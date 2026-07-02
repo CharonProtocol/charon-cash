@@ -1,0 +1,12 @@
+/target
+.DS_Store
+
+# Frontend
+app/node_modules
+app/.next
+app/.env
+app/.env.local
+
+# IDE
+.vscode
+.idea
