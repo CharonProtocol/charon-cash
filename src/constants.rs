@@ -4,10 +4,10 @@ pub const ROOT_HISTORY_SIZE: u8 = 100;
 
 pub const MERKLE_TREE_HEIGHT: u8 = 26;
 
-// pub const ADMIN_PUBKEY: Option<Address> = None;
+pub const ADMIN_PUBKEY: Option<[u8; 32]> = None;
 
-pub const ADMIN_PUBKEY: Option<[u8; 32]> =
-    Some(pubkey!("97rSMQUukMDjA7PYErccyx7ZxbHvSDaeXp2ig5BwSrTf"));
+// pub const ADMIN_PUBKEY: Option<[u8; 32]> =
+//     Some(pubkey!("97rSMQUukMDjA7PYErccyx7ZxbHvSDaeXp2ig5BwSrTf"));
 
 pub const ALLOW_ALL_SPL_TOKENS: bool = true;
 
@@ -29,3 +29,7 @@ pub const UPDATE_DEPOSIT_FEE: u8 = 1 << 0;
 pub const UPDATE_WITHDRAWAL_FEE: u8 = 1 << 1;
 pub const UPDATE_FEE_ERROR_MARGIN: u8 = 1 << 2;
 pub const VALID_MASK: u8 = UPDATE_DEPOSIT_FEE | UPDATE_WITHDRAWAL_FEE | UPDATE_FEE_ERROR_MARGIN;
+
+pub const GLOBAL_CONFIG_SEED: &[u8] = b"global_config";
+pub const TREE_ACCOUNT_SEED: &[u8] = b"merkle_tree";
+pub const TREE_TOKEN_ACCOUNT_SEED: &[u8] = b"tree_token";

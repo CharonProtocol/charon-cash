@@ -1,13 +1,23 @@
 use crate::{
-    constants::{ADMIN_PUBKEY, ALLOWED_TOKENS, ALLOW_ALL_SPL_TOKENS, MERKLE_TREE_HEIGHT},
+    constants::{
+        ADMIN_PUBKEY, ALLOWED_TOKENS, ALLOW_ALL_SPL_TOKENS, MERKLE_TREE_HEIGHT, TREE_ACCOUNT_SEED,
+    },
     error::PrivacyCashError,
-    helper::{verify_initialized, verify_program_id, verify_signer, verify_uninitialized},
+    helper::{
+        verify_initialized, verify_pda, verify_program_id, verify_signer, verify_uninitialized,
+    },
     merkle_tree::MerkleTree,
     states::MerkleTreeAccount,
 };
 use bytemuck::{from_bytes_mut, Pod, Zeroable};
 use light_hasher::Poseidon;
-use pinocchio::{error::ProgramError, AccountView, ProgramResult};
+use pinocchio::{
+    cpi::{Seed, Signer},
+    error::ProgramError,
+    sysvars::{rent::Rent, Sysvar},
+    AccountView, Address, ProgramResult,
+};
+use pinocchio_system::instructions::CreateAccount;
 
 #[repr(C)]
 #[derive(Pod, Zeroable, Clone, Copy)]
@@ -41,10 +51,38 @@ pub fn process_initialize_tree_account_for_spl_token(
             return Err(PrivacyCashError::Unauthorized.into());
         }
     }
-
-    if ALLOW_ALL_SPL_TOKENS || !ALLOWED_TOKENS.contains(mint.address().as_array()) {
+    if !ALLOW_ALL_SPL_TOKENS && !ALLOWED_TOKENS.contains(mint.address().as_array()) {
         return Err(PrivacyCashError::InvalidMintAddress.into());
     }
+
+    let tree_account_bump = [params.tree_account_bump];
+    {
+        verify_pda(
+            tree_account,
+            &[
+                TREE_ACCOUNT_SEED,
+                mint.address().as_ref(),
+                &tree_account_bump,
+            ],
+            &crate::ID,
+        )?;
+    }
+
+    let tree_account_seed = [
+        Seed::from(TREE_ACCOUNT_SEED),
+        Seed::from(mint.address().as_ref()),
+        Seed::from(&tree_account_bump),
+    ];
+    let tree_account_signer = Signer::from(&tree_account_seed);
+
+    CreateAccount {
+        from: authority,
+        to: tree_account,
+        lamports: Rent::get()?.try_minimum_balance(MerkleTreeAccount::LEN)?,
+        space: MerkleTreeAccount::LEN as u64,
+        owner: &Address::from(crate::ID),
+    }
+    .invoke_signed(&[tree_account_signer])?;
 
     let mut tree_account_data = tree_account.try_borrow_mut()?;
     let tree_account =

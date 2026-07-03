@@ -18,3 +18,24 @@ num-derive = "0.4.2"
 solana-clock = "3.0.1"
 shank = "0.4.8"
 light-hasher = "4.0.0"
+
+
+[dev-dependencies]
+litesvm = "0.10.0"
+litesvm-token = "0.10.0"
+
+solana-instruction = "3.1.0"
+solana-keypair = "3.1.2"
+solana-native-token = "3.0.0"
+solana-signer = "3.0.0"
+solana-transaction = "3.0.2"
+solana-message = "3.0.1"
+solana-sdk-ids = "3.1.0"
+solana-rpc-client = "3.1.9"
+
+spl-token-2022 = { version = "11.0.0", features = ["no-entrypoint"] }
+spl-associated-token-account = { version = "8.0.0", features = ["no-entrypoint"] }
+spl-associated-token-account-interface = "2.0.0"
+
+five8 = "1.0.0"
+five8_core = "1.0.0"

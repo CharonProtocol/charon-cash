@@ -43,3 +43,15 @@ pub fn verify_basis_points(rate: u16) -> ProgramResult {
 
     Ok(())
 }
+
+pub fn verify_pda<const N: usize>(
+    account: &AccountView,
+    seeds: &[&[u8]; N],
+    program_id: &[u8; 32],
+) -> ProgramResult {
+    let derived = pinocchio_pubkey::derive_address(seeds, None, program_id);
+    if derived != *account.address().as_array() {
+        return Err(pinocchio::error::ProgramError::InvalidAccountData);
+    }
+    Ok(())
+}
