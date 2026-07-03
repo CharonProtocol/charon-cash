@@ -1,7 +1,6 @@
-use crate::constants::MERKLE_TREE_HEIGHT;
+use crate::constants::{MERKLE_TREE_HEIGHT, ROOT_HISTORY_SIZE};
 use bytemuck::{Pod, Zeroable};
 
-const ROOT_HISTORY_SIZE: u8 = 100;
 
 #[repr(C)]
 #[derive(Zeroable, Pod, Clone, Copy)]

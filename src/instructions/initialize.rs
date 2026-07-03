@@ -1,17 +1,26 @@
 use crate::{
-    constants::{ADMIN_PUBKEY, MERKLE_TREE_HEIGHT},
+    constants::{
+        ADMIN_PUBKEY, GLOBAL_CONFIG_SEED, MERKLE_TREE_HEIGHT, TREE_ACCOUNT_SEED,
+        TREE_TOKEN_ACCOUNT_SEED,
+    },
     error::PrivacyCashError,
-    helper::{verify_program_id, verify_signer, verify_uninitialized},
+    helper::{verify_pda, verify_program_id, verify_signer, verify_uninitialized},
     merkle_tree::MerkleTree,
     states::{GlobalConfig, MerkleTreeAccount, TreeTokenAccount},
 };
 use bytemuck::{from_bytes_mut, Pod, Zeroable};
 use light_hasher::Poseidon;
-use pinocchio::{error::ProgramError, AccountView, ProgramResult};
+use pinocchio::{
+    cpi::{Seed, Signer},
+    error::ProgramError,
+    sysvars::{rent::Rent, Sysvar},
+    AccountView, Address, ProgramResult,
+};
+use pinocchio_system::instructions::CreateAccount;
 
 #[repr(C)]
 #[derive(Pod, Zeroable, Clone, Copy)]
-pub struct IntiailizeParams {
+pub struct InitiailizeParams {
     pub tree_account_bump: u8,
     pub tree_token_account_bump: u8,
     pub global_config_bump: u8,
@@ -32,7 +41,7 @@ pub fn process_initialize(accounts: &[AccountView], data: &[u8]) -> ProgramResul
 
     verify_program_id(system_program, &pinocchio_system::ID)?;
 
-    let params = bytemuck::try_pod_read_unaligned::<IntiailizeParams>(data)
+    let params = bytemuck::try_pod_read_unaligned::<InitiailizeParams>(data)
         .map_err(|_| ProgramError::InvalidInstructionData)?;
 
     if let Some(admin_key) = ADMIN_PUBKEY {
@@ -40,6 +49,42 @@ pub fn process_initialize(accounts: &[AccountView], data: &[u8]) -> ProgramResul
             return Err(PrivacyCashError::Unauthorized.into());
         }
     }
+
+    let tree_account_bump = [params.tree_account_bump];
+    let tree_token_account_bump = [params.tree_token_account_bump];
+    let global_bump = [params.global_config_bump];
+    {
+        verify_pda(
+            tree_account,
+            &[TREE_ACCOUNT_SEED, &tree_account_bump],
+            &crate::ID,
+        )?;
+        verify_pda(
+            tree_token_account,
+            &[TREE_TOKEN_ACCOUNT_SEED, &tree_token_account_bump],
+            &crate::ID,
+        )?;
+        verify_pda(
+            global_config,
+            &[GLOBAL_CONFIG_SEED, &global_bump],
+            &crate::ID,
+        )?;
+    }
+
+    let tree_account_seed = [
+        Seed::from(TREE_ACCOUNT_SEED),
+        Seed::from(&tree_account_bump),
+    ];
+    let tree_account_signer = Signer::from(&tree_account_seed);
+
+    CreateAccount {
+        from: authority,
+        to: tree_account,
+        lamports: Rent::get()?.try_minimum_balance(MerkleTreeAccount::LEN)?,
+        space: MerkleTreeAccount::LEN as u64,
+        owner: &Address::from(crate::ID),
+    }
+    .invoke_signed(&[tree_account_signer])?;
 
     let mut tree_account_data = tree_account.try_borrow_mut()?;
     let tree_account =
@@ -55,12 +100,39 @@ pub fn process_initialize(accounts: &[AccountView], data: &[u8]) -> ProgramResul
 
     MerkleTree::intialize::<Poseidon>(tree_account)?;
 
+    let tree_token_account_seed = [
+        Seed::from(TREE_TOKEN_ACCOUNT_SEED),
+        Seed::from(&tree_token_account_bump),
+    ];
+    let tree_token_account_signer = Signer::from(&tree_token_account_seed);
+
+    CreateAccount {
+        from: authority,
+        to: tree_token_account,
+        lamports: Rent::get()?.try_minimum_balance(TreeTokenAccount::LEN)?,
+        space: TreeTokenAccount::LEN as u64,
+        owner: &Address::from(crate::ID),
+    }
+    .invoke_signed(&[tree_token_account_signer])?;
+
     let mut token_account_data = tree_token_account.try_borrow_mut()?;
     let token_account =
         from_bytes_mut::<TreeTokenAccount>(&mut token_account_data[..TreeTokenAccount::LEN]);
 
     token_account.authority = *authority.address().as_array();
     token_account.bump = params.tree_token_account_bump;
+
+    let global_config_seed = [Seed::from(GLOBAL_CONFIG_SEED), Seed::from(&global_bump)];
+    let global_config_signer = Signer::from(&global_config_seed);
+
+    CreateAccount {
+        from: authority,
+        to: global_config,
+        lamports: Rent::get()?.try_minimum_balance(GlobalConfig::LEN)?,
+        space: GlobalConfig::LEN as u64,
+        owner: &Address::from(crate::ID),
+    }
+    .invoke_signed(&[global_config_signer])?;
 
     let mut global_config_data = global_config.try_borrow_mut()?;
     let global_config =
