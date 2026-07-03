@@ -1,4 +1,5 @@
 use pinocchio::{AccountView, ProgramResult};
+use crate::error::PrivacyCashError;
 
 pub fn verify_signer(account: &AccountView) -> ProgramResult {
     if !account.is_signer() {
@@ -25,6 +26,21 @@ pub fn verify_program_id(account: &AccountView, expected: &pinocchio::Address) -
     if account.address() != expected {
         return Err(pinocchio::error::ProgramError::IncorrectProgramId);
     }
+    Ok(())
+}
+
+pub fn verify_authority(expected: &[u8; 32], authority: &AccountView, ) -> ProgramResult {
+    if authority.address().as_array() != expected {
+        return Err(PrivacyCashError::Unauthorized.into());
+    }
+    Ok(())
+}
+
+pub fn verify_basis_points(rate: u16) -> ProgramResult {
+    if rate > 10_000 {
+        return Err(PrivacyCashError::InvalidFeeRate.into());
+    }
+
     Ok(())
 }
 

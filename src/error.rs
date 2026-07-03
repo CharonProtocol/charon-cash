@@ -6,6 +6,7 @@ pub enum PrivacyCashError {
     InvalidMintAddress = 1,
     InvalidMerkleTreeHeight = 2,
     InvalidRootHistorySize = 3,
+    InvalidFeeRate = 4,
 }
 
 impl From<PrivacyCashError> for ProgramError {

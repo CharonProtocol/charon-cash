@@ -24,6 +24,12 @@ pub const ALLOWED_TOKENS: &[[u8; 32]] = &[
 
 pub const SOL_ADDRESS: [u8; 32] = pubkey!("11111111111111111111111111111112");
 
+// For the Global Config update mask
+pub const UPDATE_DEPOSIT_FEE: u8 = 1 << 0;
+pub const UPDATE_WITHDRAWAL_FEE: u8 = 1 << 1;
+pub const UPDATE_FEE_ERROR_MARGIN: u8 = 1 << 2;
+pub const VALID_MASK: u8 = UPDATE_DEPOSIT_FEE | UPDATE_WITHDRAWAL_FEE | UPDATE_FEE_ERROR_MARGIN;
+
 pub const GLOBAL_CONFIG_SEED: &[u8] = b"global_config";
 pub const TREE_ACCOUNT_SEED: &[u8] = b"merkle_tree";
 pub const TREE_TOKEN_ACCOUNT_SEED: &[u8] = b"tree_token";
