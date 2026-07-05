@@ -1,7 +1,6 @@
 use crate::constants::{MERKLE_TREE_HEIGHT, ROOT_HISTORY_SIZE};
 use bytemuck::{Pod, Zeroable};
 
-
 #[repr(C)]
 #[derive(Zeroable, Pod, Clone, Copy)]
 pub struct MerkleTreeAccount {

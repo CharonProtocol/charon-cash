@@ -18,6 +18,8 @@ num-derive = "0.4.2"
 solana-clock = "3.0.1"
 shank = "0.4.8"
 light-hasher = "4.0.0"
+ark-bn254 = "0.5.0"
+ark-ff = "0.5.0"
 
 
 [dev-dependencies]

@@ -6,7 +6,7 @@ use crate::{
     error::PrivacyCashError,
     helper::{verify_pda, verify_program_id, verify_signer, verify_uninitialized},
     merkle_tree::MerkleTree,
-    states::{GlobalConfig, MerkleTreeAccount, TreeTokenAccount},
+    state::{GlobalConfig, MerkleTreeAccount, TreeTokenAccount},
 };
 use bytemuck::{from_bytes_mut, Pod, Zeroable};
 use light_hasher::Poseidon;

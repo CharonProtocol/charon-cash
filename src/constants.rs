@@ -33,3 +33,5 @@ pub const VALID_MASK: u8 = UPDATE_DEPOSIT_FEE | UPDATE_WITHDRAWAL_FEE | UPDATE_F
 pub const GLOBAL_CONFIG_SEED: &[u8] = b"global_config";
 pub const TREE_ACCOUNT_SEED: &[u8] = b"merkle_tree";
 pub const TREE_TOKEN_ACCOUNT_SEED: &[u8] = b"tree_token";
+pub const NULLIFIER0_SEED: &[u8] = b"nullifier0";
+pub const NULLIFIER1_SEED: &[u8] = b"nullifier1";

@@ -4,7 +4,7 @@ use pinocchio::{error::ProgramError, ProgramResult};
 use crate::{
     constants::{MERKLE_TREE_HEIGHT, ROOT_HISTORY_SIZE},
     error::PrivacyCashError,
-    states::MerkleTreeAccount,
+    state::MerkleTreeAccount,
 };
 
 pub struct MerkleTree;
