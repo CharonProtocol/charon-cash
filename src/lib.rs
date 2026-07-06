@@ -3,7 +3,7 @@ use pinocchio_pubkey::declare_id;
 
 use crate::instructions::{
     process_initialize, process_initialize_tree_account_for_spl_token, process_transact,
-    PrivacyCashInstructions,
+    process_transact_spl, PrivacyCashInstructions,
 };
 
 pub mod constants;
@@ -34,6 +34,7 @@ fn process_instructions(
             process_initialize_tree_account_for_spl_token(accounts, data)?
         }
         PrivacyCashInstructions::Transact => process_transact(accounts, data)?,
+        PrivacyCashInstructions::TransactSpl => process_transact_spl(accounts, data)?,
     }
     Ok(())
 }

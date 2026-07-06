@@ -14,6 +14,8 @@ pub enum PrivacyCashError {
     InsufficientFundsForWithdrawal = 9,
     InsufficientFundsForFee = 10,
     InvalidFeeAmount = 11,
+    InvalidTokenAccount = 12,
+    InvalidTokenAccountMintAddress = 13,
 }
 
 impl From<PrivacyCashError> for ProgramError {
