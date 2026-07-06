@@ -2,7 +2,8 @@ use pinocchio::{entrypoint, error::ProgramError, AccountView, Address, ProgramRe
 use pinocchio_pubkey::declare_id;
 
 use crate::instructions::{
-    process_initialize, process_initialize_tree_account_for_spl_token, PrivacyCashInstructions,
+    process_initialize, process_initialize_tree_account_for_spl_token, process_transact,
+    PrivacyCashInstructions,
 };
 
 pub mod constants;
@@ -10,8 +11,9 @@ pub mod error;
 pub mod helper;
 pub mod instructions;
 pub mod merkle_tree;
-pub mod states;
+pub mod state;
 pub mod tests;
+pub mod utils;
 
 declare_id!("HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV");
 
@@ -31,6 +33,7 @@ fn process_instructions(
         PrivacyCashInstructions::InitializeTreeAccountForSplToken => {
             process_initialize_tree_account_for_spl_token(accounts, data)?
         }
+        PrivacyCashInstructions::Transact => process_transact(accounts, data)?,
     }
     Ok(())
 }

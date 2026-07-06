@@ -1,27 +1,19 @@
 use crate::{
-    constants::{
-        UPDATE_DEPOSIT_FEE, UPDATE_FEE_ERROR_MARGIN, UPDATE_WITHDRAWAL_FEE, VALID_MASK
-    },
-    helper::{
-        verify_basis_points, verify_signer,
-        verify_initialized, verify_authority,
-    },
-    states::GlobalConfig,
+    constants::{UPDATE_DEPOSIT_FEE, UPDATE_FEE_ERROR_MARGIN, UPDATE_WITHDRAWAL_FEE, VALID_MASK},
+    helper::{verify_authority, verify_basis_points, verify_initialized, verify_signer},
+    state::GlobalConfig,
 };
 
 use bytemuck::{from_bytes_mut, Pod, Zeroable};
 
-use pinocchio::{
-    AccountView, ProgramResult,
-    error::ProgramError,
-};
+use pinocchio::{error::ProgramError, AccountView, ProgramResult};
 
 #[repr(C)]
 #[derive(Pod, Zeroable, Clone, Copy)]
 pub struct UpdateGlobalConfigParams {
-    pub deposit_fee_rate: u16, // basis points (0-10000, where 10000 = 100%)
+    pub deposit_fee_rate: u16,    // basis points (0-10000, where 10000 = 100%)
     pub withdrawal_fee_rate: u16, // basis points (0-10000, where 10000 = 100%)
-    pub fee_error_margin: u16, // basis points (0-10000, where 10000 = 100%)
+    pub fee_error_margin: u16,    // basis points (0-10000, where 10000 = 100%)
 
     pub update_mask: u8, // bitmask to indicate which fields have been updated
 
