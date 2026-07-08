@@ -2,6 +2,8 @@ pub mod initialize;
 pub mod initialize_tree_account_for_spl_token;
 pub mod transact;
 pub mod transact_spl;
+pub mod update_deposit_limit;
+pub mod update_deposit_limit_for_spl;
 pub mod update_global_config;
 
 pub use initialize::*;
