@@ -12,6 +12,7 @@ use crate::{
     state::{GlobalConfig, MerkleTreeAccount, TransactArgs},
     utils::{
         calculate_complete_ext_data_hash, check_public_amount, ext_data_hash_matches, validate_fee,
+        verify_proof, VERIFYING_KEY,
     },
 };
 use bytemuck::try_from_bytes;
@@ -143,7 +144,9 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
         global.fee_error_margin,
     )?;
 
-    // TODO: verify_proof when groth16 module is migrated from Anchor.
+    if !verify_proof(&proof, &VERIFYING_KEY) {
+        return Err(PrivacyCashError::InvalidProof.into());
+    }
 
     // PDA signer seeds for the tree's ATA (authority == global_config PDA).
     let global_bump = [global.bump];

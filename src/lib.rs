@@ -8,6 +8,7 @@ use crate::instructions::{
 
 pub mod constants;
 pub mod error;
+pub mod groth16;
 pub mod helper;
 pub mod instructions;
 pub mod merkle_tree;
