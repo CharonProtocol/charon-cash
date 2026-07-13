@@ -1,6 +1,6 @@
 use crate::{
     constants::{
-        ADMIN_PUBKEY, ALLOWED_TOKENS, ALLOW_ALL_SPL_TOKENS, MERKLE_TREE_HEIGHT, TREE_ACCOUNT_SEED,
+        ADMIN_PUBKEY, ALLOWED_TOKENS, ALLOW_ALL_SPL_TOKENS, TREE_ACCOUNT_SEED,
     },
     error::PrivacyCashError,
     helper::{
@@ -92,9 +92,7 @@ pub fn process_initialize_tree_account_for_spl_token(
     tree_account.next_index = 0;
     tree_account.root_index = 0;
     tree_account.max_deposit_amount = params.max_deposit_amount;
-    tree_account.height = MERKLE_TREE_HEIGHT;
     tree_account.bump = params.tree_account_bump;
-    tree_account.root_history_size = 100;
 
     MerkleTree::intialize::<Poseidon>(tree_account)?;
 
