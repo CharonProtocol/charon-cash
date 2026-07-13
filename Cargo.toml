@@ -18,14 +18,17 @@ num-derive = "0.4.2"
 solana-clock = "3.0.1"
 shank = "0.4.8"
 light-hasher = "4.0.0"
-ark-bn254 = "0.5.0"
-ark-ff = "0.5.0"
-ark-serialize = "0.5.0"
-num-bigint = "0.4"
 solana-bn254 = "3.2.1"
 
 
 [dev-dependencies]
+# ark crates are used only for differential tests against the byte-level
+# field arithmetic in utils.rs/groth16.rs; they are not in the SBF binary.
+ark-bn254 = "0.5.0"
+ark-ec = "0.5.0"
+ark-ff = "0.5.0"
+ark-serialize = "0.5.0"
+num-bigint = "0.4"
 litesvm = "0.10.0"
 litesvm-token = "0.10.0"
 

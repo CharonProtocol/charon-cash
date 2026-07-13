@@ -1,12 +1,14 @@
-// Source is taken from: https://github.com/Lightprotocol/groth16-solana/blob/master/src/groth16.rs
-// Ported 1:1 from the Anchor program (`privacy-cash-orignal/.../groth16.rs`).
-// We don't need checked math on public inputs, because the passed in public
-// input length is fixed at 7.
-use ark_ff::PrimeField;
-use num_bigint::BigUint;
 use solana_bn254::prelude::{
     alt_bn128_g1_addition_be, alt_bn128_g1_multiplication_be, alt_bn128_pairing_be,
 };
+
+/// BN254 scalar field modulus r (Fr), big-endian.
+/// 0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001
+pub const FR_MODULUS_BE: [u8; 32] = [
+    0x30, 0x64, 0x4e, 0x72, 0xe1, 0x31, 0xa0, 0x29, 0xb8, 0x50, 0x45, 0xb6, 0x81, 0x81, 0x58,
+    0x5d, 0x28, 0x33, 0xe8, 0x48, 0x79, 0xb9, 0x70, 0x91, 0x43, 0xe1, 0xf5, 0x93, 0xf0, 0x00,
+    0x00, 0x01,
+];
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Groth16Error {
@@ -47,18 +49,6 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
         public_inputs: &'a [[u8; 32]; NR_INPUTS],
         verifyingkey: &'a Groth16Verifyingkey<'a>,
     ) -> Result<Groth16Verifier<'a, NR_INPUTS>, Groth16Error> {
-        if proof_a.len() != 64 {
-            return Err(Groth16Error::InvalidG1Length);
-        }
-
-        if proof_b.len() != 128 {
-            return Err(Groth16Error::InvalidG2Length);
-        }
-
-        if proof_c.len() != 64 {
-            return Err(Groth16Error::InvalidG1Length);
-        }
-
         if public_inputs.len() + 1 != verifyingkey.vk_ic.len() {
             return Err(Groth16Error::InvalidPublicInputsLength);
         }
@@ -75,20 +65,23 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
 
     pub fn prepare_inputs<const CHECK: bool>(&mut self) -> Result<(), Groth16Error> {
         let mut prepared_public_inputs = self.verifyingkey.vk_ic[0];
+        let mut mul_input = [0u8; 96];
+        let mut add_input = [0u8; 128];
 
         for (i, input) in self.public_inputs.iter().enumerate() {
             if CHECK && !is_less_than_bn254_field_size_be(input) {
                 return Err(Groth16Error::PublicInputGreaterThanFieldSize);
             }
-            let mul_res = alt_bn128_g1_multiplication_be(
-                &[&self.verifyingkey.vk_ic[i + 1][..], &input[..]].concat(),
-            )
-            .map_err(|_| Groth16Error::PreparingInputsG1MulFailed)?;
-            prepared_public_inputs =
-                alt_bn128_g1_addition_be(&[&mul_res[..], &prepared_public_inputs[..]].concat())
-                    .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?[..]
-                    .try_into()
-                    .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?;
+            mul_input[..64].copy_from_slice(&self.verifyingkey.vk_ic[i + 1]);
+            mul_input[64..].copy_from_slice(input);
+            let mul_res = alt_bn128_g1_multiplication_be(&mul_input)
+                .map_err(|_| Groth16Error::PreparingInputsG1MulFailed)?;
+            add_input[..64].copy_from_slice(&mul_res);
+            add_input[64..].copy_from_slice(&prepared_public_inputs);
+            prepared_public_inputs = alt_bn128_g1_addition_be(&add_input)
+                .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?[..]
+                .try_into()
+                .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?;
         }
 
         self.prepared_public_inputs = prepared_public_inputs;
@@ -111,19 +104,17 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
     fn verify_common<const CHECK: bool>(&mut self) -> Result<bool, Groth16Error> {
         self.prepare_inputs::<CHECK>()?;
 
-        let pairing_input = [
-            self.proof_a.as_slice(),
-            self.proof_b.as_slice(),
-            self.prepared_public_inputs.as_slice(),
-            self.verifyingkey.vk_gamme_g2.as_slice(),
-            self.proof_c.as_slice(),
-            self.verifyingkey.vk_delta_g2.as_slice(),
-            self.verifyingkey.vk_alpha_g1.as_slice(),
-            self.verifyingkey.vk_beta_g2.as_slice(),
-        ]
-        .concat();
+        let mut pairing_input = [0u8; 768];
+        pairing_input[0..64].copy_from_slice(self.proof_a);
+        pairing_input[64..192].copy_from_slice(self.proof_b);
+        pairing_input[192..256].copy_from_slice(&self.prepared_public_inputs);
+        pairing_input[256..384].copy_from_slice(&self.verifyingkey.vk_gamme_g2);
+        pairing_input[384..448].copy_from_slice(self.proof_c);
+        pairing_input[448..576].copy_from_slice(&self.verifyingkey.vk_delta_g2);
+        pairing_input[576..640].copy_from_slice(&self.verifyingkey.vk_alpha_g1);
+        pairing_input[640..768].copy_from_slice(&self.verifyingkey.vk_beta_g2);
 
-        let pairing_res = alt_bn128_pairing_be(pairing_input.as_slice())
+        let pairing_res = alt_bn128_pairing_be(&pairing_input)
             .map_err(|_| Groth16Error::ProofVerificationFailed)?;
 
         if pairing_res[31] != 1 {
@@ -133,7 +124,12 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
     }
 }
 
+/// Strict `bytes < r` on big-endian 32-byte values. Lexicographic comparison
+/// of equal-length big-endian arrays equals numeric comparison.
+///
+/// This check is load-bearing for soundness: the alt_bn128 multiplication
+/// syscall does not range-check scalars, so without it `input + r` would be
+/// accepted as an alias of `input` (e.g. a nullifier replay).
 pub fn is_less_than_bn254_field_size_be(bytes: &[u8; 32]) -> bool {
-    let bigint = BigUint::from_bytes_be(bytes);
-    bigint < ark_bn254::Fr::MODULUS.into()
+    bytes < &FR_MODULUS_BE
 }
