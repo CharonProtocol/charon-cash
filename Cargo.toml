@@ -20,6 +20,9 @@ shank = "0.4.8"
 light-hasher = "4.0.0"
 ark-bn254 = "0.5.0"
 ark-ff = "0.5.0"
+ark-serialize = "0.5.0"
+num-bigint = "0.4"
+solana-bn254 = "3.2.1"
 
 
 [dev-dependencies]

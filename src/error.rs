@@ -16,6 +16,7 @@ pub enum PrivacyCashError {
     InvalidFeeAmount = 11,
     InvalidTokenAccount = 12,
     InvalidTokenAccountMintAddress = 13,
+    InvalidProof = 14,
 }
 
 impl From<PrivacyCashError> for ProgramError {

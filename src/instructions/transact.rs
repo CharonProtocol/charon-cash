@@ -12,6 +12,7 @@ use crate::{
     state::{GlobalConfig, MerkleTreeAccount, TransactArgs, TreeTokenAccount},
     utils::{
         calculate_complete_ext_data_hash, check_public_amount, ext_data_hash_matches, validate_fee,
+        verify_proof, VERIFYING_KEY,
     },
 };
 use bytemuck::try_from_bytes;
@@ -128,7 +129,9 @@ pub fn process_transact(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
         global.fee_error_margin,
     )?;
 
-    // TODO: verify_proof when groth16 module is migrated from Anchor.
+    if !verify_proof(&proof, &VERIFYING_KEY) {
+        return Err(PrivacyCashError::InvalidProof.into());
+    }
 
     let rent = Rent::get()?;
     let rent_exempt_minimum = rent.try_minimum_balance(tree_token_account.data_len())?;
