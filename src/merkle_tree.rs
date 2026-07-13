@@ -3,7 +3,6 @@ use pinocchio::{error::ProgramError, ProgramResult};
 
 use crate::{
     constants::{MERKLE_TREE_HEIGHT, ROOT_HISTORY_SIZE},
-    error::PrivacyCashError,
     state::MerkleTreeAccount,
 };
 
@@ -11,18 +10,12 @@ pub struct MerkleTree;
 
 impl MerkleTree {
     pub fn intialize<H: Hasher>(tree_account: &mut MerkleTreeAccount) -> ProgramResult {
-        let height = tree_account.height as usize;
-
-        // Initialize empty subtrees
         let zero_bytes = H::zero_bytes();
-        for i in 0..height {
+        for i in 0..MERKLE_TREE_HEIGHT as usize {
             tree_account.subtrees[i] = zero_bytes[i];
         }
 
-        // Set initial root
-        let initial_root = H::zero_bytes()[height];
-        tree_account.root = initial_root;
-        tree_account.root_history[0] = initial_root;
+        tree_account.root_history[0] = zero_bytes[MERKLE_TREE_HEIGHT as usize];
 
         Ok(())
     }
@@ -31,20 +24,10 @@ impl MerkleTree {
         leaf: [u8; 32],
         tree_account: &mut MerkleTreeAccount,
     ) -> core::result::Result<[[u8; 32]; MERKLE_TREE_HEIGHT as usize], ProgramError> {
-        let height = tree_account.height as usize;
-        let root_history_size = tree_account.root_history_size as usize;
+        let height = MERKLE_TREE_HEIGHT as usize;
+        let root_history_size = ROOT_HISTORY_SIZE as usize;
 
-        if height != MERKLE_TREE_HEIGHT as usize {
-            return Err(PrivacyCashError::InvalidMerkleTreeHeight.into());
-        }
-
-        if root_history_size == 0 || root_history_size > ROOT_HISTORY_SIZE as usize {
-            return Err(PrivacyCashError::InvalidRootHistorySize.into());
-        }
-
-        // Check if tree is full before appending
-        // Maximum capacity is 2^height leaves
-        let max_capacity = 1u64
+        let max_capacity = 1u32
             .checked_shl(height as u32)
             .ok_or(ProgramError::ArithmeticOverflow)?;
 
@@ -77,19 +60,14 @@ impl MerkleTree {
             current_index /= 2;
         }
 
-        tree_account.root = current_level_hash;
         tree_account.next_index = tree_account
             .next_index
             .checked_add(1)
             .ok_or(ProgramError::ArithmeticOverflow)
             .unwrap();
 
-        let new_root_index = (tree_account.root_index as usize)
-            .checked_add(1)
-            .ok_or(ProgramError::ArithmeticOverflow)
-            .unwrap()
-            % root_history_size;
-        tree_account.root_index = new_root_index as u64;
+        let new_root_index = (tree_account.root_index as usize + 1) % root_history_size;
+        tree_account.root_index = new_root_index as u8;
         tree_account.root_history[new_root_index] = current_level_hash;
 
         Ok(proof)
@@ -100,7 +78,7 @@ impl MerkleTree {
             return false;
         }
 
-        let root_history_size = tree_account.root_history_size as usize;
+        let root_history_size = ROOT_HISTORY_SIZE as usize;
         let current_root_index = tree_account.root_index as usize;
         let mut i = current_root_index;
 

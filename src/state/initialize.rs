@@ -4,17 +4,14 @@ use bytemuck::{Pod, Zeroable};
 #[repr(C)]
 #[derive(Zeroable, Pod, Clone, Copy)]
 pub struct MerkleTreeAccount {
-    pub root_index: u64,
-    pub next_index: u64,
     pub max_deposit_amount: u64,
+    pub next_index: u32,
+    pub root_index: u8,
+    pub bump: u8,
+    pub _padding: [u8; 2],
     pub subtrees: [[u8; 32]; MERKLE_TREE_HEIGHT as usize],
     pub root_history: [[u8; 32]; ROOT_HISTORY_SIZE as usize],
     pub authority: [u8; 32],
-    pub root: [u8; 32],
-    pub height: u8,
-    pub root_history_size: u8,
-    pub bump: u8,
-    pub _padding: [u8; 5],
 }
 impl MerkleTreeAccount {
     pub const LEN: usize = std::mem::size_of::<MerkleTreeAccount>();

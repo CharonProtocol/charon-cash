@@ -1,6 +1,6 @@
 use crate::{
     constants::{
-        ADMIN_PUBKEY, GLOBAL_CONFIG_SEED, MERKLE_TREE_HEIGHT, TREE_ACCOUNT_SEED,
+        ADMIN_PUBKEY, GLOBAL_CONFIG_SEED, TREE_ACCOUNT_SEED,
         TREE_TOKEN_ACCOUNT_SEED,
     },
     error::PrivacyCashError,
@@ -94,9 +94,7 @@ pub fn process_initialize(accounts: &[AccountView], data: &[u8]) -> ProgramResul
     tree_account.next_index = 0;
     tree_account.root_index = 0;
     tree_account.max_deposit_amount = 1_000_000_000_000;
-    tree_account.height = MERKLE_TREE_HEIGHT;
     tree_account.bump = params.tree_account_bump;
-    tree_account.root_history_size = 100;
 
     MerkleTree::intialize::<Poseidon>(tree_account)?;
 
