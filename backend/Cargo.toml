@@ -1,0 +1,36 @@
+[package]
+name = "privacy-cash-backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Runtime + HTTP
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time"] }
+axum = "0.8"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+futures = "0.3"
+
+# Serde
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Postgres via SQLx
+sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls-ring", "postgres", "migrate"] }
+
+# Solana types (Pubkey for config)
+solana-sdk = "4.0.1"
+
+# Yellowstone gRPC (live tx stream — replaces RPC poll)
+yellowstone-grpc-client = "13.2.1"
+yellowstone-grpc-proto = { version = "12.5.0", features = ["tonic"] }
+
+# Encoding for ix data / note lookups
+bs58 = "0.5"
+hex = "0.4"
+
+# Config / errors / logs
+dotenvy = "0.15"
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

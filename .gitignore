@@ -3,6 +3,9 @@
 Cargo.lock
 .DS_Store
 
+# Backend
+backend/.env
+
 # Frontend
 app/node_modules
 app/.next

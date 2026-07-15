@@ -19,7 +19,7 @@ mod test {
 
         let program_bytes = include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/target/sbpf-solana-solana/release/privacy_cash.so"
+            "/../../target/sbpf-solana-solana/release/privacy_cash.so"
         ));
 
         svm.add_program(PROGRAM_ID, program_bytes)
