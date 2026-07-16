@@ -2,8 +2,7 @@ use bytemuck::{from_bytes_mut, Pod, Zeroable};
 use pinocchio::{error::ProgramError, AccountView, ProgramResult};
 
 use crate::{
-    constants::{ADMIN_PUBKEY, TREE_ACCOUNT_SEED},
-    error::PrivacyCashError,
+    constants::TREE_ACCOUNT_SEED,
     helper::{verify_authority, verify_initialized, verify_pda, verify_signer},
     state::MerkleTreeAccount,
 };

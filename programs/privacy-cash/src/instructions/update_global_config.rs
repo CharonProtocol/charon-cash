@@ -1,5 +1,8 @@
 use crate::{
-    constants::{UPDATE_DEPOSIT_FEE, UPDATE_FEE_ERROR_MARGIN, UPDATE_WITHDRAWAL_FEE, VALID_MASK},
+    constants::{
+        UPDATE_DEPOSIT_FEE, UPDATE_FEE_ERROR_MARGIN, UPDATE_FEE_RECIPIENT, UPDATE_WITHDRAWAL_FEE,
+        VALID_MASK,
+    },
     helper::{verify_authority, verify_basis_points, verify_initialized, verify_signer},
     state::GlobalConfig,
 };
@@ -11,6 +14,8 @@ use pinocchio::{error::ProgramError, AccountView, ProgramResult};
 #[repr(C)]
 #[derive(Pod, Zeroable, Clone, Copy)]
 pub struct UpdateGlobalConfigParams {
+    pub fee_recipient: [u8; 32],  // only applied if UPDATE_FEE_RECIPIENT is set in update_mask
+
     pub deposit_fee_rate: u16,    // basis points (0-10000, where 10000 = 100%)
     pub withdrawal_fee_rate: u16, // basis points (0-10000, where 10000 = 100%)
     pub fee_error_margin: u16,    // basis points (0-10000, where 10000 = 100%)
@@ -63,6 +68,10 @@ pub fn process_update_global_config(accounts: &[AccountView], data: &[u8]) -> Pr
     if params.update_mask & UPDATE_FEE_ERROR_MARGIN != 0 {
         verify_basis_points(params.fee_error_margin)?;
         global_config.fee_error_margin = params.fee_error_margin;
+    }
+
+    if params.update_mask & UPDATE_FEE_RECIPIENT != 0 {
+        global_config.fee_recipient = params.fee_recipient;
     }
 
     Ok(())

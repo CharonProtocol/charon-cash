@@ -1,7 +1,9 @@
 //! Yellowstone gRPC stream: subscribe to program txs → decode → persist via `Db`.
 //!
-//! Replaces RPC `getSignaturesForAddress` polling with a live Geyser subscription
-//! filtered to our Pinocchio program id.
+//! Replaces RPC `getSignaturesForAddress` polling with a live Geyser subscription filtered to our
+//! Pinocchio program id. On startup it resumes from the last indexed slot, and it takes each
+//! leaf's index from the program's commitment event rather than a local counter — so a missed
+//! transaction can never silently renumber every later leaf.
 
 use std::collections::HashMap;
 
@@ -13,12 +15,12 @@ use yellowstone_grpc_proto::geyser::{
     subscribe_update::UpdateOneof, CommitmentLevel, SubscribeRequest,
     SubscribeRequestFilterTransactions, SubscribeRequestPing, SubscribeUpdateTransactionInfo,
 };
-use yellowstone_grpc_proto::solana::storage::confirmed_block::Message;
+use yellowstone_grpc_proto::solana::storage::confirmed_block::{Message, TransactionStatusMeta};
 
 use crate::config::Config;
 use crate::db::Db;
 
-use super::decode::decode_transact_ix;
+use super::decode::{decode_transact_ix, parse_commitment_events};
 use super::types::{IndexedNullifier, IndexedTransact, IndexedUtxo, TransactKind, SOL_TREE_KEY};
 
 pub struct Indexer {
@@ -79,16 +81,21 @@ impl Indexer {
             ..Default::default()
         };
 
+        // Resume from where we left off. Without this a restart silently begins at "now" and every
+        // transaction produced while we were down is lost forever (there is no backfill).
+        let from_slot = self.db.resume_from_slot().await.unwrap_or(None);
+
         subscribe_tx
             .send(SubscribeRequest {
                 transactions: HashMap::from([("privacy_cash".to_string(), filter)]),
                 commitment: Some(CommitmentLevel::Confirmed as i32),
+                from_slot,
                 ..Default::default()
             })
             .await
             .context("send subscribe request")?;
 
-        info!("yellowstone subscription active");
+        info!(?from_slot, "yellowstone subscription active");
 
         while let Some(message) = stream.next().await {
             let update = message.context("yellowstone stream message")?;
@@ -130,36 +137,42 @@ impl Indexer {
             return Ok(());
         }
 
-        match self.build_indexed(slot, &signature, tx_info).await? {
-            Some(indexed) => {
-                self.db.insert_transact(&indexed).await?;
-                info!(
-                    signature = %signature,
-                    tree = %indexed.tree_key,
-                    leaves = indexed.utxos.len(),
-                    "indexed transact"
-                );
-            }
-            None => {
-                // Non-transact program ix (initialize, etc.) — still advance cursor.
-                self.db.set_cursor(&signature, slot).await?;
-            }
+        let transacts = self.build_indexed(slot, &signature, tx_info);
+
+        if transacts.is_empty() {
+            // Not a transact (initialize/config) or a failed tx — advance the cursor so a restart
+            // doesn't re-scan from here, but persist nothing.
+            self.db.set_cursor(&signature, slot).await?;
+            return Ok(());
+        }
+
+        for indexed in &transacts {
+            self.db.insert_transact(indexed).await?;
+            info!(
+                signature = %signature,
+                tree = %indexed.tree_key,
+                leaves = indexed.utxos.len(),
+                first_leaf = indexed.utxos.first().map(|u| u.leaf_index).unwrap_or(0),
+                "indexed transact"
+            );
         }
 
         Ok(())
     }
 
-    async fn build_indexed(
+    /// Decode every `transact` in this transaction, pairing each with its commitment event (which
+    /// carries the authoritative leaf index). Returns an empty vec for non-transact / failed txs.
+    fn build_indexed(
         &self,
         slot: u64,
         signature: &str,
         tx_info: SubscribeUpdateTransactionInfo,
-    ) -> Result<Option<IndexedTransact>> {
-        // Yellowstone flattens ConfirmedTransaction into `transaction` + `meta`.
-        if let Some(meta) = &tx_info.meta {
-            if meta.err.is_some() {
-                return Ok(None);
-            }
+    ) -> Vec<IndexedTransact> {
+        let Some(meta) = &tx_info.meta else {
+            return Vec::new();
+        };
+        if meta.err.is_some() {
+            return Vec::new();
         }
 
         let Some(message) = tx_info
@@ -167,107 +180,146 @@ impl Indexer {
             .as_ref()
             .and_then(|tx| tx.message.as_ref())
         else {
-            return Ok(None);
+            return Vec::new();
         };
 
-        // Static keys + ALT-loaded addresses (v0), in Solana account-key order.
+        // Full account-key list: static keys, then ALT-loaded writable, then readonly (v0 order).
         let mut account_keys: Vec<String> = message
             .account_keys
             .iter()
             .map(|k| bs58::encode(k).into_string())
             .collect();
-
-        if let Some(meta) = &tx_info.meta {
-            for key in &meta.loaded_writable_addresses {
-                account_keys.push(bs58::encode(key).into_string());
-            }
-            for key in &meta.loaded_readonly_addresses {
-                account_keys.push(bs58::encode(key).into_string());
-            }
+        for key in &meta.loaded_writable_addresses {
+            account_keys.push(bs58::encode(key).into_string());
+        }
+        for key in &meta.loaded_readonly_addresses {
+            account_keys.push(bs58::encode(key).into_string());
         }
 
         let program_id = self.config.program_id.to_string();
-        let Some((ix_data, accounts)) =
-            extract_program_instruction(message, &account_keys, &program_id)
-        else {
-            return Ok(None);
-        };
+        let program_ixs = collect_program_instructions(message, meta, &account_keys, &program_id);
+        if program_ixs.is_empty() {
+            return Vec::new();
+        }
 
-        let decoded = match decode_transact_ix(&ix_data) {
-            Ok(d) => d,
-            Err(_) => return Ok(None),
-        };
+        let events = parse_commitment_events(&meta.log_messages);
 
-        let tree_key = match decoded.kind {
-            TransactKind::Sol => SOL_TREE_KEY.to_string(),
-            // TransactSpl account layout: mint is index 7.
-            TransactKind::Spl => accounts
-                .get(7)
-                .cloned()
-                .unwrap_or_else(|| "unknown_mint".to_string()),
-        };
+        // Each transact emits exactly one event, in the same order. If the counts disagree, the
+        // program and indexer are out of sync — refuse to guess indices (which would corrupt the
+        // tree) and surface it loudly instead.
+        if events.len() != program_ixs.len() {
+            warn!(
+                %signature,
+                transacts = program_ixs.len(),
+                events = events.len(),
+                "transact/event count mismatch — skipping tx (no reliable leaf index)"
+            );
+            return Vec::new();
+        }
 
-        let start_index = self.db.next_index(&tree_key).await?;
-        let mut utxos = Vec::with_capacity(2);
-        for (i, (commitment, encrypted)) in decoded
-            .output_commitments
-            .iter()
-            .zip([&decoded.encrypted_output1, &decoded.encrypted_output2])
-            .enumerate()
-        {
-            utxos.push(IndexedUtxo {
-                tree_key: tree_key.clone(),
-                leaf_index: start_index + i as u32,
-                commitment: *commitment,
-                encrypted_output: encrypted.clone(),
+        let mut out = Vec::with_capacity(program_ixs.len());
+        for ((ix_data, accounts), event) in program_ixs.into_iter().zip(events) {
+            let decoded = match decode_transact_ix(&ix_data) {
+                Ok(d) => d,
+                Err(err) => {
+                    // A program instruction that filtered in but doesn't decode is a real problem
+                    // (layout drift?), not something to drop in silence.
+                    warn!(%signature, error = %err, "failed to decode a program instruction");
+                    continue;
+                }
+            };
+
+            let tree_key = match decoded.kind {
+                TransactKind::Sol => SOL_TREE_KEY.to_string(),
+                // TransactSpl account layout: mint is index 7.
+                TransactKind::Spl => match accounts.get(7) {
+                    Some(mint) => mint.clone(),
+                    None => {
+                        warn!(%signature, "SPL transact missing mint account; skipping");
+                        continue;
+                    }
+                },
+            };
+
+            let base = event.leaf_index;
+            let utxos = decoded
+                .output_commitments
+                .iter()
+                .zip([&decoded.encrypted_output1, &decoded.encrypted_output2])
+                .enumerate()
+                .map(|(i, (commitment, encrypted))| IndexedUtxo {
+                    tree_key: tree_key.clone(),
+                    leaf_index: base + i as u32,
+                    commitment: *commitment,
+                    encrypted_output: encrypted.clone(),
+                    signature: signature.to_string(),
+                    slot,
+                    ext_amount: decoded.ext_amount,
+                    fee: decoded.fee,
+                })
+                .collect();
+
+            let nullifiers = decoded
+                .input_nullifiers
+                .iter()
+                .map(|n| IndexedNullifier {
+                    tree_key: tree_key.clone(),
+                    nullifier: *n,
+                    signature: signature.to_string(),
+                    slot,
+                })
+                .collect();
+
+            out.push(IndexedTransact {
                 signature: signature.to_string(),
                 slot,
-                ext_amount: decoded.ext_amount,
-                fee: decoded.fee,
+                tree_key,
+                kind: decoded.kind,
+                event_root: event.root,
+                utxos,
+                nullifiers,
             });
         }
 
-        let nullifiers = decoded
-            .input_nullifiers
-            .iter()
-            .map(|n| IndexedNullifier {
-                tree_key: tree_key.clone(),
-                nullifier: *n,
-                signature: signature.to_string(),
-                slot,
-            })
-            .collect();
-
-        Ok(Some(IndexedTransact {
-            signature: signature.to_string(),
-            slot,
-            tree_key,
-            decoded,
-            utxos,
-            nullifiers,
-        }))
+        out
     }
 }
 
-fn extract_program_instruction(
+/// Every instruction invoking our program, top-level and via CPI, in execution order — so a
+/// batched or CPI'd transact is not missed. Returns `(data, resolved account keys)` per ix.
+fn collect_program_instructions(
     message: &Message,
+    meta: &TransactionStatusMeta,
     account_keys: &[String],
     program_id: &str,
-) -> Option<(Vec<u8>, Vec<String>)> {
-    for ix in &message.instructions {
-        let pid = account_keys.get(ix.program_id_index as usize)?;
-        if pid != program_id {
-            continue;
-        }
-        // `accounts` is a byte array where each byte is an account index.
-        let accounts = ix
-            .accounts
+) -> Vec<(Vec<u8>, Vec<String>)> {
+    let resolve_accounts = |accounts: &[u8]| -> Vec<String> {
+        accounts
             .iter()
             .filter_map(|idx| account_keys.get(*idx as usize).cloned())
-            .collect();
-        return Some((ix.data.clone(), accounts));
+            .collect()
+    };
+    let is_ours = |program_id_index: u32| -> bool {
+        account_keys
+            .get(program_id_index as usize)
+            .map(|pid| pid == program_id)
+            .unwrap_or(false)
+    };
+
+    let mut out = Vec::new();
+    for ix in &message.instructions {
+        if is_ours(ix.program_id_index) {
+            out.push((ix.data.clone(), resolve_accounts(&ix.accounts)));
+        }
     }
-    None
+    for inner in &meta.inner_instructions {
+        for ix in &inner.instructions {
+            if is_ours(ix.program_id_index) {
+                out.push((ix.data.clone(), resolve_accounts(&ix.accounts)));
+            }
+        }
+    }
+    out
 }
 
 /// Background task entrypoint from `main`.

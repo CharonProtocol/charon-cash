@@ -1,6 +1,8 @@
 /target
 
-Cargo.lock
+# Cargo.lock is committed: this workspace ships binaries (indexer, relayer, CLI), and a committed
+# lock is what makes their builds reproducible — omitting it is how the earlier dependency skew
+# went unnoticed.
 .DS_Store
 
 # Backend

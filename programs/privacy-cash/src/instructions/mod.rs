@@ -10,27 +10,17 @@ pub use initialize::*;
 pub use initialize_tree_account_for_spl_token::*;
 pub use transact::*;
 pub use transact_spl::*;
+pub use update_deposit_limit::*;
+pub use update_deposit_limit_for_spl::*;
 pub use update_global_config::*;
 
 use pinocchio::error::ProgramError;
 
-pub enum PrivacyCashInstructions {
-    Initialize = 0,
-    InitializeTreeAccountForSplToken = 1,
-    Transact = 2,
-    TransactSpl = 3,
-}
+/// The instruction discriminators live in `pc-types` so the indexer decodes against the same
+/// values the program dispatches on. This alias keeps existing call sites unchanged.
+pub use pc_types::PrivacyCashInstruction as PrivacyCashInstructions;
 
-impl TryFrom<&u8> for PrivacyCashInstructions {
-    type Error = ProgramError;
-
-    fn try_from(value: &u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(PrivacyCashInstructions::Initialize),
-            1 => Ok(PrivacyCashInstructions::InitializeTreeAccountForSplToken),
-            2 => Ok(PrivacyCashInstructions::Transact),
-            3 => Ok(PrivacyCashInstructions::TransactSpl),
-            _ => Err(ProgramError::InvalidInstructionData),
-        }
-    }
+/// Adapter for the entrypoint, which hands us the discriminator by reference.
+pub fn instruction_from_byte(value: &u8) -> Result<PrivacyCashInstructions, ProgramError> {
+    PrivacyCashInstructions::from_u8(*value).ok_or(ProgramError::InvalidInstructionData)
 }

@@ -2,5 +2,19 @@
 resolver = "2"
 members = [
     "programs/privacy-cash",
+    "crates/pc-types",
+    "crates/pc-core",
+    "crates/pc-prover",
+    "crates/pc-note",
+    "crates/pc-client",
+    "crates/pc-cli",
     "backend",
+    "relayer",
 ]
+
+[workspace.dependencies]
+pc-types = { path = "crates/pc-types" }
+pc-core = { path = "crates/pc-core" }
+pc-prover = { path = "crates/pc-prover" }
+pc-note = { path = "crates/pc-note" }
+pc-client = { path = "crates/pc-client" }

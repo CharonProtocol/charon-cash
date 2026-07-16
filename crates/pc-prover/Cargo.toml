@@ -1,0 +1,24 @@
+[package]
+name = "pc-prover"
+version = "0.1.0"
+edition = "2021"
+description = "Groth16 proving for privacy-cash: builds the circuit witness and generates a proof serialized in the program's on-chain byte format, against the unmodified circom zkey."
+build = "build.rs"
+
+[dependencies]
+pc-core = { workspace = true }
+# rustwitness (native witness via w2c2) + arkworks prover. Pins ark-bn254 =0.5.0, matching our tree.
+circom-prover = "0.1.4"
+rust-witness = "0.1.6"
+num-bigint = "0.4"
+serde_json = "1"
+anyhow = "1"
+
+[build-dependencies]
+# Transpiles transaction2.wasm -> C -> native at build time so witness generation needs no wasmer.
+rust-witness = "0.1.6"
+
+[dev-dependencies]
+# The on-chain verifier is the authority on the proof byte format; the integration test feeds a
+# real proof through it to validate negation and Fp2 coordinate order end-to-end.
+privacy-cash = { path = "../../programs/privacy-cash" }

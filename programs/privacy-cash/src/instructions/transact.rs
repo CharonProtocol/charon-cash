@@ -4,6 +4,7 @@ use crate::{
         TREE_TOKEN_ACCOUNT_SEED,
     },
     error::PrivacyCashError,
+    event::emit_commitment_event,
     helper::{
         init_nullifier_account, verify_cross_nullifier, verify_initialized, verify_pda,
         verify_program_id, verify_signer,
@@ -133,6 +134,13 @@ pub fn process_transact(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
         return Err(PrivacyCashError::InvalidProof.into());
     }
 
+    // A fee may only be paid to the configured recipient. Without this a withdrawer could name
+    // themselves and reclaim the fee, making the protocol's cut zero. Only matters when a fee is
+    // actually moved; fee-free deposits leave the recipient untouched.
+    if fee > 0 && fee_recipient_key != global.fee_recipient {
+        return Err(PrivacyCashError::InvalidFeeRecipient.into());
+    }
+
     let rent = Rent::get()?;
     let rent_exempt_minimum = rent.try_minimum_balance(tree_token_account.data_len())?;
 
@@ -200,8 +208,16 @@ pub fn process_transact(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
         fee_recipient_account.set_lamports(new_fee_recipient_balance);
     }
 
+    // Sampled before the appends: this is the leaf index of output_commitments[0].
+    // output_commitments[1] lands at leaf_index + 1.
+    let leaf_index = tree.next_index;
+
     MerkleTree::append::<Poseidon>(proof.output_commitments[0], tree)?;
     MerkleTree::append::<Poseidon>(proof.output_commitments[1], tree)?;
+
+    // The leaves are gone from account state the moment they are absorbed into the tree, so
+    // this event is the only record an indexer can rebuild Merkle paths from.
+    emit_commitment_event(leaf_index, tree.current_root());
 
     Ok(())
 }

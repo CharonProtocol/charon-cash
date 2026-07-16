@@ -15,6 +15,14 @@ pub struct MerkleTreeAccount {
 }
 impl MerkleTreeAccount {
     pub const LEN: usize = std::mem::size_of::<MerkleTreeAccount>();
+
+    /// The tree's current root.
+    ///
+    /// There is no dedicated `root` field — the newest root is simply the most recently
+    /// written slot of the circular `root_history`.
+    pub fn current_root(&self) -> [u8; 32] {
+        self.root_history[self.root_index as usize]
+    }
 }
 
 #[repr(C)]
@@ -31,6 +39,10 @@ impl TreeTokenAccount {
 #[derive(Zeroable, Pod, Clone, Copy)]
 pub struct GlobalConfig {
     pub authority: [u8; 32],
+    /// The only account fees may flow to. Enforced on-chain whenever a transact pays a fee, so a
+    /// user cannot name themselves as fee recipient and withdraw for free. Upstream left this
+    /// unchecked (its `InvalidFeeRecipient`/`RecipientMismatch` errors were dead code).
+    pub fee_recipient: [u8; 32],
     pub deposit_fee_rate: u16, // basis points (0-10000, where 10000 = 100%)
     pub withdrawal_fee_rate: u16, // basis points (0-10000, where 10000 = 100%)
     pub fee_error_margin: u16, // basis points (0-10000, where 10000 = 100%)
