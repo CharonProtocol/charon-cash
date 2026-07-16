@@ -1,0 +1,25 @@
+[package]
+name = "pc-client"
+version = "0.1.0"
+edition = "2021"
+description = "Client SDK for privacy-cash: assembles the circuit witness, proves, encrypts notes, and builds deposit/withdraw instructions."
+
+[dependencies]
+pc-core = { workspace = true }
+pc-prover = { workspace = true }
+pc-note = { workspace = true }
+pc-types = { workspace = true }
+solana-pubkey = { version = "3", features = ["curve25519"] }
+solana-instruction = "3"
+anyhow = "1"
+
+[dev-dependencies]
+litesvm = "0.10.0"
+solana-keypair = "3.1.2"
+solana-signer = "3.0.0"
+solana-message = "3.1.0"
+solana-transaction = "3.1.0"
+solana-native-token = "3.0.0"
+solana-sdk-ids = "3.1.0"
+solana-compute-budget-interface = "3"
+base64 = "0.22"

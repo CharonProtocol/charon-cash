@@ -45,12 +45,14 @@ mod test {
             Address::find_program_address(&[b"global_config"], &PROGRAM_ID);
 
         let system_program = solana_sdk_ids::system_program::ID;
-        let ix_data = vec![
+        // discriminator, three bumps, then the 32-byte fee_recipient (InitiailizeParams).
+        let mut ix_data = vec![
             0u8,
             tree_account_bump,
             tree_token_account_bump,
             global_config_bump,
         ];
+        ix_data.extend_from_slice(admin.pubkey().as_ref());
 
         let accounts = vec![
             AccountMeta::new(tree_account_pda, false),

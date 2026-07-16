@@ -24,6 +24,8 @@ pub struct InitiailizeParams {
     pub tree_account_bump: u8,
     pub tree_token_account_bump: u8,
     pub global_config_bump: u8,
+    /// The account fees will be paid to. See [`GlobalConfig::fee_recipient`].
+    pub fee_recipient: [u8; 32],
 }
 
 pub fn process_initialize(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
@@ -137,6 +139,7 @@ pub fn process_initialize(accounts: &[AccountView], data: &[u8]) -> ProgramResul
         from_bytes_mut::<GlobalConfig>(&mut global_config_data[..GlobalConfig::LEN]);
 
     global_config.authority = *authority.address().as_array();
+    global_config.fee_recipient = params.fee_recipient;
     global_config.deposit_fee_rate = 0; // 0% - Free deposits
     global_config.withdrawal_fee_rate = 25; // 0.25% (25 basis points)
     global_config.fee_error_margin = 500; // 5% (500 basis points)

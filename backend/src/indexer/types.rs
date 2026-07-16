@@ -51,7 +51,10 @@ pub struct IndexedTransact {
     pub signature: String,
     pub slot: u64,
     pub tree_key: String,
-    pub decoded: DecodedTransact,
+    pub kind: TransactKind,
+    /// Root reported by the program's event, i.e. the root *after* this transact's two leaves were
+    /// appended. Persisted so the indexer's Merkle mirror can be checked against the chain.
+    pub event_root: [u8; 32],
     pub utxos: Vec<IndexedUtxo>,
     pub nullifiers: Vec<IndexedNullifier>,
 }

@@ -9,6 +9,14 @@ pub struct Db {
     pool: PgPool,
 }
 
+/// One leaf as served to a scanning client.
+pub struct LeafRow {
+    pub leaf_index: i64,
+    pub commitment: Vec<u8>,
+    pub encrypted_output: Vec<u8>,
+    pub slot: i64,
+}
+
 impl Db {
     pub async fn connect(database_url: &str) -> Result<Self> {
         let pool = PgPoolOptions::new()
@@ -18,7 +26,6 @@ impl Db {
             .context("connect to postgres")?;
 
         let db = Self { pool };
-        // Applies `backend/migrations/*.sql` via SQLx's migrator.
         sqlx::migrate!("./migrations")
             .run(&db.pool)
             .await
@@ -26,10 +33,15 @@ impl Db {
         Ok(db)
     }
 
-    /// Expose pool for future modules (relayer, sqlx queries in routes).
     #[allow(dead_code)]
     pub fn pool(&self) -> &PgPool {
         &self.pool
+    }
+
+    /// Liveness probe: a trivial query that fails if the pool/DB is unhealthy.
+    pub async fn ping(&self) -> Result<()> {
+        sqlx::query("SELECT 1").execute(&self.pool).await?;
+        Ok(())
     }
 
     pub async fn get_cursor(&self) -> Result<(Option<String>, u64)> {
@@ -38,6 +50,13 @@ impl Db {
                 .fetch_one(&self.pool)
                 .await?;
         Ok((row.0, row.1 as u64))
+    }
+
+    /// Slot to resume the geyser stream from on startup. `+1` so we don't re-request the last slot
+    /// we already fully processed (idempotency still protects us if we do).
+    pub async fn resume_from_slot(&self) -> Result<Option<u64>> {
+        let (_, slot) = self.get_cursor().await?;
+        Ok(if slot == 0 { None } else { Some(slot + 1) })
     }
 
     pub async fn set_cursor(&self, signature: &str, slot: u64) -> Result<()> {
@@ -58,6 +77,8 @@ impl Db {
         Ok(row.is_some())
     }
 
+    /// On-DB next free leaf index for a tree (0 if the tree is unseen). Used for startup
+    /// reconciliation against the chain, not for assigning indices — those come from the event.
     pub async fn next_index(&self, tree_key: &str) -> Result<u32> {
         let row: Option<(i64,)> =
             sqlx::query_as("SELECT next_index FROM trees WHERE tree_key = $1")
@@ -71,17 +92,18 @@ impl Db {
         let mut conn: Transaction<'_, Postgres> = self.pool.begin().await?;
 
         sqlx::query(
-            "INSERT INTO indexed_txs (signature, slot, tree_key, kind)
-             VALUES ($1, $2, $3, $4)
+            "INSERT INTO indexed_txs (signature, slot, tree_key, kind, root)
+             VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (signature) DO NOTHING",
         )
         .bind(&tx.signature)
         .bind(tx.slot as i64)
         .bind(&tx.tree_key)
-        .bind(match tx.decoded.kind {
+        .bind(match tx.kind {
             TransactKind::Sol => "sol",
             TransactKind::Spl => "spl",
         })
+        .bind(tx.event_root.as_slice())
         .execute(&mut *conn)
         .await?;
 
@@ -92,13 +114,13 @@ impl Db {
             insert_nullifier(&mut conn, nullifier).await?;
         }
 
+        // next_index is the max leaf index seen + 1, and can only move forward. GREATEST guards
+        // against an out-of-order or duplicate delivery walking the counter backwards.
         let new_next = tx.utxos.iter().map(|u| u.leaf_index + 1).max().unwrap_or(0);
 
         sqlx::query(
-            r#"
-            INSERT INTO trees (tree_key, next_index) VALUES ($1, $2)
-            ON CONFLICT (tree_key) DO UPDATE SET next_index = EXCLUDED.next_index
-            "#,
+            "INSERT INTO trees (tree_key, next_index) VALUES ($1, $2)
+             ON CONFLICT (tree_key) DO UPDATE SET next_index = GREATEST(trees.next_index, EXCLUDED.next_index)",
         )
         .bind(&tx.tree_key)
         .bind(new_next as i64)
@@ -123,8 +145,43 @@ impl Db {
         Ok(row.0 as u64)
     }
 
-    /// Ordered leaves for a tree — used by a future Merkle mirror.
-    #[allow(dead_code)]
+    /// Leaves in `[from, to)` leaf-index order — the client scan feed. Bounded so a client pages
+    /// rather than pulling the whole tree at once.
+    pub async fn get_leaves(&self, tree_key: &str, from: i64, to: i64) -> Result<Vec<LeafRow>> {
+        let rows: Vec<(i64, Vec<u8>, Vec<u8>, i64)> = sqlx::query_as(
+            "SELECT leaf_index, commitment, encrypted_output, slot
+             FROM utxos WHERE tree_key = $1 AND leaf_index >= $2 AND leaf_index < $3
+             ORDER BY leaf_index ASC",
+        )
+        .bind(tree_key)
+        .bind(from)
+        .bind(to)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(leaf_index, commitment, encrypted_output, slot)| LeafRow {
+                leaf_index,
+                commitment,
+                encrypted_output,
+                slot,
+            })
+            .collect())
+    }
+
+    /// All nullifier byte-strings at or after `from_slot`, for local spent-checks.
+    pub async fn get_nullifiers(&self, tree_key: &str, from_slot: i64) -> Result<Vec<Vec<u8>>> {
+        let rows: Vec<(Vec<u8>,)> = sqlx::query_as(
+            "SELECT nullifier FROM nullifiers WHERE tree_key = $1 AND slot >= $2 ORDER BY slot ASC",
+        )
+        .bind(tree_key)
+        .bind(from_slot)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(|(n,)| n).collect())
+    }
+
+    /// Ordered commitments for a tree, used to rebuild the Merkle mirror.
     pub async fn load_commitments(&self, tree_key: &str) -> Result<Vec<[u8; 32]>> {
         let rows: Vec<(Vec<u8>,)> = sqlx::query_as(
             "SELECT commitment FROM utxos WHERE tree_key = $1 ORDER BY leaf_index ASC",
@@ -142,6 +199,17 @@ impl Db {
             out.push(arr);
         }
         Ok(out)
+    }
+
+    /// The most recently indexed event root for a tree (what the chain's current root should be).
+    pub async fn latest_root(&self, tree_key: &str) -> Result<Option<Vec<u8>>> {
+        let row: Option<(Option<Vec<u8>>,)> = sqlx::query_as(
+            "SELECT root FROM indexed_txs WHERE tree_key = $1 ORDER BY slot DESC LIMIT 1",
+        )
+        .bind(tree_key)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.and_then(|r| r.0))
     }
 }
 

@@ -1,0 +1,12 @@
+[package]
+name = "pc-types"
+version = "0.1.0"
+edition = "2021"
+description = "Shared wire contract between the privacy-cash on-chain program and off-chain services."
+
+[dependencies]
+# Deliberately dependency-light: this crate is compiled into the SBF binary.
+# Nothing here may pull std or a heavy transitive tree.
+
+[features]
+default = []

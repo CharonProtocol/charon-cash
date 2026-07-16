@@ -5,6 +5,12 @@ pub const PROOF_SIZE: usize = core::mem::size_of::<Proof>();
 pub const EXT_DATA_MINIFIED_SIZE: usize = core::mem::size_of::<ExtDataMinified>();
 pub const FIXED_TRANSACT_ARGS_SIZE: usize = PROOF_SIZE + EXT_DATA_MINIFIED_SIZE;
 
+// The off-chain indexer decodes instruction bytes against pc_types::wire. If a field is ever
+// added to Proof/ExtDataMinified here without updating the shared layout, this fails to compile
+// rather than silently desyncing the indexer.
+const _: () = assert!(PROOF_SIZE == pc_types::wire::PROOF_SIZE);
+const _: () = assert!(EXT_DATA_MINIFIED_SIZE == pc_types::wire::EXT_DATA_MINIFIED_SIZE);
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub struct Proof {
@@ -27,7 +33,10 @@ pub struct ExtDataMinified {
 
 pub struct TransactArgs<'a> {
     pub proof: &'a Proof,
-    pub ext_data_minified: &'a ExtDataMinified,
+    /// Held by value, not by reference: instruction data has no alignment guarantee, and
+    /// `ExtDataMinified` needs 8-byte alignment (`i64`/`u64`). A borrowed `try_from_bytes` here
+    /// fails with an alignment error on any real transaction — see `try_pod_read_unaligned` below.
+    pub ext_data_minified: ExtDataMinified,
     pub encrypted_output1: &'a [u8],
     pub encrypted_output2: &'a [u8],
     pub nullifier_bump0: u8,
@@ -40,9 +49,11 @@ impl<'a> TransactArgs<'a> {
             return Err(ProgramError::InvalidInstructionData);
         }
 
+        // `Proof` is all byte arrays (alignment 1), so a borrowed read is safe at any offset.
         let proof = bytemuck::try_from_bytes::<Proof>(&data[..PROOF_SIZE])
             .map_err(|_| ProgramError::InvalidInstructionData)?;
-        let ext_data_minified = bytemuck::try_from_bytes::<ExtDataMinified>(
+        // `ExtDataMinified` is alignment 8; read it unaligned into an owned value.
+        let ext_data_minified = bytemuck::try_pod_read_unaligned::<ExtDataMinified>(
             &data[PROOF_SIZE..FIXED_TRANSACT_ARGS_SIZE],
         )
         .map_err(|_| ProgramError::InvalidInstructionData)?;

@@ -1,0 +1,34 @@
+[package]
+name = "privacy-cash-relayer"
+version = "0.1.0"
+edition = "2021"
+description = "Submits privacy-cash withdrawals on the user's behalf, so the on-chain fee payer is decoupled from the shielded funds."
+
+[dependencies]
+pc-client = { workspace = true }
+pc-prover = { workspace = true }
+
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+axum = "0.8"
+tower-http = { version = "0.6", features = ["trace"] }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"
+bs58 = "0.5"
+
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dotenvy = "0.15"
+
+solana-rpc-client = "3.1"
+solana-keypair = "3.1"
+solana-signer = "3.0"
+solana-pubkey = "3"
+solana-instruction = "3"
+solana-message = "3.1"
+solana-transaction = "3.1"
+solana-commitment-config = "3.0"
+solana-compute-budget-interface = "3"

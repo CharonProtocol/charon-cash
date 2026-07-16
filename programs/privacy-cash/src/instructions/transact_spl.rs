@@ -4,6 +4,7 @@ use crate::{
         TREE_ACCOUNT_SEED,
     },
     error::PrivacyCashError,
+    event::emit_commitment_event,
     helper::{
         init_nullifier_account, verify_cross_nullifier, verify_initialized, verify_pda,
         verify_program_id, verify_signer,
@@ -148,6 +149,19 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
         return Err(PrivacyCashError::InvalidProof.into());
     }
 
+    // The fee may only land in a token account owned by the configured fee recipient (for this
+    // mint). Reading the account as a TokenAccount also proves it belongs to the token program.
+    // Checked by owner rather than by deriving the ATA so a non-ATA recipient account still works.
+    if fee > 0 {
+        let fr_token = TokenAccount::from_account_view(fee_recipient_ata)?;
+        if *fr_token.owner().as_array() != global.fee_recipient {
+            return Err(PrivacyCashError::InvalidFeeRecipient.into());
+        }
+        if fr_token.mint() != mint.address() {
+            return Err(PrivacyCashError::InvalidTokenAccountMintAddress.into());
+        }
+    }
+
     // PDA signer seeds for the tree's ATA (authority == global_config PDA).
     let global_bump = [global.bump];
     let global_seeds = [Seed::from(GLOBAL_CONFIG_SEED), Seed::from(&global_bump)];
@@ -204,8 +218,16 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
         .invoke_signed(&[Signer::from(&global_seeds)])?;
     }
 
+    // Sampled before the appends: this is the leaf index of output_commitments[0].
+    // output_commitments[1] lands at leaf_index + 1.
+    let leaf_index = tree.next_index;
+
     MerkleTree::append::<Poseidon>(proof.output_commitments[0], tree)?;
     MerkleTree::append::<Poseidon>(proof.output_commitments[1], tree)?;
+
+    // Per-mint tree, but the same contract as `transact`: the indexer resolves which tree from
+    // the accounts, so the event payload stays identical.
+    emit_commitment_event(leaf_index, tree.current_root());
 
     Ok(())
 }
