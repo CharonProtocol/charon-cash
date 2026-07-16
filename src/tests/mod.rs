@@ -1,3 +1,5 @@
+pub mod utils;
+
 #[cfg(test)]
 mod test {
     use litesvm::LiteSVM;
