@@ -15,3 +15,11 @@ app/.env.local
 # IDE
 .vscode
 .idea
+
+
+
+#surfpool
+.surfpool/
+runbooks
+
+txtx.yml

@@ -8,12 +8,14 @@ use std::time::Duration;
 pub struct Config {
     pub database_url: String,
     pub program_id: Pubkey,
-    /// Yellowstone / Dragon's Mouth gRPC endpoint, e.g. `https://grpc.example.com:443`
     pub yellowstone_grpc_url: String,
-    /// Optional `x-token` auth header for the gRPC provider.
     pub yellowstone_x_token: Option<String>,
-    /// Backoff before reconnecting after the stream ends / errors.
     pub indexer_reconnect_secs: u64,
+    pub solana_rpc_url: String,
+    pub relayer_keypair_path: String,
+    pub relayer_fee_recipient: Pubkey,
+    pub relayer_fee_rate_bps: u16,
+    pub supported_mints: Vec<Pubkey>,
 }
 
 impl Config {
@@ -39,10 +41,37 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(3),
+            solana_rpc_url: std::env::var("SOLANA_RPC_URL")
+                .context("SOLANA_RPC_URL is required (e.g. https://api.mainnet-beta.solana.com)")?,
+            relayer_keypair_path: std::env::var("RELAYER_KEYPAIR")
+                .context("RELAYER_KEYPAIR is required (path to solana keypair json)")?,
+            relayer_fee_recipient: Pubkey::from_str(
+                &std::env::var("RELAYER_FEE_RECIPIENT").unwrap_or_else(|_| {
+                    "11111111111111111111111111111111".to_string()
+                }),
+            )
+            .context("invalid RELAYER_FEE_RECIPIENT pubkey")?,
+            relayer_fee_rate_bps: std::env::var("RELAYER_FEE_RATE_BPS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(25),
+            supported_mints: parse_supported_mints(),
         })
     }
 
     pub fn reconnect_delay(&self) -> Duration {
         Duration::from_secs(self.indexer_reconnect_secs)
     }
+}
+
+fn parse_supported_mints() -> Vec<Pubkey> {
+    let default = [
+        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+    ];
+    let raw = std::env::var("SUPPORTED_MINTS").unwrap_or_else(|_| default.join(","));
+    raw.split(',')
+        .filter(|s| !s.trim().is_empty())
+        .filter_map(|s| Pubkey::from_str(s.trim()).ok())
+        .collect()
 }
