@@ -9,7 +9,7 @@ use ethers::{
 use light_hasher::{Hasher, Poseidon};
 use num_bigint::BigUint;
 
-use crate::tests::common::constants::FIELD_SIZE_DECIMAL as FIELD_SIZE;
+use crate::common::constants::FIELD_SIZE_DECIMAL as FIELD_SIZE;
 
 pub struct Keypair {
     pub privkey: BigUint,

@@ -1,6 +1,6 @@
 use light_hasher::{Hasher, Poseidon};
 
-use crate::tests::common::constants::{DEFAULT_HEIGHT, ROOT_HISTORY_SIZE, ZERO_BYTES};
+use crate::common::constants::{DEFAULT_HEIGHT, ROOT_HISTORY_SIZE, ZERO_BYTES};
 
 #[derive(Clone, Debug)]
 pub struct MerkleTree {

@@ -15,7 +15,6 @@ pub mod helper;
 pub mod instructions;
 pub mod merkle_tree;
 pub mod state;
-pub mod tests;
 pub mod utils;
 
 declare_id!("HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV");

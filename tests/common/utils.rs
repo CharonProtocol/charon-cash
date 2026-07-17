@@ -1,4 +1,4 @@
-use crate::tests::common::utxo::Utxo;
+use crate::common::utxo::Utxo;
 use light_hasher::{Hasher, Sha256};
 use sha256::digest;
 use solana_keypair::Address;

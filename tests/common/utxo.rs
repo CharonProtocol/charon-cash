@@ -5,7 +5,7 @@ use light_hasher::{Hash, Hasher, HasherError};
 use num_bigint::BigUint;
 use solana_keypair::Address;
 
-use crate::tests::common::keypair::Keypair;
+use crate::common::keypair::Keypair;
 
 pub struct Utxo {
     amount: u64,
