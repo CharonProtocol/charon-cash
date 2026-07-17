@@ -1,25 +1,29 @@
+use std::str::FromStr;
+
+use bytemuck::{Pod, Zeroable};
 use light_hasher::{Hash, Hasher, HasherError};
+use num_bigint::BigUint;
 use solana_keypair::Address;
-pub struct Utxo<'a> {
-    hasher: &'a Hasher,
+
+use crate::tests::common::keypair::Keypair;
+
+pub struct Utxo {
     amount: u64,
     blinding: u64,
     keypair: Keypair,
     index: u64,
-    mint_address: &'a Address,
+    mint_address: Address,
 }
 
-impl<'a> Utxo<'a> {
+impl Utxo {
     fn new(
-        hasher: &Hasher,
         amount: u64,
         blinding: u64,
         keypair: Keypair,
         index: u64,
-        mint_address: &Address,
+        mint_address: Address,
     ) -> Self {
         Self {
-            hasher,
             amount,
             blinding,
             keypair,
@@ -31,24 +35,27 @@ impl<'a> Utxo<'a> {
     fn get_commitment(&self) -> Result<Hash, HasherError> {
         let commitment_vec: Vec<u8> = [
             self.amount.to_le_bytes().as_slice(),
-            self.keypair.pubkey.to_le_bytes().as_slice(),
+            self.keypair.pubkey.to_bytes_le().as_slice(),
             self.blinding.to_le_bytes().as_slice(),
             self.mint_address.as_array().as_slice(),
         ]
         .concat();
-        self.hasher.hash(&commitment_vec)
+        light_hasher::Poseidon::hash(&commitment_vec)
     }
     fn get_nullifier(&self) -> Result<Hash, HasherError> {
         let commitment = self.get_commitment()?;
-        let signature: String = self.keypair.sign(commitment, self.index);
+        let commitment_field = BigUint::from_bytes_le(&commitment);
+        let signature = self
+            .keypair
+            .sign(&commitment_field, &BigUint::from(self.index));
 
         let nullifier: Vec<u8> = [
             commitment.as_slice(),
             self.index.to_le_bytes().as_slice(),
-            signature.as_bytes(),
+            &signature.to_bytes_le(),
         ]
         .concat();
 
-        self.hasher.hash(&nullifier)
+        light_hasher::Poseidon::hash(&nullifier)
     }
 }
