@@ -11,6 +11,13 @@ app/node_modules
 app/.next
 app/.env
 app/.env.local
+frontend/node_modules
+frontend/dist
+frontend/.env
+frontend/.env.local
+frontend/coverage
+frontend/.vite
+frontend/.oxlint
 
 # IDE
 .vscode
