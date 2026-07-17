@@ -15,7 +15,10 @@ pub struct UpdateDepositLimitSplParams {
     pub tree_account_bump: u8,
 }
 
-pub fn update_deposit_limit_for_spl(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
+pub fn process_update_deposit_limit_for_spl(
+    accounts: &[AccountView],
+    data: &[u8],
+) -> ProgramResult {
     let [tree_account, mint, authority] = accounts else {
         return Err(ProgramError::NotEnoughAccountKeys);
     };

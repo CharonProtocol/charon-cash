@@ -1,5 +1,3 @@
-use core::slice::SlicePattern;
-
 use litesvm::LiteSVM;
 use solana_address_lookup_table_interface::{
     instruction::create_lookup_table, state::AddressLookupTable,

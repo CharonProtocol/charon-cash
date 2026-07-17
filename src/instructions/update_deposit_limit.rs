@@ -15,7 +15,7 @@ pub struct UpdateDepositLimitParams {
     pub tree_account_bump: u8,
 }
 
-pub fn update_deposit_limit(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
+pub fn process_update_deposit_limit(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     let [tree_account, authority] = accounts else {
         return Err(ProgramError::NotEnoughAccountKeys);
     };

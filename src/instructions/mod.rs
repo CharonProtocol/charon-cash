@@ -19,6 +19,9 @@ pub enum PrivacyCashInstructions {
     InitializeTreeAccountForSplToken = 1,
     Transact = 2,
     TransactSpl = 3,
+    UpdateDepositLimit = 4,
+    UpdateDepositLimitForSpl = 5,
+    UpdateGlobalConfig = 6,
 }
 
 impl TryFrom<&u8> for PrivacyCashInstructions {
@@ -30,6 +33,9 @@ impl TryFrom<&u8> for PrivacyCashInstructions {
             1 => Ok(PrivacyCashInstructions::InitializeTreeAccountForSplToken),
             2 => Ok(PrivacyCashInstructions::Transact),
             3 => Ok(PrivacyCashInstructions::TransactSpl),
+            4 => Ok(PrivacyCashInstructions::UpdateDepositLimit),
+            5 => Ok(PrivacyCashInstructions::UpdateDepositLimitForSpl),
+            6 => Ok(PrivacyCashInstructions::UpdateGlobalConfig),
             _ => Err(ProgramError::InvalidInstructionData),
         }
     }
