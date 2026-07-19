@@ -11,6 +11,16 @@ use num_bigint::BigUint;
 
 use crate::common::constants::FIELD_SIZE_DECIMAL as FIELD_SIZE;
 
+fn field_bytes(value: &BigUint) -> [u8; 32] {
+    let field = BigUint::from_str(FIELD_SIZE).unwrap();
+    let reduced = value % field;
+
+    let bytes = reduced.to_bytes_be();
+    let mut out = [0u8; 32];
+    out[32 - bytes.len()..].copy_from_slice(&bytes);
+    out
+}
+
 pub struct Keypair {
     pub privkey: BigUint,
     pub pubkey: BigUint,
@@ -38,18 +48,11 @@ impl Keypair {
     }
 
     pub fn sign(&self, commitment: &BigUint, merkle_path: &BigUint) -> BigUint {
-        let privkey_bytes = to_32_bytes(&self.privkey);
-        let commitment_bytes = to_32_bytes(commitment);
-        let merkle_path_bytes = to_32_bytes(merkle_path);
-
-        let hash = Poseidon::hash(
-            &[
-                privkey_bytes.as_slice(),
-                commitment_bytes.as_slice(),
-                merkle_path_bytes.as_slice(),
-            ]
-            .concat(),
-        )
+        let hash = Poseidon::hashv(&[
+            field_bytes(&self.privkey).as_slice(),
+            field_bytes(commitment).as_slice(),
+            field_bytes(merkle_path).as_slice(),
+        ])
         .expect("poseidon hash failed");
 
         BigUint::from_bytes_be(&hash)

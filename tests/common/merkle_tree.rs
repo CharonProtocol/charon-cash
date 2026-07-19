@@ -1,6 +1,19 @@
 use light_hasher::{Hasher, Poseidon};
 
-use crate::common::constants::{DEFAULT_HEIGHT, ROOT_HISTORY_SIZE, ZERO_BYTES};
+use crate::common::constants::{DEFAULT_HEIGHT, ZERO_BYTES};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MerklePath {
+    pub path_elements: Vec<[u8; 32]>,
+    pub path_indices: Vec<usize>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MerkleTreeSnapshot {
+    pub levels: usize,
+    pub zeros: Vec<[u8; 32]>,
+    pub layers: Vec<Vec<[u8; 32]>>,
+}
 
 #[derive(Clone, Debug)]
 pub struct MerkleTree {
@@ -11,27 +24,25 @@ pub struct MerkleTree {
     layers: Vec<Vec<[u8; 32]>>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MerklePath {
-    pub index: usize,
-    pub path_elements: Vec<[u8; 32]>,
-}
-
 impl MerkleTree {
     pub fn new(levels: usize, elements: Vec<[u8; 32]>) -> Self {
         Self::new_with_zero(levels, elements, ZERO_BYTES[0])
     }
 
-    pub fn new_with_zero(levels: usize, elements: Vec<[u8; 32]>, zero_element: [u8; 32]) -> Self {
+    pub fn new_with_zero(
+        levels: usize,
+        elements: Vec<[u8; 32]>,
+        zero_element: [u8; 32],
+    ) -> Self {
         let capacity = 1usize << levels;
         assert!(elements.len() <= capacity, "Tree is full");
 
         let mut zeros = Vec::with_capacity(levels + 1);
         zeros.push(zero_element);
         for i in 1..=levels {
-            zeros.push(
-                Poseidon::hashv(&[&zeros[i - 1], &zeros[i - 1]]).expect("poseidon zero hash"),
-            );
+            let z = Poseidon::hashv(&[&zeros[i - 1], &zeros[i - 1]])
+                .expect("poseidon zero hash");
+            zeros.push(z);
         }
 
         let mut tree = Self {
@@ -41,6 +52,7 @@ impl MerkleTree {
             zeros,
             layers: vec![elements],
         };
+
         tree.rebuild();
         tree
     }
@@ -57,58 +69,129 @@ impl MerkleTree {
     }
 
     pub fn insert(&mut self, element: [u8; 32]) {
-        assert!(self.layers[0].len() < self.capacity, "Tree is full");
+        if self.layers[0].len() >= self.capacity {
+            panic!("Tree is full");
+        }
         self.update(self.layers[0].len(), element);
     }
 
     pub fn bulk_insert(&mut self, elements: Vec<[u8; 32]>) {
-        assert!(
-            self.layers[0].len() + elements.len() <= self.capacity,
-            "Tree is full"
-        );
+        if self.layers[0].len() + elements.len() > self.capacity {
+            panic!("Tree is full");
+        }
         self.layers[0].extend(elements);
         self.rebuild();
     }
 
     pub fn update(&mut self, index: usize, element: [u8; 32]) {
-        assert!(index < self.capacity, "Index out of bounds");
-        if self.layers[0].len() <= index {
-            self.layers[0].resize(index + 1, self.zero_element);
+        if index >= self.capacity || index > self.layers[0].len() {
+            panic!("Insert index out of bounds: {}", index);
         }
-        self.layers[0][index] = element;
-        self.rebuild();
-    }
 
-    pub fn elements(&self) -> &[ [u8; 32] ] {
-        &self.layers[0]
+        if index == self.layers[0].len() {
+            self.layers[0].push(element);
+        } else {
+            self.layers[0][index] = element;
+        }
+
+        // Match the JS behavior: update only the affected branch.
+        let mut idx = index;
+        for level in 1..=self.levels {
+            idx >>= 1;
+
+            // JS reads missing siblings as the level's zero value.
+            let left = self.layers[level - 1]
+                .get(idx * 2)
+                .copied()
+                .unwrap_or(self.zeros[level - 1]);
+
+            let right = self.layers[level - 1]
+                .get(idx * 2 + 1)
+                .copied()
+                .unwrap_or(self.zeros[level - 1]);
+
+            let hashed = Poseidon::hashv(&[&left, &right]).expect("poseidon hash");
+
+            if self.layers.len() <= level {
+                self.layers.push(Vec::new());
+            }
+            if self.layers[level].len() <= idx {
+                self.layers[level].resize(idx + 1, self.zeros[level]);
+            }
+
+            self.layers[level][idx] = hashed;
+        }
     }
 
     pub fn path(&self, index: usize) -> MerklePath {
-        assert!(index < self.layers[0].len(), "Index out of bounds");
-
-        let mut path_elements = Vec::with_capacity(self.levels);
-        let mut current_index = index;
-
-        for level in 0..self.levels {
-            let sibling_index = if current_index % 2 == 0 {
-                current_index + 1
-            } else {
-                current_index - 1
-            };
-
-            let sibling = self.layers[level]
-                .get(sibling_index)
-                .copied()
-                .unwrap_or(self.zeros[level]);
-            path_elements.push(sibling);
-            current_index /= 2;
+        if index >= self.layers[0].len() {
+            panic!("Index out of bounds: {}", index);
         }
 
-        MerklePath { index, path_elements }
+        let mut path_elements = Vec::with_capacity(self.levels);
+        let mut path_indices = Vec::with_capacity(self.levels);
+        let mut idx = index;
+
+        for level in 0..self.levels {
+            path_indices.push(idx % 2);
+
+            let sibling = if (idx ^ 1) < self.layers[level].len() {
+                self.layers[level][idx ^ 1]
+            } else {
+                self.zeros[level]
+            };
+
+            path_elements.push(sibling);
+            idx >>= 1;
+        }
+
+        MerklePath {
+            path_elements,
+            path_indices,
+        }
     }
 
-    pub fn is_known_root(&self, root: [u8; 32]) -> bool {
-        root == self.root() || self.layers[self.levels].iter().any(|r| *r == root)
+    pub fn index_of<F>(&self, element: &[u8; 32], comparator: Option<F>) -> isize
+    where
+        F: Fn(&[u8; 32], &[u8; 32]) -> bool,
+    {
+        if let Some(cmp) = comparator {
+            self.layers[0]
+                .iter()
+                .position(|el| cmp(element, el))
+                .map(|i| i as isize)
+                .unwrap_or(-1)
+        } else {
+            self.layers[0]
+                .iter()
+                .position(|el| el == element)
+                .map(|i| i as isize)
+                .unwrap_or(-1)
+        }
+    }
+
+    pub fn elements(&self) -> Vec<[u8; 32]> {
+        self.layers[0].clone()
+    }
+
+    pub fn serialize(&self) -> MerkleTreeSnapshot {
+        MerkleTreeSnapshot {
+            levels: self.levels,
+            zeros: self.zeros.clone(),
+            layers: self.layers.clone(),
+        }
+    }
+
+    pub fn deserialize(data: MerkleTreeSnapshot) -> Self {
+        let capacity = 1usize << data.levels;
+
+        Self {
+            levels: data.levels,
+            capacity,
+            zero_element: data.zeros[0],
+            zeros: data.zeros,
+            layers: data.layers,
+        }
     }
 
     fn rebuild(&mut self) {
@@ -120,7 +203,11 @@ impl MerkleTree {
 
             for i in 0..prev.len().div_ceil(2) {
                 let left = prev[i * 2];
-                let right = prev.get(i * 2 + 1).copied().unwrap_or(self.zeros[level - 1]);
+                let right = prev
+                    .get(i * 2 + 1)
+                    .copied()
+                    .unwrap_or(self.zeros[level - 1]);
+
                 next.push(Poseidon::hashv(&[&left, &right]).expect("poseidon hash"));
             }
 
