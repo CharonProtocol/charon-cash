@@ -21,6 +21,7 @@ fn field_bytes(value: &BigUint) -> [u8; 32] {
     out
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Utxo {
     pub amount: u64,
     pub blinding: u64,

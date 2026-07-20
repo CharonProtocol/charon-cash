@@ -100,9 +100,8 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
     let fee = ext_data_minified.fee;
 
     let mut tree_data = tree_account.try_borrow_mut()?;
-    let tree =
-        bytemuck::try_from_bytes_mut::<MerkleTreeAccount>(&mut tree_data[..MerkleTreeAccount::LEN])
-            .map_err(|_| ProgramError::InvalidAccountData)?;
+    let mut tree =
+        bytemuck::pod_read_unaligned::<MerkleTreeAccount>(&mut tree_data[..MerkleTreeAccount::LEN]);
 
     verify_pda(
         tree_account,
@@ -110,7 +109,7 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
         &crate::ID,
     )?;
 
-    if !MerkleTree::is_known_root(tree, proof.root) {
+    if !MerkleTree::is_known_root(&tree, proof.root) {
         return Err(PrivacyCashError::UnknownRoot.into());
     }
 
@@ -204,8 +203,8 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
         .invoke_signed(&[Signer::from(&global_seeds)])?;
     }
 
-    MerkleTree::append::<Poseidon>(proof.output_commitments[0], tree)?;
-    MerkleTree::append::<Poseidon>(proof.output_commitments[1], tree)?;
+    MerkleTree::append::<Poseidon>(proof.output_commitments[0], &mut tree)?;
+    MerkleTree::append::<Poseidon>(proof.output_commitments[1], &mut tree)?;
 
     Ok(())
 }

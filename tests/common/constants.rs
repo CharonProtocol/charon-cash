@@ -36,10 +36,16 @@ pub const FIELD_SIZE_DECIMAL: &str =
     "21888242871839275222246405745257275088548364400416034343698204186575808495617";
 
 pub const FEE_RECIPIENT_ACCOUNT: Address =
-    Address::new_from_array([0u8; 32]); // replace in tests if needed
+    Address::new_from_array([
+        1,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,
+    ]);// replace in tests if needed
 
 pub const DEPOSIT_FEE_RATE: u16 = 0;
 pub const WITHDRAW_FEE_RATE: u16 = 35;
 pub const FEE_ERROR_MARGIN: u16 = 500;
 
-pub const SOL_ADDRESS: Address = Address::new_from_array([0u8; 32]);
+pub const SOL_ADDRESS: Address =
+    Address::new_from_array(pinocchio_pubkey::pubkey!("11111111111111111111111111111112"));

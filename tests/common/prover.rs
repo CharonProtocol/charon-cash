@@ -194,7 +194,7 @@ fn build_circom_inputs(input: &ProofInput) -> Result<Vec<(String, Vec<BigInt>)>>
         ),
         (
             "extDataHash".to_string(),
-            vec![bytes32_to_bigint(&input.ext_data_hash)],
+            vec![bytes32_to_bigint_le(&input.ext_data_hash)],
         ),
         (
             "inAmount".to_string(),
@@ -242,6 +242,10 @@ fn build_circom_inputs(input: &ProofInput) -> Result<Vec<(String, Vec<BigInt>)>>
 
 fn bytes32_to_bigint(bytes: &[u8; 32]) -> BigInt {
     BigInt::from(BigUint::from_bytes_be(bytes))
+}
+
+fn bytes32_to_bigint_le(bytes: &[u8; 32]) -> BigInt {
+    BigInt::from(BigUint::from_bytes_le(bytes))
 }
 
 fn biguint_to_bigint(v: &BigUint) -> BigInt {
@@ -345,15 +349,15 @@ fn serialize_g2(p: &G2Affine, compressed: bool) -> Vec<u8> {
     let y1 = fq_to_be_bytes_32(&p.y.c1);
 
     let mut out = Vec::with_capacity(if compressed { 64 } else { 128 });
-    out.extend_from_slice(&x0);
     out.extend_from_slice(&x1);
+    out.extend_from_slice(&x0);
 
     if compressed {
         add_bitmask_to_first_byte(&mut out, y_is_positive_g2(&p.y));
         return out;
     }
 
-    out.extend_from_slice(&y0);
     out.extend_from_slice(&y1);
+    out.extend_from_slice(&y0);
     out
 }
