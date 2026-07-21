@@ -1,58 +1,46 @@
-import type { WithdrawKind, WithdrawRequest } from "@/lib/types"
-
-export class ClientSdkNotConnectedError extends Error {
-  constructor(message = "Client SDK is not connected — ZK proof generation is not implemented yet.") {
-    super(message)
-    this.name = "ClientSdkNotConnectedError"
-  }
-}
-
-export interface BuildWithdrawParams {
-  kind: WithdrawKind
-  recipient: string
-  extAmount: number
-  fee: number
-  mint?: string
-}
-
-export const CLIENT_SDK_VERSION: string | null = null
-
-export function isClientSdkConnected(): boolean {
-  return false
-}
-
-export async function buildWithdrawRequest(
-  _params: BuildWithdrawParams,
-): Promise<WithdrawRequest> {
-  throw new ClientSdkNotConnectedError(
-    "buildWithdrawRequest() is a stub. The real implementation goes in src/lib/client-sdk — see README.md. " +
-      "It must fetch the Merkle proof from the backend, run the circom WASM prover to produce proof_a/b/c, " +
-      "compute ext_data_hash + public_amount from the note, and return a full WithdrawRequest.",
-  )
-}
-
-export function parsePastedWithdrawRequest(json: string): WithdrawRequest {
-  const data = JSON.parse(json) as Record<string, unknown>
-  const required = [
-    "kind",
-    "proof_a",
-    "proof_b",
-    "proof_c",
-    "root",
-    "public_amount",
-    "ext_data_hash",
-    "input_nullifiers",
-    "output_commitments",
-    "ext_amount",
-    "fee",
-    "encrypted_output1",
-    "encrypted_output2",
-    "recipient",
-  ]
-  for (const key of required) {
-    if (!(key in data)) {
-      throw new Error(`pasted proof JSON missing field: ${key}`)
-    }
-  }
-  return data as unknown as WithdrawRequest
-}
+export { PrivacyCashClient } from "./client"
+export type { Signer, DepositResult, WithdrawResult } from "./client"
+export {
+  EncryptionService,
+  Keypair,
+  Utxo,
+  getExtDataHash,
+  getMintAddressField,
+} from "./crypto"
+export {
+  prove,
+  parseProofToBytesArray,
+  parseToBytesArray,
+} from "./prover"
+export {
+  buildTransactTransaction,
+  buildTransactIxData,
+  deriveAccounts,
+} from "./program"
+export type { ProofBytes, TransactAccounts } from "./program"
+export {
+  fetchRelayerInfo,
+  fetchTreeState,
+  fetchMerkleProof,
+  isNullifierSpent,
+} from "./merkle"
+export type { RelayerInfo, TreeState, MerkleProof } from "./merkle"
+export {
+  loadNotes,
+  unspentNotes,
+  saveNote,
+  markNoteSpent,
+  totalBalance,
+  exportNotes,
+  importNotes,
+  clearNotes,
+  newNoteId,
+} from "./notes"
+export type { Note } from "./notes"
+export {
+  FIELD_SIZE,
+  MERKLE_TREE_DEPTH,
+  SIGN_MESSAGE,
+  SOL_TREE_KEY,
+  WRAPPED_SOL_MINT,
+} from "./constants"
