@@ -14,7 +14,7 @@ import type {
   WithdrawRequest,
 } from "@/lib/types"
 
-const BASE = (import.meta.env.VITE_BACKEND_URL ?? "").replace(/\/$/, "")
+const BASE = ((import.meta as any).env?.VITE_BACKEND_URL ?? process.env.VITE_BACKEND_URL ?? "").replace(/\/$/, "")
 
 export class BackendError extends Error {
   code: string
