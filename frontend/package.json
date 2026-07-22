@@ -15,6 +15,7 @@
     "@ethersproject/keccak256": "^5.8.0",
     "@ethersproject/sha2": "^5.8.0",
     "@lightprotocol/hasher.rs": "^0.2.1",
+    "@privacy-cash/client": "workspace:*",
     "@radix-ui/react-label": "^2.1.11",
     "@radix-ui/react-slot": "^1.1.11",
     "@solana/spl-token": "^0.4.15",

@@ -13,9 +13,7 @@ import {
 } from "@solana/web3.js"
 import { WasmFactory } from "@lightprotocol/hasher.rs"
 
-import { LocalMirror, readGlobalFees, readSolTreeState } from "../src/lib/client-sdk/local-provider.ts"
-import { deriveAccounts } from "../src/lib/client-sdk/program.ts"
-import { MERKLE_TREE_DEPTH } from "../src/lib/client-sdk/constants.ts"
+import { LocalMirror, readGlobalFees, readSolTreeState, deriveAccounts, MERKLE_TREE_DEPTH } from "@privacy-cash/client"
 
 const PROGRAM = new PublicKey(process.env.PROGRAM_ID ?? "5GcqZ4aZ3xF87wQF5pFmHHYAk73Hcww1r8414KdeUJ9P")
 const RPC = process.env.SOLANA_RPC_URL ?? "http://localhost:8899"

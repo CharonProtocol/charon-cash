@@ -11,6 +11,7 @@ export {
   prove,
   parseProofToBytesArray,
   parseToBytesArray,
+  setCircuitBuffers,
 } from "./prover"
 export {
   buildTransactTransaction,
@@ -18,6 +19,7 @@ export {
   deriveAccounts,
 } from "./program"
 export type { ProofBytes, TransactAccounts } from "./program"
+export { LocalMirror, readSolTreeState, readGlobalFees } from "./local-provider"
 export {
   fetchRelayerInfo,
   fetchTreeState,

@@ -20,10 +20,12 @@ import nacl from "tweetnacl"
 import BN from "bn.js"
 import { WasmFactory } from "@lightprotocol/hasher.rs"
 
-import { EncryptionService, Keypair as UtxoKeypair, Utxo, getExtDataHash, getMintAddressField } from "../src/lib/client-sdk/crypto.ts"
-import { prove, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers } from "../src/lib/client-sdk/prover.ts"
-import { buildTransactIxData, deriveAccounts } from "../src/lib/client-sdk/program.ts"
-import { FIELD_SIZE, MERKLE_TREE_DEPTH, WRAPPED_SOL_MINT } from "../src/lib/client-sdk/constants.ts"
+import {
+  EncryptionService, Keypair as UtxoKeypair, Utxo, getExtDataHash, getMintAddressField,
+  prove, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers,
+  buildTransactIxData, deriveAccounts,
+  FIELD_SIZE, MERKLE_TREE_DEPTH, WRAPPED_SOL_MINT,
+} from "@privacy-cash/client"
 
 const PROGRAM = new PublicKey("6e5ioWVHAyuzfNSGAmJLfiGwKrmwr2GkqoDYWAhqvdjX")
 const RPC = process.env.RPC ?? "http://localhost:8899"

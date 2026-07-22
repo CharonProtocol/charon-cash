@@ -4,14 +4,14 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { WasmFactory } from "@lightprotocol/hasher.rs"
 
-import { FIELD_SIZE, MERKLE_TREE_DEPTH, WRAPPED_SOL_MINT } from "../constants"
+import { FIELD_SIZE, MERKLE_TREE_DEPTH, WRAPPED_SOL_MINT } from "../src/constants"
 import {
   EncryptionService,
   Keypair,
   Utxo,
   getExtDataHash,
-} from "../crypto"
-import { prove, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers } from "../prover"
+} from "../src/crypto"
+import { prove, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers } from "../src/prover"
 
 const FIELD = BigInt(FIELD_SIZE.toString())
 
@@ -31,9 +31,11 @@ function circuitDir(): string {
   if (process.env.CIRCUIT_DIR) return process.env.CIRCUIT_DIR
   const here = fileURLToPath(new URL(".", import.meta.url))
   const candidates = [
-    path.join(here, "..", "..", "..", "..", "..", "privacy-cash-sdk", "circuit2"),
+    path.join(here, "..", "..", "privacy-cash-sdk", "circuit2"),
+    path.join(here, "..", "..", "frontend", "public", "circuit"),
     path.join(process.cwd(), "privacy-cash-sdk", "circuit2"),
     path.join(process.cwd(), "..", "privacy-cash-sdk", "circuit2"),
+    path.join(process.cwd(), "frontend", "public", "circuit"),
   ]
   for (const c of candidates) {
     if (existsSync(path.join(c, "transaction2.wasm"))) return c

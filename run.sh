@@ -10,16 +10,19 @@ L=/tmp/privacy-cash
 rpc_up() { curl -s -m2 -X POST http://localhost:8899 -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'; }
 wait_http() { local url="$1" i; for i in $(seq 1 40); do curl -s -m2 -o /dev/null "$url" 2>/dev/null && return 0; sleep 1; done; return 1; }
 
-echo "▶ 1/5  Postgres (docker, pgvector)…"
-docker start privacycash-pg >/dev/null 2>&1 || docker run -d --name privacycash-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=privacy_cash -p 5432:5432 pgvector/pgvector:pg16 >/dev/null
-echo "    db=privacy_cash on :5432"
+echo "▶ 1/5  Postgres (docker) — optional, only the Rust backend needs it…"
+if docker start privacycash-pg >/dev/null 2>&1 || docker run -d --name privacycash-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=privacy_cash -p 5432:5432 pgvector/pgvector:pg16 >/dev/null 2>&1; then
+  echo "    db=privacy_cash on :5432"
+else
+  echo "    ⚠ docker not running — skipped (backend shim reads on-chain, Postgres optional)"
+fi
 
 echo "▶ 2/5  Surfpool (local Solana, :8899)…"
 if rpc_up; then echo "    already running"; else
   nohup surfpool start > "$L-surfpool.log" 2>&1 &
   echo "    starting (log $L-surfpool.log)…"
-  if ! rpc_up; then echo "    ✗ surfpool didn't come up — open another terminal, run 'surfpool start', then re-run ./run.sh"; exit 1; fi
-  echo "    up"
+  for i in $(seq 1 60); do rpc_up && break; sleep 1; done
+  rpc_up && echo "    up" || { echo "    ✗ surfpool didn't come up — run 'surfpool start' in a terminal, then re-run ./run.sh"; exit 1; }
 fi
 
 echo "▶ 3/5  Program (deploy if missing)…"

@@ -9,7 +9,7 @@ import {
   loadNotes,
   clearNotes,
   type Note,
-} from "@/lib/client-sdk"
+} from "@privacy-cash/client"
 import {
   Card,
   CardContent,
