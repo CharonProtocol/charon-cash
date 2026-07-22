@@ -1,0 +1,32 @@
+{
+  "name": "@privacy-cash/client",
+  "version": "0.1.0",
+  "description": "Browser-native client SDK for the privacy-cash Pinocchio program (deposit/withdraw SOL+SPL, ZK proofs, self-signed, no relayer).",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "postinstall": "node scripts/setup.mjs"
+  },
+  "dependencies": {
+    "@lightprotocol/hasher.rs": "^0.2.1",
+    "@solana/spl-token": "^0.4.15",
+    "@solana/web3.js": "^1.98.4",
+    "bn.js": "^5.2.5",
+    "bs58": "^6.0.0",
+    "ethers": "^6.17.0",
+    "ffjavascript": "^0.3.1",
+    "snarkjs": "^0.7.6",
+    "tweetnacl": "^1.0.3"
+  },
+  "devDependencies": {
+    "@types/bn.js": "^5.2.0",
+    "@types/node": "^24.3.0",
+    "typescript": "~6.0.2",
+    "vitest": "^4.1.10"
+  }
+}

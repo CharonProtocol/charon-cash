@@ -71,7 +71,11 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
         let global_data = global_config.try_borrow()?;
         let global = try_from_bytes::<GlobalConfig>(&global_data[..GlobalConfig::LEN])
             .map_err(|_| ProgramError::InvalidAccountData)?;
-        verify_pda(global_config, &[GLOBAL_CONFIG_SEED, &[global.bump]], &crate::ID)?;
+        verify_pda(
+            global_config,
+            &[GLOBAL_CONFIG_SEED, &[global.bump]],
+            &crate::ID,
+        )?;
         *global
     };
 

@@ -1,0 +1,55 @@
+name: Publish to npm when version changes
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "package.json"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org/
+
+      - name: Get current package version
+        id: pkg
+        run: echo "version=$(node -p 'require(\"./package.json\").version')" >> $GITHUB_OUTPUT
+
+      - name: Check if version already exists on npm
+        id: check
+        run: |
+          PKG_NAME=$(node -p 'require("./package.json").name')
+          PUBLISHED=$(npm view $PKG_NAME versions --json | grep -o "\"${{ steps.pkg.outputs.version }}\"" || true)
+          if [ -n "$PUBLISHED" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Version ${{ steps.pkg.outputs.version }} already exists on npm. Skipping publish."
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build source
+        run: npm run build || echo "No build script defined."
+
+      - name: Publish to npm
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          echo "Publishing version ${{ steps.pkg.outputs.version }}..."
+          npm publish --access public

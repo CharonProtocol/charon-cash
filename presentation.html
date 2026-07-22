@@ -1,0 +1,753 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Privacy Cash · system overview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --paper:#ffffff;
+    --panel:#f5f6f8;
+    --panel-2:#eef0f4;
+    --line:#e4e7ec;
+    --line-2:#d4d8e0;
+    --ink:#0e1116;
+    --body:#3f4757;
+    --mute:#868f9e;
+    --accent:#5b54e6;
+    --accent-soft:#ecebfc;
+    --c-program:#111827;
+    --c-indexer:#0e7c86;
+    --c-relayer:#5b54e6;
+    --c-sdk:#b45309;
+    --c-data:#424a57;
+    --c-chain:#6b7280;
+    --f-display:"Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --f-body:"IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --f-mono:"IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --maxw:1140px;
+    --radius:14px;
+    --shadow:0 1px 2px rgba(16,20,28,.04), 0 10px 30px rgba(16,20,28,.06);
+  }
+
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--f-body);
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+
+  /* ---------- deck / slides ---------- */
+  .deck{position:fixed; inset:0; overflow:hidden}
+  .slide{
+    position:absolute; inset:0;
+    display:flex; align-items:safe center; justify-content:safe center;
+    padding:clamp(28px,5vw,72px) clamp(24px,6vw,84px) clamp(58px,7vw,84px);
+    opacity:0; visibility:hidden; transform:translateY(10px);
+    transition:opacity .42s ease, transform .42s ease, visibility .42s;
+    overflow:auto;
+  }
+  .slide.is-active{opacity:1; visibility:visible; transform:none}
+  .slide__inner{width:100%; max-width:var(--maxw); margin:auto}
+
+  /* ---------- typography ---------- */
+  .eyebrow{
+    font-family:var(--f-mono); font-size:.74rem; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--mute);
+    display:inline-flex; align-items:center; gap:.6em; margin:0 0 1.1rem;
+  }
+  .eyebrow::before{content:""; width:7px; height:7px; border-radius:2px; background:var(--accent)}
+  .h1{font-family:var(--f-display); font-weight:700; line-height:1.02; letter-spacing:-.02em;
+      font-size:clamp(2.7rem,6.4vw,5rem); margin:0}
+  .h2{font-family:var(--f-display); font-weight:600; line-height:1.06; letter-spacing:-.015em;
+      font-size:clamp(1.9rem,3.8vw,3.05rem); margin:0 0 1.1rem}
+  .h3{font-family:var(--f-display); font-weight:600; font-size:clamp(1.15rem,1.7vw,1.4rem); margin:0 0 .5rem}
+  .lead{font-size:clamp(1.05rem,1.55vw,1.32rem); line-height:1.5; color:var(--body); margin:0; max-width:60ch}
+  .body{font-size:clamp(.98rem,1.2vw,1.1rem); line-height:1.55; color:var(--body); margin:0}
+  .body + .body{margin-top:.7rem}
+  .mute{color:var(--mute)}
+  .mono{font-family:var(--f-mono)}
+  .accent{color:var(--accent)}
+  .tight p{margin:0}
+
+  /* ---------- layout helpers ---------- */
+  .stack{display:flex; flex-direction:column; gap:1rem}
+  .row{display:flex; gap:1.1rem; flex-wrap:wrap; align-items:flex-start}
+  .grid-2{display:grid; grid-template-columns:1.05fr .95fr; gap:clamp(24px,4vw,56px); align-items:center}
+  .grid-3{display:grid; grid-template-columns:repeat(3,1fr); gap:16px}
+  .col{display:flex; flex-direction:column; gap:.55rem}
+  .footnote{font-family:var(--f-mono); font-size:.76rem; color:var(--mute); margin-top:1.4rem; line-height:1.5}
+
+  /* ---------- component chips ---------- */
+  .chip{
+    display:inline-flex; align-items:center; gap:.5em;
+    font-family:var(--f-mono); font-size:.72rem; letter-spacing:.05em;
+    text-transform:uppercase; color:var(--body);
+    background:var(--panel); border:1px solid var(--line);
+    padding:.4em .8em; border-radius:999px; white-space:nowrap;
+  }
+  .chip::before{content:""; width:8px; height:8px; border-radius:2px; background:var(--cc,var(--accent))}
+  .chip--program{--cc:var(--c-program)}
+  .chip--indexer{--cc:var(--c-indexer)}
+  .chip--relayer{--cc:var(--c-relayer)}
+  .chip--sdk{--cc:var(--c-sdk)}
+  .chip--data{--cc:var(--c-data)}
+  .chip--chain{--cc:var(--c-chain)}
+  .chips{display:flex; flex-wrap:wrap; gap:.5rem}
+
+  /* ---------- cards ---------- */
+  .cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(215px,1fr)); gap:14px}
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    padding:16px 18px; box-shadow:var(--shadow);
+  }
+  .card h4{
+    font-family:var(--f-mono); font-weight:500; font-size:.84rem; margin:0 0 .4rem;
+    color:var(--cc,var(--ink)); display:flex; align-items:center; gap:.5em;
+  }
+  .card h4::before{content:""; width:7px;height:7px;border-radius:2px;background:var(--cc,var(--accent))}
+  .card p{margin:0; color:var(--body); font-size:.92rem; line-height:1.5}
+  .card small{color:var(--mute); font-family:var(--f-mono); font-size:.72rem; display:block; margin-top:.45rem}
+
+  /* ---------- numbered steps (real sequences only) ---------- */
+  .steps{list-style:none; counter-reset:step; margin:0; padding:0; display:grid; gap:12px}
+  .steps li{
+    counter-increment:step; display:grid; grid-template-columns:auto 1fr; gap:16px; align-items:start;
+    padding:13px 16px; background:var(--panel); border:1px solid var(--line); border-radius:12px;
+  }
+  .steps li::before{
+    content:counter(step,decimal-leading-zero);
+    font-family:var(--f-mono); font-weight:500; color:var(--accent);
+    font-size:.95rem; padding-top:1px;
+  }
+  .steps li b{font-weight:600; color:var(--ink)}
+  .steps li span{color:var(--body); font-size:.96rem; line-height:1.5}
+
+  /* entrance for steps */
+  .slide.is-active .steps li{animation:rise .5s both}
+  .slide.is-active .steps li:nth-child(1){animation-delay:.06s}
+  .slide.is-active .steps li:nth-child(2){animation-delay:.14s}
+  .slide.is-active .steps li:nth-child(3){animation-delay:.22s}
+  .slide.is-active .steps li:nth-child(4){animation-delay:.30s}
+  .slide.is-active .steps li:nth-child(5){animation-delay:.38s}
+  .slide.is-active .steps li:nth-child(6){animation-delay:.46s}
+  @keyframes rise{from{opacity:0; transform:translateY(9px)} to{opacity:1; transform:none}}
+
+  /* ---------- mini flow (horizontal nodes + arrows) ---------- */
+  .flow{display:flex; align-items:stretch; gap:0; flex-wrap:wrap; margin-top:.4rem}
+  .flow .fnode{
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:11px 15px; min-width:120px; position:relative;
+  }
+  .flow .fnode h5{margin:0; font-family:var(--f-mono); font-size:.82rem; font-weight:500; color:var(--cc,var(--ink)); display:flex; align-items:center; gap:.45em}
+  .flow .fnode h5::before{content:"";width:7px;height:7px;border-radius:2px;background:var(--cc,var(--accent))}
+  .flow .fnode p{margin:.25rem 0 0; font-size:.78rem; color:var(--mute); line-height:1.4}
+  .flow .farrow{
+    align-self:center; padding:0 8px; font-family:var(--f-mono); font-size:.72rem;
+    color:var(--mute); text-align:center; line-height:1.3; position:relative;
+  }
+  .flow .farrow::before{content:"→"; display:block; font-size:1.15rem; color:var(--line-2); margin-bottom:1px}
+  .flow .farrow.dash::before{content:"⇢"}
+
+  /* ---------- public/private tags ---------- */
+  .tag{
+    display:inline-flex; align-items:center; gap:.4em; font-family:var(--f-mono); font-size:.72rem;
+    padding:.28em .6em; border-radius:7px; border:1px solid var(--line);
+  }
+  .tag--pub{border-color:#c9c5fb; color:var(--accent); background:var(--accent-soft)}
+  .tag--priv{border-style:dashed; border-color:var(--line-2); color:var(--mute); background:transparent}
+  .taglist{display:flex; flex-wrap:wrap; gap:.5rem; align-items:center}
+
+  /* ---------- table ---------- */
+  .tbl{width:100%; border-collapse:collapse; font-size:.94rem}
+  .tbl th,.tbl td{text-align:left; padding:10px 12px; border-bottom:1px solid var(--line)}
+  .tbl th{font-family:var(--f-mono); text-transform:uppercase; font-size:.7rem; letter-spacing:.07em; color:var(--mute); font-weight:500}
+  .tbl td code{font-family:var(--f-mono); font-size:.86rem; color:var(--ink)}
+  .tbl tr.user td{background:var(--accent-soft)}
+  .tbl tr.user td code{color:var(--accent); font-weight:500}
+  .tbl .role{font-family:var(--f-mono); font-size:.7rem; color:var(--mute); text-transform:uppercase; letter-spacing:.05em}
+  .tbl tr.user .role{color:var(--accent)}
+
+  /* ---------- key/value rows ---------- */
+  .kv{display:grid; grid-template-columns:auto 1fr; gap:8px 18px; font-size:.95rem}
+  .kv dt{font-family:var(--f-mono); color:var(--mute); font-size:.82rem; padding-top:2px}
+  .kv dd{margin:0; color:var(--body)}
+
+  /* ---------- diagram + legend ---------- */
+  .diagram{width:100%; height:auto; display:block}
+  .slide.is-active .diagram{animation:fade .55s both}
+  @keyframes fade{from{opacity:0} to{opacity:1}}
+  .legend{display:flex; flex-wrap:wrap; gap:1.1rem; margin-top:.9rem; font-family:var(--f-mono); font-size:.74rem; color:var(--mute)}
+  .legend span{display:inline-flex; align-items:center; gap:.45em}
+  .legend i{display:inline-block; width:22px; height:0; border-top:2px solid var(--line-2)}
+  .legend i.dash{border-top-style:dashed}
+  .legend .sw{width:9px;height:9px;border-radius:2px;border-top:0}
+
+  /* ---------- chrome: progress, counter, brand, nav ---------- */
+  .progress{position:fixed; top:0; left:0; height:3px; background:var(--accent); z-index:20; transition:width .4s ease}
+  .brand{position:fixed; top:18px; left:clamp(20px,5vw,40px); z-index:15;
+         display:flex; align-items:center; gap:.55rem; font-family:var(--f-mono);
+         font-size:.7rem; letter-spacing:.12em; text-transform:uppercase; color:var(--mute)}
+  .counter{position:fixed; bottom:18px; right:clamp(20px,5vw,40px); z-index:15;
+           font-family:var(--f-mono); font-size:.74rem; color:var(--mute); letter-spacing:.06em}
+  .counter b{color:var(--ink); font-weight:500}
+  .hint{position:fixed; bottom:18px; left:clamp(20px,5vw,40px); z-index:15;
+        font-family:var(--f-mono); font-size:.7rem; color:var(--mute)}
+  .nav{position:fixed; bottom:16px; left:50%; transform:translateX(-50%); z-index:15;
+       display:flex; gap:6px; background:var(--paper); border:1px solid var(--line);
+       padding:5px; border-radius:999px; box-shadow:var(--shadow)}
+  .nav button{
+    border:0; background:transparent; width:34px; height:30px; border-radius:999px; cursor:pointer;
+    color:var(--body); font-family:var(--f-mono); font-size:.85rem; transition:background .15s, color .15s;
+  }
+  .nav button:hover{background:var(--panel); color:var(--ink)}
+  .nav .dots{display:flex; align-items:center; gap:5px; padding:0 8px}
+  .nav .dots i{width:6px;height:6px;border-radius:50%;background:var(--line-2);transition:background .2s,transform .2s;cursor:pointer;display:block}
+  .nav .dots i.on{background:var(--accent); transform:scale(1.25)}
+
+  /* title-slide hero */
+  .hero{width:100%; max-width:430px; margin:0 auto}
+
+  /* responsive */
+  @media (max-width:880px){
+    .grid-2{grid-template-columns:1fr}
+    .grid-3{grid-template-columns:1fr}
+    .brand,.hint{display:none}
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none !important; transition:none !important}
+  }
+</style>
+</head>
+<body>
+
+<div class="brand">
+  <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+    <g fill="none" stroke="#5b54e6" stroke-width="1.6">
+      <path d="M12 3 V9 M12 9 L6 14 M12 9 L18 14 M6 14 L3 20 M6 14 L9 20 M18 14 L15 20 M18 14 L21 20"/>
+    </g>
+    <g fill="#5b54e6"><circle cx="12" cy="3" r="1.8"/><circle cx="6" cy="14" r="1.5"/><circle cx="18" cy="14" r="1.5"/></g>
+    <g fill="#d4d8e0"><circle cx="3" cy="20" r="1.3"/><circle cx="9" cy="20" r="1.3"/><circle cx="15" cy="20" r="1.3"/><circle cx="21" cy="20" r="1.3"/></g>
+  </svg>
+  Privacy&nbsp;Cash
+</div>
+
+<div class="progress" id="progress"></div>
+
+<main class="deck" id="deck">
+
+  <!-- 1 · TITLE -->
+  <section class="slide is-active" aria-label="Title">
+    <div class="slide__inner">
+      <div class="grid-2">
+        <div class="col">
+          <p class="eyebrow">A zero-knowledge privacy pool on Solana</p>
+          <h1 class="h1">Privacy<br/>Cash</h1>
+          <p class="lead" style="margin-top:1.2rem">Deposit funds. Hold a secret note. Withdraw to a fresh address &mdash; with a zero-knowledge proof that breaks the link between them.</p>
+          <div class="chips" style="margin-top:1.5rem">
+            <span class="chip chip--program">Program</span>
+            <span class="chip chip--indexer">Backend</span>
+            <span class="chip chip--relayer">Wallet</span>
+            <span class="chip chip--sdk">Client&nbsp;SDK</span>
+          </div>
+        </div>
+        <div>
+          <svg class="hero" viewBox="0 0 420 300" role="img" aria-label="A Merkle tree of commitments, with one leaf and its path to the root highlighted">
+            <!-- faint edges -->
+            <g stroke="#e4e7ec" stroke-width="1.5" fill="none">
+              <path d="M210 36 L105 112 M210 36 L315 112"/>
+              <path d="M105 112 L52 188 M105 112 L158 188 M315 112 L262 188 M315 112 L368 188"/>
+              <path d="M52 188 L26 264 M52 188 L78 264 M158 188 L130 264 M158 188 L186 264 M262 188 L238 264 M262 188 L288 264 M368 188 L342 264 M368 188 L394 264"/>
+            </g>
+            <!-- highlighted commitment path: leaf(130,264) -> (158,188) -> (105,112) -> (210,36) -->
+            <g stroke="#5b54e6" stroke-width="2.2" fill="none">
+              <path d="M130 264 L158 188 M158 188 L105 112 M105 112 L210 36"/>
+            </g>
+            <!-- faint nodes -->
+            <g fill="#d4d8e0">
+              <circle cx="315" cy="112" r="4.5"/><circle cx="262" cy="188" r="4.5"/><circle cx="368" cy="188" r="4.5"/>
+              <circle cx="52" cy="188" r="4.5"/><circle cx="238" cy="264" r="4"/><circle cx="288" cy="264" r="4"/>
+              <circle cx="342" cy="264" r="4"/><circle cx="394" cy="264" r="4"/><circle cx="26" cy="264" r="4"/><circle cx="78" cy="264" r="4"/><circle cx="186" cy="264" r="4"/>
+            </g>
+            <!-- highlighted nodes -->
+            <g fill="#5b54e6">
+              <circle cx="210" cy="36" r="6"/>
+              <circle cx="105" cy="112" r="5.5"/>
+              <circle cx="158" cy="188" r="5.5"/>
+              <circle cx="130" cy="264" r="6.5"/>
+            </g>
+            <g font-family="IBM Plex Mono, monospace" font-size="9" fill="#868f9e">
+              <text x="222" y="32">root</text>
+              <text x="140" y="280" fill="#5b54e6">your commitment</text>
+            </g>
+          </svg>
+          <p class="footnote" style="text-align:center">A Poseidon Merkle tree of commitments. The proof shows a path to the root &mdash; without revealing which leaf.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 · BIG IDEA -->
+  <section class="slide" aria-label="The big idea">
+    <div class="slide__inner">
+      <p class="eyebrow">The problem</p>
+      <h2 class="h2">Solana is public.<br/>Spending shouldn&rsquo;t be.</h2>
+      <p class="lead">Every transaction is visible to everyone, forever. Privacy Cash lets you deposit SOL or SPL tokens, hold a secret &ldquo;note,&rdquo; and later withdraw to a brand-new address. A zero-knowledge proof proves you own the funds <span class="accent">without revealing which deposit they came from</span>.</p>
+
+      <div class="grid-3" style="margin-top:2rem">
+        <div class="card">
+          <h4 style="--cc:var(--c-sdk)">01 &middot; Deposit</h4>
+          <p>Drop funds into the pool. You receive an encrypted note only you can read &mdash; the proof of ownership.</p>
+        </div>
+        <div class="card">
+          <h4 style="--cc:var(--c-program)">02 &middot; Mix</h4>
+          <p>Funds sit in a shared pool backed by a Merkle tree of commitments. There is no link on-chain to you.</p>
+        </div>
+        <div class="card">
+          <h4 style="--cc:var(--c-relayer)">03 &middot; Withdraw</h4>
+          <p>Prove you own a note and withdraw to a fresh address. Your wallet signs and sends it straight to the RPC &mdash; no relayer in the path.</p>
+        </div>
+      </div>
+      <p class="footnote">Not fixed denominations &mdash; a 2-input / 2-output UTXO model, so amounts are flexible and can be split or joined.</p>
+    </div>
+  </section>
+
+  <!-- 3 · SYSTEM MAP -->
+  <section class="slide" aria-label="System map">
+    <div class="slide__inner">
+      <p class="eyebrow">System map</p>
+      <h2 class="h2">Four parts. One proof.</h2>
+      <svg class="diagram" viewBox="0 0 1040 470" role="img" aria-label="Architecture: the client SDK generates the proof, the wallet signs, and the SDK submits deposit and withdraw straight to the Solana program via RPC. The backend is a read-only indexer — it decodes the program over Yellowstone gRPC, writes leaves and nullifiers to Postgres, and serves merkle proofs, roots, nullifier status and fees back to the SDK. No relayer submits anything.">
+        <defs>
+          <marker id="ah" markerWidth="9" markerHeight="9" refX="7.6" refY="4.5" orient="auto" markerUnits="userSpaceOnUse">
+            <path d="M0,0 L9,4.5 L0,9 z" fill="#9aa2b0"/>
+          </marker>
+        </defs>
+
+        <!-- arrows (drawn before nodes so nodes sit on top) -->
+        <g fill="none" stroke="#9aa2b0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <!-- A: SDK -> Program (deposit + withdraw, sign + send to RPC) -->
+          <path d="M520 250 V108" marker-end="url(#ah)"/>
+          <!-- B: SDK -> Backend (GET merkle/root/fees) dashed -->
+          <path d="M390 305 H335 V226 H280" stroke-dasharray="5 5" marker-end="url(#ah)"/>
+          <!-- C: SDK -> Wallet (sign request) solid -->
+          <path d="M650 305 H705 V226 H760" marker-end="url(#ah)"/>
+          <!-- D: Program -> Backend (gRPC stream) solid -->
+          <path d="M380 108 V140 H155 V178" marker-end="url(#ah)"/>
+          <!-- E: Backend -> Postgres (writes) solid -->
+          <path d="M155 272 V360" marker-end="url(#ah)"/>
+        </g>
+
+        <!-- arrow labels -->
+        <g font-family="IBM Plex Mono, monospace" font-size="11" fill="#5b6270">
+          <text x="534" y="182">deposit + withdraw · sign + send to RPC</text>
+          <text x="300" y="200" text-anchor="end">GET merkle · root · fees</text>
+          <text x="715" y="200">sign msg + tx</text>
+          <text x="172" y="132">gRPC tx stream</text>
+          <text x="165" y="318">writes leaves + nullifiers</text>
+        </g>
+
+        <!-- nodes -->
+        <!-- Program -->
+        <g>
+          <rect x="330" y="20" width="380" height="88" rx="14" fill="#f5f6f8" stroke="#e4e7ec"/>
+          <rect x="330" y="20" width="5" height="88" rx="2" fill="#111827"/>
+          <text x="352" y="52" font-family="Space Grotesk, sans-serif" font-size="18" font-weight="600" fill="#0e1116">Solana &middot; privacy-cash program</text>
+          <text x="352" y="74" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="#868f9e">Poseidon Merkle tree &middot; nullifier set &middot; Groth16 / BN254</text>
+          <text x="352" y="92" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="#868f9e">7 instructions &middot; 2-in / 2-out UTXO model</text>
+        </g>
+        <!-- Indexer -->
+        <g>
+          <rect x="30" y="178" width="250" height="94" rx="14" fill="#f5f6f8" stroke="#e4e7ec"/>
+          <rect x="30" y="178" width="5" height="94" rx="2" fill="#0e7c86"/>
+          <text x="52" y="210" font-family="Space Grotesk, sans-serif" font-size="16" font-weight="600" fill="#0e1116">Backend</text>
+          <text x="52" y="232" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">indexer + read-only API</text>
+          <text x="52" y="250" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">Yellowstone gRPC &rarr; Postgres</text>
+        </g>
+        <!-- Wallet -->
+        <g>
+          <rect x="760" y="178" width="250" height="94" rx="14" fill="#f5f6f8" stroke="#e4e7ec"/>
+          <rect x="760" y="178" width="5" height="94" rx="2" fill="#5b54e6"/>
+          <text x="782" y="210" font-family="Space Grotesk, sans-serif" font-size="16" font-weight="600" fill="#0e1116">Wallet &middot; Phantom</text>
+          <text x="782" y="232" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">signs the note-derive message</text>
+          <text x="782" y="250" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">signs the versioned tx</text>
+        </g>
+        <!-- SDK (hub) -->
+        <g>
+          <rect x="390" y="250" width="260" height="110" rx="14" fill="#f5f6f8" stroke="#e4e7ec"/>
+          <rect x="390" y="250" width="5" height="110" rx="2" fill="#b45309"/>
+          <text x="412" y="282" font-family="Space Grotesk, sans-serif" font-size="16" font-weight="600" fill="#0e1116">Client SDK &middot; pcash</text>
+          <text x="412" y="304" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">note &middot; Groth16 proof &middot; build tx</text>
+          <text x="412" y="322" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">deposit + withdraw, self-signed</text>
+          <text x="412" y="342" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">runs entirely off-chain, client-side</text>
+        </g>
+        <!-- Postgres -->
+        <g>
+          <rect x="30" y="360" width="250" height="82" rx="14" fill="#f5f6f8" stroke="#e4e7ec"/>
+          <rect x="30" y="360" width="5" height="82" rx="2" fill="#424a57"/>
+          <text x="52" y="392" font-family="Space Grotesk, sans-serif" font-size="16" font-weight="600" fill="#0e1116">Postgres</text>
+          <text x="52" y="414" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">leaves &middot; nullifiers &middot; tree cursor</text>
+        </g>
+      </svg>
+      <div class="legend">
+        <span><i></i> submit / write</span>
+        <span><i class="dash"></i> query / read</span>
+        <span><span class="sw" style="background:#0e7c86"></span> backend</span>
+        <span><span class="sw" style="background:#5b54e6"></span> wallet</span>
+        <span><span class="sw" style="background:#b45309"></span> client SDK</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 · PROGRAM -->
+  <section class="slide" aria-label="On-chain program">
+    <div class="slide__inner">
+      <p class="eyebrow"><span class="chip chip--program" style="padding:.2em .6em">main</span></p>
+      <h2 class="h2">The on-chain program</h2>
+      <p class="lead" style="margin-bottom:1.4rem">Built with <span class="mono">Pinocchio</span> (not Anchor). It holds a height-26 Poseidon Merkle tree of commitments, a nullifier set, and a Groth16 verifier over BN254. Each transaction is a 2-input / 2-output UTXO move.</p>
+
+      <table class="tbl">
+        <thead><tr><th>Instruction</th><th>What it does</th><th>Who</th></tr></thead>
+        <tbody>
+          <tr><td><code>Initialize</code></td><td>Boot the SOL pool, the vault, the tree, global config</td><td class="role">setup</td></tr>
+          <tr><td><code>InitializeTreeForSpl</code></td><td>Create a per-mint tree (USDC, USDT&hellip;)</td><td class="role">setup</td></tr>
+          <tr class="user"><td><code>Transact</code></td><td>Deposit or withdraw SOL (sign of amount)</td><td class="role">user path</td></tr>
+          <tr class="user"><td><code>TransactSpl</code></td><td>Deposit or withdraw an SPL token</td><td class="role">user path</td></tr>
+          <tr><td><code>UpdateGlobalConfig</code></td><td>Set fee rates (deposit / withdraw / margin)</td><td class="role">admin</td></tr>
+          <tr><td><code>UpdateDepositLimit</code></td><td>Cap the max SOL deposit</td><td class="role">admin</td></tr>
+          <tr><td><code>UpdateDepositLimitSpl</code></td><td>Cap the max deposit for a mint</td><td class="role">admin</td></tr>
+        </tbody>
+      </table>
+      <p class="footnote">Seven instructions in total. Four are caller-actionable; the user deposit/withdraw path is just <span class="mono accent">Transact</span> &amp; <span class="mono accent">TransactSpl</span> &mdash; the sign of <span class="mono">ext_amount</span> picks deposit (+) vs withdraw (&minus;). The pairing check alone costs ~1M compute units.</p>
+    </div>
+  </section>
+
+  <!-- 5 · ZK PROOF -->
+  <section class="slide" aria-label="The zero-knowledge proof">
+    <div class="slide__inner">
+      <p class="eyebrow">The zero-knowledge proof</p>
+      <h2 class="h2">What it proves &mdash; and what it hides</h2>
+      <p class="lead">The circuit (<span class="mono">transaction2</span>, 2-in/2-out, depth 26) proves: <span class="accent">&ldquo;I know a leaf in the tree, its nullifier secret, and a valid path to the root&rdquo;</span> &mdash; without revealing <em>which</em> leaf.</p>
+
+      <div class="grid-2" style="margin-top:1.6rem">
+        <div class="card">
+          <h4 style="--cc:var(--accent)">Public &mdash; visible on-chain</h4>
+          <div class="taglist" style="margin-top:.3rem">
+            <span class="tag tag--pub">merkle root</span>
+            <span class="tag tag--pub">public amount</span>
+            <span class="tag tag--pub">ext-data hash</span>
+            <span class="tag tag--pub">2 nullifiers</span>
+            <span class="tag tag--pub">2 output commitments</span>
+          </div>
+          <small>What the chain checks against the verifying key.</small>
+        </div>
+        <div class="card">
+          <h4 style="--cc:var(--mute)">Private &mdash; never leaves your machine</h4>
+          <div class="taglist" style="margin-top:.3rem">
+            <span class="tag tag--priv">spending key</span>
+            <span class="tag tag--priv">blinding</span>
+            <span class="tag tag--priv">amount</span>
+            <span class="tag tag--priv">merkle path</span>
+          </div>
+          <small>The witness. The chain never sees it.</small>
+        </div>
+      </div>
+      <p class="footnote">The nullifier is a one-way function of your key &mdash; the <em>only</em> thing that links a withdraw to a deposit, and it can&rsquo;t be inverted to find you.</p>
+    </div>
+  </section>
+
+  <!-- 6 · DEPOSIT FLOW -->
+  <section class="slide" aria-label="Deposit flow">
+    <div class="slide__inner">
+      <p class="eyebrow">Deposit &middot; <span class="mono">pcash deposit</span></p>
+      <h2 class="h2">Deposit goes straight to the chain</h2>
+      <p class="lead" style="margin-bottom:1.3rem">Your wallet signs and sends it straight to the RPC &mdash; no relayer in the path.</p>
+
+      <ol class="steps">
+        <li><span><b>Generate a shielded key and secret note</b> &mdash; a random blinding factor, full field entropy.</span></li>
+        <li><span><b>Compute the commitment</b> &mdash; <span class="mono">Poseidon(amount, pubkey, blinding, mint)</span>.</span></li>
+        <li><span><b>Build a Groth16 proof</b> with <span class="mono">ext_amount &gt; 0</span> (this is a deposit).</span></li>
+        <li><span><b>Build &amp; sign the <code>Transact</code> instruction</b>, send it directly to the program &mdash; your wallet pays the gas.</span></li>
+        <li><span><b>The program verifies the proof</b>, appends the commitment as a new leaf, and initializes the nullifier.</span></li>
+        <li><span><b>The indexer records</b> the new leaf and nullifier in Postgres.</span></li>
+      </ol>
+
+      <div class="flow" style="margin-top:1.3rem">
+        <div class="fnode" style="--cc:var(--c-sdk)"><h5>pcash</h5><p>builds proof + ix</p></div>
+        <div class="farrow">sign + send</div>
+        <div class="fnode" style="--cc:var(--c-program)"><h5>Program</h5><p>verify &middot; append leaf</p></div>
+        <div class="farrow dash">records</div>
+        <div class="fnode" style="--cc:var(--c-indexer)"><h5>Indexer</h5><p>leaf + nullifier &rarr; DB</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 · WITHDRAW FLOW -->
+  <section class="slide" aria-label="Withdraw flow">
+    <div class="slide__inner">
+      <p class="eyebrow">Withdraw &middot; <span class="mono">pcash withdraw</span> &mdash; the centerpiece</p>
+      <h2 class="h2">Withdraw goes straight to the chain too</h2>
+
+      <ol class="steps">
+        <li><span><b>Fetch the Merkle path</b> for your note from the backend&rsquo;s read-only API &mdash; <span class="mono">/api/merkle/&hellip;/proof</span>.</span></li>
+        <li><span><b>Build a Groth16 withdrawal proof</b> (<span class="mono">ext_amount &lt; 0</span>), bound to the recipient and fee.</span></li>
+        <li><span><b>Build the <code>Transact</code> instruction</b> &mdash; the pool itself pays the recipient and the fee, not a relayer.</span></li>
+        <li><span><b>Your wallet signs the versioned tx</b> and the SDK submits it direct to the RPC.</span></li>
+        <li><span><b>The program verifies the proof</b>, checks the nullifier isn&rsquo;t spent, and pays the recipient.</span></li>
+      </ol>
+
+      <div class="flow" style="margin-top:1.2rem">
+        <div class="fnode" style="--cc:var(--c-indexer)"><h5>Backend</h5><p>merkle path + root</p></div>
+        <div class="farrow dash">GET proof</div>
+        <div class="fnode" style="--cc:var(--c-sdk)"><h5>pcash</h5><p>proof bound to recipient</p></div>
+        <div class="farrow">wallet signs</div>
+        <div class="fnode" style="--cc:var(--c-relayer)"><h5>Wallet</h5><p>sign versioned tx</p></div>
+        <div class="farrow">send to RPC</div>
+        <div class="fnode" style="--cc:var(--c-program)"><h5>Program</h5><p>verify &middot; pay recipient</p></div>
+      </div>
+      <p class="footnote">No relayer submits on your behalf &mdash; your wallet signs and sends direct to the RPC. The pool pays the recipient and the fee; the backend only ever serves read-only data (merkle proofs, roots, nullifier status, fees).</p>
+    </div>
+  </section>
+
+  <!-- 8 · INDEXER -->
+  <section class="slide" aria-label="Indexer">
+    <div class="slide__inner">
+      <p class="eyebrow"><span class="chip chip--indexer" style="padding:.2em .6em">feat/backend</span></p>
+      <h2 class="h2">Indexer &mdash; the chain, mirrored</h2>
+      <p class="lead" style="margin-bottom:1.3rem">Its job: turn the chain into a queryable database so clients can build proofs.</p>
+
+      <div class="grid-2">
+        <div class="col">
+          <div class="card">
+            <h4 style="--cc:var(--c-indexer)">How it watches</h4>
+            <p>A Yellowstone gRPC stream subscribes to every confirmed, non-failed program transaction. It decodes each <span class="mono">Transact</span> / <span class="mono">TransactSpl</span> to extract commitments, nullifiers, and encrypted outputs.</p>
+          </div>
+          <div class="card">
+            <h4 style="--cc:var(--c-data)">What it stores &mdash; Postgres</h4>
+            <p>Leaves (commitments + encrypted outputs), the nullifier set, and the tree cursor. The Merkle tree itself is rebuilt in memory on demand.</p>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card">
+            <h4 style="--cc:var(--c-indexer)">What it serves</h4>
+            <p>Over HTTP: all leaves, all nullifiers, the current Merkle root, and a Merkle proof for any leaf index.</p>
+          </div>
+          <div class="card" style="--cc:var(--c-sdk)">
+            <h4 style="--cc:var(--c-sdk)">Privacy model</h4>
+            <p>Clients <span class="accent">download everything and scan locally</span>. The indexer never learns which notes are yours &mdash; there is no &ldquo;notes owned by X&rdquo; endpoint by design.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9 · BACKEND -->
+  <section class="slide" aria-label="Backend">
+    <div class="slide__inner">
+      <p class="eyebrow"><span class="chip chip--indexer" style="padding:.2em .6em">feat/backend</span></p>
+      <h2 class="h2">Backend &mdash; read-only chain mirror</h2>
+      <p class="lead" style="margin-bottom:1.3rem">No relayer. The backend only indexes the program and serves data &mdash; it never signs or submits a transaction.</p>
+
+      <div class="grid-2">
+        <ol class="steps" style="gap:9px">
+          <li><span><b>Yellowstone gRPC</b> streams every <span class="mono">Transact</span> from the program.</span></li>
+          <li><span><b>Decode</b> the proof, ext-data, nullifiers and output commitments.</span></li>
+          <li><span><b>Mirror the Poseidon Merkle tree</b>; write leaves + nullifiers to Postgres.</span></li>
+          <li><span><b>Serve read-only</b>: <span class="mono">/api/merkle/&hellip;/proof</span>, root, nullifier status, fees.</span></li>
+        </ol>
+        <div class="col">
+          <div class="card">
+            <h4 style="--cc:var(--c-indexer)">What it does <i>not</i> do</h4>
+            <p>It holds no signing key for your funds, never pays gas, and can&rsquo;t redirect a withdrawal &mdash; the recipient is baked into the proof your wallet signs. The submit path lives entirely in the client SDK.</p>
+          </div>
+          <div class="card">
+            <h4 style="--cc:var(--c-indexer)">Why we still run it</h4>
+            <p>Merkle proofs, known roots and nullifier status are shared state. The backend computes them once from the chain so each client doesn&rsquo;t re-index Solana itself.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10 · SDK -->
+  <section class="slide" aria-label="Offchain Rust SDK">
+    <div class="slide__inner">
+      <p class="eyebrow"><span class="chip chip--sdk" style="padding:.2em .6em">feat/offchain-rust</span></p>
+      <h2 class="h2">Client SDK &mdash; pure Rust, runs on your machine</h2>
+      <p class="lead" style="margin-bottom:1.2rem">A from-scratch Rust port of the reference client. The <span class="mono">pcash</span> CLI drives the whole flow.</p>
+
+      <div class="cards">
+        <div class="card"><h4 style="--cc:var(--c-sdk)">pc-core</h4><p>Shielded keys, UTXOs (commitment &amp; nullifier), Merkle mirror, ext-data hash.</p></div>
+        <div class="card"><h4 style="--cc:var(--c-sdk)">pc-prover</h4><p>Groth16 proving via arkworks + circom witness. No runtime WASM.</p></div>
+        <div class="card"><h4 style="--cc:var(--c-sdk)">pc-note</h4><p>Self-encrypted notes &mdash; ChaCha20-Poly1305 + a view tag.</p></div>
+        <div class="card"><h4 style="--cc:var(--c-sdk)">pc-client</h4><p>Assemble deposit &amp; withdraw instructions, PDA derivation, local scan.</p></div>
+        <div class="card"><h4 style="--cc:var(--c-sdk)">pc-cli</h4><p>The <span class="mono">pcash</span> binary: <span class="mono">init &middot; deposit &middot; scan &middot; balance &middot; withdraw</span>.</p></div>
+        <div class="card"><h4 style="--cc:var(--c-program)">program fix</h4><p>Emits an authoritative leaf-index event so the indexer can&rsquo;t miscount leaves.</p></div>
+      </div>
+      <p class="footnote">Same Poseidon hasher as the on-chain program, with shared wire types &mdash; so off-chain and on-chain can&rsquo;t silently drift apart.</p>
+    </div>
+  </section>
+
+  <!-- 11 · MERKLE & NULLIFIERS -->
+  <section class="slide" aria-label="Merkle tree and nullifiers">
+    <div class="slide__inner">
+      <p class="eyebrow">Under the hood</p>
+      <h2 class="h2">Merkle tree &amp; nullifiers</h2>
+      <div class="grid-2" style="margin-top:.4rem">
+        <div class="col">
+          <div class="card">
+            <h4 style="--cc:var(--c-program)">Incremental Poseidon tree</h4>
+            <p>Height 26 &rarr; ~67M leaves. Only the 26-level frontier is stored on-chain &mdash; not every leaf.</p>
+          </div>
+          <div class="card">
+            <h4 style="--cc:var(--c-program)">100-root history</h4>
+            <p>A ring buffer keeps the last 100 roots. A withdraw must prove against a <span class="accent">known root</span>, which tolerates finality and reorgs.</p>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card">
+            <h4 style="--cc:var(--c-relayer)">The nullifier &mdash; one-way link</h4>
+            <p><span class="mono">nullifier = Poseidon(commitment, index, sign)</span> where <span class="mono">sign = Poseidon(privkey,&hellip;)</span>. Spending reveals the nullifier; you can&rsquo;t invert it back to the leaf or your key.</p>
+          </div>
+          <div class="card">
+            <h4 style="--cc:var(--c-program)">Double-spend guard</h4>
+            <p>The program creates the nullifier account <em>before</em> moving any value &mdash; so a replay of the same proof can never succeed.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 12 · LOCAL RUN -->
+  <section class="slide" aria-label="Running locally">
+    <div class="slide__inner">
+      <p class="eyebrow">Running locally</p>
+      <h2 class="h2">How the pieces come up</h2>
+      <ol class="steps">
+        <li><span><b class="mono">surfpool</b> &mdash; a local Solana fork that also deploys the program.</span></li>
+        <li><span><b>Postgres</b> &mdash; the indexer&rsquo;s database.</span></li>
+        <li><span><b class="mono">cargo run -p privacy-cash-backend</b> &mdash; brings up the backend (indexer + read-only API) on :8080.</span></li>
+        <li><span><b class="mono">pcash</b> &mdash; init a wallet, then deposit, scan, and withdraw.</span></li>
+      </ol>
+      <p class="footnote">Gotcha: the program ID in <span class="mono">declare_id!</span>, the deployed address, and the backend&rsquo;s <span class="mono">PROGRAM_ID</span> env must all match (locally, whatever address you deploy to).</p>
+    </div>
+  </section>
+
+  <!-- 13 · BRANCHES -->
+  <section class="slide" aria-label="Branches to merged system">
+    <div class="slide__inner">
+      <p class="eyebrow">Branches &rarr; one system</p>
+      <h2 class="h2">Four branches, one coherent system</h2>
+      <p class="lead" style="margin-bottom:1.4rem">Each branch owns a clean slice. Merged, they form the full privacy pool.</p>
+
+      <div class="cards">
+        <div class="card"><h4 style="--cc:var(--c-program)"><span class="mono">main</span></h4><p>The on-chain program &mdash; Pinocchio, Groth16 verification, <span class="mono">Transact</span> / <span class="mono">TransactSpl</span>.</p></div>
+        <div class="card"><h4 style="--cc:var(--c-indexer)"><span class="mono">feat/backend</span></h4><p>The indexer &mdash; Yellowstone gRPC into Postgres, serves Merkle proofs.</p></div>
+        <div class="card"><h4 style="--cc:var(--c-relayer)"><span class="mono">feat/backend_relayer</span></h4><p>Backend service &mdash; indexer + read-only data API. The relayer submit path is retired: the client SDK self-signs and submits direct to RPC.</p></div>
+        <div class="card"><h4 style="--cc:var(--c-sdk)"><span class="mono">feat/offchain-rust</span></h4><p>The client SDK &mdash; pc-* crates, the <span class="mono">pcash</span> CLI, and the leaf-index event fix.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 14 · STATUS / Q&A -->
+  <section class="slide" aria-label="Status and Q&A">
+    <div class="slide__inner">
+      <p class="eyebrow">Where it stands</p>
+      <h2 class="h2">What works &mdash; honestly</h2>
+      <div class="grid-2" style="margin-top:.4rem">
+        <div class="card" style="--cc:var(--c-sdk)">
+          <h4 style="--cc:#0e7c86">Proven end-to-end</h4>
+          <p>The full deposit &rarr; scan &rarr; withdraw cycle runs with real Groth16 proofs (an e2e test on surfpool, SOL &amp; SPL, multi-account). The client SDK builds the proof, the wallet signs, and the SDK submits direct to RPC; the backend mirrors the chain; the recipient is paid.</p>
+        </div>
+        <div class="card">
+          <h4 style="--cc:var(--c-sdk)">Today&rsquo;s surface</h4>
+          <p>Deposit and withdraw run through the <span class="mono">pcash</span> client SDK. The protocol, backend, and SDK are real and wired together &mdash; no relayer in the submit path.</p>
+        </div>
+      </div>
+      <p class="footnote" style="margin-top:2rem; font-size:.9rem">Thank you &mdash; questions?</p>
+    </div>
+  </section>
+
+</main>
+
+<nav class="nav" id="nav" aria-label="Slide navigation">
+  <button id="prev" title="Previous (←)" aria-label="Previous">‹</button>
+  <div class="dots" id="dots"></div>
+  <button id="next" title="Next (→)" aria-label="Next">›</button>
+</nav>
+
+<div class="counter" id="counter"><b id="cur">1</b> / <span id="tot">14</span></div>
+<div class="hint">← → navigate &middot; F fullscreen</div>
+
+<script>
+  (function(){
+    var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+    var total = slides.length;
+    var idx = 0;
+    var dotsEl = document.getElementById('dots');
+    var curEl = document.getElementById('cur');
+    var totEl = document.getElementById('tot');
+    var progress = document.getElementById('progress');
+
+    totEl.textContent = total;
+
+    // build dots
+    slides.forEach(function(s, i){
+      var d = document.createElement('i');
+      d.setAttribute('role','button');
+      d.setAttribute('tabindex','0');
+      d.setAttribute('aria-label','Slide ' + (i+1));
+      d.addEventListener('click', function(){ go(i); });
+      dotsEl.appendChild(d);
+    });
+    var dots = Array.prototype.slice.call(dotsEl.children);
+
+    function render(){
+      slides.forEach(function(s,i){ s.classList.toggle('is-active', i===idx); });
+      dots.forEach(function(d,i){ d.classList.toggle('on', i===idx); });
+      curEl.textContent = idx+1;
+      progress.style.width = ((idx+1)/total*100) + '%';
+    }
+    function go(i){ idx = Math.max(0, Math.min(total-1, i)); render(); }
+    function next(){ go(idx+1); }
+    function prev(){ go(idx-1); }
+
+    document.getElementById('next').addEventListener('click', next);
+    document.getElementById('prev').addEventListener('click', prev);
+
+    document.addEventListener('keydown', function(e){
+      var k = e.key;
+      if(k==='ArrowRight' || k==='PageDown' || k===' '){ e.preventDefault(); next(); }
+      else if(k==='ArrowLeft' || k==='PageUp'){ e.preventDefault(); prev(); }
+      else if(k==='Home'){ e.preventDefault(); go(0); }
+      else if(k==='End'){ e.preventDefault(); go(total-1); }
+      else if(k==='f' || k==='F'){
+        if(!document.fullscreenElement){ document.documentElement.requestFullscreen(); }
+        else { document.exitFullscreen(); }
+      }
+    });
+
+    // touch / trackpad swipe
+    var sx=0, sy=0;
+    document.addEventListener('touchstart', function(e){ sx=e.touches[0].clientX; sy=e.touches[0].clientY; }, {passive:true});
+    document.addEventListener('touchend', function(e){
+      var dx=e.changedTouches[0].clientX-sx, dy=e.changedTouches[0].clientY-sy;
+      if(Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)){ dx<0 ? next() : prev(); }
+    }, {passive:true});
+
+    // deep link by hash (#3)
+    var h = parseInt((location.hash||'').replace('#',''),10);
+    if(!isNaN(h) && h>=1 && h<=total){ idx = h-1; }
+    render();
+  })();
+</script>
+</body>
+</html>
