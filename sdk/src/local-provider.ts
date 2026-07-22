@@ -64,6 +64,10 @@ export class LocalMirror {
   leaves(): string[] {
     return this.layers[0].slice()
   }
+  /** Current root as a decimal field-element string. */
+  root(): string {
+    return this.layers[MERKLE_TREE_DEPTH]?.length ? this.layers[MERKLE_TREE_DEPTH][0] : this.zeros[MERKLE_TREE_DEPTH]
+  }
 }
 
 function beBytesToDecimal(bytes: Uint8Array): string {

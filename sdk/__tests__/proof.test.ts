@@ -12,6 +12,7 @@ import {
   getExtDataHash,
 } from "../src/crypto"
 import { prove, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers } from "../src/prover"
+import { LocalMirror } from "../src/local-provider"
 
 const FIELD = BigInt(FIELD_SIZE.toString())
 
@@ -135,5 +136,67 @@ describe("client-sdk crypto + proof", () => {
 
     // public_amount (deposit, fee=0): ext_amount - fee == public_amount (mod field)
     expect(mod(be(pub[1]))).toBe(mod(extAmount - fee))
+  }, 120_000)
+
+  it("generates a valid WITHDRAW proof (negative ext_amount, real Merkle path)", async () => {
+    const wasm = await WasmFactory.getInstance()
+    const enc = new EncryptionService()
+    enc.deriveFromSignature(new Uint8Array(64).fill(13))
+    const kp = new Keypair(enc.utxoPrivateKey, wasm)
+
+    const gross = 10_000_000n
+    const fee = 2500n
+    const recipientGets = gross - fee
+    const extAmount = -recipientGets // negative => withdrawal
+
+    // a previously-deposited note (being spent) + a dummy second input
+    const note = new Utxo({ wasm, amount: gross.toString(), keypair: kp, index: 0, mintAddress: WRAPPED_SOL_MINT })
+    const dummyIn = new Utxo({ wasm, keypair: kp })
+    const mirror = LocalMirror.fromLeaves(wasm, [note.getCommitment(), dummyIn.getCommitment()])
+    const root = mirror.root()
+    const notePath = mirror.path(mirror.indexOf(note.getCommitment()))
+
+    const outputs = [
+      new Utxo({ wasm, amount: "0", keypair: kp, index: 2, mintAddress: WRAPPED_SOL_MINT }),
+      new Utxo({ wasm, amount: "0", keypair: kp, index: 3, mintAddress: WRAPPED_SOL_MINT }),
+    ]
+    const ct1 = await enc.encryptUtxo(outputs[0])
+    const ct2 = await enc.encryptUtxo(outputs[1])
+    const extDataHash = getExtDataHash({
+      recipient: "11111111111111111111111111111111",
+      extAmount: Number(extAmount),
+      encryptedOutput1: ct1 as unknown as Uint8Array,
+      encryptedOutput2: ct2 as unknown as Uint8Array,
+      fee: Number(fee),
+      feeRecipient: "11111111111111111111111111111111",
+      mintAddress: WRAPPED_SOL_MINT,
+    })
+
+    const { proof, publicSignals } = await prove({
+      root,
+      inputNullifier: await Promise.all([note.getNullifier(), dummyIn.getNullifier()]),
+      outputCommitment: outputs.map((x) => x.getCommitment()),
+      publicAmount: mod(extAmount - fee).toString(),
+      extDataHash,
+      inAmount: [note.amount.toString(10), dummyIn.amount.toString(10)],
+      inPrivateKey: [note.keypair.privkey, dummyIn.keypair.privkey],
+      inBlinding: [note.blinding.toString(10), dummyIn.blinding.toString(10)],
+      inPathIndices: [note.index, dummyIn.index],
+      inPathElements: [notePath, new Array(MERKLE_TREE_DEPTH).fill("0")],
+      outAmount: outputs.map((x) => x.amount.toString(10)),
+      outBlinding: outputs.map((x) => x.blinding.toString(10)),
+      outPubkey: outputs.map((x) => x.keypair.pubkey),
+      mintAddress: WRAPPED_SOL_MINT,
+    } as unknown as Record<string, unknown>)
+
+    const pub = parseToBytesArray(publicSignals)
+    parseProofToBytesArray(proof) // shape sanity
+
+    // ext_data_hash consistency: Fr_le(sha256) == Fr_be(proof.ext_data_hash)
+    expect(mod(le(extDataHash))).toBe(mod(be(pub[2])))
+    // withdraw public_amount: -(abs(ext_amount) + fee) == -gross (mod field)
+    expect(mod(be(pub[1]))).toBe(mod(-gross))
+    // the circuit's root public output must equal the mirror root we fed in
+    expect(mod(be(pub[0]))).toBe(mod(BigInt(root)))
   }, 120_000)
 })
