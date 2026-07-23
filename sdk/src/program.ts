@@ -12,6 +12,11 @@ import BN from "bn.js"
 
 import { DISC_TRANSACT, DISC_TRANSACT_SPL, SEED } from "./constants"
 
+// Bind Buffer from the global (set by vite-plugin-node-polyfills in the browser,
+// native in Node/tests). Declaring it locally prevents the polyfill plugin from
+// injecting an unresolvable shim import into this SDK module.
+const Buffer = globalThis.Buffer as typeof globalThis.Buffer
+
 /** Byte layout the Pinocchio program's TransactArgs expects (see state/transact.rs). */
 export interface ProofBytes {
   proofA: number[]

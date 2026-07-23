@@ -5,6 +5,11 @@ import { keccak256, sha256 } from "ethers"
 
 import { FIELD_SIZE, SIGN_MESSAGE, WRAPPED_SOL_MINT } from "./constants"
 
+// Bind Buffer from the global (set by vite-plugin-node-polyfills in the browser,
+// native in Node/tests). Declaring it locally prevents the polyfill plugin from
+// injecting an unresolvable shim import into this SDK module.
+const Buffer = globalThis.Buffer as typeof globalThis.Buffer
+
 /**
  * Field-element keypair used inside UTXO commitments/nullifiers.
  * Ported 1:1 from privacy-cash-sdk/src/models/keypair.ts (browser-safe).
