@@ -8,6 +8,8 @@ import {
   importNotes,
   loadNotes,
   clearNotes,
+  pruneStaleNotes,
+  fetchTreeState,
   type Note,
 } from "@privacy-cash/client"
 import {
@@ -29,6 +31,19 @@ export function NotesCard({ refreshKey }: { refreshKey: number }) {
   const [tick, setTick] = useState(0)
 
   const reload = () => setTick((t) => t + 1)
+
+  // On mount / wallet change: fetch the tree state from the backend + prune any
+  // stale notes (leaf index not in the current tree). This keeps the displayed
+  // balance honest — no phantom SOL from a prior simnet session.
+  useEffect(() => {
+    if (!publicKey) return
+    fetchTreeState("sol")
+      .then(({ nextLeafIndex }) => {
+        const removed = pruneStaleNotes(publicKey, nextLeafIndex)
+        if (removed > 0) reload()
+      })
+      .catch(() => {})
+  }, [publicKey])
 
   useEffect(() => {
     if (publicKey) setNotes(loadNotes(publicKey))

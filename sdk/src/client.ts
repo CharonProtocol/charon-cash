@@ -72,6 +72,14 @@ export class PrivacyCashClient {
       this.info = await fetchRelayerInfo()
       if (!this.programId) this.programId = new PublicKey(this.info.programId)
     }
+    // Prune stale notes whose leaf index isn't in the current tree (e.g. after
+    // a simnet reset). This keeps the displayed balance honest.
+    try {
+      const { nextLeafIndex } = await fetchTreeState(SOL_TREE_KEY)
+      pruneStaleNotes(this.publicKey, nextLeafIndex)
+    } catch {
+      /* tree may not be initialized yet — skip */
+    }
   }
 
   /** Prompt wallet to sign the constant message; derive the note keypair. */
