@@ -1,39 +1,57 @@
 mod common;
-use litesvm::LiteSVM;
-use solana_clock::Clock;
-use solana_sdk::{
-    native_token::LAMPORTS_PER_SOL,
-    signature::{Keypair, Signer},
-    instruction::Instruction,
-};
-use solana_transaction::{Transaction, AccountMeta};
-use ethers::{
-    core::{k256::schnorr::CryptoRngCore, rand::{RngCore, thread_rng}}, utils::hex,
-};
-use std::{ops::{Add, Sub, Rem}, str::FromStr, path::PathBuf};
+use borsh::BorshDeserialize;
 use common::{
-    constants::{DEFAULT_HEIGHT, DEPOSIT_FEE_RATE, FEE_ERROR_MARGIN, FEE_RECIPIENT_ACCOUNT, FIELD_SIZE_DECIMAL, ROOT_HISTORY_SIZE, SOL_ADDRESS, WITHDRAW_FEE_RATE, },
+    constants::{
+        DEFAULT_HEIGHT, DEPOSIT_FEE_RATE, FEE_ERROR_MARGIN, FEE_RECIPIENT_ACCOUNT,
+        FIELD_SIZE_DECIMAL, ROOT_HISTORY_SIZE, SOL_ADDRESS, WITHDRAW_FEE_RATE,
+    },
     merkle_tree::MerkleTree,
+    prover::{
+        deposit_artifacts_to_submit, prove, DepositProofArtifacts, DepositProofToSubmit, ProofInput,
+    },
+    test_alt::{
+        create_global_test_alt, create_versioned_tx_with_alt, get_global_test_alt,
+        get_test_protocol_addresses, get_test_protocol_addresses_with_mint, reset_global_test_alt,
+    },
     utils::{get_ext_data_hash, ExtData},
-    prover::{DepositProofToSubmit, DepositProofArtifacts, ProofInput,
-    prove, deposit_artifacts_to_submit },
-    test_alt::{create_global_test_alt, create_versioned_tx_with_alt, get_global_test_alt, get_test_protocol_addresses, get_test_protocol_addresses_with_mint, reset_global_test_alt},
-    utxo::Utxo
+    utxo::Utxo,
 };
+use ethers::{
+    core::{
+        k256::schnorr::CryptoRngCore,
+        rand::{thread_rng, RngCore},
+    },
+    utils::hex,
+};
+use light_hasher::zero_bytes::poseidon::ZERO_BYTES;
+use litesvm::LiteSVM;
+use litesvm_token::{CreateAssociatedTokenAccount, CreateMint, MintTo};
 use num_bigint::{BigInt, BigUint};
 use privacy_cash::{
-    instructions,
+    instructions::{self, IntiailizeTreeTokenAccountParams, PrivacyCashInstructions},
     state::{
-        transact::{Proof, ExtDataMinified, TransactArgs},
-        MerkleTreeAccount
+        transact::{ExtDataMinified, Proof, TransactArgs},
+        MerkleTreeAccount,
     },
-    instructions::PrivacyCashInstructions,
 };
 use solana_address::Address;
-use light_hasher::zero_bytes::poseidon::ZERO_BYTES;
-use solana_sdk_ids::system_program::ID as SYSTEM_PROGRAM;
-use solana_program::{example_mocks::solana_sdk::system_instruction, pubkey::Pubkey};
+use solana_clock::Clock;
 use solana_compute_budget_interface::ComputeBudgetInstruction;
+use solana_program::{example_mocks::solana_sdk::system_instruction, pubkey::Pubkey};
+use solana_program_pack::Pack;
+use solana_sdk::{
+    instruction::Instruction,
+    native_token::LAMPORTS_PER_SOL,
+    signature::{Keypair, Signer},
+};
+use solana_sdk_ids::system_program::ID as SYSTEM_PROGRAM;
+use solana_transaction::{AccountMeta, Transaction};
+use spl_associated_token_account::get_associated_token_address;
+use std::{
+    ops::{Add, Rem, Sub},
+    path::PathBuf,
+    str::FromStr,
+};
 
 const PROGRAM_ID: &str = "HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV";
 const DEFAULT_ZERO: [u8; 32] = ZERO_BYTES[0]; // The default value of elements for initializing a tree
@@ -45,7 +63,10 @@ pub fn generate_random_nullifier() -> [u8; 32] {
 }
 
 pub fn create_ext_data_minified(ext_data: &ExtData) -> ExtDataMinified {
-    ExtDataMinified { ext_amount: ext_data.ext_amount, fee: ext_data.fee }
+    ExtDataMinified {
+        ext_amount: ext_data.ext_amount,
+        fee: ext_data.fee,
+    }
 }
 
 /// Calculates the protocol fee for a given amount using basis points.
@@ -89,9 +110,7 @@ pub fn bn_to_bytes(value: u128) -> [u8; 32] {
 }
 
 // Helper to turn the DepositProofToSubmit struct into the Proof struct we use in next 2 functions
-pub fn format_proof(
-    proof: DepositProofToSubmit,
-) -> Proof {
+pub fn format_proof(proof: DepositProofToSubmit) -> Proof {
     Proof {
         proof_a: proof.proof_a.try_into().expect("proof_a must be 64 bytes"),
         proof_b: proof.proof_b.try_into().expect("proof_b must be 128 bytes"),
@@ -114,15 +133,11 @@ pub struct NullifierPdas {
 }
 
 pub fn find_nullifier_pdas(program_id: &Pubkey, proof: &Proof) -> NullifierPdas {
-    let (nullifier0, bump0) = Pubkey::find_program_address(
-        &[b"nullifier0", &proof.input_nullifiers[0]],
-        program_id,
-    );
+    let (nullifier0, bump0) =
+        Pubkey::find_program_address(&[b"nullifier0", &proof.input_nullifiers[0]], program_id);
 
-    let (nullifier1, bump1) = Pubkey::find_program_address(
-        &[b"nullifier1", &proof.input_nullifiers[1]],
-        program_id,
-    );
+    let (nullifier1, bump1) =
+        Pubkey::find_program_address(&[b"nullifier1", &proof.input_nullifiers[1]], program_id);
 
     NullifierPdas {
         nullifier0,
@@ -132,47 +147,45 @@ pub fn find_nullifier_pdas(program_id: &Pubkey, proof: &Proof) -> NullifierPdas 
     }
 }
 
-pub fn find_cross_check_nullifier_pdas(
-    program_id: &Pubkey,
-    proof: &Proof,
-) -> (Pubkey, Pubkey) {
-    let (nullifier2_pda, _) = Pubkey::find_program_address(
-        &[
-            b"nullifier0",
-            &proof.input_nullifiers[1],
-        ],
-        program_id,
-    );
+pub fn find_cross_check_nullifier_pdas(program_id: &Pubkey, proof: &Proof) -> (Pubkey, Pubkey) {
+    let (nullifier2_pda, _) =
+        Pubkey::find_program_address(&[b"nullifier0", &proof.input_nullifiers[1]], program_id);
 
-    let (nullifier3_pda, _) = Pubkey::find_program_address(
-        &[
-            b"nullifier1",
-            &proof.input_nullifiers[0],
-        ],
-        program_id,
-    );
+    let (nullifier3_pda, _) =
+        Pubkey::find_program_address(&[b"nullifier1", &proof.input_nullifiers[0]], program_id);
 
     (nullifier2_pda, nullifier3_pda)
 }
 
-pub struct TestContext {
+pub struct TestContextSpl {
     pub svm: LiteSVM,
 
-    pub authority: Keypair,
+    pub authority: Keypair, // program authority
     pub funding_account: Keypair,
     pub recipient: Keypair,
     pub fee_recipient: Keypair,
-    pub random_user: Keypair,
+    pub random_user: Keypair, // Signs the transactions
     pub attacker: Keypair,
 
     pub tree_account: Pubkey,
-    pub tree_token_account: Pubkey,
+    pub spl_tree_account: Pubkey,
+    pub tree_token_account: Pubkey,     // The Pool
+    pub spl_tree_token_account: Pubkey, // THE USDC Pool
     pub global_config: Pubkey,
+
+    // token accounts
+    pub spl_token_mint: Pubkey, // USDC
+
+    pub fee_recipient_ata: Pubkey,
+    pub random_user_ata: Pubkey,
+    pub attacker_ata: Pubkey,
 
     pub tree_bump: u8,
     pub tree_token_bump: u8,
+    pub spl_tree_bump: u8,
 
-    pub merkle_tree: MerkleTree,
+    pub sol_merkle_tree: MerkleTree, // Indexer
+    pub spl_merkle_tree: MerkleTree, // Indexer
 }
 
 #[repr(C)]
@@ -211,7 +224,38 @@ pub fn build_initialize_ix(
             AccountMeta::new(authority, true),
             AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
         ],
-        data
+        data,
+    }
+}
+
+pub fn build_initialize_for_spl_ix(
+    program_id: Pubkey,
+    authority: Pubkey,
+    spl_tree_account: Pubkey,
+    mint: Pubkey,
+    global_config: Pubkey,
+    tree_account_bump: u8,
+    max_deposit_amount: u64,
+) -> Instruction {
+    let params = IntiailizeTreeTokenAccountParams {
+        max_deposit_amount,
+        tree_account_bump,
+        padding: [0u8; 7],
+    };
+
+    let mut data = vec![PrivacyCashInstructions::InitializeTreeAccountForSplToken as u8];
+    data.extend_from_slice(bytemuck::bytes_of(&params));
+
+    Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new(spl_tree_account, false),
+            AccountMeta::new(mint, false),
+            AccountMeta::new(global_config, false),
+            AccountMeta::new(authority, true),
+            AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
+        ],
+        data,
     }
 }
 
@@ -261,20 +305,15 @@ pub fn build_transact_ix(
         program_id,
         accounts: vec![
             AccountMeta::new(tree_account, false),
-
             AccountMeta::new(nullifier0, false),
             AccountMeta::new(nullifier1, false),
             AccountMeta::new(nullifier2, false),
             AccountMeta::new(nullifier3, false),
-
             AccountMeta::new(tree_token_account, false),
             AccountMeta::new(global_config, false),
-
             AccountMeta::new(recipient, false),
             AccountMeta::new(fee_recipient, false),
-
             AccountMeta::new(signer, true),
-
             AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
         ],
         data,
@@ -288,7 +327,18 @@ fn advance_one_slot(svm: &mut LiteSVM) {
     svm.expire_blockhash();
 }
 
-pub fn setup() -> TestContext {
+fn get_token_account_state(svm: &mut LiteSVM, account: &Address) -> spl_token::state::Account {
+    let account_raw = svm
+        .get_account(account)
+        .expect("Could not get given Account");
+
+    let account_state =
+        spl_token::state::Account::unpack(&account_raw.data).expect("Expected Raw Account Data");
+
+    account_state
+}
+
+pub fn setup() -> TestContextSpl {
     reset_global_test_alt();
     let mut svm = LiteSVM::new();
 
@@ -296,8 +346,11 @@ pub fn setup() -> TestContext {
 
     // Load the Anchor program into LiteSVM.
     // Replace the path with your actual built .so.
-    svm.add_program(program_id, include_bytes!("../target/deploy/privacy_cash.so"))
-        .unwrap();
+    svm.add_program(
+        program_id,
+        include_bytes!("../target/deploy/privacy_cash.so"),
+    )
+    .unwrap();
 
     let authority = Keypair::new();
     let funding_account = Keypair::new();
@@ -306,10 +359,10 @@ pub fn setup() -> TestContext {
     let random_user = Keypair::new();
     let attacker = Keypair::new();
 
-    let merkle_tree = MerkleTree::new(DEFAULT_HEIGHT, Vec::new());
+    let sol_merkle_tree = MerkleTree::new(DEFAULT_HEIGHT, Vec::new());
+    let spl_merkle_tree = MerkleTree::new(DEFAULT_HEIGHT, Vec::new());
 
-    let (tree_account, tree_bump) =
-        Pubkey::find_program_address(&[b"merkle_tree"], &program_id);
+    let (tree_account, tree_bump) = Pubkey::find_program_address(&[b"merkle_tree"], &program_id);
 
     let (tree_token_account, tree_token_bump) =
         Pubkey::find_program_address(&[b"tree_token"], &program_id);
@@ -318,7 +371,8 @@ pub fn setup() -> TestContext {
         Pubkey::find_program_address(&[b"global_config"], &program_id);
 
     // Fund the funding account.
-    svm.airdrop(&funding_account.pubkey(), 1_000 * LAMPORTS_PER_SOL).unwrap();
+    svm.airdrop(&funding_account.pubkey(), 1_000 * LAMPORTS_PER_SOL)
+        .unwrap();
 
     let balance = svm.get_balance(&funding_account.pubkey()).unwrap();
     assert!(balance > 0);
@@ -351,7 +405,7 @@ pub fn setup() -> TestContext {
         global_config,
         tree_bump,
         tree_token_bump,
-        global_config_bump
+        global_config_bump,
     );
 
     let initialize_tx = Transaction::new_signed_with_payer(
@@ -364,12 +418,27 @@ pub fn setup() -> TestContext {
     svm.send_transaction(initialize_tx).unwrap();
 
     // Fund the tree token PDA after initialization.
-    svm.airdrop(&tree_token_account, 2 * LAMPORTS_PER_SOL).unwrap();
+    svm.airdrop(&tree_token_account, 2 * LAMPORTS_PER_SOL)
+        .unwrap();
+
+    // Verify the initialized tree account.
+    let account = svm
+        .get_account(&tree_account)
+        .expect("tree account missing");
+    let tree_state = bytemuck::from_bytes::<MerkleTreeAccount>(&account.data);
+
+    assert_eq!(tree_state.authority, authority.pubkey().to_bytes());
+    assert_eq!(tree_state.next_index, 0);
+    assert_eq!(tree_state.root_index, 0);
+    assert_eq!(tree_state.root_history.len(), ROOT_HISTORY_SIZE);
 
     // THIS SECTION IS RELATED TO THE BEFOREEACH PART, NO NEED TO ADAPT THAT SEPARATELY
-    svm.airdrop(&recipient.pubkey(), LAMPORTS_PER_SOL / 2).unwrap();
-    svm.airdrop(&fee_recipient.pubkey(), LAMPORTS_PER_SOL / 2).unwrap();
-    svm.airdrop(&random_user.pubkey(), LAMPORTS_PER_SOL).unwrap();
+    svm.airdrop(&recipient.pubkey(), LAMPORTS_PER_SOL / 2)
+        .unwrap();
+    svm.airdrop(&fee_recipient.pubkey(), LAMPORTS_PER_SOL / 2)
+        .unwrap();
+    svm.airdrop(&random_user.pubkey(), LAMPORTS_PER_SOL)
+        .unwrap();
     svm.airdrop(&attacker.pubkey(), LAMPORTS_PER_SOL).unwrap();
 
     assert!(svm.get_balance(&recipient.pubkey()).unwrap() > 0);
@@ -378,16 +447,95 @@ pub fn setup() -> TestContext {
     assert!(svm.get_balance(&attacker.pubkey()).unwrap() > 0);
     // --------------------------------------------------------------------------------
 
+    // Additional Token Accounts for spl_tests
+    let spl_token_mint = CreateMint::new(&mut svm, &authority)
+        .authority(&authority.pubkey())
+        .freeze_authority(&authority.pubkey())
+        .decimals(6)
+        .send()
+        .expect("USDC Mint Creation Failed");
+
+    let (spl_tree_account, spl_tree_bump) = Address::derive_program_address(
+        &[b"merkle_tree", spl_token_mint.as_array()],
+        &Address::from_str_const(PROGRAM_ID),
+    )
+    .expect("Spl Tree Account For USDC transactions");
+
+    // Initialise SPL tree
+    let initialize_spl_tree_ix = build_initialize_for_spl_ix(
+        program_id,
+        authority.pubkey(),
+        spl_tree_account,
+        spl_token_mint,
+        global_config,
+        tree_bump,
+        50_000_000_000_000,
+    );
+
+    let initialize_spl_tree_tx = Transaction::new_signed_with_payer(
+        &[initialize_spl_tree_ix],
+        Some(&authority.pubkey()),
+        &[&authority],
+        svm.latest_blockhash(),
+    );
+
+    svm.send_transaction(initialize_spl_tree_tx).unwrap();
+
     // Verify the initialized tree account.
-    let account = svm.get_account(&tree_account).expect("tree account missing");
-    let tree_state = bytemuck::from_bytes::<MerkleTreeAccount>(&account.data);
+    let spl_tree_account_raw = svm
+        .get_account(&spl_tree_account)
+        .expect("tree account missing");
+    let spl_tree_state = bytemuck::from_bytes::<MerkleTreeAccount>(&spl_tree_account_raw.data);
 
-    assert_eq!(tree_state.authority, authority.pubkey().to_bytes());
-    assert_eq!(tree_state.next_index, 0);
-    assert_eq!(tree_state.root_index, 0);
-    assert_eq!(tree_state.root_history.len(), ROOT_HISTORY_SIZE);
+    assert_eq!(spl_tree_state.authority, authority.pubkey().to_bytes());
+    assert_eq!(spl_tree_state.next_index, 0);
+    assert_eq!(spl_tree_state.root_index, 0);
+    assert_eq!(spl_tree_state.root_history.len(), ROOT_HISTORY_SIZE);
 
-    TestContext {
+    let fee_recipient_ata =
+        CreateAssociatedTokenAccount::new(&mut svm, &fee_recipient, &spl_token_mint)
+            .send()
+            .expect("Fee Recipient Could Not be initialised");
+    let random_user_ata =
+        CreateAssociatedTokenAccount::new(&mut svm, &random_user, &spl_token_mint)
+            .send()
+            .expect("Fee Recipient Could Not be initialised");
+    let attacker_ata = CreateAssociatedTokenAccount::new(&mut svm, &attacker, &spl_token_mint)
+        .send()
+        .expect("Fee Recipient Could Not be initialised");
+
+    let spl_tree_token_account = get_associated_token_address(&spl_tree_account, &spl_token_mint);
+
+    let mint_amount = 100_000_000_000_000;
+    MintTo::new(
+        &mut svm,
+        &authority,
+        &spl_token_mint,
+        &random_user_ata,
+        mint_amount,
+    )
+    .send()
+    .expect("Token Could Not Be Minted to Random User Ata");
+
+    MintTo::new(
+        &mut svm,
+        &authority,
+        &spl_token_mint,
+        &attacker_ata,
+        mint_amount,
+    )
+    .send()
+    .expect("Token Could Not Be Minted to Attacker  Ata");
+
+    let random_user_ata_state = get_token_account_state(&mut svm, &random_user_ata);
+
+    assert_eq!(random_user_ata_state.amount, mint_amount);
+
+    let attacker_ata_state = get_token_account_state(&mut svm, &attacker_ata);
+
+    assert_eq!(attacker_ata_state.amount, mint_amount);
+
+    TestContextSpl {
         svm,
         authority,
         funding_account,
@@ -400,6 +548,197 @@ pub fn setup() -> TestContext {
         global_config,
         tree_bump,
         tree_token_bump,
-        merkle_tree,
+        sol_merkle_tree,
+        spl_merkle_tree,
+        spl_token_mint,
+        spl_tree_account,
+        spl_tree_bump,
+        fee_recipient_ata,
+        attacker_ata,
+        random_user_ata,
+        spl_tree_token_account,
+    }
+}
+
+#[test]
+fn deposit_sol_withdraw_usdc() {
+    let mut ctx = setup();
+    // Part 1 : Depositing SOL
+
+    let deposit_amount = 20000; // SOL
+    let calculated_deposit_fee = calculate_deposit_fee(deposit_amount);
+
+    let deposit_ext_data = ExtData {
+        recipient: ctx.recipient.pubkey().to_bytes(),
+        ext_amount: i64::try_from(deposit_amount).unwrap(),
+        encrypted_output1: b"depositEncryptedOutput1".to_vec(),
+        encrypted_output2: b"depositEncryptedOutput2".to_vec(),
+        fee: calculated_deposit_fee,
+        fee_recipient: FEE_RECIPIENT_ACCOUNT.to_bytes(),
+        mint_address: Pubkey::from_str("11111111111111111111111111111112") // SOL Mint
+            .unwrap()
+            .to_bytes(),
+    };
+
+    let deposit_inputs = [Utxo::empty(), Utxo::empty()];
+
+    let field_size = BigInt::from_str(FIELD_SIZE_DECIMAL).unwrap();
+
+    let ext_amount = BigInt::from(deposit_ext_data.ext_amount);
+    let deposit_fee = BigInt::from(calculated_deposit_fee);
+
+    let public_amount_number = (ext_amount - calculated_deposit_fee + &field_size) % &field_size;
+
+    let output_index = ctx.merkle_tree.elements().len() as u64;
+
+    let deposit_outputs = [
+        Utxo::new_with_index(
+            public_amount_number
+                .clone()
+                .try_into()
+                .expect("Public amount should fit in u64"),
+            output_index,
+        ),
+        Utxo::new(0),
+    ];
+
+    let deposit_input_merkle_path_indices = [0usize; 2];
+
+    let deposit_input_merkle_path_elements = vec![
+        vec![[0u8; 32]; ctx.merkle_tree.levels],
+        vec![[0u8; 32]; ctx.merkle_tree.levels],
+    ];
+
+    let deposit_input_nullifiers = [
+        deposit_inputs[0].get_nullifier().unwrap(),
+        deposit_inputs[1].get_nullifier().unwrap(),
+    ];
+
+    let deposit_output_commitments = [
+        deposit_outputs[0]
+            .get_commitment()
+            .expect("failed to compute output commitment"),
+        deposit_outputs[1]
+            .get_commitment()
+            .expect("failed to compute output commitment"),
+    ];
+
+    let deposit_root = ctx.merkle_tree.root();
+    let deposit_ext_data_hash = get_ext_data_hash(&deposit_ext_data);
+
+    let deposit_input = ProofInput {
+        root: deposit_root,
+        input_nullifier: deposit_input_nullifiers,
+        output_commitment: deposit_output_commitments,
+        public_amount: public_amount_number
+            .clone()
+            .to_biguint()
+            .expect("public amount should be non-negative"),
+        ext_data_hash: deposit_ext_data_hash,
+
+        in_amount: deposit_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
+        in_private_key: deposit_inputs
+            .iter()
+            .map(|x| x.keypair.privkey.clone())
+            .collect(),
+        in_blinding: deposit_inputs
+            .iter()
+            .map(|x| BigUint::from(x.blinding.clone()))
+            .collect(),
+
+        mint_address: deposit_inputs[0].mint_address.to_string(),
+
+        in_path_indices: deposit_input_merkle_path_indices,
+        in_path_elements: deposit_input_merkle_path_elements,
+
+        out_amount: deposit_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
+        out_blinding: deposit_outputs
+            .iter()
+            .map(|x| BigUint::from(x.blinding.clone()))
+            .collect(),
+        out_pubkey: deposit_outputs
+            .iter()
+            .map(|x| x.keypair.pubkey.clone())
+            .collect(),
+    };
+
+    let key_base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("artifacts")
+        .join("circuits")
+        .join("transaction2");
+
+    let deposit_proof_result = prove(&deposit_input, &key_base_path).unwrap();
+
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+
+    let deposit_proof_to_submit = format_proof(deposit_artifacts);
+
+    let deposit_nullifiers = find_nullifier_pdas(
+        &Pubkey::from_str_const(PROGRAM_ID),
+        &deposit_proof_to_submit,
+    );
+    let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
+        &Pubkey::from_str_const(PROGRAM_ID),
+        &deposit_proof_to_submit,
+    );
+
+    let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
+
+    let deposit_test_protocol_addresses = get_test_protocol_addresses(
+        &Address::from_str_const(PROGRAM_ID),
+        &ctx.authority.pubkey(),
+        &FEE_RECIPIENT_ACCOUNT,
+    );
+
+    let deposit_lookup_table_address = create_global_test_alt(
+        &mut ctx.svm,
+        &ctx.authority,
+        &ctx.authority,
+        &deposit_test_protocol_addresses,
+    );
+
+    advance_one_slot(&mut ctx.svm);
+
+    let transact_ix = build_transact_ix(
+        Pubkey::from_str_const(PROGRAM_ID),
+        &deposit_proof_to_submit,
+        &create_ext_data_minified(&deposit_ext_data),
+        &deposit_ext_data.encrypted_output1,
+        &deposit_ext_data.encrypted_output2,
+        deposit_nullifiers.bump0,
+        deposit_nullifiers.bump1,
+        ctx.tree_account,
+        deposit_nullifiers.nullifier0,
+        deposit_nullifiers.nullifier1,
+        deposit_cross_check_nullifiers.0,
+        deposit_cross_check_nullifiers.1,
+        ctx.tree_token_account,
+        ctx.global_config,
+        ctx.recipient.pubkey(),
+        FEE_RECIPIENT_ACCOUNT,
+        ctx.random_user.pubkey(),
+    );
+
+    let deposit_versioned_tx = create_versioned_tx_with_alt(
+        &mut ctx.svm,
+        &ctx.random_user, // payer
+        &[],              // additional signers
+        &[modify_compute_units.clone(), transact_ix],
+        &deposit_lookup_table_address,
+    );
+
+    ctx.svm
+        .send_transaction(deposit_versioned_tx)
+        .expect("deposit transaction failed");
+
+    // Update our local Merkle tree to match the on-chain state.
+    for commitment in deposit_output_commitments {
+        ctx.merkle_tree.insert(commitment);
     }
 }
