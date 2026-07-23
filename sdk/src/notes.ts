@@ -48,6 +48,20 @@ export function markNoteSpent(
   persist(wallet, notes)
 }
 
+/**
+ * Remove notes whose leaf index is not in the current tree (index >= nextLeafIndex).
+ * Such notes are stale — e.g. left over from a prior simnet session before the tree
+ * was wiped/redeployed. They can never be spent (the leaf doesn't exist), so drop them.
+ * Returns the count removed.
+ */
+export function pruneStaleNotes(wallet: PublicKey, nextLeafIndex: number): number {
+  const all = loadNotes(wallet)
+  const kept = all.filter((n) => n.index < nextLeafIndex)
+  const removed = all.length - kept.length
+  if (removed > 0) persist(wallet, kept)
+  return removed
+}
+
 export function unspentNotes(wallet: PublicKey): Note[] {
   return loadNotes(wallet).filter((n) => !n.spent)
 }

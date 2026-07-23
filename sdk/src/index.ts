@@ -32,6 +32,7 @@ export {
   unspentNotes,
   saveNote,
   markNoteSpent,
+  pruneStaleNotes,
   totalBalance,
   exportNotes,
   importNotes,

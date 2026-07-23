@@ -17,7 +17,7 @@ import {
   fetchTreeState,
   type RelayerInfo,
 } from "./merkle"
-import { markNoteSpent, newNoteId, saveNote, unspentNotes } from "./notes"
+import { markNoteSpent, newNoteId, pruneStaleNotes, saveNote, unspentNotes } from "./notes"
 import { parseProofToBytesArray, parseToBytesArray, prove } from "./prover"
 import { buildTransactTransaction, type ProofBytes } from "./program"
 
@@ -161,10 +161,16 @@ export class PrivacyCashClient {
     const wasm = this.wasm!
     const utxoKeypair = this.utxoKeypair!
 
+    // Fetch the current tree state FIRST, then drop any notes whose leaf index
+    // isn't in this tree (stale leftovers from a prior simnet session — they can
+    // never be spent because the leaf doesn't exist).
+    const { root, nextLeafIndex } = await fetchTreeState(SOL_TREE_KEY)
+    pruneStaleNotes(this.publicKey, nextLeafIndex)
+
     const sorted = unspentNotes(this.publicKey)
-      .filter((n) => n.mintAddress === WRAPPED_SOL_MINT)
+      .filter((n) => n.mintAddress === WRAPPED_SOL_MINT && n.index < nextLeafIndex)
       .sort((a, b) => Number(b.amount) - Number(a.amount))
-    if (sorted.length === 0) throw new Error("no spendable notes")
+    if (sorted.length === 0) throw new Error("no spendable notes in the current tree — deposit first")
 
     let inputNotes = sorted.filter((n) => BigInt(n.amount) >= BigInt(grossLamports))
     if (inputNotes.length === 0) {
@@ -196,8 +202,6 @@ export class PrivacyCashClient {
     const recipientGets = gross.sub(fee)
     const extAmount = recipientGets.neg()
     const change = totalInput.sub(gross)
-
-    const { root, nextLeafIndex } = await fetchTreeState(SOL_TREE_KEY)
 
     const inputPathElements: string[][] = []
     for (const u of inputs) {
