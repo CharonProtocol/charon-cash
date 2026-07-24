@@ -418,12 +418,12 @@
         <thead><tr><th>Instruction</th><th>What it does</th><th>Who</th></tr></thead>
         <tbody>
           <tr><td><code>Initialize</code></td><td>Boot the SOL pool, the vault, the tree, global config</td><td class="role">setup</td></tr>
-          <tr><td><code>InitializeTreeForSpl</code></td><td>Create a per-mint tree (USDC, USDT&hellip;)</td><td class="role">setup</td></tr>
+          <tr><td><code>InitializeTreeAccountForSplToken</code></td><td>Create a per-mint tree (USDC, USDT&hellip;)</td><td class="role">setup</td></tr>
           <tr class="user"><td><code>Transact</code></td><td>Deposit or withdraw SOL (sign of amount)</td><td class="role">user path</td></tr>
           <tr class="user"><td><code>TransactSpl</code></td><td>Deposit or withdraw an SPL token</td><td class="role">user path</td></tr>
           <tr><td><code>UpdateGlobalConfig</code></td><td>Set fee rates (deposit / withdraw / margin)</td><td class="role">admin</td></tr>
           <tr><td><code>UpdateDepositLimit</code></td><td>Cap the max SOL deposit</td><td class="role">admin</td></tr>
-          <tr><td><code>UpdateDepositLimitSpl</code></td><td>Cap the max deposit for a mint</td><td class="role">admin</td></tr>
+          <tr><td><code>UpdateDepositLimitForSpl</code></td><td>Cap the max deposit for a mint</td><td class="role">admin</td></tr>
         </tbody>
       </table>
       <p class="footnote">Seven instructions in total. Four are caller-actionable; the user deposit/withdraw path is just <span class="mono accent">Transact</span> &amp; <span class="mono accent">TransactSpl</span> &mdash; the sign of <span class="mono">ext_amount</span> picks deposit (+) vs withdraw (&minus;). The pairing check alone costs ~1M compute units.</p>
@@ -499,7 +499,7 @@
       <ol class="steps">
         <li><span><b>Fetch the Merkle path</b> for your note from the backend&rsquo;s read-only API &mdash; <span class="mono">/api/merkle/&hellip;/proof</span>.</span></li>
         <li><span><b>Build a Groth16 withdrawal proof</b> (<span class="mono">ext_amount &lt; 0</span>), bound to the recipient and fee.</span></li>
-        <li><span><b>Build the <code>Transact</code> instruction</b> &mdash; the pool itself pays the recipient and the fee, not a relayer.</span></li>
+        <li><span><b>Build the <code>Transact</code> / <code>TransactSpl</code> instruction</b> &mdash; prepends idempotent ATA creation for recipient &amp; fee recipient, pool pays funds &amp; fee.</span></li>
         <li><span><b>Your wallet signs the versioned tx</b> and the SDK submits it direct to the RPC.</span></li>
         <li><span><b>The program verifies the proof</b>, checks the nullifier isn&rsquo;t spent, and pays the recipient.</span></li>
       </ol>

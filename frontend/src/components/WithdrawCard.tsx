@@ -23,6 +23,7 @@ interface Result {
   recipientLamports: number
   feeLamports: number
   changeLamports: string
+  nullifiers?: string[]
 }
 
 export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
@@ -55,6 +56,7 @@ export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
         recipientLamports: res.recipientLamports,
         feeLamports: res.feeLamports,
         changeLamports: res.changeLamports,
+        nullifiers: res.nullifiers,
       })
       setStatus(null)
       onChanged?.()
@@ -130,6 +132,7 @@ export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
                 recipient_sol: lamportsToSol(result.recipientLamports).toFixed(9),
                 fee_sol: lamportsToSol(result.feeLamports).toFixed(9),
                 change_lamports: result.changeLamports,
+                nullifiers: result.nullifiers,
               }}
             />
           </div>

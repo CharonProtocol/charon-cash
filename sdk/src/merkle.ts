@@ -61,7 +61,7 @@ export function getBackendUrl(): string {
   return BACKEND_URL
 }
 
-function bytesToHex(bytes: ArrayLike<number>): string {
+export function bytesToHex(bytes: ArrayLike<number>): string {
   let out = "0x"
   for (let i = 0; i < bytes.length; i++)
     out += (bytes as number[])[i].toString(16).padStart(2, "0")

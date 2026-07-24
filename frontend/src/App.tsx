@@ -25,10 +25,10 @@ export default function App() {
           <DepositSplCard onChanged={bump} />
           <WithdrawSplCard onChanged={bump} />
           <NotesCard refreshKey={refreshKey} />
-          <RelayerInfoCard refreshKey={refreshKey} />
+          <AdminCard onChanged={bump} />
           <MerkleTreeCard />
           <NullifierCard />
-          <AdminCard onChanged={bump} />
+          <RelayerInfoCard refreshKey={refreshKey} />
         </div>
         <footer className="mt-8 text-center text-xs text-muted-foreground">
           privacy-cash · fully client-side SDK: proofs, signing &amp; RPC submit

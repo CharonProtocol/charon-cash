@@ -25,6 +25,7 @@ interface Result {
   feeRaw: number
   changeRaw: string
   mint: string
+  nullifiers?: string[]
 }
 
 const DEFAULT_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
@@ -81,6 +82,7 @@ export function WithdrawSplCard({ onChanged }: { onChanged?: () => void }) {
         feeRaw: res.feeLamports,
         changeRaw: res.changeLamports,
         mint: mintStr,
+        nullifiers: res.nullifiers,
       })
       setStatus(null)
       onChanged?.()
@@ -188,6 +190,7 @@ export function WithdrawSplCard({ onChanged }: { onChanged?: () => void }) {
                 recipient_raw: result.recipientRaw,
                 fee_raw: result.feeRaw,
                 change_raw: result.changeRaw,
+                nullifiers: result.nullifiers,
               }}
             />
           </div>

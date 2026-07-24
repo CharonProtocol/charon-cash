@@ -22,6 +22,7 @@ interface Result {
   signature: string
   amountLamports: number
   leafIndex: number
+  nullifiers?: string[]
 }
 
 export function DepositCard({ onChanged }: { onChanged?: () => void }) {
@@ -110,6 +111,7 @@ export function DepositCard({ onChanged }: { onChanged?: () => void }) {
                 signature: result.signature,
                 amount_sol: lamportsToSol(result.amountLamports).toFixed(9),
                 leaf_index: result.leafIndex,
+                nullifiers: result.nullifiers,
               }}
             />
           </div>

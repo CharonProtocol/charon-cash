@@ -23,6 +23,7 @@ interface Result {
   amountRaw: number
   leafIndex: number
   mint: string
+  nullifiers?: string[]
 }
 
 const DEFAULT_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
@@ -68,6 +69,7 @@ export function DepositSplCard({ onChanged }: { onChanged?: () => void }) {
         amountRaw: res.amountLamports,
         leafIndex: res.leafIndex,
         mint: mintStr,
+        nullifiers: res.nullifiers,
       })
       setStatus(null)
       onChanged?.()
@@ -163,6 +165,7 @@ export function DepositSplCard({ onChanged }: { onChanged?: () => void }) {
                 mint: result.mint,
                 amount_raw: result.amountRaw,
                 leaf_index: result.leafIndex,
+                nullifiers: result.nullifiers,
               }}
             />
           </div>

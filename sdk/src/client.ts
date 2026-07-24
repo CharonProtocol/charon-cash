@@ -27,6 +27,7 @@ import {
   getMintAddressField,
 } from "./crypto"
 import {
+  bytesToHex,
   fetchMerkleProof,
   fetchRelayerInfo,
   fetchTreeState,
@@ -71,6 +72,7 @@ export interface DepositResult {
   signature: string
   amountLamports: number
   leafIndex: number
+  nullifiers?: string[]
 }
 
 export interface WithdrawResult {
@@ -78,6 +80,7 @@ export interface WithdrawResult {
   recipientLamports: number
   feeLamports: number
   changeLamports: string
+  nullifiers?: string[]
 }
 
 export interface SyncResult {
@@ -250,7 +253,7 @@ export class PrivacyCashClient {
     const enc1 = await this.enc!.encryptUtxo(outputs[0])
     const enc2 = await this.enc!.encryptUtxo(outputs[1])
 
-    const signature = await this.proveAndSend({
+    const { signature, nullifiers } = await this.proveAndSend({
       root,
       inputs,
       outputs,
@@ -280,7 +283,7 @@ export class PrivacyCashClient {
 
     await this.waitForLeaves(treeKey, nextLeafIndex + 1)
 
-    return { signature, amountLamports, leafIndex: nextLeafIndex }
+    return { signature, amountLamports, leafIndex: nextLeafIndex, nullifiers }
   }
 
   async withdrawSOL(
@@ -352,7 +355,7 @@ export class PrivacyCashClient {
     // For deposits, on-chain hashes recipient_token_account — use fee ATA (fee=0).
     const recipientAta = feeAta
 
-    const signature = await this.proveAndSend({
+    const { signature, nullifiers } = await this.proveAndSend({
       root,
       inputs,
       outputs,
@@ -389,6 +392,7 @@ export class PrivacyCashClient {
       signature,
       amountLamports: Number(amountRaw),
       leafIndex: nextLeafIndex,
+      nullifiers,
     }
   }
 
@@ -593,7 +597,7 @@ export class PrivacyCashClient {
       }
     }
 
-    const signature = await this.proveAndSend({
+    const { signature, nullifiers } = await this.proveAndSend({
       root,
       inputs,
       outputs,
@@ -630,6 +634,7 @@ export class PrivacyCashClient {
       recipientLamports: recipientGets.toNumber(),
       feeLamports: fee.toNumber(),
       changeLamports: change.toString(),
+      nullifiers,
     }
   }
 
@@ -653,7 +658,7 @@ export class PrivacyCashClient {
     recipientTokenAccount?: PublicKey
     feeRecipientAta?: PublicKey
     preIxs?: TransactionInstruction[]
-  }): Promise<string> {
+  }): Promise<{ signature: string; nullifiers: string[] }> {
     const inputNullifiers = await Promise.all(
       args.inputs.map((x) => x.getNullifier()),
     )
@@ -712,6 +717,8 @@ export class PrivacyCashClient {
       inputNullifiers: [pub[3], pub[4]],
       outputCommitments: [pub[5], pub[6]],
     }
+
+    const nullifierHexes = [pub[3], pub[4]].map((b) => bytesToHex(b))
 
     let transaction: VersionedTransaction
     if (args.isSpl) {
@@ -781,6 +788,6 @@ export class PrivacyCashClient {
     } catch {
       /* signature still returned for inspection */
     }
-    return signature
+    return { signature, nullifiers: nullifierHexes }
   }
 }
