@@ -583,6 +583,12 @@ export class PrivacyCashClient {
             args.recipient,
             mint,
           ),
+          createAssociatedTokenAccountIdempotentInstruction(
+            this.publicKey,
+            feeAta,
+            this.feeRecipient,
+            mint,
+          ),
         ],
       }
     }
