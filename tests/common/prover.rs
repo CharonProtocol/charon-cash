@@ -1,14 +1,21 @@
 use anyhow::{anyhow, Result};
-use ark_bn254::{Bn254, Fq, Fq2, Fr, G1Affine, G2Affine};
-use ark_circom::{read_zkey, WitnessCalculator};
+use ark_bn254::Fr;
+use ark_bn254::{Bn254, Fq, Fq2, G1Affine, G2Affine};
 use ark_circom::circom::CircomReduction;
-use ark_ff::{BigInteger, PrimeField};
-use ark_groth16::{Groth16, Proof};
+use ark_circom::circom::{R1CSFile, R1CS};
+use ark_circom::{read_zkey, WitnessCalculator};
+use ark_ff::{BigInteger, One, PrimeField};
+use ark_groth16::{prepare_verifying_key, Groth16, Proof};
 use ark_std::{rand::thread_rng, UniformRand};
-use num_bigint::{BigInt, BigUint};
+use num_bigint::{BigInt, BigUint, Sign};
 use once_cell::sync::Lazy;
+use solana_sdk::bs58;
+use std::str::FromStr;
 use std::{fs::File, path::Path};
 use wasmer::Store;
+
+use crate::common::constants::FIELD_SIZE_DECIMAL;
+use crate::common::utils::get_mint_address_field;
 
 /// BN254 base field modulus used for sign-bit logic, matching the TS implementation.
 static FIELD_SIZE: Lazy<BigUint> = Lazy::new(|| {
@@ -70,17 +77,13 @@ pub struct DepositProofToSubmit {
 }
 
 /// Prove using Circom WASM witness generation + SnarkJS `.zkey`.
-pub fn prove(
-    input: &ProofInput,
-    key_base_path: &Path,
-) -> Result<DepositProofArtifacts> {
+pub fn prove(input: &ProofInput, key_base_path: &Path) -> Result<DepositProofArtifacts> {
     let wasm_path = key_base_path.with_extension("wasm");
     let zkey_path = key_base_path.with_extension("zkey");
 
     // 1) Run the Circom-generated witness calculator from WASM.
     let mut store = Store::default();
-    let mut wc = WitnessCalculator::new(&mut store, &wasm_path)
-        .map_err(anyhow::Error::msg)?;
+    let mut wc = WitnessCalculator::new(&mut store, &wasm_path).map_err(anyhow::Error::msg)?;
 
     let inputs = build_circom_inputs(input)?;
     let witness: Vec<Fr> = wc
@@ -101,7 +104,6 @@ pub fn prove(
     matrices.push(np_index.a);
     matrices.push(np_index.b);
     matrices.push(np_index.c);
-
 
     let proof = Groth16::<Bn254, CircomReduction>::create_proof_with_reduction_and_matrices(
         &pk,
@@ -129,6 +131,14 @@ pub fn prove(
 
     let public_inputs = witness[1..1 + public_input_count].to_vec();
 
+    let prepared_verifying_key = prepare_verifying_key(&pk.vk);
+    let ok = ark_groth16::Groth16::<Bn254>::verify_proof(
+        &prepared_verifying_key,
+        &proof,
+        &public_inputs,
+    )
+    .unwrap();
+    println!("native verify: {ok}");
     Ok(DepositProofArtifacts {
         proof,
         public_inputs,
@@ -166,9 +176,9 @@ pub fn deposit_artifacts_to_submit(
 /// Mirrors your TS `parseProofToBytesArray()` behavior.
 pub fn proof_to_bytes(proof: &Proof<Bn254>, compressed: bool) -> ProofBytes {
     ProofBytes {
-        proof_a: serialize_g1(&proof.a, compressed, true),  // TS proofA uses inverted sign handling
+        proof_a: serialize_g1(&proof.a, compressed, true), // TS proofA uses inverted sign handling
         proof_b: serialize_g2(&proof.b, compressed),
-        proof_c: serialize_g1(&proof.c, compressed, false),  // TS proofC uses natural sign handling
+        proof_c: serialize_g1(&proof.c, compressed, false), // TS proofC uses natural sign handling
     }
 }
 
@@ -182,11 +192,19 @@ fn build_circom_inputs(input: &ProofInput) -> Result<Vec<(String, Vec<BigInt>)>>
         ("root".to_string(), vec![bytes32_to_bigint(&input.root)]),
         (
             "inputNullifier".to_string(),
-            input.input_nullifier.iter().map(bytes32_to_bigint).collect(),
+            input
+                .input_nullifier
+                .iter()
+                .map(bytes32_to_bigint)
+                .collect(),
         ),
         (
             "outputCommitment".to_string(),
-            input.output_commitment.iter().map(bytes32_to_bigint).collect(),
+            input
+                .output_commitment
+                .iter()
+                .map(bytes32_to_bigint)
+                .collect(),
         ),
         (
             "publicAmount".to_string(),
@@ -210,11 +228,20 @@ fn build_circom_inputs(input: &ProofInput) -> Result<Vec<(String, Vec<BigInt>)>>
         ),
         (
             "mintAddress".to_string(),
-            vec![string_to_bigint(&input.mint_address)?],
+            vec![{
+                let mint_field_str = get_mint_address_field(&input.mint_address);
+                // mint_field_str is now a decimal string (or, for the placeholder, still base58 — see note below)
+                string_to_bigint(&mint_field_str)?
+            }],
         ),
         (
             "inPathIndices".to_string(),
-            input.in_path_indices.iter().copied().map(BigInt::from).collect(),
+            input
+                .in_path_indices
+                .iter()
+                .copied()
+                .map(BigInt::from)
+                .collect(),
         ),
         (
             "inPathElements".to_string(),
@@ -253,8 +280,35 @@ fn biguint_to_bigint(v: &BigUint) -> BigInt {
 }
 
 fn string_to_bigint(value: &str) -> Result<BigInt> {
-    BigInt::parse_bytes(value.as_bytes(), 10)
-        .ok_or_else(|| anyhow!("invalid decimal field element: {value}"))
+    // If every character is a decimal digit, parse as base 10.
+    if value.chars().all(|c| c.is_ascii_digit()) {
+        return BigInt::parse_bytes(value.as_bytes(), 10)
+            .ok_or_else(|| anyhow!("invalid decimal integer"));
+    }
+
+    // Otherwise treat it as a Base58-encoded Solana key.
+    let bytes = bs58::decode(value)
+        .into_vec()
+        .map_err(|e| anyhow!("invalid base58 string: {e}"))?;
+
+    let raw = BigInt::from_bytes_be(Sign::Plus, &bytes);
+    Ok(raw)
+}
+pub fn string_to_biguint(value: &str) -> Result<BigUint> {
+    // If every character is a decimal digit, parse as base 10.
+    if value.chars().all(|c| c.is_ascii_digit()) {
+        return BigUint::parse_bytes(value.as_bytes(), 10)
+            .ok_or_else(|| anyhow!("invalid decimal integer"));
+    }
+
+    // Otherwise treat it as a Base58-encoded Solana key.
+    let bytes = bs58::decode(value)
+        .into_vec()
+        .map_err(|e| anyhow!("invalid base58 string: {e}"))?;
+
+    let raw: BigUint = BigUint::from_bytes_be(&bytes);
+    let field_size = BigUint::from_str(FIELD_SIZE_DECIMAL).unwrap();
+    Ok(raw % &field_size)
 }
 
 fn parse_bigint_vec(values: &[String]) -> Result<Vec<BigInt>> {

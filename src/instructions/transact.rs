@@ -36,7 +36,7 @@ pub fn process_transact(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
     verify_program_id(system_program, &pinocchio_system::ID)?;
 
     let args = TransactArgs::try_from_bytes(data)?;
-    let proof = *args.proof;
+    let proof = args.proof;
     let ext_data_minified = args.ext_data_minified;
     let encrypted_output1 = args.encrypted_output1;
     let encrypted_output2 = args.encrypted_output2;
@@ -87,8 +87,8 @@ pub fn process_transact(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
         nullifier_bump1,
     )?;
 
-    let recipient_key = *recipient.address().as_array();
-    let fee_recipient_key = *fee_recipient_account.address().as_array();
+    let recipient_key = recipient.address().as_array();
+    let fee_recipient_key = fee_recipient_account.address().as_array();
     let ext_amount = ext_data_minified.ext_amount;
     let fee = ext_data_minified.fee;
 
@@ -110,7 +110,7 @@ pub fn process_transact(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
         encrypted_output2,
         fee,
         fee_recipient_key,
-        SOL_ADDRESS,
+        &SOL_ADDRESS,
     )?;
 
     if !ext_data_hash_matches(calculated_ext_data_hash, proof.ext_data_hash) {
@@ -129,7 +129,7 @@ pub fn process_transact(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
         global.fee_error_margin,
     )?;
 
-    if !verify_proof(&proof, &VERIFYING_KEY) {
+    if !verify_proof(proof, &VERIFYING_KEY) {
         return Err(PrivacyCashError::InvalidProof.into());
     }
 

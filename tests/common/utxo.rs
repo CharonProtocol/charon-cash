@@ -1,13 +1,13 @@
 use std::str::FromStr;
 
+use crate::common::constants::FIELD_SIZE_DECIMAL;
+use crate::common::keypair::Keypair;
+use crate::common::utils::get_mint_address_field;
 use light_hasher::{Hash, Hasher, HasherError, Poseidon};
 use num_bigint::BigUint;
 use num_traits::ToBytes;
 use rand::random;
 use solana_keypair::Address;
-use crate::common::utils::get_mint_address_field;
-use crate::common::keypair::Keypair;
-use crate::common::constants::FIELD_SIZE_DECIMAL;
 
 const DEFAULT_MINT_ADDRESS: &str = "11111111111111111111111111111112";
 
@@ -32,7 +32,7 @@ pub struct Utxo {
 
 impl Utxo {
     pub fn empty() -> Self {
-    Self::new(0)
+        Self::new(0)
     }
 
     pub fn new(amount: u64) -> Self {
@@ -132,7 +132,6 @@ impl Utxo {
             field_bytes(&signature).as_slice(),
         ])
     }
-
 }
 
 impl Default for Utxo {

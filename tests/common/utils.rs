@@ -59,10 +59,6 @@ pub fn get_ext_data_hash(ext_data: &ExtData) -> [u8; 32] {
 }
 
 pub fn get_mint_address_field(mint: &str) -> String {
-    if mint == "11111111111111111111111111111112" {
-        return mint.to_string();
-    }
-
     let mint_bytes = Address::from_str(mint).expect("valid pubkey").to_bytes();
     let out = BigUint::from_bytes_be(&mint_bytes[..31]);
     out.to_string()
