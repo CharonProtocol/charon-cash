@@ -3,6 +3,7 @@ mod indexer_status;
 mod merkle;
 mod nullifier;
 mod relayer;
+mod utxos;
 
 use axum::routing::{get, post};
 use axum::Router;
@@ -27,5 +28,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/merkle/{tree_key}", get(merkle::tree_state))
         .route("/api/merkle/{tree_key}/proof/{leaf_index}", get(merkle::proof))
         .route("/api/nullifier/{hash}", get(nullifier::status))
+        .route("/api/utxos/range", get(utxos::range))
+        .route("/api/utxos/check/{hex}", get(utxos::check))
         .with_state(state)
 }

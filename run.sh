@@ -28,6 +28,10 @@ fi
 echo "▶ 3/5  Program (deploy if missing)…"
 [ -f target/deploy/privacy-cash-program.json ] || solana-keygen new --no-bip39-passphrase --silent -o target/deploy/privacy-cash-program.json
 PROG=$(solana-keygen pubkey target/deploy/privacy-cash-program.json)
+EXISTING_ALT=""
+if [ -f frontend/.env ]; then
+  EXISTING_ALT=$(grep -E '^VITE_ALT_ADDRESS=' frontend/.env 2>/dev/null | cut -d= -f2- || true)
+fi
 perl -0pi -e 's/declare_id!\("[^"]+"\);/declare_id!("'"$PROG"'");/' programs/privacy-cash/src/lib.rs
 if solana --url localhost program show "$PROG" >/dev/null 2>&1; then
   echo "    $PROG already deployed"
@@ -41,7 +45,14 @@ VITE_BACKEND_URL=http://localhost:8080
 VITE_SOLANA_RPC_URL=http://localhost:8899
 VITE_PROGRAM_ID=$PROG
 EOF
+# Preserve any existing ALT address across re-runs
+if [ -n "${EXISTING_ALT:-}" ]; then
+  echo "VITE_ALT_ADDRESS=$EXISTING_ALT" >> frontend/.env
+fi
 echo "    program=$PROG  (frontend/.env written)"
+
+echo "▶ 3b/5 Address Lookup Table (needed for SPL txs)…"
+( cd frontend && PROGRAM_ID="$PROG" VITE_ALT_ADDRESS="${EXISTING_ALT:-}" bun scripts/create-alt.mjs 2>&1 | sed 's/^/    /' ) || echo "    ⚠ ALT create failed — SPL deposit will try to create one via wallet"
 
 echo "▶ 4/5  Backend shim (:8080, reads on-chain via RPC)…"
 pkill -f backend-shim.mjs >/dev/null 2>&1; sleep 1

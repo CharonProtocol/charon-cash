@@ -36,6 +36,33 @@ export interface NullifierStatus {
   spent: boolean
 }
 
+export interface UtxoRangeItem {
+  leaf_index: number
+  commitment: string
+  encrypted_output_hex: string
+  signature: string
+  slot: number
+}
+
+export interface UtxoRangeResponse {
+  tree_key: string
+  start: number
+  end: number
+  total: number
+  next_index: number
+  has_more: boolean
+  utxos: UtxoRangeItem[]
+}
+
+export interface UtxoCheckResponse {
+  exists: boolean
+  tree_key?: string
+  leaf_index?: number
+  commitment?: string
+  signature?: string
+  slot?: number
+}
+
 export interface IndexerStatus {
   last_signature: string | null
   last_slot: number

@@ -8,6 +8,7 @@ import {
   importNotes,
   loadNotes,
   clearNotes,
+  WRAPPED_SOL_MINT,
   type Note,
 } from "@privacy-cash/client"
 import {
@@ -35,9 +36,18 @@ export function NotesCard({ refreshKey }: { refreshKey: number }) {
     else setNotes([])
   }, [publicKey, refreshKey, tick])
 
-  const balance = notes
-    .filter((n) => !n.spent)
+  const unspent = notes.filter((n) => !n.spent)
+  const solBalance = unspent
+    .filter((n) => n.mintAddress === WRAPPED_SOL_MINT)
     .reduce((s, n) => s + BigInt(n.amount), 0n)
+  const splBalances = new Map<string, bigint>()
+  for (const n of unspent) {
+    if (n.mintAddress === WRAPPED_SOL_MINT) continue
+    splBalances.set(
+      n.mintAddress,
+      (splBalances.get(n.mintAddress) ?? 0n) + BigInt(n.amount),
+    )
+  }
 
   return (
     <Card>
@@ -51,13 +61,18 @@ export function NotesCard({ refreshKey }: { refreshKey: number }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
             <p className="text-xs text-muted-foreground">private balance</p>
             <p className="text-2xl font-semibold">
-              {lamportsToSol(Number(balance)).toFixed(6)}{" "}
+              {lamportsToSol(Number(solBalance)).toFixed(6)}{" "}
               <span className="text-sm text-muted-foreground">SOL</span>
             </p>
+            {[...splBalances.entries()].map(([mint, bal]) => (
+              <p key={mint} className="font-mono text-xs text-muted-foreground">
+                {bal.toString()} raw · {shortHash(mint, 6, 4)}
+              </p>
+            ))}
           </div>
           <Button variant="outline" size="sm" onClick={reload}>
             <RefreshCw className="mr-1 size-3" /> refresh
@@ -97,25 +112,35 @@ export function NotesCard({ refreshKey }: { refreshKey: number }) {
             {notes.length === 0 && (
               <p className="text-muted-foreground">no notes yet — deposit to create one.</p>
             )}
-            {notes.map((n) => (
-              <div
-                key={n.id}
-                className="flex items-center justify-between gap-2 border-b pb-1 last:border-0"
-              >
-                <span className="font-mono">
-                  {lamportsToSol(Number(n.amount)).toFixed(6)} SOL
-                </span>
-                <span className="text-muted-foreground">leaf {n.index}</span>
-                {n.depositTx && (
-                  <span className="text-muted-foreground">
-                    {shortHash(n.depositTx, 6, 4)}
+            {notes.map((n) => {
+              const isSol = n.mintAddress === WRAPPED_SOL_MINT
+              return (
+                <div
+                  key={n.id}
+                  className="flex items-center justify-between gap-2 border-b pb-1 last:border-0"
+                >
+                  <span className="font-mono">
+                    {isSol
+                      ? `${lamportsToSol(Number(n.amount)).toFixed(6)} SOL`
+                      : `${n.amount} raw`}
                   </span>
-                )}
-                <Badge variant={n.spent ? "secondary" : "outline"}>
-                  {n.spent ? "spent" : "unspent"}
-                </Badge>
-              </div>
-            ))}
+                  {!isSol && (
+                    <span className="text-muted-foreground">
+                      {shortHash(n.mintAddress, 4, 4)}
+                    </span>
+                  )}
+                  <span className="text-muted-foreground">leaf {n.index}</span>
+                  {n.depositTx && (
+                    <span className="text-muted-foreground">
+                      {shortHash(n.depositTx, 6, 4)}
+                    </span>
+                  )}
+                  <Badge variant={n.spent ? "secondary" : "outline"}>
+                    {n.spent ? "spent" : "unspent"}
+                  </Badge>
+                </div>
+              )
+            })}
           </div>
         </div>
 

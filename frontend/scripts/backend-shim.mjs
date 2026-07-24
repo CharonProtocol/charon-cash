@@ -13,7 +13,7 @@ import {
 } from "@solana/web3.js"
 import { WasmFactory } from "@lightprotocol/hasher.rs"
 
-import { LocalMirror, readGlobalFees, readSolTreeState, deriveAccounts, MERKLE_TREE_DEPTH } from "@privacy-cash/client"
+import { LocalMirror, readGlobalFees, readTreeState, deriveAccounts, MERKLE_TREE_DEPTH } from "@privacy-cash/client"
 
 const PROGRAM = new PublicKey(process.env.PROGRAM_ID ?? "5GcqZ4aZ3xF87wQF5pFmHHYAk73Hcww1r8414KdeUJ9P")
 const RPC = process.env.SOLANA_RPC_URL ?? "http://localhost:8899"
@@ -60,52 +60,146 @@ if (!(await conn.getAccountInfo(solTree))) {
   console.log("initialized.")
 }
 
-// ---- index: scan program tx history -> commitments (leaves) + nullifiers ----
-let leaves = []
+// ---- index: scan program tx history -> commitments / encrypted outputs / nullifiers ----
+/** @type {{ treeKey: string, leafIndex: number, commitment: string, encryptedHex: string, signature: string, slot: number }[]} */
+let utxos = []
 let nullifiers = new Set()
 let lastSlot = 0
 let lastSig = null
-let mirror = new LocalMirror(wasm)
+/** @type {Map<string, import('@privacy-cash/client').LocalMirror>} */
+let mirrors = new Map()
+
+function treeKeyForDisc(disc, accountKeys, mintIndexHint) {
+  if (disc === 2) return "sol"
+  // TransactSpl: mint is account index 7 in the ix keys (see buildTransactSplInstruction)
+  try {
+    const mintPk = accountKeys[mintIndexHint]
+    return mintPk ? mintPk.toBase58() : "spl-unknown"
+  } catch {
+    return "spl-unknown"
+  }
+}
+
+function resolveKeys(msg, meta) {
+  const staticKeys = (msg.staticAccountKeys ?? msg.accountKeys ?? []).map((k) =>
+    k.pubkey ? new PublicKey(k.pubkey) : new PublicKey(k),
+  )
+  const writable = (meta?.loadedAddresses?.writable ?? []).map((k) => new PublicKey(k))
+  const readonly = (meta?.loadedAddresses?.readonly ?? []).map((k) => new PublicKey(k))
+  return [...staticKeys, ...writable, ...readonly]
+}
 
 async function rescan() {
   const sigs = await conn.getSignaturesForAddress(PROGRAM, { limit: 1000 }, "confirmed")
   lastSlot = sigs[0]?.slot ?? lastSlot
   lastSig = sigs[0]?.signature ?? lastSig
   const ordered = sigs.filter((s) => !s.err).reverse()
-  const newLeaves = []
+  const newUtxos = []
   const newNulls = new Set()
+  const perTree = new Map() // treeKey -> commitment decimals[]
+
   for (const s of ordered) {
     const t = await conn.getTransaction(s.signature, { maxSupportedTransactionVersion: 0 })
-    const msg = t?.transaction?.message
-    const ixs = msg?.compiledInstructions ?? msg?.instructions ?? []
+    if (!t) continue
+    const msg = t.transaction.message
+    const meta = t.meta
+    const allKeys = resolveKeys(msg, meta)
+    const ixs = msg.compiledInstructions ?? msg.instructions ?? []
     for (const ix of ixs) {
-      const data = Buffer.from(ix.data, "base64")
-      if (data.length < 481) continue
-      const disc = data[0]
+      const prog =
+        allKeys[ix.programIdIndex] ??
+        allKeys[ix.programIdIndex?.toString?.()] 
+      if (!prog || !prog.equals?.(PROGRAM)) {
+        // legacy: may not have programIdIndex resolution — check data disc only
+      }
+      const raw = typeof ix.data === "string" ? Buffer.from(ix.data, "base64") : Buffer.from(ix.data)
+      if (raw.length < 497) continue
+      const disc = raw[0]
       if (disc !== 2 && disc !== 3) continue
-      newLeaves.push(be(data.subarray(1 + 416, 1 + 448)).toString())
-      newLeaves.push(be(data.subarray(1 + 448, 1 + 480)).toString())
-      newNulls.add(Buffer.from(data.subarray(1 + 352, 1 + 384)).toString("hex"))
-      newNulls.add(Buffer.from(data.subarray(1 + 384, 1 + 416)).toString("hex"))
+      // args after 1-byte disc
+      const args = raw.subarray(1)
+      const c0 = be(args.subarray(416, 448)).toString()
+      const c1 = be(args.subarray(448, 480)).toString()
+      let offset = 480 + 16 // proof + ExtDataMinified
+      const readLenPref = () => {
+        const len = args.readUInt32LE(offset); offset += 4
+        const slice = args.subarray(offset, offset + len); offset += len
+        return slice
+      }
+      let enc1, enc2
+      try {
+        enc1 = readLenPref()
+        enc2 = readLenPref()
+      } catch {
+        continue
+      }
+
+      // mint account index in TransactSpl keys list is 7
+      let treeKey = "sol"
+      if (disc === 3) {
+        const mintIdx = ix.accountKeyIndexes?.[7] ?? ix.accounts?.[7]
+        const mintPk = mintIdx != null ? allKeys[mintIdx] : null
+        treeKey = mintPk ? mintPk.toBase58() : "spl-unknown"
+      }
+
+      const base = perTree.get(treeKey)?.length ?? 0
+      perTree.set(treeKey, [...(perTree.get(treeKey) ?? []), c0, c1])
+      newUtxos.push({
+        treeKey,
+        leafIndex: base,
+        commitment: Buffer.from(args.subarray(416, 448)).toString("hex"),
+        encryptedHex: Buffer.from(enc1).toString("hex"),
+        signature: s.signature,
+        slot: s.slot,
+      })
+      newUtxos.push({
+        treeKey,
+        leafIndex: base + 1,
+        commitment: Buffer.from(args.subarray(448, 480)).toString("hex"),
+        encryptedHex: Buffer.from(enc2).toString("hex"),
+        signature: s.signature,
+        slot: s.slot,
+      })
+      newNulls.add(Buffer.from(args.subarray(352, 384)).toString("hex"))
+      newNulls.add(Buffer.from(args.subarray(384, 416)).toString("hex"))
     }
   }
-  leaves = newLeaves
+
+  // Recompute leaf indices correctly in order
+  const counts = new Map()
+  utxos = newUtxos.map((u) => {
+    const i = counts.get(u.treeKey) ?? 0
+    counts.set(u.treeKey, i + 1)
+    return { ...u, leafIndex: i }
+  })
   nullifiers = newNulls
-  mirror = LocalMirror.fromLeaves(wasm, leaves)
+  mirrors = new Map()
+  for (const [tk, commits] of perTree) {
+    // rebuild commit list in leaf order from utxos
+    const orderedCommits = utxos.filter((u) => u.treeKey === tk).map((u) => be(Buffer.from(u.commitment, "hex")).toString())
+    mirrors.set(tk, LocalMirror.fromLeaves(wasm, orderedCommits))
+  }
 }
 await rescan()
-console.log(`indexed ${leaves.length} leaves, ${nullifiers.size} nullifiers`)
+console.log(`indexed ${utxos.length} utxos across ${mirrors.size} trees, ${nullifiers.size} nullifiers`)
 setInterval(() => { rescan().catch((e) => console.error("rescan:", e.message)) }, 4000)
 
-async function proofFor(idx) {
+async function proofFor(treeKey, idx) {
   for (let attempt = 0; attempt < 4; attempt++) {
-    if (idx < leaves.length) break
+    if (utxos.some((u) => u.treeKey === treeKey && u.leafIndex === idx) && mirrors.has(treeKey)) break
     await rescan()
-    if (idx < leaves.length) break
     await new Promise((r) => setTimeout(r, 700))
   }
-  if (idx >= leaves.length) return null
-  return { path_elements: mirror.path(idx).map(dec2hex), path_indices: Array.from({ length: MERKLE_TREE_DEPTH }, (_, i) => (idx >> i) & 1) }
+  const m = mirrors.get(treeKey)
+  if (!m) return null
+  try {
+    return {
+      path_elements: m.path(idx).map(dec2hex),
+      path_indices: Array.from({ length: MERKLE_TREE_DEPTH }, (_, i) => (idx >> i) & 1),
+    }
+  } catch {
+    return null
+  }
 }
 
 Bun.serve({
@@ -121,7 +215,7 @@ Bun.serve({
     try {
       if (p === "/health") return json({ status: "ok" })
 
-      if (p === "/indexer/status") return json({ last_signature: lastSig, last_slot: lastSlot, sol_utxo_count: leaves.length })
+      if (p === "/indexer/status") return json({ last_signature: lastSig, last_slot: lastSlot, sol_utxo_count: utxos.length })
 
       if (p === "/api/relayer/info") {
         let fees = { withdrawalFeeRateBps: 25, feeErrorMarginBps: 500 }
@@ -131,15 +225,68 @@ Bun.serve({
 
       const m = p.match(/^\/api\/merkle\/([^/]+)$/)
       if (m && method === "GET") {
-        const st = await readSolTreeState(conn, PROGRAM)
-        return json({ tree_key: m[1], next_leaf_index: st.nextLeafIndex, current_root: dec2hexU(st.root), known_roots: [dec2hexU(st.root)], leaf_count: leaves.length })
+        const treeKey = decodeURIComponent(m[1])
+        try {
+          const st = await readTreeState(conn, PROGRAM, treeKey)
+          const count = utxos.filter((u) => u.treeKey === treeKey).length
+          return json({ tree_key: treeKey, next_leaf_index: st.nextLeafIndex, current_root: dec2hexU(st.root), known_roots: [dec2hexU(st.root)], leaf_count: count })
+        } catch (e) {
+          return json({ error: { code: "TREE_NOT_INITIALIZED", message: e.message } }, 404)
+        }
       }
 
       const mp = p.match(/^\/api\/merkle\/([^/]+)\/proof\/(\d+)$/)
       if (mp) {
-        const pr = await proofFor(Number(mp[2]))
+        const treeKey = decodeURIComponent(mp[1])
+        const pr = await proofFor(treeKey, Number(mp[2]))
         if (!pr) return json({ error: { code: "LEAF_NOT_FOUND", message: "leaf not indexed yet" } }, 404)
         return json(pr)
+      }
+
+      if (p === "/api/utxos/range" && method === "GET") {
+        const treeKey = url.searchParams.get("tree_key") || "sol"
+        const start = Number(url.searchParams.get("start") ?? 0)
+        const end = Number(url.searchParams.get("end") ?? start + 2000)
+        const page = utxos.filter((u) => u.treeKey === treeKey && u.leafIndex >= start && u.leafIndex < end)
+        const total = utxos.filter((u) => u.treeKey === treeKey).length
+        return json({
+          tree_key: treeKey,
+          start,
+          end,
+          total,
+          next_index: total,
+          has_more: end < total,
+          utxos: page.map((u) => ({
+            leaf_index: u.leafIndex,
+            commitment: u.commitment,
+            encrypted_output_hex: u.encryptedHex,
+            signature: u.signature,
+            slot: u.slot,
+          })),
+        })
+      }
+
+      const chk = p.match(/^\/api\/utxos\/check\/([^/]+)$/)
+      if (chk && method === "GET") {
+        const hex = decodeURIComponent(chk[1]).replace(/^0x/i, "").toLowerCase()
+        const treeKey = url.searchParams.get("tree_key")
+        const hit = utxos.find(
+          (u) =>
+            u.encryptedHex.toLowerCase() === hex &&
+            (!treeKey || u.treeKey === treeKey),
+        )
+        return json(
+          hit
+            ? {
+                exists: true,
+                tree_key: hit.treeKey,
+                leaf_index: hit.leafIndex,
+                commitment: hit.commitment,
+                signature: hit.signature,
+                slot: hit.slot,
+              }
+            : { exists: false },
+        )
       }
 
       const n = p.match(/^\/api\/nullifier\/([^/]+)$/)

@@ -61,7 +61,7 @@ export function DepositCard({ onChanged }: { onChanged?: () => void }) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <ArrowDownToLine className="size-4" /> Deposit
+          <ArrowDownToLine className="size-4" /> Deposit SOL
         </CardTitle>
         <CardDescription>
           Client-side: the SDK generates the ZK proof, your wallet signs + pays,

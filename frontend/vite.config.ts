@@ -2,41 +2,59 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
-import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const srcDir = fileURLToPath(new URL('./src', import.meta.url))
 const require = createRequire(import.meta.url)
-// The polyfill plugin injects `import ... from "vite-plugin-node-polyfills/shims/*"` into
-// files that use Buffer/process/global — including the linked SDK package, which can't
-// resolve those bare paths from its own context. Alias them to the real shim files.
-const shim = (name: string) => {
-  try {
-    return require.resolve(`vite-plugin-node-polyfills/shims/${name}`)
-  } catch {
-    return undefined
-  }
-}
+
+const polyfillsRoot = dirname(dirname(require.resolve('vite-plugin-node-polyfills')))
+// Always use the ESM build of the plugin shims (require.resolve returns .cjs).
+const shim = (name: string) => join(polyfillsRoot, 'shims', name, 'dist', 'index.js')
 
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
     nodePolyfills({
-      include: ['buffer', 'process', 'stream', 'util', 'assert', 'path'],
+      include: ['buffer', 'process', 'stream', 'util', 'assert', 'path', 'crypto'],
       globals: { Buffer: true, process: true, global: true },
+      protocolImports: true,
     }),
   ],
   resolve: {
-    alias: Object.fromEntries(
-      [['@', srcDir], ['buffer', shim('buffer')], ['vite-plugin-node-polyfills/shims/buffer', shim('buffer')]].filter(
-        ([, v]) => v,
-      ),
-    ),
+    alias: {
+      '@': srcDir,
+      buffer: require.resolve('buffer/'),
+      process: require.resolve('process/browser.js'),
+      'vite-plugin-node-polyfills/shims/buffer': shim('buffer'),
+      'vite-plugin-node-polyfills/shims/process': shim('process'),
+      'vite-plugin-node-polyfills/shims/global': shim('global'),
+    },
+  },
+  define: {
+    global: 'globalThis',
+  },
+  optimizeDeps: {
+    include: [
+      'buffer',
+      'process',
+      'vite-plugin-node-polyfills/shims/buffer',
+      'vite-plugin-node-polyfills/shims/process',
+      'vite-plugin-node-polyfills/shims/global',
+    ],
+    esbuildOptions: {
+      define: { global: 'globalThis' },
+    },
+  },
+  build: {
+    commonjsOptions: { transformMixedEsModules: true },
   },
   server: {
     host: '0.0.0.0',
     port: 5173,
+    fs: { allow: ['..'] },
     proxy: {
       '/api': { target: 'http://localhost:8080', changeOrigin: true },
       '/health': { target: 'http://localhost:8080', changeOrigin: true },
@@ -44,4 +62,3 @@ export default defineConfig({
     },
   },
 })
-

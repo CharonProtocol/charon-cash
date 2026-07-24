@@ -11,6 +11,8 @@ import type {
   UpdateConfigRequest,
   UpdateDepositLimitRequest,
   UpdateDepositLimitSplRequest,
+  UtxoCheckResponse,
+  UtxoRangeResponse,
   WithdrawRequest,
 } from "@/lib/types"
 
@@ -99,6 +101,22 @@ export const api = {
     ),
   nullifier: (hash: string) =>
     req<NullifierStatus>("GET", `/api/nullifier/${encodeURIComponent(hash)}`),
+  utxoRange: (treeKey: string, start: number, end: number) => {
+    const q = new URLSearchParams({
+      tree_key: treeKey,
+      start: String(start),
+      end: String(end),
+    })
+    return req<UtxoRangeResponse>("GET", `/api/utxos/range?${q}`)
+  },
+  utxoCheck: (encryptedHex: string, treeKey?: string) => {
+    const hex = encryptedHex.replace(/^0x/i, "").toLowerCase()
+    const q = treeKey ? `?tree_key=${encodeURIComponent(treeKey)}` : ""
+    return req<UtxoCheckResponse>(
+      "GET",
+      `/api/utxos/check/${encodeURIComponent(hex)}${q}`,
+    )
+  },
   initialize: () => req<RelayResponse>("POST", "/api/relayer/initialize"),
   initializeSpl: (b: InitializeSplRequest) =>
     req<RelayResponse>("POST", "/api/relayer/initialize-spl", b),

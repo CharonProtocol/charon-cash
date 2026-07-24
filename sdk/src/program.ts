@@ -6,6 +6,7 @@ import {
   TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
+  type AddressLookupTableAccount,
 } from "@solana/web3.js"
 import { getAssociatedTokenAddressSync } from "@solana/spl-token"
 import BN from "bn.js"
@@ -229,9 +230,11 @@ export interface SplTransactExtras {
   signerTokenAccount: PublicKey
   recipientTokenAccount: PublicKey
   feeRecipientAta: PublicKey
+  /** Optional instructions prepended (e.g. create ATA idempotent). */
+  preIxs?: TransactionInstruction[]
 }
 
-/** Build the 16-account Pinocchio transact_spl instruction (caller compiles with an ALT). */
+/** Build the 16-account Pinocchio transact_spl instruction. */
 export function buildTransactSplInstruction(
   params: BuildTxParams & SplTransactExtras,
 ): { ix: TransactionInstruction; accounts: TransactAccounts; treeAccount: PublicKey } {
@@ -241,7 +244,7 @@ export function buildTransactSplInstruction(
   const [treeAccount] = deriveSplTreeAccount(params.programId, params.mint)
   const treeAta = getAssociatedTokenAddressSync(params.mint, accounts.globalConfig, true)
   const ixData = buildTransactIxData(
-    true, // SPL discriminator
+    true,
     params.proof,
     params.extAmount,
     params.fee,
@@ -262,7 +265,7 @@ export function buildTransactSplInstruction(
       { pubkey: params.signer, isSigner: true, isWritable: true },
       { pubkey: params.mint, isSigner: false, isWritable: false },
       { pubkey: params.signerTokenAccount, isSigner: false, isWritable: true },
-      { pubkey: params.recipient, isSigner: false, isWritable: false }, // _recipient (unused)
+      { pubkey: params.recipient, isSigner: false, isWritable: false },
       { pubkey: params.recipientTokenAccount, isSigner: false, isWritable: true },
       { pubkey: treeAta, isSigner: false, isWritable: true },
       { pubkey: params.feeRecipientAta, isSigner: false, isWritable: true },
@@ -273,4 +276,56 @@ export function buildTransactSplInstruction(
     data: ixData,
   })
   return { ix, accounts, treeAccount }
+}
+
+/** Assemble an unsigned v0 SPL transaction (uses ALT — required to fit proof + 16 accounts). */
+export async function buildTransactSplTransaction(
+  params: BuildTxParams &
+    SplTransactExtras & {
+      lookupTables: AddressLookupTableAccount[]
+    },
+): Promise<{ transaction: VersionedTransaction; accounts: TransactAccounts }> {
+  const { ix, accounts } = buildTransactSplInstruction(params)
+  const { blockhash } = await params.connection.getLatestBlockhash()
+  const limitIx = ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 })
+  const priceIx = ComputeBudgetProgram.setComputeUnitPrice({
+    microLamports: 5_000,
+  })
+  const pre = params.preIxs ?? []
+  const tables = params.lookupTables
+
+  const tryCompile = (instructions: TransactionInstruction[]) =>
+    new VersionedTransaction(
+      new TransactionMessage({
+        payerKey: params.signer,
+        recentBlockhash: blockhash,
+        instructions,
+      }).compileToV0Message(tables),
+    )
+
+  const safeSerialize = (tx: VersionedTransaction): number => {
+    try {
+      return tx.serialize().length
+    } catch (e) {
+      if (
+        e instanceof RangeError ||
+        (e instanceof Error && /overruns Uint8Array/i.test(e.message))
+      ) {
+        return Number.POSITIVE_INFINITY
+      }
+      throw e
+    }
+  }
+
+  let tx = tryCompile([...pre, limitIx, priceIx, ix])
+  if (safeSerialize(tx) > 1232) {
+    tx = tryCompile([...pre, limitIx, ix])
+  }
+  const size = safeSerialize(tx)
+  if (size > 1232) {
+    throw new Error(
+      `SPL transaction too large (${size} > 1232) even with ALT; extend the lookup table with more static accounts`,
+    )
+  }
+  return { transaction: tx, accounts }
 }

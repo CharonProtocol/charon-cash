@@ -7,6 +7,8 @@ import { NullifierCard } from "@/components/NullifierCard"
 import { AdminCard } from "@/components/AdminCard"
 import { WithdrawCard } from "@/components/WithdrawCard"
 import { DepositCard } from "@/components/DepositCard"
+import { DepositSplCard } from "@/components/DepositSplCard"
+import { WithdrawSplCard } from "@/components/WithdrawSplCard"
 import { NotesCard } from "@/components/NotesCard"
 
 export default function App() {
@@ -20,6 +22,8 @@ export default function App() {
         <div className="grid gap-4 lg:grid-cols-2">
           <DepositCard onChanged={bump} />
           <WithdrawCard onChanged={bump} />
+          <DepositSplCard onChanged={bump} />
+          <WithdrawSplCard onChanged={bump} />
           <NotesCard refreshKey={refreshKey} />
           <RelayerInfoCard refreshKey={refreshKey} />
           <MerkleTreeCard />

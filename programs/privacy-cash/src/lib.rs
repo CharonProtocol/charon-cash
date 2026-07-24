@@ -17,7 +17,7 @@ pub mod state;
 pub mod tests;
 pub mod utils;
 
-declare_id!("6e5ioWVHAyuzfNSGAmJLfiGwKrmwr2GkqoDYWAhqvdjX");
+declare_id!("Dz8MTy797RkN55JhgLCuKQ3sWDs4YHBipEoThADFFf58");
 
 entrypoint!(process_instructions);
 

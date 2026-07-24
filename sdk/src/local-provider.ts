@@ -2,7 +2,7 @@ import type { LightWasm } from "@lightprotocol/hasher.rs"
 import { Connection, PublicKey } from "@solana/web3.js"
 
 import { MERKLE_TREE_DEPTH } from "./constants"
-import { deriveAccounts } from "./program"
+import { deriveAccounts, deriveSplTreeAccount } from "./program"
 
 // MerkleTreeAccount layout (programs/.../state/initialize.rs), repr(C):
 const NEXT_INDEX_OFF = 8 // u32
@@ -76,20 +76,41 @@ function beBytesToDecimal(bytes: Uint8Array): string {
   return r.toString()
 }
 
-/** Read current root + next leaf index from the on-chain SOL tree account. */
-export async function readSolTreeState(
+/** Read current root + next leaf index from an on-chain tree account (SOL or SPL). */
+export async function readTreeState(
   connection: Connection,
   programId: PublicKey,
+  treeKey: string = "sol",
 ): Promise<SolTreeState> {
-  const { treeAccount } = deriveAccounts(programId, new Uint8Array(32), new Uint8Array(32))
+  const treeAccount =
+    treeKey === "sol"
+      ? deriveAccounts(programId, new Uint8Array(32), new Uint8Array(32)).treeAccount
+      : deriveSplTreeAccount(programId, new PublicKey(treeKey))[0]
   const acct = await connection.getAccountInfo(treeAccount)
-  if (!acct) throw new Error("tree account not initialized — call initialize first")
+  if (!acct) {
+    throw new Error(
+      treeKey === "sol"
+        ? "SOL tree not initialized — run Admin → Initialize"
+        : `SPL tree for mint ${treeKey} not initialized — run Admin → Initialize SPL`,
+    )
+  }
   const rootIndex = acct.data[ROOT_INDEX_OFF]
   const rootBytes = acct.data.subarray(
     ROOT_HISTORY_OFF + rootIndex * 32,
     ROOT_HISTORY_OFF + rootIndex * 32 + 32,
   )
-  return { root: beBytesToDecimal(rootBytes), nextLeafIndex: acct.data.readUInt32LE(NEXT_INDEX_OFF) }
+  return {
+    root: beBytesToDecimal(rootBytes),
+    nextLeafIndex: acct.data.readUInt32LE(NEXT_INDEX_OFF),
+  }
+}
+
+/** @deprecated use readTreeState(connection, programId, "sol") */
+export async function readSolTreeState(
+  connection: Connection,
+  programId: PublicKey,
+): Promise<SolTreeState> {
+  return readTreeState(connection, programId, "sol")
 }
 
 /** Read withdrawal fee rate + error margin (bps) from the on-chain global config. */

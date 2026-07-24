@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react"
-import { PublicKey } from "@solana/web3.js"
 import { useWallet } from "@solana/wallet-adapter-react"
 import { toast } from "sonner"
 import { ArrowUpFromLine } from "lucide-react"
@@ -50,7 +49,7 @@ export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
       const lamports = Math.round(Number(amount) * 1_000_000_000)
       if (!lamports || lamports <= 0) throw new Error("enter a valid amount")
       setStatus("generating ZK proof + signing tx…")
-      const res = await client.withdrawSOL(lamports, new PublicKey(recipient))
+      const res = await client.withdrawSOL(lamports, recipient.trim())
       setResult({
         signature: res.signature,
         recipientLamports: res.recipientLamports,
@@ -74,7 +73,7 @@ export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <ArrowUpFromLine className="size-4" /> Withdraw
+          <ArrowUpFromLine className="size-4" /> Withdraw SOL
         </CardTitle>
         <CardDescription>
           Spend a local note: SDK fetches the Merkle proof, generates the ZK

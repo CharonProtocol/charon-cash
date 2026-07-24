@@ -123,8 +123,7 @@ impl Db {
         Ok(row.0 as u64)
     }
 
-    /// Ordered leaves for a tree — used by a future Merkle mirror.
-    #[allow(dead_code)]
+    /// Ordered leaves for a tree — used by the in-memory Merkle mirror.
     pub async fn load_commitments(&self, tree_key: &str) -> Result<Vec<[u8; 32]>> {
         let rows: Vec<(Vec<u8>,)> = sqlx::query_as(
             "SELECT commitment FROM utxos WHERE tree_key = $1 ORDER BY leaf_index ASC",
@@ -143,6 +142,91 @@ impl Db {
         }
         Ok(out)
     }
+
+    /// Page encrypted outputs by leaf_index in `[start, end)`.
+    pub async fn utxos_range(
+        &self,
+        tree_key: &str,
+        start: u64,
+        end: u64,
+    ) -> Result<Vec<UtxoRow>> {
+        let rows: Vec<(i64, Vec<u8>, String, String, i64)> = sqlx::query_as(
+            r#"
+            SELECT leaf_index, commitment, encrypted_output_hex, signature, slot
+            FROM utxos
+            WHERE tree_key = $1 AND leaf_index >= $2 AND leaf_index < $3
+            ORDER BY leaf_index ASC
+            "#,
+        )
+        .bind(tree_key)
+        .bind(start as i64)
+        .bind(end as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|(leaf_index, commitment, encrypted_output_hex, signature, slot)| UtxoRow {
+                tree_key: tree_key.to_string(),
+                leaf_index: leaf_index as u64,
+                commitment,
+                encrypted_output_hex,
+                signature,
+                slot: slot as u64,
+            })
+            .collect())
+    }
+
+    /// Lookup by encrypted_output_hex (optionally scoped to a tree).
+    pub async fn utxo_by_encrypted_hex(
+        &self,
+        encrypted_hex: &str,
+        tree_key: Option<&str>,
+    ) -> Result<Option<UtxoRow>> {
+        let row: Option<(String, i64, Vec<u8>, String, String, i64)> = if let Some(tk) = tree_key {
+            sqlx::query_as(
+                r#"
+                SELECT tree_key, leaf_index, commitment, encrypted_output_hex, signature, slot
+                FROM utxos WHERE encrypted_output_hex = $1 AND tree_key = $2
+                "#,
+            )
+            .bind(encrypted_hex)
+            .bind(tk)
+            .fetch_optional(&self.pool)
+            .await?
+        } else {
+            sqlx::query_as(
+                r#"
+                SELECT tree_key, leaf_index, commitment, encrypted_output_hex, signature, slot
+                FROM utxos WHERE encrypted_output_hex = $1
+                "#,
+            )
+            .bind(encrypted_hex)
+            .fetch_optional(&self.pool)
+            .await?
+        };
+
+        Ok(row.map(
+            |(tree_key, leaf_index, commitment, encrypted_output_hex, signature, slot)| UtxoRow {
+                tree_key,
+                leaf_index: leaf_index as u64,
+                commitment,
+                encrypted_output_hex,
+                signature,
+                slot: slot as u64,
+            },
+        ))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UtxoRow {
+    pub tree_key: String,
+    pub leaf_index: u64,
+    pub commitment: Vec<u8>,
+    pub encrypted_output_hex: String,
+    pub signature: String,
+    pub slot: u64,
 }
 
 async fn insert_utxo(conn: &mut Transaction<'_, Postgres>, utxo: &IndexedUtxo) -> Result<()> {
