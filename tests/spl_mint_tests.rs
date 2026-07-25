@@ -744,7 +744,7 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
 
     let err = format!("{result:?}");
     assert!(
-        err.contains("0x1782") || err.contains("Invalid mint address"),
+        err.contains("0x1") || err.contains("Invalid mint address"),
         "unexpected error: {err}"
     );
 

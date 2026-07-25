@@ -38,7 +38,6 @@ use solana_program::{example_mocks::solana_sdk::system_instruction, pubkey::Pubk
 use solana_compute_budget_interface::ComputeBudgetInstruction;
 
 const PROGRAM_ID: &str = "HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV";
-const DEFAULT_ZERO: [u8; 32] = ZERO_BYTES[0]; // The default value of elements for initializing a tree
 
 pub fn generate_random_nullifier() -> [u8; 32] {
     let mut nullifier = [0u8; 32];
