@@ -510,15 +510,20 @@
   });
 
   // deep link: #flowId  or  #flowId-n
+  // (flow ids themselves contain hyphens, so match a known id by prefix, then parse the step tail)
   function applyHash(){
     var h = (location.hash || "").replace("#","");
-    var parts = h.split("-");
-    var id = parts[0];
-    var n = parts.length > 1 ? parseInt(parts[parts.length-1], 10) : NaN;
-    if(FLOWS[id]){
-      flowId = id;
-      stepIdx = (!isNaN(n) && n >= 1) ? Math.min(n-1, FLOWS[id].steps.length - 1) : 0;
-      Array.prototype.forEach.call(switchEl.children, function(b){ b.classList.toggle("on", b.dataset.flow === id); });
+    var matched = null, rest = "";
+    for (var k = 0; k < ORDER.length; k++){
+      var cid = ORDER[k];
+      if (h === cid){ matched = cid; rest = ""; break; }
+      if (h.indexOf(cid + "-") === 0){ matched = cid; rest = h.substring(cid.length + 1); break; }
+    }
+    if (matched){
+      var n = rest ? parseInt(rest, 10) : NaN;
+      flowId = matched;
+      stepIdx = (!isNaN(n) && n >= 1) ? Math.min(n - 1, FLOWS[matched].steps.length - 1) : 0;
+      Array.prototype.forEach.call(switchEl.children, function(b){ b.classList.toggle("on", b.dataset.flow === matched); });
       render();
     } else {
       setFlow(ORDER[0]);
