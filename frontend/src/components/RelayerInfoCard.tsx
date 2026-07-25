@@ -49,7 +49,7 @@ export function RelayerInfoCard({ refreshKey }: { refreshKey: number }) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center justify-between gap-2">
-          Relayer info
+          Pool &amp; fee info
           <Button variant="ghost" size="icon" onClick={load} disabled={loading} title="Refresh">
             <RefreshCw className={loading ? "animate-spin" : ""} />
           </Button>
