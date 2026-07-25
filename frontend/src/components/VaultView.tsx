@@ -1,7 +1,10 @@
 import { NotesCard } from "@/components/NotesCard"
 import { Lock } from "lucide-react"
 
+import { useNotesSync } from "@/hooks/useNotesSync"
+
 export function VaultView({ refreshKey }: { refreshKey: number }) {
+  useNotesSync()
   return (
     <div className="mx-auto max-w-4xl space-y-6 py-4">
       <div className="space-y-2 rounded-[14px] border border-border bg-card p-6">

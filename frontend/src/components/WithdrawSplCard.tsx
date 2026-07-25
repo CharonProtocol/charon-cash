@@ -86,6 +86,7 @@ export function WithdrawSplCard({ onChanged }: { onChanged?: () => void }) {
       })
       setStatus(null)
       onChanged?.()
+      client.backupNotes().catch(() => {})
       toast.success("SPL withdraw landed", {
         description: shortHash(res.signature, 8, 6),
       })

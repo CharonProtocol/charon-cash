@@ -2,18 +2,12 @@ import { bytesToHex } from "@/lib/format"
 import type {
   HealthStatus,
   IndexerStatus,
-  InitializeSplRequest,
   MerklePath,
   NullifierStatus,
-  RelayResponse,
   RelayerInfo,
   TreeState,
-  UpdateConfigRequest,
-  UpdateDepositLimitRequest,
-  UpdateDepositLimitSplRequest,
   UtxoCheckResponse,
   UtxoRangeResponse,
-  WithdrawRequest,
 } from "@/lib/types"
 
 const BASE = ((import.meta as any).env?.VITE_BACKEND_URL ?? process.env.VITE_BACKEND_URL ?? "").replace(/\/$/, "")
@@ -117,15 +111,4 @@ export const api = {
       `/api/utxos/check/${encodeURIComponent(hex)}${q}`,
     )
   },
-  initialize: () => req<RelayResponse>("POST", "/api/relayer/initialize"),
-  initializeSpl: (b: InitializeSplRequest) =>
-    req<RelayResponse>("POST", "/api/relayer/initialize-spl", b),
-  updateConfig: (b: UpdateConfigRequest) =>
-    req<RelayResponse>("POST", "/api/relayer/update-config", b),
-  updateDepositLimit: (b: UpdateDepositLimitRequest) =>
-    req<RelayResponse>("POST", "/api/relayer/update-deposit-limit", b),
-  updateDepositLimitSpl: (b: UpdateDepositLimitSplRequest) =>
-    req<RelayResponse>("POST", "/api/relayer/update-deposit-limit-spl", b),
-  withdraw: (b: WithdrawRequest) =>
-    req<RelayResponse>("POST", "/api/relayer", b),
 }

@@ -6,6 +6,7 @@ import { WithdrawCard } from "@/components/WithdrawCard"
 import { DepositSplCard } from "@/components/DepositSplCard"
 import { WithdrawSplCard } from "@/components/WithdrawSplCard"
 import { Button } from "@/components/ui/button"
+import { useNotesSync } from "@/hooks/useNotesSync"
 
 interface UserAppViewProps {
   onChanged: () => void
@@ -14,6 +15,8 @@ interface UserAppViewProps {
 export function UserAppView({ onChanged }: UserAppViewProps) {
   const [assetType, setAssetType] = useState<"SOL" | "SPL">("SOL")
   const [activeTab, setActiveTab] = useState<"deposit" | "withdraw">("deposit")
+
+  useNotesSync()
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 py-4">

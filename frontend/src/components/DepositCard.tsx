@@ -47,6 +47,7 @@ export function DepositCard({ onChanged }: { onChanged?: () => void }) {
       setResult(res)
       setStatus(null)
       onChanged?.()
+      client.backupNotes().catch(() => {})
       toast.success("deposit landed", {
         description: shortHash(res.signature, 8, 6),
       })

@@ -2,9 +2,16 @@ import { type ReactNode, useState } from "react"
 import { toast } from "sonner"
 import { Rocket } from "lucide-react"
 
-import { api, BackendError } from "@/lib/api"
+import {
+  operatorInitialize,
+  operatorInitializeSpl,
+  operatorUpdateConfig,
+  operatorUpdateDepositLimit,
+  OperatorError,
+  type OperatorResponse,
+} from "@privacy-cash/client"
+
 import { shortHash } from "@/lib/format"
-import type { RelayResponse } from "@/lib/types"
 import {
   Card,
   CardContent,
@@ -28,7 +35,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 export function AdminCard({ onChanged }: { onChanged: () => void }) {
   const [busy, setBusy] = useState<string | null>(null)
-  const [last, setLast] = useState<RelayResponse | null>(null)
+  const [last, setLast] = useState<OperatorResponse | null>(null)
   const [errCode, setErrCode] = useState<string | null>(null)
   const [errMsg, setErrMsg] = useState<string | null>(null)
 
@@ -39,7 +46,7 @@ export function AdminCard({ onChanged }: { onChanged: () => void }) {
   const [feeMargin, setFeeMargin] = useState("")
   const [newLimit, setNewLimit] = useState("1000000000000")
 
-  async function run(name: string, fn: () => Promise<RelayResponse>) {
+  async function run(name: string, fn: () => Promise<OperatorResponse>) {
     setBusy(name)
     setErrCode(null)
     setErrMsg(null)
@@ -47,11 +54,13 @@ export function AdminCard({ onChanged }: { onChanged: () => void }) {
     try {
       const r = await fn()
       setLast(r)
-      toast.success(`${name}: ${r.status}`, { description: shortHash(r.signature, 10, 8) })
+      toast.success(`${name}: ${r.status}`, {
+        description: shortHash(r.signature, 10, 8),
+      })
       onChanged()
     } catch (e) {
-      const code = e instanceof BackendError ? e.code : "ERROR"
-      const msg = e instanceof BackendError ? e.message : (e as Error).message
+      const code = e instanceof OperatorError ? e.code : "ERROR"
+      const msg = (e as Error).message
       setErrCode(code)
       setErrMsg(msg)
       toast.error(`${name} failed: ${code}`, { description: msg })
@@ -73,7 +82,10 @@ export function AdminCard({ onChanged }: { onChanged: () => void }) {
       </CardHeader>
       <CardContent className="space-y-4">
         <Section title="Initialize SOL tree">
-          <Button onClick={() => run("initialize", () => api.initialize())} disabled={!!busy}>
+          <Button
+            onClick={() => run("initialize", () => operatorInitialize())}
+            disabled={!!busy}
+          >
             {busy === "initialize" ? "Initializing…" : "Initialize"}
           </Button>
         </Section>
@@ -82,18 +94,28 @@ export function AdminCard({ onChanged }: { onChanged: () => void }) {
         <Section title="Initialize SPL tree">
           <div className="space-y-1.5">
             <Label htmlFor="spl-mint">mint (base58)</Label>
-            <Input id="spl-mint" value={splMint} onChange={(e) => setSplMint(e.target.value)} className="font-mono text-xs" />
+            <Input
+              id="spl-mint"
+              value={splMint}
+              onChange={(e) => setSplMint(e.target.value)}
+              className="font-mono text-xs"
+            />
             <Label htmlFor="spl-max">max deposit amount (optional, lamports)</Label>
-            <Input id="spl-max" value={splMax} onChange={(e) => setSplMax(e.target.value)} inputMode="numeric" />
+            <Input
+              id="spl-max"
+              value={splMax}
+              onChange={(e) => setSplMax(e.target.value)}
+              inputMode="numeric"
+            />
           </div>
           <Button
             variant="secondary"
             onClick={() =>
               run("initialize-spl", () =>
-                api.initializeSpl({
-                  mint: splMint.trim(),
-                  max_deposit_amount: splMax.trim() ? Number(splMax) : undefined,
-                }),
+                operatorInitializeSpl(
+                  splMint.trim(),
+                  splMax.trim() ? Number(splMax) : undefined,
+                ),
               )
             }
             disabled={!!busy}
@@ -106,25 +128,48 @@ export function AdminCard({ onChanged }: { onChanged: () => void }) {
         <Section title="Update fee config (bps, fill the ones to change)">
           <div className="grid grid-cols-3 gap-2">
             <div className="space-y-1">
-              <Label htmlFor="dep-fee" className="text-[11px]">deposit</Label>
-              <Input id="dep-fee" value={depositFee} onChange={(e) => setDepositFee(e.target.value)} inputMode="numeric" />
+              <Label htmlFor="dep-fee" className="text-[11px]">
+                deposit
+              </Label>
+              <Input
+                id="dep-fee"
+                value={depositFee}
+                onChange={(e) => setDepositFee(e.target.value)}
+                inputMode="numeric"
+              />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="wdr-fee" className="text-[11px]">withdrawal</Label>
-              <Input id="wdr-fee" value={withdrawalFee} onChange={(e) => setWithdrawalFee(e.target.value)} inputMode="numeric" />
+              <Label htmlFor="wdr-fee" className="text-[11px]">
+                withdrawal
+              </Label>
+              <Input
+                id="wdr-fee"
+                value={withdrawalFee}
+                onChange={(e) => setWithdrawalFee(e.target.value)}
+                inputMode="numeric"
+              />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="fee-margin" className="text-[11px]">error margin</Label>
-              <Input id="fee-margin" value={feeMargin} onChange={(e) => setFeeMargin(e.target.value)} inputMode="numeric" />
+              <Label htmlFor="fee-margin" className="text-[11px]">
+                error margin
+              </Label>
+              <Input
+                id="fee-margin"
+                value={feeMargin}
+                onChange={(e) => setFeeMargin(e.target.value)}
+                inputMode="numeric"
+              />
             </div>
           </div>
           <Button
             variant="secondary"
             onClick={() =>
               run("update-config", () =>
-                api.updateConfig({
+                operatorUpdateConfig({
                   deposit_fee_rate: depositFee.trim() ? Number(depositFee) : undefined,
-                  withdrawal_fee_rate: withdrawalFee.trim() ? Number(withdrawalFee) : undefined,
+                  withdrawal_fee_rate: withdrawalFee.trim()
+                    ? Number(withdrawalFee)
+                    : undefined,
                   fee_error_margin: feeMargin.trim() ? Number(feeMargin) : undefined,
                 }),
               )
@@ -138,10 +183,19 @@ export function AdminCard({ onChanged }: { onChanged: () => void }) {
         <div className="border-t pt-4" />
         <Section title="Update SOL deposit limit (lamports)">
           <div className="flex gap-2">
-            <Input value={newLimit} onChange={(e) => setNewLimit(e.target.value)} inputMode="numeric" className="font-mono" />
+            <Input
+              value={newLimit}
+              onChange={(e) => setNewLimit(e.target.value)}
+              inputMode="numeric"
+              className="font-mono"
+            />
             <Button
               variant="secondary"
-              onClick={() => run("update-deposit-limit", () => api.updateDepositLimit({ new_limit: Number(newLimit) }))}
+              onClick={() =>
+                run("update-deposit-limit", () =>
+                  operatorUpdateDepositLimit(Number(newLimit)),
+                )
+              }
               disabled={!!busy}
             >
               {busy === "update-deposit-limit" ? "…" : "Update"}
