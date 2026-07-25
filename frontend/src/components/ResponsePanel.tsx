@@ -41,7 +41,7 @@ export function StatusDot({ ok }: { ok: boolean }) {
     <span
       className={cn(
         "inline-block size-2 rounded-full",
-        ok ? "bg-emerald-500" : "bg-red-500",
+        ok ? "bg-green-500" : "bg-red-500",
       )}
     />
   )

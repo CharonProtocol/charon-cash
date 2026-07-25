@@ -67,7 +67,8 @@ export function AdminCard({ onChanged }: { onChanged: () => void }) {
           <Rocket className="size-4" /> Admin
         </CardTitle>
         <CardDescription>
-          Program setup & config. The relayer signs and pays for every transaction here.
+          Program setup &amp; fee config. These operator actions are signed and
+          submitted by the backend.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
