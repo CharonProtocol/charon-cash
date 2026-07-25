@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Cash · Pinocchio Program & Protocol Flow Presentation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #07090e;
+      --card: rgba(15, 23, 42, 0.75);
+      --card-border: rgba(255, 255, 255, 0.1);
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --accent-emerald: #10b981;
+      --accent-cyan: #38bdf8;
+      --accent-indigo: #6366f1;
+      --accent-purple: #a855f7;
+      --accent-amber: #f59e0b;
+      --accent-red: #ef4444;
+      --font-main: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      --font-code: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.12) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(99, 102, 241, 0.12) 0px, transparent 50%),
+        radial-gradient(at 50% 100%, rgba(56, 189, 248, 0.08) 0px, transparent 50%);
+      background-attachment: fixed;
+      color: var(--text);
+      font-family: var(--font-main);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    .deck-container {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 6rem;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      margin-bottom: 2rem;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent-emerald), var(--accent-indigo));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #022c22;
+      font-weight: 800;
+      font-size: 1.25rem;
+      box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+    }
+
+    .brand-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-title span {
+      color: var(--accent-emerald);
+    }
+
+    .slide-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .btn {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      padding: 0.6rem 1.2rem;
+      border-radius: 10px;
+      font-family: var(--font-main);
+      font-weight: 600;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .btn:hover {
+      background: rgba(30, 41, 59, 0.9);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .btn-primary {
+      background: var(--accent-emerald);
+      color: #022c22;
+      border: none;
+      box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
+    }
+
+    .btn-primary:hover {
+      background: #34d399;
+    }
+
+    .slide-viewport {
+      position: relative;
+      min-height: 620px;
+    }
+
+    .slide {
+      display: none;
+      animation: fadeIn 0.4s ease forwards;
+    }
+
+    .slide.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .glass-card {
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--card-border);
+      border-radius: 24px;
+      padding: 2.5rem;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.4);
+    }
+
+    .glass-card-glow {
+      border-color: rgba(16, 185, 129, 0.3);
+      box-shadow: 0 0 30px rgba(16, 185, 129, 0.12), 0 20px 50px rgba(0,0,0,0.4);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 1rem;
+    }
+
+    .badge-emerald { background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-cyan { background: rgba(56, 189, 248, 0.15); color: var(--accent-cyan); border: 1px solid rgba(56, 189, 248, 0.3); }
+    .badge-indigo { background: rgba(99, 102, 241, 0.15); color: var(--accent-indigo); border: 1px solid rgba(99, 102, 241, 0.3); }
+    .badge-purple { background: rgba(168, 85, 247, 0.15); color: var(--accent-purple); border: 1px solid rgba(168, 85, 247, 0.3); }
+    .badge-amber { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); border: 1px solid rgba(245, 158, 11, 0.3); }
+    .badge-red { background: rgba(239, 68, 68, 0.15); color: var(--accent-red); border: 1px solid rgba(239, 68, 68, 0.3); }
+
+    .slide-title {
+      font-size: 2.25rem;
+      font-weight: 800;
+      line-height: 1.2;
+      margin-bottom: 0.75rem;
+    }
+
+    .slide-subtitle {
+      font-size: 1.125rem;
+      color: var(--text-muted);
+      margin-bottom: 2rem;
+      line-height: 1.6;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.25rem;
+    }
+
+    @media (max-width: 900px) {
+      .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    }
+
+    .info-box {
+      background: rgba(9, 13, 22, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .info-box h4 {
+      font-size: 1rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .info-box p {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    pre {
+      background: #030712;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      padding: 1.25rem;
+      font-family: var(--font-code);
+      font-size: 0.825rem;
+      color: #a7f3d0;
+      overflow-x: auto;
+      line-height: 1.6;
+    }
+
+    .diagram-container {
+      background: rgba(3, 7, 18, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 18px;
+      padding: 1.5rem;
+      font-family: var(--font-code);
+      font-size: 0.8rem;
+    }
+
+    .diagram-step {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.75rem 1rem;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      margin-bottom: 0.75rem;
+    }
+
+    .diagram-step:last-child {
+      margin-bottom: 0;
+    }
+
+    .step-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(16, 185, 129, 0.2);
+      color: var(--accent-emerald);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.8rem;
+      flex-shrink: 0;
+    }
+
+    .step-text {
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .step-highlight {
+      color: var(--accent-emerald);
+      font-weight: 600;
+    }
+
+    .step-highlight-blue {
+      color: var(--accent-cyan);
+      font-weight: 600;
+    }
+
+    /* Interactive Simulator */
+    .anim-canvas {
+      position: relative;
+      background: rgba(3, 7, 18, 0.95);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 2rem;
+      min-height: 420px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow: hidden;
+    }
+
+    .nodes-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: relative;
+      z-index: 2;
+    }
+
+    .node {
+      background: rgba(15, 23, 42, 0.9);
+      border: 2px solid rgba(255, 255, 255, 0.15);
+      border-radius: 16px;
+      padding: 1rem;
+      text-align: center;
+      min-width: 130px;
+      transition: all 0.3s ease;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+
+    .node.active-node {
+      border-color: var(--accent-emerald);
+      box-shadow: 0 0 25px rgba(16, 185, 129, 0.4);
+      background: rgba(16, 185, 129, 0.15);
+    }
+
+    .node.bypass-node {
+      border-color: rgba(255, 255, 255, 0.2);
+      opacity: 0.35;
+    }
+
+    .node-title {
+      font-weight: 700;
+      font-size: 0.85rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .node-sub {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: var(--font-code);
+    }
+
+    .flow-wire {
+      position: absolute;
+      top: 50%;
+      left: 70px;
+      right: 70px;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.1);
+      z-index: 1;
+    }
+
+    .packet-dot {
+      position: absolute;
+      top: -6px;
+      left: 0%;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--accent-emerald);
+      box-shadow: 0 0 15px var(--accent-emerald);
+      transition: left 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .console-log {
+      background: #020617;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 1rem;
+      font-family: var(--font-code);
+      font-size: 0.8rem;
+      color: var(--accent-emerald);
+      max-height: 120px;
+      overflow-y: auto;
+      margin-top: 1rem;
+    }
+
+    footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--text-muted);
+      font-size: 0.875rem;
+    }
+
+    .dots-indicator {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .dot.active {
+      background: var(--accent-emerald);
+      box-shadow: 0 0 10px var(--accent-emerald);
+      width: 24px;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="deck-container">
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <div class="brand-icon">🛡️</div>
+      <div>
+        <div class="brand-title">PRIVACY<span>CASH</span></div>
+        <div style="font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-code);">PINOCCHIO PROGRAM EXECUTION FLOW</div>
+      </div>
+    </div>
+
+    <div class="slide-controls">
+      <button class="btn" id="prevBtn" onclick="changeSlide(-1)">← Previous</button>
+      <span id="slideCounter" style="font-family: var(--font-code); font-size: 0.875rem; color: var(--text-muted);">1 / 10</span>
+      <button class="btn btn-primary" id="nextBtn" onclick="changeSlide(1)">Next →</button>
+    </div>
+  </header>
+
+  <!-- Slide Viewport -->
+  <main class="slide-viewport">
+    
+    <!-- Slide 1: Pinocchio Program Overview -->
+    <div class="slide active" id="slide-1">
+      <div class="glass-card glass-card-glow">
+        <span class="badge badge-emerald">Slide 01 · Pinocchio Program</span>
+        <h2 class="slide-title">Pinocchio Program Architecture</h2>
+        <p class="slide-subtitle">Privacy Cash runs on a zero-dependency <strong>Pinocchio C/Rust Solana program</strong> with 1-byte instruction tags, client-side WASM proofs, direct RPC deposit submission, and optional gasless relayer withdrawals.</p>
+        
+        <div class="grid-4">
+          <div class="info-box">
+            <h4><span style="color:var(--accent-emerald)">⚡</span> 1. Pinocchio Program</h4>
+            <p>Custom 0-dependency Solana program using <code>pinocchio::{entrypoint, AccountView}</code> for maximum throughput and zero overhead.</p>
+          </div>
+          <div class="info-box">
+            <h4><span style="color:var(--accent-cyan)">📡</span> 2. Direct RPC Dispatch</h4>
+            <p><strong>Deposits & Direct Withdrawals bypass the relayer!</strong> Wallet signs raw transaction bytes directly to Solana RPC node.</p>
+          </div>
+          <div class="info-box">
+            <h4><span style="color:var(--accent-indigo)">🔒</span> 3. Client ZK Prover</h4>
+            <p>Browser computes Poseidon hashes & Groth16 witness locally in WebAssembly. Zero private keys touch the server.</p>
+          </div>
+          <div class="info-box">
+            <h4><span style="color:var(--accent-purple)">⚡</span> 4. Relayer / Indexer</h4>
+            <p>Indexer logs RPC event logs to SQLite cache. Relayer acts as fee-payer only for 0-SOL recipient withdrawals.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 2: Step 1 - Offline Secret & Note Construction -->
+    <div class="slide" id="slide-2">
+      <div class="glass-card">
+        <span class="badge badge-emerald">Slide 02 · Step 1</span>
+        <h2 class="slide-title">1. Client Offline Note Construction</h2>
+        <p class="slide-subtitle">When the user initiates a deposit, the client SDK creates a 256-bit secret commitment completely offline inside browser memory.</p>
+        
+        <div class="grid-2">
+          <div class="info-box">
+            <h4>Cryptographic Mechanics</h4>
+            <p>1. WebCrypto CSPRNG generates 32-byte <code>secret</code> & 32-byte <code>nullifier</code>.</p>
+            <p>2. Light Hasher / Poseidon computes commitment: <code>C = Hash(nullifier, secret)</code>.</p>
+            <p>3. Note data is encrypted using AES-GCM 256-bit derived from wallet signature.</p>
+            <p>4. Encrypted note string is stored in user's browser LocalStorage/IndexedDB.</p>
+          </div>
+          <div>
+            <pre><code>// Client SDK: Note Construction (crypto.ts)
+const secret = crypto.getRandomValues(new Uint8Array(32));
+const nullifier = crypto.getRandomValues(new Uint8Array(32));
+
+// Poseidon Hasher over BN254 Field
+const commitment = poseidon([
+  bytesToBigInt(nullifier), 
+  bytesToBigInt(secret)
+]);
+
+console.log("Leaf Commitment Hash:", commitment.toString(16));</code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 3: Step 2 - Direct RPC Submission & Pinocchio Deposit -->
+    <div class="slide" id="slide-3">
+      <div class="glass-card">
+        <span class="badge badge-cyan">Slide 03 · Step 2</span>
+        <h2 class="slide-title">2. Direct RPC Submission & Pinocchio Deposit</h2>
+        <p class="slide-subtitle"><strong>No backend relayer for deposits!</strong> The depositor wallet signs the transaction and sends raw bytes directly to Solana RPC node.</p>
+        
+        <div class="grid-2">
+          <div class="diagram-container">
+            <div style="font-weight: 700; color: var(--accent-cyan); margin-bottom: 1rem; text-transform: uppercase;">PINOCCHIO DEPOSIT PIPELINE</div>
+            <div class="diagram-step">
+              <div class="step-num">1</div>
+              <div class="step-text"><span class="step-highlight">Client SDK</span> constructs VersionedTransaction with Pinocchio <code>Transact = 2</code> / <code>TransactSpl = 3</code> tag.</div>
+            </div>
+            <div class="diagram-step">
+              <div class="step-num">2</div>
+              <div class="step-text"><span class="step-highlight">User Wallet</span> signs transaction: <code>signer.signTransaction(tx)</code>.</div>
+            </div>
+            <div class="diagram-step">
+              <div class="step-num">3</div>
+              <div class="step-text"><span class="step-highlight-blue">Direct RPC Dispatch</span>: <code>conn.sendRawTransaction(signed.serialize())</code>. Bypasses relayer!</div>
+            </div>
+            <div class="diagram-step">
+              <div class="step-num">4</div>
+              <div class="step-text"><span class="step-highlight">Pinocchio Program</span> escrows SOL in Vault PDA & inserts commitment leaf into 20-level Merkle Tree.</div>
+            </div>
+          </div>
+
+          <div>
+            <pre><code>// Client SDK (client.ts)
+const signedTx = await this.signer.signTransaction(tx);
+
+// DIRECT SOLANA RPC SUBMISSION (Bypasses Relayer!)
+const txId = await this.conn.sendRawTransaction(
+  signedTx.serialize(), 
+  { skipPreflight: false, maxRetries: 5 }
+);
+
+await this.conn.confirmTransaction(txId, "confirmed");</code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 4: Step 3 - Indexer Asynchronous Event Logging -->
+    <div class="slide" id="slide-4">
+      <div class="glass-card">
+        <span class="badge badge-purple">Slide 04 · Step 3</span>
+        <h2 class="slide-title">3. Indexer Asynchronous Event Indexing</h2>
+        <p class="slide-subtitle">The backend Indexer runs asynchronously. It monitors Solana RPC logs to cache Merkle tree leaves and spent nullifiers in SQLite.</p>
+        
+        <div class="grid-3">
+          <div class="info-box">
+            <h4>1. WebSocket RPC Logs</h4>
+            <p>Indexer subscribes to Pinocchio log events: <code>DepositEvent { leaf_index, commitment }</code>.</p>
+          </div>
+          <div class="info-box">
+            <h4>2. Merkle Tree Cache</h4>
+            <p>Updates local SQLite tree database so clients can quickly fetch Merkle inclusion paths via <code>/api/merkle/proof</code>.</p>
+          </div>
+          <div class="info-box">
+            <h4>3. Client Sync Poll</h4>
+            <p>Client SDK calls <code>waitForLeaves()</code> or <code>syncNotes()</code> to confirm leaf index assignment.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 5: Step 4 - Off-Chain ZK Proof Synthesis (snarkjs WASM) -->
+    <div class="slide" id="slide-5">
+      <div class="glass-card">
+        <span class="badge badge-indigo">Slide 05 · Step 4</span>
+        <h2 class="slide-title">4. Off-Chain ZK Proof Synthesis (snarkjs WASM)</h2>
+        <p class="slide-subtitle">To withdraw, the browser fetches the Merkle path from Indexer and computes a Groth16 witness locally in ~350ms.</p>
+        
+        <div class="grid-2">
+          <div class="info-box">
+            <h4>Zero-Knowledge Security</h4>
+            <p>• Proves ownership of a leaf in the Merkle Tree without revealing leaf index.</p>
+            <p>• Proves <code>nullifier_hash = Hash(nullifier)</code> matches note secret.</p>
+            <p>• Binds proof to <code>recipient</code> address & <code>extDataHash</code>.</p>
+            <p>• Private inputs (secret, blinding, Merkle path) **never leave browser memory**.</p>
+          </div>
+          <div>
+            <pre><code>// Browser snarkjs Groth16 Witness Calculation
+const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+  {
+    root: merkleRoot,
+    publicAmount: publicAmount,
+    extDataHash: extDataHash,
+    inputNullifier: [nullifier0, nullifier1],
+    outputCommitment: [commit0, commit1],
+    inPrivateKey: [secret0, secret1],
+    inPathElements: path.elements,
+    inPathIndices: path.indices,
+  },
+  "/wasm/withdraw.wasm",
+  "/zkey/withdraw_final.zkey"
+);</code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 6: Step 5 - Withdrawal Branching (Direct RPC vs Relayed) -->
+    <div class="slide" id="slide-6">
+      <div class="glass-card">
+        <span class="badge badge-amber">Slide 06 · Step 5</span>
+        <h2 class="slide-title">5. Withdrawal Branching: Direct RPC vs Relayed</h2>
+        <p class="slide-subtitle">Withdrawals support two execution paths depending on recipient account status.</p>
+        
+        <div class="grid-2">
+          <div class="info-box border-emerald-500/30">
+            <h4 style="color:var(--accent-emerald)">PATH A: Direct RPC Withdrawal</h4>
+            <p><strong>Used when wallet has SOL gas balance:</strong></p>
+            <p>1. Client generates ZK proof in browser.</p>
+            <p>2. Client builds <code>transact</code> transaction.</p>
+            <p>3. Depositor wallet signs transaction.</p>
+            <p>4. <strong>Sent DIRECTLY to Solana RPC (`sendRawTransaction`).</strong></p>
+          </div>
+          <div class="info-box border-purple-500/30">
+            <h4 style="color:var(--accent-purple)">PATH B: Gasless Relayed Withdrawal</h4>
+            <p><strong>Used for 0-SOL fresh target recipient address:</strong></p>
+            <p>1. Client generates ZK proof in browser.</p>
+            <p>2. Sends proof payload to Relayer: <code>POST /api/relay/withdraw</code>.</p>
+            <p>3. Relayer checks fee rates & pre-verifies proof off-chain.</p>
+            <p>4. <strong>Relayer signs as gas fee-payer & submits to Solana RPC.</strong></p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 7: Step 6 - Pinocchio Program On-Chain Verifier -->
+    <div class="slide" id="slide-7">
+      <div class="glass-card">
+        <span class="badge badge-red">Slide 07 · Step 6</span>
+        <h2 class="slide-title">6. Pinocchio Program On-Chain Verification</h2>
+        <p class="slide-subtitle">The Pinocchio program evaluates elliptic curve pairing checks and records Nullifier PDAs to prevent double spending.</p>
+        
+        <div class="grid-2">
+          <div class="info-box">
+            <h4>Pinocchio Program Execution (lib.rs)</h4>
+            <p>1. Entrypoint parses 1-byte tag: <code>PrivacyCashInstructions::Transact = 2</code>.</p>
+            <p>2. <code>verify_groth16()</code> checks BN254 curve pairing equation against verification key.</p>
+            <p>3. Asserts Nullifier PDA: <code>seeds = [b"nullifier0", nullifier_hash]</code> does not exist.</p>
+            <p>4. Creates Nullifier PDA marker account to lock note against double-spending.</p>
+            <p>5. Transfers funds from Vault PDA escrow to clean recipient address!</p>
+          </div>
+          <div>
+            <pre><code>// Pinocchio Program Entrypoint (lib.rs)
+entrypoint!(process_instructions);
+
+fn process_instructions(
+    _program_id: &Address,
+    accounts: &[AccountView],
+    instruction_data: &[u8],
+) -> ProgramResult {
+    let (discriminator, data) = instruction_data.split_first()?;
+    match PrivacyCashInstructions::try_from(discriminator)? {
+        PrivacyCashInstructions::Transact => process_transact(accounts, data)?,
+        PrivacyCashInstructions::TransactSpl => process_transact_spl(accounts, data)?,
+        _ => Err(ProgramError::InvalidInstructionData),
+    }
+}</code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 8: Step 7 - Complete Sequence Diagram -->
+    <div class="slide" id="slide-8">
+      <div class="glass-card">
+        <span class="badge badge-emerald">Slide 08 · Sequence Chart</span>
+        <h2 class="slide-title">Complete End-to-End Sequence Diagram</h2>
+        <p class="slide-subtitle">Visual blueprint comparing Deposit (Direct RPC) vs Relayed Withdrawal execution pipelines.</p>
+        
+        <div class="diagram-container">
+<pre style="background:transparent; border:none; padding:0; color:var(--text); font-size:0.8rem;">
+┌──────────────┐         ┌───────────────┐         ┌────────────────────┐         ┌───────────────┐
+│ User Browser │         │  Solana RPC   │         │ Pinocchio Program  │         │ Indexer / DB  │
+└──────┬───────┘         └───────┬───────┘         └─────────┬──────────┘         └───────┬───────┘
+       │                         │                           │                            │
+       │─── 1. Generate Poseidon ┤                           │                            │
+       │    Commitment (WASM)    │                           │                            │
+       │                         │                           │                            │
+       │─── 2. Wallet Sign Tx ───┤                           │                            │
+       │                         │                           │                            │
+       │─── 3. sendRawTransaction ──────────────────────────>│                            │
+       │    (DIRECT TO RPC!)     │                           │                            │
+       │                         │─── 4. Execute Pinocchio ->│                            │
+       │                         │    Transact Tag = 2       │                            │
+       │                         │<── Emit DepositEvent ─────│                            │
+       │                         │                                                        │
+       │                         │────── 5. Indexer Listens WebSocket Logs ──────────────>│
+       │                         │          Index Leaf to SQLite DB                       │
+       │                         │                                                        │
+       │<─────────────────────── 6. Poll /api/utxos/range ────────────────────────────────│
+       │                            Sync Local Note Vault                                 │
+</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 9: Technical Specs & Pinocchio Tag List -->
+    <div class="slide" id="slide-9">
+      <div class="glass-card">
+        <span class="badge badge-cyan">Slide 09 · Technical Specs</span>
+        <h2 class="slide-title">Pinocchio Discriminators & Wire Formats</h2>
+        <p class="slide-subtitle">Technical breakdown of Pinocchio 1-byte instruction tags and ALT address optimization.</p>
+        
+        <div class="grid-2">
+          <div class="info-box">
+            <h4>Pinocchio Discriminator Enum</h4>
+            <p>• <code>0: Initialize</code> — Initialize SOL Merkle Tree PDA.</p>
+            <p>• <code>1: InitializeTreeAccountForSplToken</code> — Initialize SPL Tree PDA.</p>
+            <p>• <code>2: Transact</code> — Native SOL deposit & withdrawal.</p>
+            <p>• <code>3: TransactSpl</code> — SPL Token (USDC/USDT) deposit & withdrawal.</p>
+            <p>• <code>4: UpdateGlobalConfig</code> — Update fee rates (bps).</p>
+            <p>• Address Lookup Tables (ALT): Compresses account array to stay within 1232-byte MTU limit.</p>
+          </div>
+          <div>
+            <pre><code>// Pinocchio Instruction Enums (constants.ts)
+pub enum PrivacyCashInstructions {
+    Initialize = 0,
+    InitializeTreeAccountForSplToken = 1,
+    Transact = 2,
+    TransactSpl = 3,
+    UpdateGlobalConfig = 4,
+    UpdateDepositLimit = 5,
+    UpdateDepositLimitForSpl = 6,
+}</code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 10: Interactive Execution Simulator -->
+    <div class="slide" id="slide-10">
+      <div class="glass-card glass-card-glow">
+        <span class="badge badge-emerald">Slide 10 · Live Simulator</span>
+        <h2 class="slide-title">Pinocchio Execution Simulator</h2>
+        <p class="slide-subtitle">Select mode and click "Run Step" to watch data packets travel across nodes with real-time logs!</p>
+
+        <div class="anim-canvas">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <div style="display:flex; gap:0.5rem;">
+              <button class="btn btn-primary" id="modeDepositBtn" onclick="setSimMode('deposit')">Mode: Deposit (Direct RPC)</button>
+              <button class="btn" id="modeWithdrawBtn" onclick="setSimMode('withdraw')">Mode: Relayed Withdraw</button>
+            </div>
+            <span id="modeBadge" class="badge badge-emerald" style="margin:0;">DIRECT RPC DEPOSIT MODE</span>
+          </div>
+
+          <div class="flow-wire">
+            <div class="packet-dot" id="packet"></div>
+          </div>
+
+          <div class="nodes-row">
+            <div class="node active-node" id="node-1">
+              <div class="node-title">1. User UI</div>
+              <div class="node-sub">Click Action</div>
+            </div>
+            <div class="node" id="node-2">
+              <div class="node-title">2. WASM SDK</div>
+              <div class="node-sub">Poseidon / Proof</div>
+            </div>
+            <div class="node" id="node-3">
+              <div class="node-title">3. Relayer API</div>
+              <div class="node-sub">Fee Payer (Opt)</div>
+            </div>
+            <div class="node" id="node-4">
+              <div class="node-title">4. Solana RPC</div>
+              <div class="node-sub">sendRawTransaction</div>
+            </div>
+            <div class="node" id="node-5">
+              <div class="node-title">5. Pinocchio Program</div>
+              <div class="node-sub">Transact Tag = 2</div>
+            </div>
+            <div class="node" id="node-6">
+              <div class="node-title">6. Indexer DB</div>
+              <div class="node-sub">Sync Log</div>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 1rem; align-items: center; margin-top: 1.5rem;">
+            <button class="btn btn-primary" onclick="stepAnim()">▶ Run Execution Step</button>
+            <button class="btn" onclick="resetAnim()">↺ Reset Flow</button>
+            <span id="animStatus" style="font-family: var(--font-code); font-size: 0.85rem; color: var(--accent-emerald);">Ready to start flow simulation.</span>
+          </div>
+
+          <div class="console-log" id="consoleLog">
+            [SYS] Initialization complete. Pinocchio Program Ready. Click "Run Execution Step"...
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Footer Navigation -->
+  <footer>
+    <div>Privacy Cash Pinocchio Execution Flow Presentation · Standalone File</div>
+    <div class="dots-indicator" id="dotsContainer"></div>
+  </footer>
+</div>
+
+<script>
+  let currentSlide = 1;
+  const totalSlides = 10;
+  let simMode = 'deposit';
+
+  function updateSlides() {
+    for (let i = 1; i <= totalSlides; i++) {
+      const slide = document.getElementById(`slide-${i}`);
+      if (slide) {
+        if (i === currentSlide) slide.classList.add('active');
+        else slide.classList.remove('active');
+      }
+    }
+    document.getElementById('slideCounter').innerText = `${currentSlide} / ${totalSlides}`;
+    document.getElementById('prevBtn').disabled = currentSlide === 1;
+    document.getElementById('nextBtn').innerText = currentSlide === totalSlides ? "Finish ↵" : "Next →";
+
+    const dotsContainer = document.getElementById('dotsContainer');
+    dotsContainer.innerHTML = '';
+    for (let i = 1; i <= totalSlides; i++) {
+      const dot = document.createElement('div');
+      dot.className = `dot ${i === currentSlide ? 'active' : ''}`;
+      dot.onclick = () => goToSlide(i);
+      dotsContainer.appendChild(dot);
+    }
+  }
+
+  function changeSlide(direction) {
+    currentSlide += direction;
+    if (currentSlide < 1) currentSlide = 1;
+    if (currentSlide > totalSlides) currentSlide = totalSlides;
+    updateSlides();
+  }
+
+  function goToSlide(slideNum) {
+    currentSlide = slideNum;
+    updateSlides();
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === 'Space') changeSlide(1);
+    else if (e.key === 'ArrowLeft') changeSlide(-1);
+  });
+
+  // Simulator
+  let animStep = 1;
+
+  const depositLogs = [
+    "[1/5] User UI: Clicked 'Deposit SOL'. WebCrypto generated 32-byte secret & nullifier.",
+    "[2/5] WASM SDK: Computed Poseidon commitment leaf C = Hash(nullifier, secret). Encrypted note locally.",
+    "[3/5] Direct Solana RPC: Wallet signed tx. Client sent raw bytes DIRECTLY to RPC (sendRawTransaction). Bypassed Relayer!",
+    "[4/5] Pinocchio Program: Executed Transact discriminator (2). Escrowed SOL in Vault PDA & inserted leaf into Merkle tree.",
+    "[5/5] Indexer DB: Caught DepositEvent on RPC logs. Updated SQLite leaf index cache & client synced note."
+  ];
+
+  const withdrawLogs = [
+    "[1/6] User UI: Clicked 'Withdraw to 0-SOL Address'.",
+    "[2/6] WASM SDK: Fetched Merkle path from Indexer. Generated Groth16 witness in browser WASM (~350ms).",
+    "[3/6] Relayer API: Dispatched POST /api/relay/withdraw. Relayer pre-verified proof & signed as gas fee-payer.",
+    "[4/6] Solana RPC: Relayer submitted signed raw transaction to Solana RPC node.",
+    "[5/6] Pinocchio Program: Verified BN254 pairing check. Checked Nullifier PDA unspent & created Nullifier PDA marker.",
+    "[6/6] Target Wallet: Received clean SOL payout with 0 SOL gas fee spent by recipient!"
+  ];
+
+  function setSimMode(mode) {
+    simMode = mode;
+    const depBtn = document.getElementById('modeDepositBtn');
+    const wdrBtn = document.getElementById('modeWithdrawBtn');
+    const modeBadge = document.getElementById('modeBadge');
+    const relayerNode = document.getElementById('node-3');
+
+    if (mode === 'deposit') {
+      depBtn.className = 'btn btn-primary';
+      wdrBtn.className = 'btn';
+      modeBadge.className = 'badge badge-emerald';
+      modeBadge.innerText = 'DIRECT RPC DEPOSIT MODE (BYPASSES RELAYER)';
+      relayerNode.classList.add('bypass-node');
+    } else {
+      depBtn.className = 'btn';
+      wdrBtn.className = 'btn btn-primary';
+      modeBadge.className = 'badge badge-purple';
+      modeBadge.innerText = 'RELAYED GASLESS WITHDRAWAL MODE';
+      relayerNode.classList.remove('bypass-node');
+    }
+    resetAnim();
+  }
+
+  function stepAnim() {
+    const packet = document.getElementById('packet');
+    const consoleLog = document.getElementById('consoleLog');
+    const animStatus = document.getElementById('animStatus');
+
+    const logs = simMode === 'deposit' ? depositLogs : withdrawLogs;
+    const maxSteps = logs.length;
+
+    if (animStep > maxSteps) animStep = 1;
+
+    for (let i = 1; i <= 6; i++) {
+      const n = document.getElementById(`node-${i}`);
+      if (n) n.classList.remove('active-node');
+    }
+
+    let nodeIdx = animStep;
+    if (simMode === 'deposit' && animStep >= 3) {
+      nodeIdx = animStep + 1; // skip node-3 (Relayer) for direct RPC deposits
+    }
+
+    const activeNode = document.getElementById(`node-${nodeIdx}`);
+    if (activeNode) activeNode.classList.add('active-node');
+
+    const pct = ((nodeIdx - 1) / 5) * 100;
+    packet.style.left = `${pct}%`;
+
+    consoleLog.innerHTML += `<br>${logs[animStep - 1]}`;
+    consoleLog.scrollTop = consoleLog.scrollHeight;
+    animStatus.innerText = `Step ${animStep} of ${maxSteps} active (${simMode.toUpperCase()} MODE)`;
+
+    animStep++;
+  }
+
+  function resetAnim() {
+    animStep = 1;
+    document.getElementById('packet').style.left = '0%';
+    for (let i = 1; i <= 6; i++) {
+      const n = document.getElementById(`node-${i}`);
+      if (n) n.classList.remove('active-node');
+    }
+    document.getElementById('node-1').classList.add('active-node');
+    document.getElementById('consoleLog').innerText = `[SYS] Simulator reset. Mode: ${simMode.toUpperCase()}`;
+    document.getElementById('animStatus').innerText = 'Ready to start flow simulation.';
+  }
+
+  updateSlides();
+  setSimMode('deposit');
+</script>
+</body>
+</html>

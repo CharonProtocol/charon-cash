@@ -30,19 +30,30 @@ export const CIRCUIT = {
   ZKEY_URL: "/circuit/transaction2.zkey",
 }
 
+function getEnv(): Record<string, string | undefined> {
+  try {
+    return (import.meta as unknown as { env?: Record<string, string> }).env ?? {}
+  } catch {
+    return {}
+  }
+}
+
 export function backendUrl(): string {
-  return (import.meta.env.VITE_BACKEND_URL ?? "http://localhost:8080").replace(
+  const env = getEnv()
+  return (env.VITE_BACKEND_URL ?? "http://localhost:8080").replace(
     /\/$/,
     "",
   )
 }
 
 export function rpcUrl(): string {
-  return import.meta.env.VITE_SOLANA_RPC_URL ?? "http://localhost:8899"
+  const env = getEnv()
+  return env.VITE_SOLANA_RPC_URL ?? "http://localhost:8899"
 }
 
 export function envProgramId(): PublicKey | null {
-  const v = import.meta.env.VITE_PROGRAM_ID
+  const env = getEnv()
+  const v = env.VITE_PROGRAM_ID
   try {
     return v ? new PublicKey(v) : null
   } catch {

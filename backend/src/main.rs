@@ -1,3 +1,4 @@
+mod admin;
 mod config;
 mod db;
 mod indexer;
@@ -37,7 +38,13 @@ async fn main() -> anyhow::Result<()> {
     let rpc = Arc::new(RpcClient::new(config.solana_rpc_url.clone()));
     let keypair = Arc::new(load_keypair(&config.relayer_keypair_path)?);
     let mirror = MerkleMirror::new(db.clone(), config.program_id);
-    let relayer = Arc::new(Relayer::new(rpc, keypair, config.clone(), db.clone(), mirror));
+    let relayer = Arc::new(Relayer::new(
+        rpc,
+        keypair,
+        config.clone(),
+        db.clone(),
+        mirror,
+    ));
 
     let state = AppState {
         db,
@@ -62,7 +69,10 @@ fn load_keypair(path: &str) -> anyhow::Result<Keypair> {
     let arr: Vec<u8> = serde_json::from_slice(&bytes)
         .map_err(|e| anyhow::anyhow!("keypair file {path} must be a JSON byte array: {e}"))?;
     if arr.len() < 32 {
-        anyhow::bail!("keypair file {path}: expected >=32 bytes, got {}", arr.len());
+        anyhow::bail!(
+            "keypair file {path}: expected >=32 bytes, got {}",
+            arr.len()
+        );
     }
     let mut seed = [0u8; 32];
     seed.copy_from_slice(&arr[..32]);

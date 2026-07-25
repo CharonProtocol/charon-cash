@@ -77,6 +77,24 @@ export {
 } from "./notes"
 export type { Note } from "./notes"
 export {
+  encryptNotesBlob,
+  decryptNotesBlob,
+  pushEncryptedNotes,
+  pullEncryptedNotes,
+} from "./notestore"
+export {
+  setOperatorPassword,
+  getOperatorPassword,
+  verifyOperator,
+  operatorInitialize,
+  operatorInitializeSpl,
+  operatorUpdateConfig,
+  operatorUpdateDepositLimit,
+  operatorUpdateDepositLimitSpl,
+  OperatorError,
+  type OperatorResponse,
+} from "./admin"
+export {
   FIELD_SIZE,
   MERKLE_TREE_DEPTH,
   SIGN_MESSAGE,

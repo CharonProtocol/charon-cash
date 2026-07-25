@@ -46,7 +46,9 @@ import {
   unspentNotes,
   upsertNote,
   markNoteSpentByIndex,
+  type Note,
 } from "./notes"
+import { pushEncryptedNotes, pullEncryptedNotes } from "./notestore"
 import { parseProofToBytesArray, parseToBytesArray, prove } from "./prover"
 import {
   buildTransactSplTransaction,
@@ -145,6 +147,10 @@ export class PrivacyCashClient {
         await this.syncNotes(SOL_TREE_KEY).catch(() => {
           /* unlock still succeeds if indexer is briefly down */
         })
+        // Hydrate from the encrypted note blob in the backend (new device / cleared browser).
+        await pullEncryptedNotes(this.publicKey, this.enc!).catch(() => {
+          /* restore is best-effort */
+        })
       })()
     }
     await this.unlocking
@@ -152,6 +158,18 @@ export class PrivacyCashClient {
 
   isUnlocked(): boolean {
     return !!this.utxoKeypair
+  }
+
+  /** Push the local note set to the backend (encrypted blob; server can't read it). */
+  async backupNotes(): Promise<void> {
+    await this.unlock()
+    await pushEncryptedNotes(this.publicKey, this.enc!)
+  }
+
+  /** Pull + decrypt the encrypted note blob from the backend into local storage. */
+  async restoreNotes(): Promise<Note[]> {
+    await this.unlock()
+    return pullEncryptedNotes(this.publicKey, this.enc!)
   }
 
   /**

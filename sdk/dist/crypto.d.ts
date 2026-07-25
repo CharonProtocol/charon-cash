@@ -1,0 +1,84 @@
+import type { LightWasm } from "@lightprotocol/hasher.rs";
+import { PublicKey } from "@solana/web3.js";
+import BN from "bn.js";
+import { SIGN_MESSAGE } from "./constants";
+/**
+ * Field-element keypair used inside UTXO commitments/nullifiers.
+ * Ported 1:1 from privacy-cash-sdk/src/models/keypair.ts (browser-safe).
+ * privkey is an Fr scalar; pubkey = poseidon(privkey).
+ */
+export declare class Keypair {
+    privkey: BN;
+    pubkey: BN;
+    private wasm;
+    constructor(privkeyHex: string, wasm: LightWasm);
+    /** poseidon(privkey, commitment, merklePath) */
+    sign(commitment: string, merklePath: string): string;
+}
+/** First-31-bytes / 248-bit field encoding of an SPL mint; SOL mint passes through. */
+export declare function getMintAddressField(mint: PublicKey | string): string;
+/**
+ * UTXO ported from privacy-cash-sdk/src/models/utxo.ts.
+ * commitment = poseidon(amount, pubkey, blinding, mintField)
+ * nullifier   = poseidon(commitment, index, sign(commitment, index))
+ */
+export declare class Utxo {
+    amount: BN;
+    blinding: BN;
+    keypair: Keypair;
+    index: number;
+    mintAddress: string;
+    private wasm;
+    constructor(opts: {
+        wasm: LightWasm;
+        amount?: BN | number | string;
+        keypair: Keypair;
+        blinding?: BN | number | string;
+        index?: number;
+        mintAddress?: string;
+    });
+    getCommitment(): string;
+    getNullifier(): Promise<string>;
+}
+export declare function randomInt(maxExclusive: number): number;
+/**
+ * ext_data_hash = SHA-256 over:
+ *   recipient(32) | ext_amount.le(8) | enc1.len.le(4) | enc1
+ *                  | enc2.len.le(4) | enc2 | fee.le(8) | fee_recipient(32) | mint(32)
+ *
+ * Built manually to be byte-identical to the SDK's borsh output and to the
+ * Pinocchio program's `calculate_complete_ext_data_hash` (see backend validate.rs).
+ */
+export declare function getExtDataHash(ext: {
+    recipient: PublicKey | string;
+    extAmount: BN | number | string;
+    encryptedOutput1: Uint8Array;
+    encryptedOutput2: Uint8Array;
+    fee: BN | number | string;
+    feeRecipient: PublicKey | string;
+    mintAddress: PublicKey | string;
+}): Uint8Array;
+/**
+ * Browser-native EncryptionService (Web Crypto AES-256-GCM).
+ * Mirrors privacy-cash-sdk's V2 format:
+ *   [version(8)] [iv(12)] [authTag(16)] [ciphertext]
+ * UTXO private key is derived deterministically from a wallet signature, so the
+ * same wallet always recovers the same note set.
+ */
+export declare class EncryptionService {
+    private encKeyV2;
+    private utxoPrivKeyV2;
+    private cryptoKey;
+    /** Derive keys from an ed25519 signature of the constant SIGN_MESSAGE. */
+    deriveFromSignature(signature: Uint8Array): void;
+    get utxoPrivateKey(): string;
+    private key;
+    encrypt(data: Uint8Array | string): Promise<Buffer>;
+    decrypt(encrypted: Uint8Array): Promise<Buffer>;
+    /** Encrypt a UTXO as "amount|blinding|index|mintAddress" (pipe-delimited). */
+    encryptUtxo(utxo: Utxo): Promise<Buffer>;
+    decryptUtxo(encrypted: Uint8Array, wasm: LightWasm): Promise<Utxo>;
+}
+export declare function randomBytes(n: number): Uint8Array;
+export { SIGN_MESSAGE };
+//# sourceMappingURL=crypto.d.ts.map

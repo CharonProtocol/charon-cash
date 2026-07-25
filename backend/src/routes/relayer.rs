@@ -8,6 +8,7 @@ use crate::relayer::dto::{
 use crate::relayer::error::AppError;
 use crate::state::AppState;
 
+#[allow(dead_code)] // retired: withdraw is client-signed, submitted direct to RPC
 pub async fn withdraw(
     State(state): State<AppState>,
     Json(req): Json<WithdrawRequest>,

@@ -60,6 +60,7 @@ export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
       })
       setStatus(null)
       onChanged?.()
+      client.backupNotes().catch(() => {})
       toast.success("withdraw landed", {
         description: shortHash(res.signature, 8, 6),
       })
