@@ -13,7 +13,7 @@ import {
 } from "@solana/web3.js"
 import { WasmFactory } from "@lightprotocol/hasher.rs"
 
-import { LocalMirror, readGlobalFees, readTreeState, deriveAccounts, MERKLE_TREE_DEPTH } from "@privacy-cash/client"
+import { LocalMirror, readGlobalFees, readTreeState, deriveAccounts, MERKLE_TREE_DEPTH } from "privacy-cash-sdk"
 
 const PROGRAM = new PublicKey(process.env.PROGRAM_ID ?? "5GcqZ4aZ3xF87wQF5pFmHHYAk73Hcww1r8414KdeUJ9P")
 const RPC = process.env.SOLANA_RPC_URL ?? "http://localhost:8899"
@@ -66,7 +66,7 @@ let utxos = []
 let nullifiers = new Set()
 let lastSlot = 0
 let lastSig = null
-/** @type {Map<string, import('@privacy-cash/client').LocalMirror>} */
+/** @type {Map<string, import('privacy-cash-sdk').LocalMirror>} */
 let mirrors = new Map()
 
 function treeKeyForDisc(disc, accountKeys, mintIndexHint) {

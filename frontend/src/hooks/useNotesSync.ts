@@ -16,8 +16,11 @@ export function useNotesSync() {
     const pk = client.publicKey.toBase58()
     if (restoredFor.current === pk) return
     restoredFor.current = pk
-    client.restoreNotes().catch(() => {
-      /* restore is best-effort; local storage is still the primary source */
-    })
+    
+    // BUG FIX: Do not automatically call restoreNotes on mount, as it forces
+    // a wallet signature prompt before the user clicks Deposit or Withdraw.
+    // client.restoreNotes().catch(() => {
+    //   /* restore is best-effort; local storage is still the primary source */
+    // })
   }, [client, connected])
 }

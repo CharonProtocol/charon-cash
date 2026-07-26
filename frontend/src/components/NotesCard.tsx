@@ -10,7 +10,7 @@ import {
   clearNotes,
   WRAPPED_SOL_MINT,
   type Note,
-} from "@privacy-cash/client"
+} from "privacy-cash-sdk"
 import {
   Card,
   CardContent,

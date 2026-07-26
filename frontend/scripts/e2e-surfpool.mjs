@@ -25,7 +25,7 @@ import {
   prove, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers,
   buildTransactIxData, deriveAccounts,
   FIELD_SIZE, MERKLE_TREE_DEPTH, WRAPPED_SOL_MINT,
-} from "@privacy-cash/client"
+} from "privacy-cash-sdk"
 
 const PROGRAM = new PublicKey("6e5ioWVHAyuzfNSGAmJLfiGwKrmwr2GkqoDYWAhqvdjX")
 const RPC = process.env.RPC ?? "http://localhost:8899"
