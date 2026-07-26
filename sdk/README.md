@@ -1,8 +1,8 @@
-# @privacy-cash/client
+# privacy-cash-sdk
 
 Browser-native client SDK for **Privacy Cash** — Zero-Knowledge private transactions on Solana using client-side Groth16 ZK-SNARKs and gasless relayer withdrawals.
 
-[![npm version](https://img.shields.io/npm/v/@privacy-cash/client.svg)](https://www.npmjs.com/package/@privacy-cash/client)
+[![npm version](https://img.shields.io/npm/v/privacy-cash-sdk.svg)](https://www.npmjs.com/package/privacy-cash-sdk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Features
@@ -16,13 +16,13 @@ Browser-native client SDK for **Privacy Cash** — Zero-Knowledge private transa
 ## Installation (using Bun)
 
 ```bash
-bun add @privacy-cash/client @solana/web3.js
+bun add privacy-cash-sdk @solana/web3.js
 ```
 
 or with npm / yarn:
 
 ```bash
-npm install @privacy-cash/client @solana/web3.js
+npm install privacy-cash-sdk @solana/web3.js
 ```
 
 ## Quick Start
@@ -30,7 +30,7 @@ npm install @privacy-cash/client @solana/web3.js
 ### 1. Initialize Client & Unlock Vault
 
 ```typescript
-import { PrivacyCashClient } from "@privacy-cash/client";
+import { PrivacyCashClient } from "privacy-cash-sdk";
 import { Connection } from "@solana/web3.js";
 
 const connection = new Connection("https://api.devnet.solana.com");
@@ -47,7 +47,7 @@ await client.unlock();
 ### 2. Shielded SOL Deposit
 
 ```typescript
-import { solToLamports } from "@privacy-cash/client";
+import { solToLamports } from "privacy-cash-sdk";
 
 // Deposit 0.5 SOL into the shielded pool
 const depositResult = await client.depositSOL(solToLamports(0.5));
