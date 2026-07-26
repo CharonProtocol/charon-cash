@@ -9,7 +9,7 @@ import {
   operatorUpdateDepositLimit,
   OperatorError,
   type OperatorResponse,
-} from "@privacy-cash/client"
+} from "privacy-cash-sdk"
 
 import { shortHash } from "@/lib/format"
 import {

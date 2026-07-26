@@ -1,7 +1,7 @@
 import { useMemo } from "react"
 import { useConnection, useWallet } from "@solana/wallet-adapter-react"
 
-import { PrivacyCashClient } from "@privacy-cash/client"
+import { PrivacyCashClient } from "privacy-cash-sdk"
 
 export function usePrivacyCash() {
   const { connection } = useConnection()

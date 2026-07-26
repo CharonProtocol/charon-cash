@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react"
 import { ShieldAlert, Lock, ArrowRight, LogOut } from "lucide-react"
-import { verifyOperator, setOperatorPassword } from "@privacy-cash/client"
+import { verifyOperator, setOperatorPassword } from "privacy-cash-sdk"
 
 import { AdminCard } from "@/components/AdminCard"
 import { Button } from "@/components/ui/button"

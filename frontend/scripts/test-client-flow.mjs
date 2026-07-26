@@ -16,7 +16,7 @@ globalThis.localStorage = {
 import nacl from "tweetnacl"
 import { Connection, Keypair, PublicKey, VersionedTransaction } from "@solana/web3.js"
 
-import { PrivacyCashClient, setCircuitBuffers } from "@privacy-cash/client"
+import { PrivacyCashClient, setCircuitBuffers } from "privacy-cash-sdk"
 
 // load circuit from disk (browser fetches /circuit/*; Node can't fetch relative)
 const cdir = path.join(import.meta.dirname, "..", "..", "privacy-cash-sdk", "circuit2")
