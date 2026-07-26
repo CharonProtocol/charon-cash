@@ -109,7 +109,7 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
         bytemuck::try_from_bytes_mut::<MerkleTreeAccount>(&mut tree_data[..MerkleTreeAccount::LEN])
             .map_err(|e| PrivacyCashError::InvalidMerkleTreeAccount)?;
 
-    if ALLOW_ALL_SPL_TOKENS || ALLOWED_TOKENS.contains(&mint_address) {
+    if !ALLOW_ALL_SPL_TOKENS && !ALLOWED_TOKENS.contains(&mint_address) {
         return Err(PrivacyCashError::InvalidMintAddress.into());
     }
 
