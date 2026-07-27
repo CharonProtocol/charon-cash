@@ -1,35 +1,24 @@
 mod common;
 use common::{
     constants::{
-        DEFAULT_HEIGHT, DEPOSIT_FEE_RATE, FEE_ERROR_MARGIN, FEE_RECIPIENT_ACCOUNT,
-        FIELD_SIZE_DECIMAL, ROOT_HISTORY_SIZE, SOL_ADDRESS, WITHDRAW_FEE_RATE,
+        DEFAULT_HEIGHT, DEPOSIT_FEE_RATE, FIELD_SIZE_DECIMAL, ROOT_HISTORY_SIZE, WITHDRAW_FEE_RATE,
     },
     merkle_tree::MerkleTree,
-    prover::{
-        deposit_artifacts_to_submit, prove, DepositProofArtifacts, DepositProofToSubmit, ProofInput,
-    },
+    prover::{deposit_artifacts_to_submit, prove, DepositProofToSubmit, ProofInput},
     test_alt::{
-        create_global_test_alt, create_versioned_tx_with_alt, get_global_test_alt,
-        get_test_protocol_addresses, get_test_protocol_addresses_with_mint, reset_global_test_alt,
+        create_global_test_alt, create_versioned_tx_with_alt,
+        get_test_protocol_addresses_with_mint, reset_global_test_alt,
     },
     utils::{get_ext_data_hash, ExtData},
     utxo::Utxo,
 };
-use ethers::{
-    core::{
-        k256::{schnorr::CryptoRngCore, sha2::digest::Key},
-        rand::{thread_rng, RngCore},
-    },
-    utils::hex,
-};
-use light_hasher::zero_bytes::poseidon::ZERO_BYTES;
+use ethers::core::rand::{thread_rng, RngCore};
 use litesvm::LiteSVM;
 use num_bigint::{BigInt, BigUint};
 use privacy_cash::{
-    instructions,
     instructions::PrivacyCashInstructions,
     state::{
-        transact::{ExtDataMinified, Proof, TransactArgs},
+        transact::{ExtDataMinified, Proof},
         MerkleTreeAccount,
     },
 };
@@ -52,16 +41,9 @@ use spl_token::{
     instruction::{initialize_mint, mint_to},
     state::{Account as TokenAccount, Mint},
 };
-use std::{
-    ops::{Add, Rem, Sub},
-    path::PathBuf,
-    str::FromStr,
-};
-
-use crate::common::utils::get_mint_address_field;
+use std::{path::PathBuf, str::FromStr};
 
 const PROGRAM_ID: &str = "HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV";
-const DEFAULT_ZERO: [u8; 32] = ZERO_BYTES[0]; // The default value of elements for initializing a tree
 
 pub fn generate_random_nullifier() -> [u8; 32] {
     let mut nullifier = [0u8; 32];
