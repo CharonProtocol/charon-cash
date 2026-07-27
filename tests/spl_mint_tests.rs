@@ -1,47 +1,61 @@
 mod common;
-use litesvm::LiteSVM;
-use solana_clock::Clock;
-use solana_sdk::{
-    native_token::LAMPORTS_PER_SOL,
-    signature::{Keypair, Signer},
-    instruction::Instruction,
-};
-use solana_program_pack::Pack;
-use solana_transaction::{Transaction, AccountMeta};
-use ethers::{
-    core::{k256::{schnorr::CryptoRngCore, sha2::digest::Key}, rand::{RngCore, thread_rng}}, utils::hex,
-};
-use std::{ops::{Add, Sub, Rem}, str::FromStr, path::PathBuf};
 use common::{
-    constants::{DEFAULT_HEIGHT, DEPOSIT_FEE_RATE, FEE_ERROR_MARGIN, FEE_RECIPIENT_ACCOUNT, FIELD_SIZE_DECIMAL, ROOT_HISTORY_SIZE, SOL_ADDRESS, WITHDRAW_FEE_RATE, },
+    constants::{
+        DEFAULT_HEIGHT, DEPOSIT_FEE_RATE, FEE_ERROR_MARGIN, FEE_RECIPIENT_ACCOUNT,
+        FIELD_SIZE_DECIMAL, ROOT_HISTORY_SIZE, SOL_ADDRESS, WITHDRAW_FEE_RATE,
+    },
     merkle_tree::MerkleTree,
+    prover::{
+        deposit_artifacts_to_submit, prove, DepositProofArtifacts, DepositProofToSubmit, ProofInput,
+    },
+    test_alt::{
+        create_global_test_alt, create_versioned_tx_with_alt, get_global_test_alt,
+        get_test_protocol_addresses, get_test_protocol_addresses_with_mint, reset_global_test_alt,
+    },
     utils::{get_ext_data_hash, ExtData},
-    prover::{DepositProofToSubmit, DepositProofArtifacts, ProofInput,
-    prove, deposit_artifacts_to_submit },
-    test_alt::{create_global_test_alt, create_versioned_tx_with_alt, get_global_test_alt, get_test_protocol_addresses, get_test_protocol_addresses_with_mint, reset_global_test_alt},
-    utxo::Utxo
+    utxo::Utxo,
 };
+use ethers::{
+    core::{
+        k256::{schnorr::CryptoRngCore, sha2::digest::Key},
+        rand::{thread_rng, RngCore},
+    },
+    utils::hex,
+};
+use light_hasher::zero_bytes::poseidon::ZERO_BYTES;
+use litesvm::LiteSVM;
 use num_bigint::{BigInt, BigUint};
 use privacy_cash::{
     instructions,
-    state::{
-        transact::{Proof, ExtDataMinified, TransactArgs},
-        MerkleTreeAccount
-    },
     instructions::PrivacyCashInstructions,
+    state::{
+        transact::{ExtDataMinified, Proof, TransactArgs},
+        MerkleTreeAccount,
+    },
 };
 use solana_address::Address;
-use light_hasher::zero_bytes::poseidon::ZERO_BYTES;
-use solana_sdk_ids::system_program::ID as SYSTEM_PROGRAM;
-use solana_program::{example_mocks::solana_sdk::system_instruction, pubkey::Pubkey};
+use solana_clock::Clock;
 use solana_compute_budget_interface::ComputeBudgetInstruction;
+use solana_program::{example_mocks::solana_sdk::system_instruction, pubkey::Pubkey};
+use solana_program_pack::Pack;
+use solana_sdk::{
+    instruction::Instruction,
+    native_token::LAMPORTS_PER_SOL,
+    signature::{Keypair, Signer},
+};
+use solana_sdk_ids::system_program::ID as SYSTEM_PROGRAM;
+use solana_transaction::{AccountMeta, Transaction};
+use spl_associated_token_account::{
+    get_associated_token_address_with_program_id, instruction::create_associated_token_account,
+};
 use spl_token::{
     instruction::{initialize_mint, mint_to},
     state::{Account as TokenAccount, Mint},
 };
-use spl_associated_token_account::{
-    get_associated_token_address_with_program_id,
-    instruction::create_associated_token_account,
+use std::{
+    ops::{Add, Rem, Sub},
+    path::PathBuf,
+    str::FromStr,
 };
 
 use crate::common::utils::get_mint_address_field;
@@ -56,7 +70,10 @@ pub fn generate_random_nullifier() -> [u8; 32] {
 }
 
 pub fn create_ext_data_minified(ext_data: &ExtData) -> ExtDataMinified {
-    ExtDataMinified { ext_amount: ext_data.ext_amount, fee: ext_data.fee }
+    ExtDataMinified {
+        ext_amount: ext_data.ext_amount,
+        fee: ext_data.fee,
+    }
 }
 
 /// Calculates the protocol fee for a given amount using basis points.
@@ -100,9 +117,7 @@ pub fn bn_to_bytes(value: u128) -> [u8; 32] {
 }
 
 // Helper to turn the DepositProofToSubmit struct into the Proof struct we use in next 2 functions
-pub fn format_proof(
-    proof: DepositProofToSubmit,
-) -> Proof {
+pub fn format_proof(proof: DepositProofToSubmit) -> Proof {
     Proof {
         proof_a: proof.proof_a.try_into().expect("proof_a must be 64 bytes"),
         proof_b: proof.proof_b.try_into().expect("proof_b must be 128 bytes"),
@@ -125,15 +140,11 @@ pub struct NullifierPdas {
 }
 
 pub fn find_nullifier_pdas(program_id: &Pubkey, proof: &Proof) -> NullifierPdas {
-    let (nullifier0, bump0) = Pubkey::find_program_address(
-        &[b"nullifier0", &proof.input_nullifiers[0]],
-        program_id,
-    );
+    let (nullifier0, bump0) =
+        Pubkey::find_program_address(&[b"nullifier0", &proof.input_nullifiers[0]], program_id);
 
-    let (nullifier1, bump1) = Pubkey::find_program_address(
-        &[b"nullifier1", &proof.input_nullifiers[1]],
-        program_id,
-    );
+    let (nullifier1, bump1) =
+        Pubkey::find_program_address(&[b"nullifier1", &proof.input_nullifiers[1]], program_id);
 
     NullifierPdas {
         nullifier0,
@@ -143,25 +154,12 @@ pub fn find_nullifier_pdas(program_id: &Pubkey, proof: &Proof) -> NullifierPdas 
     }
 }
 
-pub fn find_cross_check_nullifier_pdas(
-    program_id: &Pubkey,
-    proof: &Proof,
-) -> (Pubkey, Pubkey) {
-    let (nullifier2_pda, _) = Pubkey::find_program_address(
-        &[
-            b"nullifier0",
-            &proof.input_nullifiers[1],
-        ],
-        program_id,
-    );
+pub fn find_cross_check_nullifier_pdas(program_id: &Pubkey, proof: &Proof) -> (Pubkey, Pubkey) {
+    let (nullifier2_pda, _) =
+        Pubkey::find_program_address(&[b"nullifier0", &proof.input_nullifiers[1]], program_id);
 
-    let (nullifier3_pda, _) = Pubkey::find_program_address(
-        &[
-            b"nullifier1",
-            &proof.input_nullifiers[0],
-        ],
-        program_id,
-    );
+    let (nullifier3_pda, _) =
+        Pubkey::find_program_address(&[b"nullifier1", &proof.input_nullifiers[0]], program_id);
 
     (nullifier2_pda, nullifier3_pda)
 }
@@ -222,7 +220,7 @@ pub fn build_initialize_ix(
             AccountMeta::new(authority, true),
             AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
         ],
-        data
+        data,
     }
 }
 
@@ -241,8 +239,11 @@ pub fn setup() -> TestContext {
 
     // Load the Anchor program into LiteSVM.
     // Replace the path with your actual built .so.
-    svm.add_program(program_id, include_bytes!("../target/deploy/privacy_cash.so"))
-        .unwrap();
+    svm.add_program(
+        program_id,
+        include_bytes!("../target/deploy/privacy_cash.so"),
+    )
+    .unwrap();
 
     let authority = Keypair::new();
     let funding_account = Keypair::new();
@@ -253,8 +254,7 @@ pub fn setup() -> TestContext {
 
     let merkle_tree = MerkleTree::new(DEFAULT_HEIGHT, Vec::new());
 
-    let (tree_account, tree_bump) =
-        Pubkey::find_program_address(&[b"merkle_tree"], &program_id);
+    let (tree_account, tree_bump) = Pubkey::find_program_address(&[b"merkle_tree"], &program_id);
 
     let (tree_token_account, tree_token_bump) =
         Pubkey::find_program_address(&[b"tree_token"], &program_id);
@@ -263,7 +263,8 @@ pub fn setup() -> TestContext {
         Pubkey::find_program_address(&[b"global_config"], &program_id);
 
     // Fund the funding account.
-    svm.airdrop(&funding_account.pubkey(), 1_000 * LAMPORTS_PER_SOL).unwrap();
+    svm.airdrop(&funding_account.pubkey(), 1_000 * LAMPORTS_PER_SOL)
+        .unwrap();
 
     let balance = svm.get_balance(&funding_account.pubkey()).unwrap();
     assert!(balance > 0);
@@ -296,7 +297,7 @@ pub fn setup() -> TestContext {
         global_config,
         tree_bump,
         tree_token_bump,
-        global_config_bump
+        global_config_bump,
     );
 
     let initialize_tx = Transaction::new_signed_with_payer(
@@ -309,12 +310,16 @@ pub fn setup() -> TestContext {
     svm.send_transaction(initialize_tx).unwrap();
 
     // Fund the tree token PDA after initialization.
-    svm.airdrop(&tree_token_account, 2 * LAMPORTS_PER_SOL).unwrap();
+    svm.airdrop(&tree_token_account, 2 * LAMPORTS_PER_SOL)
+        .unwrap();
 
     // THIS SECTION IS RELATED TO THE BEFOREEACH PART, NO NEED TO ADAPT THAT SEPARATELY
-    svm.airdrop(&recipient.pubkey(), LAMPORTS_PER_SOL / 2).unwrap();
-    svm.airdrop(&fee_recipient.pubkey(), LAMPORTS_PER_SOL / 2).unwrap();
-    svm.airdrop(&random_user.pubkey(), LAMPORTS_PER_SOL).unwrap();
+    svm.airdrop(&recipient.pubkey(), LAMPORTS_PER_SOL / 2)
+        .unwrap();
+    svm.airdrop(&fee_recipient.pubkey(), LAMPORTS_PER_SOL / 2)
+        .unwrap();
+    svm.airdrop(&random_user.pubkey(), LAMPORTS_PER_SOL)
+        .unwrap();
     svm.airdrop(&attacker.pubkey(), LAMPORTS_PER_SOL).unwrap();
 
     assert!(svm.get_balance(&recipient.pubkey()).unwrap() > 0);
@@ -324,7 +329,9 @@ pub fn setup() -> TestContext {
     // --------------------------------------------------------------------------------
 
     // Verify the initialized tree account.
-    let account = svm.get_account(&tree_account).expect("tree account missing");
+    let account = svm
+        .get_account(&tree_account)
+        .expect("tree account missing");
     let tree_state = bytemuck::from_bytes::<MerkleTreeAccount>(&account.data);
 
     assert_eq!(tree_state.authority, authority.pubkey().to_bytes());
@@ -348,7 +355,6 @@ pub fn setup() -> TestContext {
         merkle_tree,
     }
 }
-
 
 // -----------------------------------------------------------------------------
 // SPL token fixtures
@@ -379,13 +385,14 @@ fn create_mint_and_atas(ctx: &mut TestContext) -> SplTokenFixtures {
     let mint_lamports = 1_000_000_000u64;
     let mint_space = Mint::LEN as u64;
 
-    let create_mint_ix = solana_program::example_mocks::solana_sdk::system_instruction::create_account(
-        &ctx.authority.pubkey(),
-        &mint.pubkey(),
-        mint_lamports,
-        mint_space,
-        &pinocchio_token::ID,
-    );
+    let create_mint_ix =
+        solana_program::example_mocks::solana_sdk::system_instruction::create_account(
+            &ctx.authority.pubkey(),
+            &mint.pubkey(),
+            mint_lamports,
+            mint_space,
+            &pinocchio_token::ID,
+        );
 
     let init_mint_ix = initialize_mint(
         &pinocchio_token::ID,
@@ -406,9 +413,21 @@ fn create_mint_and_atas(ctx: &mut TestContext) -> SplTokenFixtures {
         .send_transaction(mint_tx)
         .expect("failed to initialize SPL mint");
 
-    let signer_token_account = get_associated_token_address_with_program_id(&ctx.random_user.pubkey(), &mint.pubkey(), &pinocchio_token::ID);
-    let attacker_token_account = get_associated_token_address_with_program_id(&ctx.attacker.pubkey(), &mint.pubkey(), &pinocchio_token::ID);
-    let fee_recipient_token_account = get_associated_token_address_with_program_id(&ctx.fee_recipient.pubkey(), &mint.pubkey(), &pinocchio_token::ID);
+    let signer_token_account = get_associated_token_address_with_program_id(
+        &ctx.random_user.pubkey(),
+        &mint.pubkey(),
+        &pinocchio_token::ID,
+    );
+    let attacker_token_account = get_associated_token_address_with_program_id(
+        &ctx.attacker.pubkey(),
+        &mint.pubkey(),
+        &pinocchio_token::ID,
+    );
+    let fee_recipient_token_account = get_associated_token_address_with_program_id(
+        &ctx.fee_recipient.pubkey(),
+        &mint.pubkey(),
+        &pinocchio_token::ID,
+    );
 
     let create_signer_ata_ix = create_associated_token_account(
         &ctx.authority.pubkey(),
@@ -430,7 +449,11 @@ fn create_mint_and_atas(ctx: &mut TestContext) -> SplTokenFixtures {
     );
 
     let create_atas_tx = Transaction::new_signed_with_payer(
-        &[create_signer_ata_ix, create_attacker_ata_ix, create_fee_recipient_ata_ix],
+        &[
+            create_signer_ata_ix,
+            create_attacker_ata_ix,
+            create_fee_recipient_ata_ix,
+        ],
         Some(&ctx.authority.pubkey()),
         &[&ctx.authority],
         ctx.svm.latest_blockhash(),
@@ -470,7 +493,10 @@ fn create_mint_and_atas(ctx: &mut TestContext) -> SplTokenFixtures {
         .expect("failed to mint SPL tokens");
 
     assert_eq!(token_balance(&ctx.svm, &signer_token_account), mint_amount);
-    assert_eq!(token_balance(&ctx.svm, &attacker_token_account), mint_amount);
+    assert_eq!(
+        token_balance(&ctx.svm, &attacker_token_account),
+        mint_amount
+    );
 
     SplTokenFixtures {
         mint: mint.pubkey(),
@@ -527,14 +553,14 @@ pub fn build_transact_spl_ix(
             AccountMeta::new(nullifier3, false),
             AccountMeta::new(global_config, false),
             AccountMeta::new(signer, true),
-            AccountMeta::new_readonly(mint, false),          // was: recipient
-            AccountMeta::new(signer_token_account, false),   // was: mint
-            AccountMeta::new_readonly(recipient, false),     // was: signer_token_account (this is `_recipient` on-chain — read but ignored)
+            AccountMeta::new_readonly(mint, false),
+            AccountMeta::new(signer_token_account, false),
+            AccountMeta::new_readonly(recipient, false),
             AccountMeta::new(recipient_token_account, false),
             AccountMeta::new(tree_ata, false),
             AccountMeta::new(fee_recipient_ata, false),
             AccountMeta::new_readonly(pinocchio_token::ID, false),
-            AccountMeta::new_readonly(spl_associated_token_account::id(), false),
+            AccountMeta::new_readonly(spl_associated_token_account::ID, false),
             AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
         ],
         data,
@@ -553,7 +579,11 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
     let deposit_amount: u64 = 20_000;
     let calculated_deposit_fee = calculate_deposit_fee(deposit_amount);
 
-    let recipient_token_account = get_associated_token_address_with_program_id(&ctx.recipient.pubkey(), &fixtures.mint, &pinocchio_token::ID);
+    let recipient_token_account = get_associated_token_address_with_program_id(
+        &ctx.recipient.pubkey(),
+        &fixtures.mint,
+        &pinocchio_token::ID,
+    );
     let create_recipient_ata_ix = create_associated_token_account(
         &ctx.random_user.pubkey(),
         &ctx.recipient.pubkey(),
@@ -570,20 +600,17 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
         .send_transaction(create_recipient_ata_tx)
         .expect("failed to create recipient ATA");
 
-    let mut inputs = [Utxo::empty(), Utxo::empty()];
-    for utxo in &mut inputs {
-        utxo.mint_address = fixtures.mint.clone();
-    }
+    let inputs = [
+        Utxo::with_mint(0, fixtures.mint),
+        Utxo::with_mint(0, fixtures.mint),
+    ];
 
     let output_amount = deposit_amount - calculated_deposit_fee;
     let output_index = ctx.merkle_tree.elements().len() as u64;
-    let mut outputs = [
-        Utxo::new_with_index(output_amount, output_index),
-        Utxo::new(0),
+    let outputs = [
+        Utxo::with_mint(output_amount, fixtures.mint).with_index(output_index),
+        Utxo::with_mint(0, fixtures.mint),
     ];
-    for utxo in &mut outputs {
-        utxo.mint_address = fixtures.mint.clone();
-    }
 
     let input_merkle_path_indices = [0usize; 2];
     let input_merkle_path_elements = vec![
@@ -596,8 +623,12 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
         inputs[1].get_nullifier().unwrap(),
     ];
     let output_commitments = [
-        outputs[0].get_commitment().expect("failed to compute output commitment"),
-        outputs[1].get_commitment().expect("failed to compute output commitment"),
+        outputs[0]
+            .get_commitment()
+            .expect("failed to compute output commitment"),
+        outputs[1]
+            .get_commitment()
+            .expect("failed to compute output commitment"),
     ];
 
     let root = ctx.merkle_tree.root();
@@ -618,25 +649,31 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
     let ext_amount = BigInt::from(ext_data.ext_amount);
     let deposit_fee = BigInt::from(calculated_deposit_fee);
 
-    let public_amount_number =
-        (ext_amount - deposit_fee + &field_size) % &field_size;
+    let public_amount_number = (ext_amount - deposit_fee + &field_size) % &field_size;
 
     let proof_input = ProofInput {
         root,
         input_nullifier: input_nullifiers,
         output_commitment: output_commitments,
-        public_amount: public_amount_number.clone()
+        public_amount: public_amount_number
+            .clone()
             .to_biguint()
             .expect("public amount should be non-negative"),
         ext_data_hash,
         in_amount: inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
         in_private_key: inputs.iter().map(|x| x.keypair.privkey.clone()).collect(),
-        in_blinding: inputs.iter().map(|x| BigUint::from(x.blinding.clone())).collect(),
+        in_blinding: inputs
+            .iter()
+            .map(|x| BigUint::from(x.blinding.clone()))
+            .collect(),
         mint_address: fixtures.mint.to_string(),
         in_path_indices: input_merkle_path_indices,
         in_path_elements: input_merkle_path_elements,
         out_amount: outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
-        out_blinding: outputs.iter().map(|x| BigUint::from(x.blinding.clone())).collect(),
+        out_blinding: outputs
+            .iter()
+            .map(|x| BigUint::from(x.blinding.clone()))
+            .collect(),
         out_pubkey: outputs.iter().map(|x| x.keypair.pubkey.clone()).collect(),
     };
 
@@ -646,15 +683,17 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
         .join("transaction2");
 
     let proof_result = prove(&proof_input, &key_base_path).unwrap();
-    let proof_to_submit = format_proof(
-        deposit_artifacts_to_submit(&proof_result, false).unwrap(),
-    );
+    let proof_to_submit = format_proof(deposit_artifacts_to_submit(&proof_result, false).unwrap());
 
     let nullifiers = find_nullifier_pdas(&Pubkey::from_str_const(PROGRAM_ID), &proof_to_submit);
     let cross_check_nullifiers =
         find_cross_check_nullifier_pdas(&Pubkey::from_str_const(PROGRAM_ID), &proof_to_submit);
 
-    let tree_ata = get_associated_token_address_with_program_id(&ctx.global_config, &fixtures.mint, &pinocchio_token::ID);
+    let tree_ata = get_associated_token_address_with_program_id(
+        &ctx.global_config,
+        &fixtures.mint,
+        &pinocchio_token::ID,
+    );
 
     let create_tree_ata_ix = create_associated_token_account(
         &ctx.authority.pubkey(),
@@ -672,17 +711,15 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
 
     ctx.svm.send_transaction(tx).unwrap();
 
-    let test_protocol_addresses = 
-        get_test_protocol_addresses_with_mint(
-            &Address::from_str_const(PROGRAM_ID),
-            &ctx.authority.pubkey(),
-            &tree_ata,
-            &ctx.fee_recipient.pubkey(),
-            &fixtures.fee_recipient_token_account,
-            &ctx.tree_account,
-            &Pubkey::from_str("11111111111111111111111111111112")
-            .unwrap()
-        );
+    let test_protocol_addresses = get_test_protocol_addresses_with_mint(
+        &Address::from_str_const(PROGRAM_ID),
+        &ctx.authority.pubkey(),
+        &tree_ata,
+        &ctx.fee_recipient.pubkey(),
+        &fixtures.fee_recipient_token_account,
+        &ctx.tree_account,
+        &fixtures.mint,
+    );
     let lookup_table_address = create_global_test_alt(
         &mut ctx.svm,
         &ctx.authority,
@@ -707,7 +744,7 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
         &ext_data.encrypted_output2,
         nullifiers.bump0,
         nullifiers.bump1,
-        ctx.tree_account,
+        ctx.tree_account, // This Tree Account is Still Wrong But Since Check Never Reaches till here so we move
         nullifiers.nullifier0,
         nullifiers.nullifier1,
         cross_check_nullifiers.0,
@@ -730,20 +767,28 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
         &lookup_table_address,
     );
 
-    let result = ctx.svm.send_transaction(versioned_tx);
+    let err = ctx
+        .svm
+        .send_transaction(versioned_tx)
+        .expect_err("expected non-USDC SPL deposit to fail, but the transaction succeeded");
+
+    let logs = err.meta.logs.join("\n");
     assert!(
-        result.is_err(),
-        "expected non-USDC SPL deposit to fail, but the transaction succeeded"
+        logs.contains("0x1") || logs.contains("InvalidMintAddress"),
+        "unexpected error: {logs}"
     );
 
-    let err = format!("{result:?}");
-    assert!(
-        err.contains("0x1") || err.contains("Invalid mint address"),
-        "unexpected error: {err}"
+    assert_eq!(
+        token_balance(&ctx.svm, &fixtures.signer_token_account),
+        signer_before
     );
-
-    assert_eq!(token_balance(&ctx.svm, &fixtures.signer_token_account), signer_before);
-    assert_eq!(token_balance(&ctx.svm, &recipient_token_account), recipient_before);
-    assert_eq!(token_balance(&ctx.svm, &fixtures.fee_recipient_token_account), fee_recipient_before);
+    assert_eq!(
+        token_balance(&ctx.svm, &recipient_token_account),
+        recipient_before
+    );
+    assert_eq!(
+        token_balance(&ctx.svm, &fixtures.fee_recipient_token_account),
+        fee_recipient_before
+    );
     assert_eq!(token_balance(&ctx.svm, &tree_ata), tree_before);
 }

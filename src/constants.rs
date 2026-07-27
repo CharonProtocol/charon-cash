@@ -9,7 +9,7 @@ pub const ADMIN_PUBKEY: Option<[u8; 32]> = None;
 // pub const ADMIN_PUBKEY: Option<[u8; 32]> =
 //     Some(pubkey!("97rSMQUukMDjA7PYErccyx7ZxbHvSDaeXp2ig5BwSrTf"));
 
-pub const ALLOW_ALL_SPL_TOKENS: bool = true;
+pub const ALLOW_ALL_SPL_TOKENS: bool = false;
 
 pub const ALLOWED_TOKENS: &[[u8; 32]] = &[
     pubkey!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"), // USDC
