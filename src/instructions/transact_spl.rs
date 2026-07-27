@@ -1,8 +1,5 @@
 use crate::{
-    constants::{
-        ALLOWED_TOKENS, ALLOW_ALL_SPL_TOKENS, GLOBAL_CONFIG_SEED, NULLIFIER0_SEED, NULLIFIER1_SEED,
-        TREE_ACCOUNT_SEED,
-    },
+    constants::{GLOBAL_CONFIG_SEED, NULLIFIER0_SEED, NULLIFIER1_SEED, TREE_ACCOUNT_SEED},
     error::PrivacyCashError,
     helper::{
         init_nullifier_account, verify_cross_nullifier, verify_initialized, verify_pda,
@@ -24,7 +21,6 @@ use pinocchio::{
     ProgramResult,
 };
 use pinocchio_associated_token_account::instructions::CreateIdempotent;
-use pinocchio_log::log;
 use pinocchio_token::{instructions::Transfer as TokenTransfer, state::TokenAccount};
 
 /// Users deposit or withdraw SPL tokens from the program.
@@ -197,8 +193,6 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
         }
         .invoke_signed(&[Signer::from(&global_seeds)])?;
     }
-
-    log!("Seventh Checkpoint");
 
     if fee > 0 {
         // Fee payment: tree's ATA -> fee recipient's ATA, signed by global_config PDA.

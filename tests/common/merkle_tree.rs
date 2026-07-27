@@ -29,19 +29,14 @@ impl MerkleTree {
         Self::new_with_zero(levels, elements, ZERO_BYTES[0])
     }
 
-    pub fn new_with_zero(
-        levels: usize,
-        elements: Vec<[u8; 32]>,
-        zero_element: [u8; 32],
-    ) -> Self {
+    pub fn new_with_zero(levels: usize, elements: Vec<[u8; 32]>, zero_element: [u8; 32]) -> Self {
         let capacity = 1usize << levels;
         assert!(elements.len() <= capacity, "Tree is full");
 
         let mut zeros = Vec::with_capacity(levels + 1);
         zeros.push(zero_element);
         for i in 1..=levels {
-            let z = Poseidon::hashv(&[&zeros[i - 1], &zeros[i - 1]])
-                .expect("poseidon zero hash");
+            let z = Poseidon::hashv(&[&zeros[i - 1], &zeros[i - 1]]).expect("poseidon zero hash");
             zeros.push(z);
         }
 
@@ -151,23 +146,12 @@ impl MerkleTree {
         }
     }
 
-    pub fn index_of<F>(&self, element: &[u8; 32], comparator: Option<F>) -> isize
-    where
-        F: Fn(&[u8; 32], &[u8; 32]) -> bool,
-    {
-        if let Some(cmp) = comparator {
-            self.layers[0]
-                .iter()
-                .position(|el| cmp(element, el))
-                .map(|i| i as isize)
-                .unwrap_or(-1)
-        } else {
-            self.layers[0]
-                .iter()
-                .position(|el| el == element)
-                .map(|i| i as isize)
-                .unwrap_or(-1)
-        }
+    pub fn index_of(&self, element: &[u8; 32]) -> isize {
+        self.layers[0]
+            .iter()
+            .position(|el| el == element)
+            .map(|i| i as isize)
+            .unwrap_or(-1)
     }
 
     pub fn elements(&self) -> Vec<[u8; 32]> {

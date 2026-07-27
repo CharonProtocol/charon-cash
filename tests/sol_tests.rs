@@ -1,41 +1,58 @@
 mod common;
-use litesvm::LiteSVM;
-use pinocchio::error::ProgramError;
-use solana_clock::Clock;
-use solana_sdk::{
-    native_token::LAMPORTS_PER_SOL,
-    signature::{Keypair, Signer},
-    instruction::Instruction,
-};
-use solana_transaction::{Transaction, AccountMeta};
-use ethers::{
-    core::{k256::schnorr::CryptoRngCore, rand::{RngCore, thread_rng}}, utils::hex,
-};
-use std::{dbg, ops::{Add, Rem, Sub}, path::PathBuf, str::FromStr};
+use bytemuck::{bytes_of, from_bytes, NoUninit, Pod, Zeroable};
 use common::{
-    constants::{DEFAULT_HEIGHT, DEPOSIT_FEE_RATE, FEE_ERROR_MARGIN, FEE_RECIPIENT_ACCOUNT, FIELD_SIZE_DECIMAL, ROOT_HISTORY_SIZE, SOL_ADDRESS, WITHDRAW_FEE_RATE, },
+    constants::{
+        DEFAULT_HEIGHT, DEPOSIT_FEE_RATE, FEE_ERROR_MARGIN, FEE_RECIPIENT_ACCOUNT,
+        FIELD_SIZE_DECIMAL, ROOT_HISTORY_SIZE, SOL_ADDRESS, WITHDRAW_FEE_RATE,
+    },
     merkle_tree::MerkleTree,
+    prover::{
+        deposit_artifacts_to_submit, prove, DepositProofArtifacts, DepositProofToSubmit, ProofInput,
+    },
+    test_alt::{
+        create_global_test_alt, create_versioned_tx_with_alt, get_global_test_alt,
+        get_test_protocol_addresses, get_test_protocol_addresses_with_mint, reset_global_test_alt,
+    },
     utils::{get_ext_data_hash, ExtData},
-    prover::{DepositProofToSubmit, DepositProofArtifacts, ProofInput,
-    prove, deposit_artifacts_to_submit },
-    test_alt::{create_global_test_alt, create_versioned_tx_with_alt, get_global_test_alt, get_test_protocol_addresses, get_test_protocol_addresses_with_mint, reset_global_test_alt},
-    utxo::Utxo
+    utxo::Utxo,
 };
+use ethers::{
+    core::{
+        k256::schnorr::CryptoRngCore,
+        rand::{thread_rng, RngCore},
+    },
+    utils::hex,
+};
+use light_hasher::zero_bytes::poseidon::ZERO_BYTES;
+use litesvm::LiteSVM;
 use num_bigint::{BigInt, BigUint};
 use num_traits::ToPrimitive;
+use pinocchio::error::ProgramError;
 use privacy_cash::{
-    constants, instructions::{self, PrivacyCashInstructions}, state::{
-        GlobalConfig, MerkleTreeAccount, transact::{ExtDataMinified, Proof, TransactArgs}
+    constants,
+    instructions::{self, PrivacyCashInstructions},
+    state::{
+        transact::{ExtDataMinified, Proof, TransactArgs},
+        GlobalConfig, MerkleTreeAccount,
     },
 };
-use bytemuck::{
-    bytes_of, from_bytes, NoUninit, Pod, Zeroable
-};
 use solana_address::Address;
-use light_hasher::zero_bytes::poseidon::ZERO_BYTES;
-use solana_sdk_ids::system_program::ID as SYSTEM_PROGRAM;
-use solana_program::{example_mocks::solana_sdk::system_instruction, pubkey::Pubkey};
+use solana_clock::Clock;
 use solana_compute_budget_interface::ComputeBudgetInstruction;
+use solana_program::{example_mocks::solana_sdk::system_instruction, pubkey::Pubkey};
+use solana_sdk::{
+    instruction::Instruction,
+    native_token::LAMPORTS_PER_SOL,
+    signature::{Keypair, Signer},
+};
+use solana_sdk_ids::system_program::ID as SYSTEM_PROGRAM;
+use solana_transaction::{AccountMeta, Transaction};
+use std::{
+    dbg,
+    ops::{Add, Rem, Sub},
+    path::PathBuf,
+    str::FromStr,
+};
 
 const PROGRAM_ID: &str = "HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV";
 const DEFAULT_ZERO: [u8; 32] = ZERO_BYTES[0]; // The default value of elements for initializing a tree
@@ -47,7 +64,10 @@ pub fn generate_random_nullifier() -> [u8; 32] {
 }
 
 pub fn create_ext_data_minified(ext_data: &ExtData) -> ExtDataMinified {
-    ExtDataMinified { ext_amount: ext_data.ext_amount, fee: ext_data.fee }
+    ExtDataMinified {
+        ext_amount: ext_data.ext_amount,
+        fee: ext_data.fee,
+    }
 }
 
 /// Calculates the protocol fee for a given amount using basis points.
@@ -91,9 +111,7 @@ pub fn bn_to_bytes(value: u128) -> [u8; 32] {
 }
 
 // Helper to turn the DepositProofToSubmit struct into the Proof struct we use in next 2 functions
-pub fn format_proof(
-    proof: DepositProofToSubmit,
-) -> Proof {
+pub fn format_proof(proof: DepositProofToSubmit) -> Proof {
     Proof {
         proof_a: proof.proof_a.try_into().expect("proof_a must be 64 bytes"),
         proof_b: proof.proof_b.try_into().expect("proof_b must be 128 bytes"),
@@ -116,15 +134,11 @@ pub struct NullifierPdas {
 }
 
 pub fn find_nullifier_pdas(program_id: &Pubkey, proof: &Proof) -> NullifierPdas {
-    let (nullifier0, bump0) = Pubkey::find_program_address(
-        &[b"nullifier0", &proof.input_nullifiers[0]],
-        program_id,
-    );
+    let (nullifier0, bump0) =
+        Pubkey::find_program_address(&[b"nullifier0", &proof.input_nullifiers[0]], program_id);
 
-    let (nullifier1, bump1) = Pubkey::find_program_address(
-        &[b"nullifier1", &proof.input_nullifiers[1]],
-        program_id,
-    );
+    let (nullifier1, bump1) =
+        Pubkey::find_program_address(&[b"nullifier1", &proof.input_nullifiers[1]], program_id);
 
     NullifierPdas {
         nullifier0,
@@ -134,25 +148,12 @@ pub fn find_nullifier_pdas(program_id: &Pubkey, proof: &Proof) -> NullifierPdas 
     }
 }
 
-pub fn find_cross_check_nullifier_pdas(
-    program_id: &Pubkey,
-    proof: &Proof,
-) -> (Pubkey, Pubkey) {
-    let (nullifier2_pda, _) = Pubkey::find_program_address(
-        &[
-            b"nullifier0",
-            &proof.input_nullifiers[1],
-        ],
-        program_id,
-    );
+pub fn find_cross_check_nullifier_pdas(program_id: &Pubkey, proof: &Proof) -> (Pubkey, Pubkey) {
+    let (nullifier2_pda, _) =
+        Pubkey::find_program_address(&[b"nullifier0", &proof.input_nullifiers[1]], program_id);
 
-    let (nullifier3_pda, _) = Pubkey::find_program_address(
-        &[
-            b"nullifier1",
-            &proof.input_nullifiers[0],
-        ],
-        program_id,
-    );
+    let (nullifier3_pda, _) =
+        Pubkey::find_program_address(&[b"nullifier1", &proof.input_nullifiers[0]], program_id);
 
     (nullifier2_pda, nullifier3_pda)
 }
@@ -213,7 +214,7 @@ pub fn build_initialize_ix(
             AccountMeta::new(authority, true),
             AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
         ],
-        data
+        data,
     }
 }
 
@@ -263,20 +264,15 @@ pub fn build_transact_ix(
         program_id,
         accounts: vec![
             AccountMeta::new(tree_account, false),
-
             AccountMeta::new(nullifier0, false),
             AccountMeta::new(nullifier1, false),
             AccountMeta::new(nullifier2, false),
             AccountMeta::new(nullifier3, false),
-
             AccountMeta::new(tree_token_account, false),
             AccountMeta::new(global_config, false),
-
             AccountMeta::new(recipient, false),
             AccountMeta::new(fee_recipient, false),
-
             AccountMeta::new(signer, true),
-
             AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
         ],
         data,
@@ -298,8 +294,11 @@ pub fn setup() -> TestContext {
 
     // Load the Anchor program into LiteSVM.
     // Replace the path with your actual built .so.
-    svm.add_program(program_id, include_bytes!("../target/deploy/privacy_cash.so"))
-        .unwrap();
+    svm.add_program(
+        program_id,
+        include_bytes!("../target/deploy/privacy_cash.so"),
+    )
+    .unwrap();
 
     let authority = Keypair::new();
     let funding_account = Keypair::new();
@@ -310,8 +309,7 @@ pub fn setup() -> TestContext {
 
     let merkle_tree = MerkleTree::new(DEFAULT_HEIGHT, Vec::new());
 
-    let (tree_account, tree_bump) =
-        Pubkey::find_program_address(&[b"merkle_tree"], &program_id);
+    let (tree_account, tree_bump) = Pubkey::find_program_address(&[b"merkle_tree"], &program_id);
 
     let (tree_token_account, tree_token_bump) =
         Pubkey::find_program_address(&[b"tree_token"], &program_id);
@@ -320,7 +318,8 @@ pub fn setup() -> TestContext {
         Pubkey::find_program_address(&[b"global_config"], &program_id);
 
     // Fund the funding account.
-    svm.airdrop(&funding_account.pubkey(), 1_000 * LAMPORTS_PER_SOL).unwrap();
+    svm.airdrop(&funding_account.pubkey(), 1_000 * LAMPORTS_PER_SOL)
+        .unwrap();
 
     let balance = svm.get_balance(&funding_account.pubkey()).unwrap();
     assert!(balance > 0);
@@ -353,7 +352,7 @@ pub fn setup() -> TestContext {
         global_config,
         tree_bump,
         tree_token_bump,
-        global_config_bump
+        global_config_bump,
     );
 
     let initialize_tx = Transaction::new_signed_with_payer(
@@ -366,12 +365,16 @@ pub fn setup() -> TestContext {
     svm.send_transaction(initialize_tx).unwrap();
 
     // Fund the tree token PDA after initialization.
-    svm.airdrop(&tree_token_account, 2 * LAMPORTS_PER_SOL).unwrap();
+    svm.airdrop(&tree_token_account, 2 * LAMPORTS_PER_SOL)
+        .unwrap();
 
     // THIS SECTION IS RELATED TO THE BEFOREEACH PART, NO NEED TO ADAPT THAT SEPARATELY
-    svm.airdrop(&recipient.pubkey(), LAMPORTS_PER_SOL / 2).unwrap();
-    svm.airdrop(&fee_recipient.pubkey(), LAMPORTS_PER_SOL / 2).unwrap();
-    svm.airdrop(&random_user.pubkey(), LAMPORTS_PER_SOL).unwrap();
+    svm.airdrop(&recipient.pubkey(), LAMPORTS_PER_SOL / 2)
+        .unwrap();
+    svm.airdrop(&fee_recipient.pubkey(), LAMPORTS_PER_SOL / 2)
+        .unwrap();
+    svm.airdrop(&random_user.pubkey(), LAMPORTS_PER_SOL)
+        .unwrap();
     svm.airdrop(&attacker.pubkey(), LAMPORTS_PER_SOL).unwrap();
 
     assert!(svm.get_balance(&recipient.pubkey()).unwrap() > 0);
@@ -381,7 +384,9 @@ pub fn setup() -> TestContext {
     // --------------------------------------------------------------------------------
 
     // Verify the initialized tree account.
-    let account = svm.get_account(&tree_account).expect("tree account missing");
+    let account = svm
+        .get_account(&tree_account)
+        .expect("tree account missing");
     let tree_state = bytemuck::from_bytes::<MerkleTreeAccount>(&account.data);
 
     assert_eq!(tree_state.authority, authority.pubkey().to_bytes());
@@ -407,8 +412,7 @@ pub fn setup() -> TestContext {
 }
 
 #[test]
-fn double_spend_attack_fails()
-{
+fn double_spend_attack_fails() {
     let mut ctx = setup();
 
     let deposit_amount = 1000;
@@ -426,24 +430,26 @@ fn double_spend_attack_fails()
             .to_bytes(),
     };
 
-    let deposit_inputs = [
-        Utxo::empty(),
-        Utxo::empty()
-    ];
+    let deposit_inputs = [Utxo::empty(), Utxo::empty()];
 
     let field_size = BigInt::from_str(FIELD_SIZE_DECIMAL).unwrap();
 
     let ext_amount = BigInt::from(deposit_ext_data.ext_amount);
     let deposit_fee = BigInt::from(deposit_fee);
 
-    let public_amount_number =
-        (ext_amount - deposit_fee + &field_size) % &field_size;
+    let public_amount_number = (ext_amount - deposit_fee + &field_size) % &field_size;
 
     let output_index = ctx.merkle_tree.elements().len() as u64;
-    
+
     let deposit_outputs = [
-        Utxo::new_with_index(public_amount_number.clone().try_into().expect("Public amount should fit in u64"), output_index),
-        Utxo::new(0)
+        Utxo::new_with_index(
+            public_amount_number
+                .clone()
+                .try_into()
+                .expect("Public amount should fit in u64"),
+            output_index,
+        ),
+        Utxo::new(0),
     ];
 
     let deposit_input_merkle_path_indices = [0usize; 2];
@@ -474,7 +480,8 @@ fn double_spend_attack_fails()
         root: deposit_root,
         input_nullifier: deposit_input_nullifiers,
         output_commitment: deposit_output_commitments,
-        public_amount: public_amount_number.clone()
+        public_amount: public_amount_number
+            .clone()
             .to_biguint()
             .expect("public amount should be non-negative"),
         ext_data_hash: deposit_ext_data_hash,
@@ -522,30 +529,40 @@ fn double_spend_attack_fails()
 
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
-    let deposit_nullifiers = find_nullifier_pdas(&Pubkey::from_str_const(PROGRAM_ID), &deposit_proof_to_submit);
-    let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(&Pubkey::from_str_const(PROGRAM_ID), &deposit_proof_to_submit);
+    let deposit_nullifiers = find_nullifier_pdas(
+        &Pubkey::from_str_const(PROGRAM_ID),
+        &deposit_proof_to_submit,
+    );
+    let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
+        &Pubkey::from_str_const(PROGRAM_ID),
+        &deposit_proof_to_submit,
+    );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
-    let deposit_test_protocol_addresses = 
-        get_test_protocol_addresses(&Address::from_str_const(PROGRAM_ID), &ctx.authority.pubkey(), &FEE_RECIPIENT_ACCOUNT);
-    
-    let deposit_lookup_table_address = 
-        create_global_test_alt(&mut ctx.svm, &ctx.authority, &ctx.authority, &deposit_test_protocol_addresses);
+    let deposit_test_protocol_addresses = get_test_protocol_addresses(
+        &Address::from_str_const(PROGRAM_ID),
+        &ctx.authority.pubkey(),
+        &FEE_RECIPIENT_ACCOUNT,
+    );
+
+    let deposit_lookup_table_address = create_global_test_alt(
+        &mut ctx.svm,
+        &ctx.authority,
+        &ctx.authority,
+        &deposit_test_protocol_addresses,
+    );
 
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_ix(
         Pubkey::from_str_const(PROGRAM_ID),
-
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
         &deposit_ext_data.encrypted_output2,
-
         deposit_nullifiers.bump0,
         deposit_nullifiers.bump1,
-
         ctx.tree_account,
         deposit_nullifiers.nullifier0,
         deposit_nullifiers.nullifier1,
@@ -560,8 +577,8 @@ fn double_spend_attack_fails()
 
     let deposit_versioned_tx = create_versioned_tx_with_alt(
         &mut ctx.svm,
-        &ctx.random_user,           // payer
-        &[],                        // additional signers
+        &ctx.random_user, // payer
+        &[],              // additional signers
         &[modify_compute_units.clone(), transact_ix],
         &deposit_lookup_table_address,
     );
@@ -586,26 +603,19 @@ fn double_spend_attack_fails()
         Utxo::empty(),       // empty second input
     ];
 
-    let first_outputs = [
-        Utxo::new(800),
-        Utxo::new(0),
-    ];
+    let first_outputs = [Utxo::new(800), Utxo::new(0)];
 
     let first_inputs_sum: u64 = first_inputs.iter().map(|x| x.amount).sum();
     let first_outputs_sum: u64 = first_outputs.iter().map(|x| x.amount).sum();
     let first_withdraw_fee = calculate_withdrawal_fee(first_inputs_sum);
 
-    let first_ext_amount = BigInt::from(first_withdraw_fee)
-        + BigInt::from(first_outputs_sum)
+    let first_ext_amount = BigInt::from(first_withdraw_fee) + BigInt::from(first_outputs_sum)
         - BigInt::from(first_inputs_sum);
 
-    let first_public_amount = (&first_ext_amount - BigInt::from(first_withdraw_fee) + &field_size)
-        % &field_size;
+    let first_public_amount =
+        (&first_ext_amount - BigInt::from(first_withdraw_fee) + &field_size) % &field_size;
 
-    let first_input_merkle_path_indices = [
-        output_index as usize,
-        0usize,
-    ];
+    let first_input_merkle_path_indices = [output_index as usize, 0usize];
 
     let first_input_merkle_path_elements = vec![
         ctx.merkle_tree
@@ -651,15 +661,33 @@ fn double_spend_attack_fails()
             .to_biguint()
             .expect("first public amount should be non-negative"),
         ext_data_hash: first_ext_data_hash,
-        in_amount: first_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
-        in_private_key: first_inputs.iter().map(|x| x.keypair.privkey.clone()).collect(),
-        in_blinding: first_inputs.iter().map(|x| BigUint::from(x.blinding.clone())).collect(),
+        in_amount: first_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
+        in_private_key: first_inputs
+            .iter()
+            .map(|x| x.keypair.privkey.clone())
+            .collect(),
+        in_blinding: first_inputs
+            .iter()
+            .map(|x| BigUint::from(x.blinding.clone()))
+            .collect(),
         mint_address: first_inputs[0].mint_address.to_string(),
         in_path_indices: first_input_merkle_path_indices,
         in_path_elements: first_input_merkle_path_elements,
-        out_amount: first_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
-        out_blinding: first_outputs.iter().map(|x| BigUint::from(x.blinding.clone())).collect(),
-        out_pubkey: first_outputs.iter().map(|x| x.keypair.pubkey.clone()).collect(),
+        out_amount: first_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
+        out_blinding: first_outputs
+            .iter()
+            .map(|x| BigUint::from(x.blinding.clone()))
+            .collect(),
+        out_pubkey: first_outputs
+            .iter()
+            .map(|x| x.keypair.pubkey.clone())
+            .collect(),
     };
 
     let first_proof_result = prove(&first_proof_input, &key_base_path).unwrap();
@@ -668,8 +696,10 @@ fn double_spend_attack_fails()
 
     let first_nullifiers =
         find_nullifier_pdas(&Pubkey::from_str_const(PROGRAM_ID), &first_proof_to_submit);
-    let first_cross_check_nullifiers =
-        find_cross_check_nullifier_pdas(&Pubkey::from_str_const(PROGRAM_ID), &first_proof_to_submit);
+    let first_cross_check_nullifiers = find_cross_check_nullifier_pdas(
+        &Pubkey::from_str_const(PROGRAM_ID),
+        &first_proof_to_submit,
+    );
 
     let first_test_protocol_addresses = get_test_protocol_addresses(
         &Address::from_str_const(PROGRAM_ID),
@@ -733,21 +763,17 @@ fn double_spend_attack_fails()
         target_utxo.clone(), // same note reused in position 1
     ];
 
-    let second_outputs = [
-        Utxo::new(200),
-        Utxo::new(0),
-    ];
+    let second_outputs = [Utxo::new(200), Utxo::new(0)];
 
     let second_inputs_sum: u64 = second_inputs.iter().map(|x| x.amount).sum();
     let second_outputs_sum: u64 = second_outputs.iter().map(|x| x.amount).sum();
     let second_withdraw_fee = calculate_withdrawal_fee(second_inputs_sum);
 
-    let second_ext_amount = BigInt::from(second_withdraw_fee)
-        + BigInt::from(second_outputs_sum)
+    let second_ext_amount = BigInt::from(second_withdraw_fee) + BigInt::from(second_outputs_sum)
         - BigInt::from(second_inputs_sum);
 
-    let second_public_amount = (&second_ext_amount - BigInt::from(second_withdraw_fee) + &field_size)
-        % &field_size;
+    let second_public_amount =
+        (&second_ext_amount - BigInt::from(second_withdraw_fee) + &field_size) % &field_size;
 
     let second_input_merkle_path_indices = [
         0usize,
@@ -768,8 +794,7 @@ fn double_spend_attack_fails()
     ];
 
     assert_eq!(
-        first_input_nullifiers[0],
-        second_input_nullifiers[1],
+        first_input_nullifiers[0], second_input_nullifiers[1],
         "same UTXO should produce the same nullifier"
     );
 
@@ -804,15 +829,33 @@ fn double_spend_attack_fails()
             .to_biguint()
             .expect("second public amount should be non-negative"),
         ext_data_hash: second_ext_data_hash,
-        in_amount: second_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
-        in_private_key: second_inputs.iter().map(|x| x.keypair.privkey.clone()).collect(),
-        in_blinding: second_inputs.iter().map(|x| BigUint::from(x.blinding.clone())).collect(),
+        in_amount: second_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
+        in_private_key: second_inputs
+            .iter()
+            .map(|x| x.keypair.privkey.clone())
+            .collect(),
+        in_blinding: second_inputs
+            .iter()
+            .map(|x| BigUint::from(x.blinding.clone()))
+            .collect(),
         mint_address: second_inputs[0].mint_address.to_string(),
         in_path_indices: second_input_merkle_path_indices,
         in_path_elements: second_input_merkle_path_elements,
-        out_amount: second_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
-        out_blinding: second_outputs.iter().map(|x| BigUint::from(x.blinding.clone())).collect(),
-        out_pubkey: second_outputs.iter().map(|x| x.keypair.pubkey.clone()).collect(),
+        out_amount: second_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
+        out_blinding: second_outputs
+            .iter()
+            .map(|x| BigUint::from(x.blinding.clone()))
+            .collect(),
+        out_pubkey: second_outputs
+            .iter()
+            .map(|x| x.keypair.pubkey.clone())
+            .collect(),
     };
 
     let second_proof_result = prove(&second_proof_input, &key_base_path).unwrap();
@@ -821,8 +864,10 @@ fn double_spend_attack_fails()
 
     let second_nullifiers =
         find_nullifier_pdas(&Pubkey::from_str_const(PROGRAM_ID), &second_proof_to_submit);
-    let second_cross_check_nullifiers =
-        find_cross_check_nullifier_pdas(&Pubkey::from_str_const(PROGRAM_ID), &second_proof_to_submit);
+    let second_cross_check_nullifiers = find_cross_check_nullifier_pdas(
+        &Pubkey::from_str_const(PROGRAM_ID),
+        &second_proof_to_submit,
+    );
 
     let second_test_protocol_addresses = get_test_protocol_addresses(
         &Address::from_str_const(PROGRAM_ID),
@@ -870,7 +915,6 @@ fn double_spend_attack_fails()
         second_result.is_err(),
         "double-spend should fail, but the transaction succeeded"
     );
-
 }
 
 #[test]
@@ -898,10 +942,9 @@ fn can_execute_both_deposit_and_withdraw_for_correct_input_with_positive_fee() {
     let deposit_inputs = [Utxo::empty(), Utxo::empty()];
     let field_size = BigInt::from_str(FIELD_SIZE_DECIMAL).unwrap();
 
-    let deposit_public_amount_big = (BigInt::from(deposit_amount)
-        - BigInt::from(deposit_fee_amount)
-        + &field_size)
-        % &field_size;
+    let deposit_public_amount_big =
+        (BigInt::from(deposit_amount) - BigInt::from(deposit_fee_amount) + &field_size)
+            % &field_size;
     let deposit_public_amount: u64 = deposit_public_amount_big
         .clone()
         .try_into()
@@ -946,8 +989,14 @@ fn can_execute_both_deposit_and_withdraw_for_correct_input_with_positive_fee() {
             .to_biguint()
             .expect("deposit public amount should be non-negative"),
         ext_data_hash: deposit_ext_data_hash,
-        in_amount: deposit_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
-        in_private_key: deposit_inputs.iter().map(|x| x.keypair.privkey.clone()).collect(),
+        in_amount: deposit_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
+        in_private_key: deposit_inputs
+            .iter()
+            .map(|x| x.keypair.privkey.clone())
+            .collect(),
         in_blinding: deposit_inputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -955,12 +1004,18 @@ fn can_execute_both_deposit_and_withdraw_for_correct_input_with_positive_fee() {
         mint_address: deposit_inputs[0].mint_address.to_string(),
         in_path_indices: deposit_input_merkle_path_indices,
         in_path_elements: deposit_input_merkle_path_elements,
-        out_amount: deposit_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: deposit_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: deposit_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
             .collect(),
-        out_pubkey: deposit_outputs.iter().map(|x| x.keypair.pubkey.clone()).collect(),
+        out_pubkey: deposit_outputs
+            .iter()
+            .map(|x| x.keypair.pubkey.clone())
+            .collect(),
     };
 
     let key_base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -969,14 +1024,17 @@ fn can_execute_both_deposit_and_withdraw_for_correct_input_with_positive_fee() {
         .join("transaction2");
 
     let deposit_proof_result = prove(&deposit_proof_input, &key_base_path).unwrap();
-    let deposit_artifacts =
-        deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
-    let deposit_nullifiers =
-        find_nullifier_pdas(&Pubkey::from_str_const(PROGRAM_ID), &deposit_proof_to_submit);
-    let deposit_cross_check_nullifiers =
-        find_cross_check_nullifier_pdas(&Pubkey::from_str_const(PROGRAM_ID), &deposit_proof_to_submit);
+    let deposit_nullifiers = find_nullifier_pdas(
+        &Pubkey::from_str_const(PROGRAM_ID),
+        &deposit_proof_to_submit,
+    );
+    let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
+        &Pubkey::from_str_const(PROGRAM_ID),
+        &deposit_proof_to_submit,
+    );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
@@ -993,10 +1051,8 @@ fn can_execute_both_deposit_and_withdraw_for_correct_input_with_positive_fee() {
         &deposit_test_protocol_addresses,
     );
 
-    let tree_token_account_balance_before =
-        ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
-    let fee_recipient_balance_before =
-        ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
+    let tree_token_account_balance_before = ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
+    let fee_recipient_balance_before = ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
     let recipient_balance_before = ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
     let random_user_balance_before = ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
@@ -1038,10 +1094,8 @@ fn can_execute_both_deposit_and_withdraw_for_correct_input_with_positive_fee() {
         ctx.merkle_tree.insert(commitment);
     }
 
-    let tree_token_account_balance_after =
-        ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
-    let fee_recipient_balance_after =
-        ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
+    let tree_token_account_balance_after = ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
+    let fee_recipient_balance_after = ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
     let recipient_balance_after = ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
     let random_user_balance_after = ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
@@ -1072,9 +1126,8 @@ fn can_execute_both_deposit_and_withdraw_for_correct_input_with_positive_fee() {
         + BigInt::from(withdraw_outputs_sum)
         - BigInt::from(withdraw_inputs_sum);
 
-    let withdraw_public_amount = (&withdraw_ext_amount - BigInt::from(withdraw_fee_amount)
-        + &field_size)
-        % &field_size;
+    let withdraw_public_amount =
+        (&withdraw_ext_amount - BigInt::from(withdraw_fee_amount) + &field_size) % &field_size;
 
     let withdraw_input_merkle_path_indices = [output_index as usize, 0usize];
     let withdraw_input_merkle_path_elements = vec![
@@ -1122,8 +1175,14 @@ fn can_execute_both_deposit_and_withdraw_for_correct_input_with_positive_fee() {
             .to_biguint()
             .expect("withdraw public amount should be non-negative"),
         ext_data_hash: withdraw_ext_data_hash,
-        in_amount: withdraw_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
-        in_private_key: withdraw_inputs.iter().map(|x| x.keypair.privkey.clone()).collect(),
+        in_amount: withdraw_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
+        in_private_key: withdraw_inputs
+            .iter()
+            .map(|x| x.keypair.privkey.clone())
+            .collect(),
         in_blinding: withdraw_inputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -1131,23 +1190,32 @@ fn can_execute_both_deposit_and_withdraw_for_correct_input_with_positive_fee() {
         mint_address: withdraw_inputs[0].mint_address.to_string(),
         in_path_indices: withdraw_input_merkle_path_indices,
         in_path_elements: withdraw_input_merkle_path_elements,
-        out_amount: withdraw_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: withdraw_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: withdraw_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
             .collect(),
-        out_pubkey: withdraw_outputs.iter().map(|x| x.keypair.pubkey.clone()).collect(),
+        out_pubkey: withdraw_outputs
+            .iter()
+            .map(|x| x.keypair.pubkey.clone())
+            .collect(),
     };
 
     let withdraw_proof_result = prove(&withdraw_proof_input, &key_base_path).unwrap();
-    let withdraw_artifacts =
-        deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
-    let withdraw_nullifiers =
-        find_nullifier_pdas(&Pubkey::from_str_const(PROGRAM_ID), &withdraw_proof_to_submit);
-    let withdraw_cross_check_nullifiers =
-        find_cross_check_nullifier_pdas(&Pubkey::from_str_const(PROGRAM_ID), &withdraw_proof_to_submit);
+    let withdraw_nullifiers = find_nullifier_pdas(
+        &Pubkey::from_str_const(PROGRAM_ID),
+        &withdraw_proof_to_submit,
+    );
+    let withdraw_cross_check_nullifiers = find_cross_check_nullifier_pdas(
+        &Pubkey::from_str_const(PROGRAM_ID),
+        &withdraw_proof_to_submit,
+    );
 
     let withdraw_test_protocol_addresses = get_test_protocol_addresses(
         &Address::from_str_const(PROGRAM_ID),
@@ -1221,18 +1289,18 @@ fn can_execute_both_deposit_and_withdraw_to_pda_recipient_with_positive_fees() {
     );
 
     // Fund the PDA accounts so they exist and can be balance-checked.
-    ctx.svm.airdrop(&pda_recipient, LAMPORTS_PER_SOL / 2).unwrap();
-    ctx.svm.airdrop(&pda_fee_recipient, LAMPORTS_PER_SOL / 2).unwrap();
+    ctx.svm
+        .airdrop(&pda_recipient, LAMPORTS_PER_SOL / 2)
+        .unwrap();
+    ctx.svm
+        .airdrop(&pda_fee_recipient, LAMPORTS_PER_SOL / 2)
+        .unwrap();
 
     // Snapshot balances before anything happens.
-    let tree_token_account_balance_before =
-        ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
-    let pda_fee_recipient_balance_before =
-        ctx.svm.get_balance(&pda_fee_recipient).unwrap();
-    let pda_recipient_balance_before =
-        ctx.svm.get_balance(&pda_recipient).unwrap();
-    let random_user_balance_before =
-        ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
+    let tree_token_account_balance_before = ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
+    let pda_fee_recipient_balance_before = ctx.svm.get_balance(&pda_fee_recipient).unwrap();
+    let pda_recipient_balance_before = ctx.svm.get_balance(&pda_recipient).unwrap();
+    let random_user_balance_before = ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
     // -----------------------------
     // Step 1: Deposit
@@ -1255,10 +1323,9 @@ fn can_execute_both_deposit_and_withdraw_to_pda_recipient_with_positive_fees() {
     let deposit_inputs = [Utxo::empty(), Utxo::empty()];
     let field_size = BigInt::from_str(FIELD_SIZE_DECIMAL).unwrap();
 
-    let deposit_public_amount_big = (BigInt::from(deposit_amount)
-        - BigInt::from(calculated_deposit_fee)
-        + &field_size)
-        % &field_size;
+    let deposit_public_amount_big =
+        (BigInt::from(deposit_amount) - BigInt::from(calculated_deposit_fee) + &field_size)
+            % &field_size;
 
     let deposit_public_amount: u64 = deposit_public_amount_big
         .clone()
@@ -1304,7 +1371,10 @@ fn can_execute_both_deposit_and_withdraw_to_pda_recipient_with_positive_fees() {
             .to_biguint()
             .expect("deposit public amount should be non-negative"),
         ext_data_hash: deposit_ext_data_hash,
-        in_amount: deposit_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        in_amount: deposit_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         in_private_key: deposit_inputs
             .iter()
             .map(|x| x.keypair.privkey.clone())
@@ -1316,7 +1386,10 @@ fn can_execute_both_deposit_and_withdraw_to_pda_recipient_with_positive_fees() {
         mint_address: deposit_inputs[0].mint_address.to_string(),
         in_path_indices: deposit_input_merkle_path_indices,
         in_path_elements: deposit_input_merkle_path_elements,
-        out_amount: deposit_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: deposit_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: deposit_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -1336,8 +1409,7 @@ fn can_execute_both_deposit_and_withdraw_to_pda_recipient_with_positive_fees() {
     let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
-    let deposit_nullifiers =
-        find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
+    let deposit_nullifiers = find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
     let deposit_cross_check_nullifiers =
         find_cross_check_nullifier_pdas(&program_id, &deposit_proof_to_submit);
 
@@ -1396,12 +1468,9 @@ fn can_execute_both_deposit_and_withdraw_to_pda_recipient_with_positive_fees() {
 
     let tree_token_account_balance_after_deposit =
         ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
-    let pda_fee_recipient_balance_after_deposit =
-        ctx.svm.get_balance(&pda_fee_recipient).unwrap();
-    let pda_recipient_balance_after_deposit =
-        ctx.svm.get_balance(&pda_recipient).unwrap();
-    let random_user_balance_after_deposit =
-        ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
+    let pda_fee_recipient_balance_after_deposit = ctx.svm.get_balance(&pda_fee_recipient).unwrap();
+    let pda_recipient_balance_after_deposit = ctx.svm.get_balance(&pda_recipient).unwrap();
+    let random_user_balance_after_deposit = ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
     assert_eq!(
         tree_token_account_balance_after_deposit as i128
@@ -1409,13 +1478,11 @@ fn can_execute_both_deposit_and_withdraw_to_pda_recipient_with_positive_fees() {
         deposit_public_amount as i128
     );
     assert_eq!(
-        pda_fee_recipient_balance_after_deposit as i128
-            - pda_fee_recipient_balance_before as i128,
+        pda_fee_recipient_balance_after_deposit as i128 - pda_fee_recipient_balance_before as i128,
         calculated_deposit_fee as i128
     );
     assert_eq!(
-        pda_recipient_balance_after_deposit as i128
-            - pda_recipient_balance_before as i128,
+        pda_recipient_balance_after_deposit as i128 - pda_recipient_balance_before as i128,
         0
     );
     assert!(random_user_balance_after_deposit < random_user_balance_before);
@@ -1432,17 +1499,13 @@ fn can_execute_both_deposit_and_withdraw_to_pda_recipient_with_positive_fees() {
     let withdrawal_amount = withdraw_inputs_sum - withdraw_outputs_sum;
     let withdraw_fee = calculate_withdrawal_fee(withdrawal_amount);
 
-    let withdraw_ext_amount = BigInt::from(withdraw_fee)
-        + BigInt::from(withdraw_outputs_sum)
+    let withdraw_ext_amount = BigInt::from(withdraw_fee) + BigInt::from(withdraw_outputs_sum)
         - BigInt::from(withdraw_inputs_sum);
 
     let withdraw_public_amount_big =
         (&withdraw_ext_amount - BigInt::from(withdraw_fee) + &field_size) % &field_size;
 
-    let withdraw_input_merkle_path_indices = [
-        output_index as usize,
-        0usize,
-    ];
+    let withdraw_input_merkle_path_indices = [output_index as usize, 0usize];
 
     let withdraw_input_merkle_path_elements = vec![
         ctx.merkle_tree
@@ -1490,7 +1553,10 @@ fn can_execute_both_deposit_and_withdraw_to_pda_recipient_with_positive_fees() {
             .to_biguint()
             .expect("withdraw public amount should be non-negative"),
         ext_data_hash: withdraw_ext_data_hash,
-        in_amount: withdraw_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        in_amount: withdraw_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         in_private_key: withdraw_inputs
             .iter()
             .map(|x| x.keypair.privkey.clone())
@@ -1502,7 +1568,10 @@ fn can_execute_both_deposit_and_withdraw_to_pda_recipient_with_positive_fees() {
         mint_address: withdraw_inputs[0].mint_address.to_string(),
         in_path_indices: withdraw_input_merkle_path_indices,
         in_path_elements: withdraw_input_merkle_path_elements,
-        out_amount: withdraw_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: withdraw_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: withdraw_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -1517,8 +1586,7 @@ fn can_execute_both_deposit_and_withdraw_to_pda_recipient_with_positive_fees() {
     let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
-    let withdraw_nullifiers =
-        find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
+    let withdraw_nullifiers = find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
     let withdraw_cross_check_nullifiers =
         find_cross_check_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
 
@@ -1576,14 +1644,10 @@ fn can_execute_both_deposit_and_withdraw_to_pda_recipient_with_positive_fees() {
         ctx.merkle_tree.insert(commitment);
     }
 
-    let final_tree_token_balance =
-        ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
-    let final_pda_fee_recipient_balance =
-        ctx.svm.get_balance(&pda_fee_recipient).unwrap();
-    let final_pda_recipient_balance =
-        ctx.svm.get_balance(&pda_recipient).unwrap();
-    let final_random_user_balance =
-        ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
+    let final_tree_token_balance = ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
+    let final_pda_fee_recipient_balance = ctx.svm.get_balance(&pda_fee_recipient).unwrap();
+    let final_pda_recipient_balance = ctx.svm.get_balance(&pda_recipient).unwrap();
+    let final_random_user_balance = ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
     let tree_token_total_diff =
         final_tree_token_balance as i128 - tree_token_account_balance_before as i128;
@@ -1622,10 +1686,8 @@ fn can_execute_both_deposit_and_withdraw_with_pda_fee_recipient_with_positive_fe
         .airdrop(&pda_fee_recipient, LAMPORTS_PER_SOL / 2)
         .unwrap();
 
-    let tree_token_account_balance_before =
-        ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
-    let pda_fee_recipient_balance_before =
-        ctx.svm.get_balance(&pda_fee_recipient).unwrap();
+    let tree_token_account_balance_before = ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
+    let pda_fee_recipient_balance_before = ctx.svm.get_balance(&pda_fee_recipient).unwrap();
     let recipient_balance_before = ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
     let random_user_balance_before = ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
@@ -1651,7 +1713,8 @@ fn can_execute_both_deposit_and_withdraw_with_pda_fee_recipient_with_positive_fe
     let field_size = BigInt::from_str(FIELD_SIZE_DECIMAL).unwrap();
 
     let deposit_public_amount_big =
-        (BigInt::from(deposit_amount) - BigInt::from(calculated_deposit_fee) + &field_size) % &field_size;
+        (BigInt::from(deposit_amount) - BigInt::from(calculated_deposit_fee) + &field_size)
+            % &field_size;
 
     let deposit_public_amount: u64 = deposit_public_amount_big
         .clone()
@@ -1697,7 +1760,10 @@ fn can_execute_both_deposit_and_withdraw_with_pda_fee_recipient_with_positive_fe
             .to_biguint()
             .expect("deposit public amount should be non-negative"),
         ext_data_hash: deposit_ext_data_hash,
-        in_amount: deposit_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        in_amount: deposit_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         in_private_key: deposit_inputs
             .iter()
             .map(|x| x.keypair.privkey.clone())
@@ -1709,7 +1775,10 @@ fn can_execute_both_deposit_and_withdraw_with_pda_fee_recipient_with_positive_fe
         mint_address: deposit_inputs[0].mint_address.to_string(),
         in_path_indices: deposit_input_merkle_path_indices,
         in_path_elements: deposit_input_merkle_path_elements,
-        out_amount: deposit_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: deposit_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: deposit_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -1729,8 +1798,7 @@ fn can_execute_both_deposit_and_withdraw_with_pda_fee_recipient_with_positive_fe
     let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
-    let deposit_nullifiers =
-        find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
+    let deposit_nullifiers = find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
     let deposit_cross_check_nullifiers =
         find_cross_check_nullifier_pdas(&program_id, &deposit_proof_to_submit);
 
@@ -1789,13 +1857,13 @@ fn can_execute_both_deposit_and_withdraw_with_pda_fee_recipient_with_positive_fe
 
     let tree_token_account_balance_after_deposit =
         ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
-    let pda_fee_recipient_balance_after_deposit =
-        ctx.svm.get_balance(&pda_fee_recipient).unwrap();
+    let pda_fee_recipient_balance_after_deposit = ctx.svm.get_balance(&pda_fee_recipient).unwrap();
     let recipient_balance_after_deposit = ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
     let random_user_balance_after_deposit = ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
     assert_eq!(
-        tree_token_account_balance_after_deposit as i128 - tree_token_account_balance_before as i128,
+        tree_token_account_balance_after_deposit as i128
+            - tree_token_account_balance_before as i128,
         deposit_public_amount as i128
     );
     assert_eq!(
@@ -1820,8 +1888,7 @@ fn can_execute_both_deposit_and_withdraw_with_pda_fee_recipient_with_positive_fe
     let withdrawal_amount = withdraw_inputs_sum - withdraw_outputs_sum;
     let withdraw_fee = calculate_withdrawal_fee(withdrawal_amount);
 
-    let withdraw_ext_amount = BigInt::from(withdraw_fee)
-        + BigInt::from(withdraw_outputs_sum)
+    let withdraw_ext_amount = BigInt::from(withdraw_fee) + BigInt::from(withdraw_outputs_sum)
         - BigInt::from(withdraw_inputs_sum);
 
     let withdraw_public_amount_big =
@@ -1874,7 +1941,10 @@ fn can_execute_both_deposit_and_withdraw_with_pda_fee_recipient_with_positive_fe
             .to_biguint()
             .expect("withdraw public amount should be non-negative"),
         ext_data_hash: withdraw_ext_data_hash,
-        in_amount: withdraw_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        in_amount: withdraw_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         in_private_key: withdraw_inputs
             .iter()
             .map(|x| x.keypair.privkey.clone())
@@ -1886,7 +1956,10 @@ fn can_execute_both_deposit_and_withdraw_with_pda_fee_recipient_with_positive_fe
         mint_address: withdraw_inputs[0].mint_address.to_string(),
         in_path_indices: withdraw_input_merkle_path_indices,
         in_path_elements: withdraw_input_merkle_path_elements,
-        out_amount: withdraw_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: withdraw_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: withdraw_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -1901,8 +1974,7 @@ fn can_execute_both_deposit_and_withdraw_with_pda_fee_recipient_with_positive_fe
     let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
-    let withdraw_nullifiers =
-        find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
+    let withdraw_nullifiers = find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
     let withdraw_cross_check_nullifiers =
         find_cross_check_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
 
@@ -1969,8 +2041,7 @@ fn can_execute_both_deposit_and_withdraw_with_pda_fee_recipient_with_positive_fe
         final_tree_token_balance as i128 - tree_token_account_balance_before as i128;
     let fee_recipient_total_diff =
         final_pda_fee_recipient_balance as i128 - pda_fee_recipient_balance_before as i128;
-    let recipient_total_diff =
-        final_recipient_balance as i128 - recipient_balance_before as i128;
+    let recipient_total_diff = final_recipient_balance as i128 - recipient_balance_before as i128;
     let random_user_total_diff =
         final_random_user_balance as i128 - random_user_balance_before as i128;
 
@@ -2012,10 +2083,9 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_with_zero
     let deposit_inputs = [Utxo::empty(), Utxo::empty()];
     let field_size = BigInt::from_str(FIELD_SIZE_DECIMAL).unwrap();
 
-    let deposit_public_amount_big = (BigInt::from(deposit_amount)
-        - BigInt::from(deposit_fee_amount)
-        + &field_size)
-        % &field_size;
+    let deposit_public_amount_big =
+        (BigInt::from(deposit_amount) - BigInt::from(deposit_fee_amount) + &field_size)
+            % &field_size;
 
     let deposit_public_amount: u64 = deposit_public_amount_big
         .clone()
@@ -2061,7 +2131,10 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_with_zero
             .to_biguint()
             .expect("deposit public amount should be non-negative"),
         ext_data_hash: deposit_ext_data_hash,
-        in_amount: deposit_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        in_amount: deposit_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         in_private_key: deposit_inputs
             .iter()
             .map(|x| x.keypair.privkey.clone())
@@ -2073,7 +2146,10 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_with_zero
         mint_address: deposit_inputs[0].mint_address.to_string(),
         in_path_indices: deposit_input_merkle_path_indices,
         in_path_elements: deposit_input_merkle_path_elements,
-        out_amount: deposit_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: deposit_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: deposit_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -2090,12 +2166,10 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_with_zero
         .join("transaction2");
 
     let deposit_proof_result = prove(&deposit_proof_input, &key_base_path).unwrap();
-    let deposit_artifacts =
-        deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
-    let deposit_nullifiers =
-        find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
+    let deposit_nullifiers = find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
     let deposit_cross_check_nullifiers =
         find_cross_check_nullifier_pdas(&program_id, &deposit_proof_to_submit);
 
@@ -2114,10 +2188,8 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_with_zero
         &deposit_test_protocol_addresses,
     );
 
-    let tree_token_account_balance_before =
-        ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
-    let fee_recipient_balance_before =
-        ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
+    let tree_token_account_balance_before = ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
+    let fee_recipient_balance_before = ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
     let recipient_balance_before = ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
     let random_user_balance_before = ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
@@ -2174,7 +2246,10 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_with_zero
         fee_recipient_balance_after_deposit - fee_recipient_balance_before,
         deposit_fee_amount
     );
-    assert_eq!(recipient_balance_after_deposit - recipient_balance_before, 0);
+    assert_eq!(
+        recipient_balance_after_deposit - recipient_balance_before,
+        0
+    );
     assert!(random_user_balance_after_deposit < random_user_balance_before);
 
     // -----------------------------
@@ -2241,7 +2316,10 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_with_zero
             .to_biguint()
             .expect("withdraw public amount should be non-negative"),
         ext_data_hash: withdraw_ext_data_hash,
-        in_amount: withdraw_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        in_amount: withdraw_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         in_private_key: withdraw_inputs
             .iter()
             .map(|x| x.keypair.privkey.clone())
@@ -2253,7 +2331,10 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_with_zero
         mint_address: withdraw_inputs[0].mint_address.to_string(),
         in_path_indices: withdraw_input_merkle_path_indices,
         in_path_elements: withdraw_input_merkle_path_elements,
-        out_amount: withdraw_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: withdraw_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: withdraw_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -2265,12 +2346,10 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_with_zero
     };
 
     let withdraw_proof_result = prove(&withdraw_proof_input, &key_base_path).unwrap();
-    let withdraw_artifacts =
-        deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
-    let withdraw_nullifiers =
-        find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
+    let withdraw_nullifiers = find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
     let withdraw_cross_check_nullifiers =
         find_cross_check_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
 
@@ -2325,10 +2404,8 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_with_zero
         ctx.merkle_tree.insert(commitment);
     }
 
-    let final_tree_token_balance =
-        ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
-    let final_fee_recipient_balance =
-        ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
+    let final_tree_token_balance = ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
+    let final_fee_recipient_balance = ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
     let final_random_user_balance = ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
     let tree_token_total_diff =
@@ -2369,10 +2446,8 @@ fn attacker_cant_frontrun_withdraw_transaction() {
     let deposit_inputs = [Utxo::empty(), Utxo::empty()];
     let field_size = BigInt::from_str(FIELD_SIZE_DECIMAL).unwrap();
 
-    let deposit_public_amount_big = (BigInt::from(deposit_amount)
-        - BigInt::from(deposit_fee)
-        + &field_size)
-        % &field_size;
+    let deposit_public_amount_big =
+        (BigInt::from(deposit_amount) - BigInt::from(deposit_fee) + &field_size) % &field_size;
 
     let deposit_public_amount: u64 = deposit_public_amount_big
         .clone()
@@ -2418,7 +2493,10 @@ fn attacker_cant_frontrun_withdraw_transaction() {
             .to_biguint()
             .expect("deposit public amount should be non-negative"),
         ext_data_hash: deposit_ext_data_hash,
-        in_amount: deposit_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        in_amount: deposit_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         in_private_key: deposit_inputs
             .iter()
             .map(|x| x.keypair.privkey.clone())
@@ -2430,7 +2508,10 @@ fn attacker_cant_frontrun_withdraw_transaction() {
         mint_address: deposit_inputs[0].mint_address.to_string(),
         in_path_indices: deposit_input_merkle_path_indices,
         in_path_elements: deposit_input_merkle_path_elements,
-        out_amount: deposit_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: deposit_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: deposit_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -2450,8 +2531,7 @@ fn attacker_cant_frontrun_withdraw_transaction() {
     let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
-    let deposit_nullifiers =
-        find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
+    let deposit_nullifiers = find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
     let deposit_cross_check_nullifiers =
         find_cross_check_nullifier_pdas(&program_id, &deposit_proof_to_submit);
 
@@ -2513,20 +2593,23 @@ fn attacker_cant_frontrun_withdraw_transaction() {
         ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
     let fee_recipient_balance_after_deposit =
         ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
-    let recipient_balance_after_deposit =
-        ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
-    let random_user_balance_after_deposit =
-        ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
+    let recipient_balance_after_deposit = ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
+    let random_user_balance_after_deposit = ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
     assert_eq!(
-        tree_token_account_balance_after_deposit - ctx.svm.get_balance(&ctx.tree_token_account).unwrap(),
+        tree_token_account_balance_after_deposit
+            - ctx.svm.get_balance(&ctx.tree_token_account).unwrap(),
         0
     );
     assert_eq!(
-        fee_recipient_balance_after_deposit - ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0),
+        fee_recipient_balance_after_deposit
+            - ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0),
         0
     );
-    assert_eq!(recipient_balance_after_deposit - recipient_balance_after_deposit, 0);
+    assert_eq!(
+        recipient_balance_after_deposit - recipient_balance_after_deposit,
+        0
+    );
     assert!(random_user_balance_after_deposit > 0);
 
     // -----------------------------
@@ -2539,8 +2622,7 @@ fn attacker_cant_frontrun_withdraw_transaction() {
     let withdraw_inputs_sum: u64 = withdraw_inputs.iter().map(|x| x.amount).sum();
     let withdraw_outputs_sum: u64 = withdraw_outputs.iter().map(|x| x.amount).sum();
 
-    let withdraw_ext_amount = BigInt::from(withdraw_fee)
-        + BigInt::from(withdraw_outputs_sum)
+    let withdraw_ext_amount = BigInt::from(withdraw_fee) + BigInt::from(withdraw_outputs_sum)
         - BigInt::from(withdraw_inputs_sum);
 
     let withdraw_public_amount_big =
@@ -2593,7 +2675,10 @@ fn attacker_cant_frontrun_withdraw_transaction() {
             .to_biguint()
             .expect("withdraw public amount should be non-negative"),
         ext_data_hash: withdraw_ext_data_hash,
-        in_amount: withdraw_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        in_amount: withdraw_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         in_private_key: withdraw_inputs
             .iter()
             .map(|x| x.keypair.privkey.clone())
@@ -2605,7 +2690,10 @@ fn attacker_cant_frontrun_withdraw_transaction() {
         mint_address: withdraw_inputs[0].mint_address.to_string(),
         in_path_indices: withdraw_input_merkle_path_indices,
         in_path_elements: withdraw_input_merkle_path_elements,
-        out_amount: withdraw_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: withdraw_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: withdraw_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -2617,12 +2705,10 @@ fn attacker_cant_frontrun_withdraw_transaction() {
     };
 
     let withdraw_proof_result = prove(&withdraw_proof_input, &key_base_path).unwrap();
-    let withdraw_artifacts =
-        deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
-    let withdraw_nullifiers =
-        find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
+    let withdraw_nullifiers = find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
     let withdraw_cross_check_nullifiers =
         find_cross_check_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
 
@@ -2662,7 +2748,8 @@ fn attacker_cant_frontrun_withdraw_transaction() {
 }
 
 #[test]
-fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_after_withdrawing_full_amount() {
+fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_after_withdrawing_full_amount(
+) {
     let mut ctx = setup();
     let program_id = Pubkey::from_str_const(PROGRAM_ID);
 
@@ -2670,8 +2757,7 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_after_wit
         ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
     let fee_recipient_balance_before_deposit =
         ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
-    let recipient_balance_before_deposit =
-        ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
+    let recipient_balance_before_deposit = ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
     let random_user_balance_before_deposit =
         ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
@@ -2696,10 +2782,9 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_after_wit
     let deposit_inputs = [Utxo::empty(), Utxo::empty()];
     let field_size = BigInt::from_str(FIELD_SIZE_DECIMAL).unwrap();
 
-    let deposit_public_amount_big = (BigInt::from(deposit_amount)
-        - BigInt::from(actual_deposit_fee)
-        + &field_size)
-        % &field_size;
+    let deposit_public_amount_big =
+        (BigInt::from(deposit_amount) - BigInt::from(actual_deposit_fee) + &field_size)
+            % &field_size;
 
     let deposit_public_amount: u64 = deposit_public_amount_big
         .clone()
@@ -2745,7 +2830,10 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_after_wit
             .to_biguint()
             .expect("deposit public amount should be non-negative"),
         ext_data_hash: deposit_ext_data_hash,
-        in_amount: deposit_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        in_amount: deposit_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         in_private_key: deposit_inputs
             .iter()
             .map(|x| x.keypair.privkey.clone())
@@ -2757,7 +2845,10 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_after_wit
         mint_address: deposit_inputs[0].mint_address.to_string(),
         in_path_indices: deposit_input_merkle_path_indices,
         in_path_elements: deposit_input_merkle_path_elements,
-        out_amount: deposit_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: deposit_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: deposit_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -2777,8 +2868,7 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_after_wit
     let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
-    let deposit_nullifiers =
-        find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
+    let deposit_nullifiers = find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
     let deposit_cross_check_nullifiers =
         find_cross_check_nullifier_pdas(&program_id, &deposit_proof_to_submit);
 
@@ -2839,19 +2929,17 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_after_wit
         ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
     let fee_recipient_balance_after_deposit =
         ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
-    let recipient_balance_after_deposit =
-        ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
-    let random_user_balance_after_deposit =
-        ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
+    let recipient_balance_after_deposit = ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
+    let random_user_balance_after_deposit = ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
     let tree_token_deposit_diff = tree_token_account_balance_after_deposit as i128
         - tree_token_account_balance_before_deposit as i128;
-    let fee_recipient_deposit_diff = fee_recipient_balance_after_deposit as i128
-        - fee_recipient_balance_before_deposit as i128;
-    let recipient_deposit_diff = recipient_balance_after_deposit as i128
-        - recipient_balance_before_deposit as i128;
-    let random_user_deposit_diff = random_user_balance_after_deposit as i128
-        - random_user_balance_before_deposit as i128;
+    let fee_recipient_deposit_diff =
+        fee_recipient_balance_after_deposit as i128 - fee_recipient_balance_before_deposit as i128;
+    let recipient_deposit_diff =
+        recipient_balance_after_deposit as i128 - recipient_balance_before_deposit as i128;
+    let random_user_deposit_diff =
+        random_user_balance_after_deposit as i128 - random_user_balance_before_deposit as i128;
 
     assert_eq!(tree_token_deposit_diff, deposit_public_amount as i128);
     assert_eq!(fee_recipient_deposit_diff, actual_deposit_fee as i128);
@@ -2868,12 +2956,11 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_after_wit
     let withdraw_outputs_sum: u64 = withdraw_outputs.iter().map(|x| x.amount).sum();
     let withdraw_fee = calculate_withdrawal_fee(withdraw_inputs_sum);
 
-    let withdraw_ext_amount = BigInt::from(withdraw_fee)
-        + BigInt::from(withdraw_outputs_sum)
+    let withdraw_ext_amount = BigInt::from(withdraw_fee) + BigInt::from(withdraw_outputs_sum)
         - BigInt::from(withdraw_inputs_sum);
 
-    let withdraw_public_amount_big = (&withdraw_ext_amount - BigInt::from(withdraw_fee) + &field_size)
-        % &field_size;
+    let withdraw_public_amount_big =
+        (&withdraw_ext_amount - BigInt::from(withdraw_fee) + &field_size) % &field_size;
 
     let withdraw_input_merkle_path_indices = [output_index as usize, 0usize];
     let withdraw_input_merkle_path_elements = vec![
@@ -2922,7 +3009,10 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_after_wit
             .to_biguint()
             .expect("withdraw public amount should be non-negative"),
         ext_data_hash: withdraw_ext_data_hash,
-        in_amount: withdraw_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        in_amount: withdraw_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         in_private_key: withdraw_inputs
             .iter()
             .map(|x| x.keypair.privkey.clone())
@@ -2934,7 +3024,10 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_after_wit
         mint_address: withdraw_inputs[0].mint_address.to_string(),
         in_path_indices: withdraw_input_merkle_path_indices,
         in_path_elements: withdraw_input_merkle_path_elements,
-        out_amount: withdraw_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: withdraw_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: withdraw_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -2949,8 +3042,7 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_after_wit
     let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
-    let withdraw_nullifiers =
-        find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
+    let withdraw_nullifiers = find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
     let withdraw_cross_check_nullifiers =
         find_cross_check_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
 
@@ -2990,60 +3082,62 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_after_wit
         ctx.merkle_tree.insert(commitment);
     }
 
-    let final_tree_token_balance =
-        ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
-    let final_fee_recipient_balance =
-        ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
-    let final_recipient_balance =
-        ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
-    let final_random_user_balance =
-        ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
+    let final_tree_token_balance = ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
+    let final_fee_recipient_balance = ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
+    let final_recipient_balance = ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
+    let final_random_user_balance = ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
-    let tree_token_withdraw_diff = final_tree_token_balance as i128
-        - tree_token_account_balance_after_deposit as i128;
-    let fee_recipient_withdraw_diff = final_fee_recipient_balance as i128
-        - fee_recipient_balance_after_deposit as i128;
-    let recipient_withdraw_diff = final_recipient_balance as i128
-        - recipient_balance_after_deposit as i128;
-    let random_user_withdraw_diff = final_random_user_balance as i128
-        - random_user_balance_after_deposit as i128;
+    let tree_token_withdraw_diff =
+        final_tree_token_balance as i128 - tree_token_account_balance_after_deposit as i128;
+    let fee_recipient_withdraw_diff =
+        final_fee_recipient_balance as i128 - fee_recipient_balance_after_deposit as i128;
+    let recipient_withdraw_diff =
+        final_recipient_balance as i128 - recipient_balance_after_deposit as i128;
+    let random_user_withdraw_diff =
+        final_random_user_balance as i128 - random_user_balance_after_deposit as i128;
 
     assert_eq!(
         tree_token_withdraw_diff,
         withdraw_ext_amount.to_i128().unwrap() - i128::from(withdraw_fee)
     );
     assert_eq!(fee_recipient_withdraw_diff, withdraw_fee as i128);
-    assert_eq!(recipient_withdraw_diff, -withdraw_ext_amount.to_i128().unwrap());
+    assert_eq!(
+        recipient_withdraw_diff,
+        -withdraw_ext_amount.to_i128().unwrap()
+    );
     assert!(random_user_withdraw_diff < 0);
 
-    let tree_token_total_diff = final_tree_token_balance as i128
-        - tree_token_account_balance_before_deposit as i128;
-    let fee_recipient_total_diff = final_fee_recipient_balance as i128
-        - fee_recipient_balance_before_deposit as i128;
-    let recipient_total_diff = final_recipient_balance as i128
-        - recipient_balance_before_deposit as i128;
-    let random_user_total_diff = final_random_user_balance as i128
-        - random_user_balance_before_deposit as i128;
+    let tree_token_total_diff =
+        final_tree_token_balance as i128 - tree_token_account_balance_before_deposit as i128;
+    let fee_recipient_total_diff =
+        final_fee_recipient_balance as i128 - fee_recipient_balance_before_deposit as i128;
+    let recipient_total_diff =
+        final_recipient_balance as i128 - recipient_balance_before_deposit as i128;
+    let random_user_total_diff =
+        final_random_user_balance as i128 - random_user_balance_before_deposit as i128;
 
     assert_eq!(tree_token_total_diff, withdraw_outputs_sum as i128);
-    assert_eq!(fee_recipient_total_diff, actual_deposit_fee as i128 + withdraw_fee as i128);
-    assert_eq!(recipient_total_diff, -withdraw_ext_amount.to_i128().unwrap());
+    assert_eq!(
+        fee_recipient_total_diff,
+        actual_deposit_fee as i128 + withdraw_fee as i128
+    );
+    assert_eq!(
+        recipient_total_diff,
+        -withdraw_ext_amount.to_i128().unwrap()
+    );
     assert!(random_user_total_diff < -(actual_deposit_fee as i128));
 }
 
 #[test]
-fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdraw_fees_higher_than_deposit_change() {
+fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdraw_fees_higher_than_deposit_change(
+) {
     let mut ctx = setup();
     let program_id = Pubkey::from_str_const(PROGRAM_ID);
 
-    let tree_token_account_balance_before =
-        ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
-    let fee_recipient_balance_before =
-        ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
-    let recipient_balance_before =
-        ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
-    let random_user_balance_before =
-        ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
+    let tree_token_account_balance_before = ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
+    let fee_recipient_balance_before = ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
+    let recipient_balance_before = ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
+    let random_user_balance_before = ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
     // -----------------------------
     // Step 1: Deposit
@@ -3067,7 +3161,8 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
     let field_size = BigInt::from_str(FIELD_SIZE_DECIMAL).unwrap();
 
     let deposit_public_amount_big =
-        (BigInt::from(deposit_amount) - BigInt::from(actual_deposit_fee) + &field_size) % &field_size;
+        (BigInt::from(deposit_amount) - BigInt::from(actual_deposit_fee) + &field_size)
+            % &field_size;
 
     let deposit_public_amount: u64 = deposit_public_amount_big
         .clone()
@@ -3113,7 +3208,10 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
             .to_biguint()
             .expect("deposit public amount should be non-negative"),
         ext_data_hash: deposit_ext_data_hash,
-        in_amount: deposit_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        in_amount: deposit_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         in_private_key: deposit_inputs
             .iter()
             .map(|x| x.keypair.privkey.clone())
@@ -3125,7 +3223,10 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
         mint_address: deposit_inputs[0].mint_address.to_string(),
         in_path_indices: deposit_input_merkle_path_indices,
         in_path_elements: deposit_input_merkle_path_elements,
-        out_amount: deposit_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: deposit_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: deposit_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -3142,12 +3243,10 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
         .join("transaction2");
 
     let deposit_proof_result = prove(&deposit_proof_input, &key_base_path).unwrap();
-    let deposit_artifacts =
-        deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
-    let deposit_nullifiers =
-        find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
+    let deposit_nullifiers = find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
     let deposit_cross_check_nullifiers =
         find_cross_check_nullifier_pdas(&program_id, &deposit_proof_to_submit);
 
@@ -3208,19 +3307,17 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
         ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
     let fee_recipient_balance_after_deposit =
         ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
-    let recipient_balance_after_deposit =
-        ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
-    let random_user_balance_after_deposit =
-        ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
+    let recipient_balance_after_deposit = ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
+    let random_user_balance_after_deposit = ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
     let tree_token_deposit_diff = tree_token_account_balance_after_deposit as i128
         - tree_token_account_balance_before as i128;
-    let fee_recipient_deposit_diff = fee_recipient_balance_after_deposit as i128
-        - fee_recipient_balance_before as i128;
-    let recipient_deposit_diff = recipient_balance_after_deposit as i128
-        - recipient_balance_before as i128;
-    let random_user_deposit_diff = random_user_balance_after_deposit as i128
-        - random_user_balance_before as i128;
+    let fee_recipient_deposit_diff =
+        fee_recipient_balance_after_deposit as i128 - fee_recipient_balance_before as i128;
+    let recipient_deposit_diff =
+        recipient_balance_after_deposit as i128 - recipient_balance_before as i128;
+    let random_user_deposit_diff =
+        random_user_balance_after_deposit as i128 - random_user_balance_before as i128;
 
     assert_eq!(tree_token_deposit_diff, deposit_public_amount as i128);
     assert_eq!(fee_recipient_deposit_diff, actual_deposit_fee as i128);
@@ -3238,8 +3335,7 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
 
     let withdraw_fee: u64 = 0;
 
-    let withdraw_ext_amount = BigInt::from(withdraw_fee)
-        + BigInt::from(withdraw_outputs_sum)
+    let withdraw_ext_amount = BigInt::from(withdraw_fee) + BigInt::from(withdraw_outputs_sum)
         - BigInt::from(withdraw_inputs_sum);
 
     let withdraw_public_amount_big =
@@ -3292,7 +3388,10 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
             .to_biguint()
             .expect("withdraw public amount should be non-negative"),
         ext_data_hash: withdraw_ext_data_hash,
-        in_amount: withdraw_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        in_amount: withdraw_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         in_private_key: withdraw_inputs
             .iter()
             .map(|x| x.keypair.privkey.clone())
@@ -3304,7 +3403,10 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
         mint_address: withdraw_inputs[0].mint_address.to_string(),
         in_path_indices: withdraw_input_merkle_path_indices,
         in_path_elements: withdraw_input_merkle_path_elements,
-        out_amount: withdraw_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: withdraw_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: withdraw_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -3316,12 +3418,10 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
     };
 
     let withdraw_proof_result = prove(&withdraw_proof_input, &key_base_path).unwrap();
-    let withdraw_artifacts =
-        deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
-    let withdraw_nullifiers =
-        find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
+    let withdraw_nullifiers = find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
     let withdraw_cross_check_nullifiers =
         find_cross_check_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
 
@@ -3361,23 +3461,19 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
         ctx.merkle_tree.insert(commitment);
     }
 
-    let final_tree_token_balance =
-        ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
-    let final_fee_recipient_balance =
-        ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
-    let final_recipient_balance =
-        ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
-    let final_random_user_balance =
-        ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
+    let final_tree_token_balance = ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
+    let final_fee_recipient_balance = ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
+    let final_recipient_balance = ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
+    let final_random_user_balance = ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
-    let tree_token_withdraw_diff = final_tree_token_balance as i128
-        - tree_token_account_balance_after_deposit as i128;
-    let fee_recipient_withdraw_diff = final_fee_recipient_balance as i128
-        - fee_recipient_balance_after_deposit as i128;
-    let recipient_withdraw_diff = final_recipient_balance as i128
-        - recipient_balance_after_deposit as i128;
-    let random_user_withdraw_diff = final_random_user_balance as i128
-        - random_user_balance_after_deposit as i128;
+    let tree_token_withdraw_diff =
+        final_tree_token_balance as i128 - tree_token_account_balance_after_deposit as i128;
+    let fee_recipient_withdraw_diff =
+        final_fee_recipient_balance as i128 - fee_recipient_balance_after_deposit as i128;
+    let recipient_withdraw_diff =
+        final_recipient_balance as i128 - recipient_balance_after_deposit as i128;
+    let random_user_withdraw_diff =
+        final_random_user_balance as i128 - random_user_balance_after_deposit as i128;
 
     let withdraw_ext_amount_i128 = withdraw_ext_amount.to_i128().unwrap();
 
@@ -3389,14 +3485,13 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
     assert_eq!(recipient_withdraw_diff, -withdraw_ext_amount_i128);
     assert!(random_user_withdraw_diff < 0);
 
-    let tree_token_total_diff = final_tree_token_balance as i128
-        - tree_token_account_balance_before as i128;
-    let fee_recipient_total_diff = final_fee_recipient_balance as i128
-        - fee_recipient_balance_before as i128;
-    let recipient_total_diff = final_recipient_balance as i128
-        - recipient_balance_before as i128;
-    let random_user_total_diff = final_random_user_balance as i128
-        - random_user_balance_before as i128;
+    let tree_token_total_diff =
+        final_tree_token_balance as i128 - tree_token_account_balance_before as i128;
+    let fee_recipient_total_diff =
+        final_fee_recipient_balance as i128 - fee_recipient_balance_before as i128;
+    let recipient_total_diff = final_recipient_balance as i128 - recipient_balance_before as i128;
+    let random_user_total_diff =
+        final_random_user_balance as i128 - random_user_balance_before as i128;
 
     assert_eq!(tree_token_total_diff, withdraw_outputs_sum as i128);
     assert_eq!(
@@ -3412,18 +3507,15 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
 }
 
 #[test]
-fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdraw_fees_the_same_as_deposit_change() {
+fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdraw_fees_the_same_as_deposit_change(
+) {
     let mut ctx = setup();
     let program_id = Pubkey::from_str_const(PROGRAM_ID);
 
-    let tree_token_account_balance_before =
-        ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
-    let fee_recipient_balance_before =
-        ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
-    let recipient_balance_before =
-        ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
-    let random_user_balance_before =
-        ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
+    let tree_token_account_balance_before = ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
+    let fee_recipient_balance_before = ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
+    let recipient_balance_before = ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
+    let random_user_balance_before = ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
     // -----------------------------
     // Step 1: Deposit
@@ -3447,7 +3539,8 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
     let field_size = BigInt::from_str(FIELD_SIZE_DECIMAL).unwrap();
 
     let deposit_public_amount_big =
-        (BigInt::from(deposit_amount) - BigInt::from(actual_deposit_fee) + &field_size) % &field_size;
+        (BigInt::from(deposit_amount) - BigInt::from(actual_deposit_fee) + &field_size)
+            % &field_size;
 
     let deposit_public_amount: u64 = deposit_public_amount_big
         .clone()
@@ -3493,7 +3586,10 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
             .to_biguint()
             .expect("deposit public amount should be non-negative"),
         ext_data_hash: deposit_ext_data_hash,
-        in_amount: deposit_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        in_amount: deposit_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         in_private_key: deposit_inputs
             .iter()
             .map(|x| x.keypair.privkey.clone())
@@ -3505,7 +3601,10 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
         mint_address: deposit_inputs[0].mint_address.to_string(),
         in_path_indices: deposit_input_merkle_path_indices,
         in_path_elements: deposit_input_merkle_path_elements,
-        out_amount: deposit_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: deposit_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: deposit_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -3522,12 +3621,10 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
         .join("transaction2");
 
     let deposit_proof_result = prove(&deposit_proof_input, &key_base_path).unwrap();
-    let deposit_artifacts =
-        deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
-    let deposit_nullifiers =
-        find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
+    let deposit_nullifiers = find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
     let deposit_cross_check_nullifiers =
         find_cross_check_nullifier_pdas(&program_id, &deposit_proof_to_submit);
 
@@ -3588,19 +3685,17 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
         ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
     let fee_recipient_balance_after_deposit =
         ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
-    let recipient_balance_after_deposit =
-        ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
-    let random_user_balance_after_deposit =
-        ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
+    let recipient_balance_after_deposit = ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
+    let random_user_balance_after_deposit = ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
     let tree_token_deposit_diff = tree_token_account_balance_after_deposit as i128
         - tree_token_account_balance_before as i128;
-    let fee_recipient_deposit_diff = fee_recipient_balance_after_deposit as i128
-        - fee_recipient_balance_before as i128;
-    let recipient_deposit_diff = recipient_balance_after_deposit as i128
-        - recipient_balance_before as i128;
-    let random_user_deposit_diff = random_user_balance_after_deposit as i128
-        - random_user_balance_before as i128;
+    let fee_recipient_deposit_diff =
+        fee_recipient_balance_after_deposit as i128 - fee_recipient_balance_before as i128;
+    let recipient_deposit_diff =
+        recipient_balance_after_deposit as i128 - recipient_balance_before as i128;
+    let random_user_deposit_diff =
+        random_user_balance_after_deposit as i128 - random_user_balance_before as i128;
 
     assert_eq!(tree_token_deposit_diff, deposit_public_amount as i128);
     assert_eq!(fee_recipient_deposit_diff, actual_deposit_fee as i128);
@@ -3619,8 +3714,7 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
     // Same as the deposit fee
     let withdraw_fee: u64 = actual_deposit_fee;
 
-    let withdraw_ext_amount = BigInt::from(withdraw_fee)
-        + BigInt::from(withdraw_outputs_sum)
+    let withdraw_ext_amount = BigInt::from(withdraw_fee) + BigInt::from(withdraw_outputs_sum)
         - BigInt::from(withdraw_inputs_sum);
 
     let withdraw_public_amount_big =
@@ -3673,7 +3767,10 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
             .to_biguint()
             .expect("withdraw public amount should be non-negative"),
         ext_data_hash: withdraw_ext_data_hash,
-        in_amount: withdraw_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        in_amount: withdraw_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         in_private_key: withdraw_inputs
             .iter()
             .map(|x| x.keypair.privkey.clone())
@@ -3685,7 +3782,10 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
         mint_address: withdraw_inputs[0].mint_address.to_string(),
         in_path_indices: withdraw_input_merkle_path_indices,
         in_path_elements: withdraw_input_merkle_path_elements,
-        out_amount: withdraw_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: withdraw_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: withdraw_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -3697,12 +3797,10 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
     };
 
     let withdraw_proof_result = prove(&withdraw_proof_input, &key_base_path).unwrap();
-    let withdraw_artifacts =
-        deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
-    let withdraw_nullifiers =
-        find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
+    let withdraw_nullifiers = find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
     let withdraw_cross_check_nullifiers =
         find_cross_check_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
 
@@ -3742,23 +3840,19 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
         ctx.merkle_tree.insert(commitment);
     }
 
-    let final_tree_token_balance =
-        ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
-    let final_fee_recipient_balance =
-        ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
-    let final_recipient_balance =
-        ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
-    let final_random_user_balance =
-        ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
+    let final_tree_token_balance = ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
+    let final_fee_recipient_balance = ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
+    let final_recipient_balance = ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
+    let final_random_user_balance = ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
-    let tree_token_withdraw_diff = final_tree_token_balance as i128
-        - tree_token_account_balance_after_deposit as i128;
-    let fee_recipient_withdraw_diff = final_fee_recipient_balance as i128
-        - fee_recipient_balance_after_deposit as i128;
-    let recipient_withdraw_diff = final_recipient_balance as i128
-        - recipient_balance_after_deposit as i128;
-    let random_user_withdraw_diff = final_random_user_balance as i128
-        - random_user_balance_after_deposit as i128;
+    let tree_token_withdraw_diff =
+        final_tree_token_balance as i128 - tree_token_account_balance_after_deposit as i128;
+    let fee_recipient_withdraw_diff =
+        final_fee_recipient_balance as i128 - fee_recipient_balance_after_deposit as i128;
+    let recipient_withdraw_diff =
+        final_recipient_balance as i128 - recipient_balance_after_deposit as i128;
+    let random_user_withdraw_diff =
+        final_random_user_balance as i128 - random_user_balance_after_deposit as i128;
 
     let withdraw_ext_amount_i128 = withdraw_ext_amount.to_i128().unwrap();
 
@@ -3770,14 +3864,13 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
     assert_eq!(recipient_withdraw_diff, -withdraw_ext_amount_i128);
     assert!(random_user_withdraw_diff < 0);
 
-    let tree_token_total_diff = final_tree_token_balance as i128
-        - tree_token_account_balance_before as i128;
-    let fee_recipient_total_diff = final_fee_recipient_balance as i128
-        - fee_recipient_balance_before as i128;
-    let recipient_total_diff = final_recipient_balance as i128
-        - recipient_balance_before as i128;
-    let random_user_total_diff = final_random_user_balance as i128
-        - random_user_balance_before as i128;
+    let tree_token_total_diff =
+        final_tree_token_balance as i128 - tree_token_account_balance_before as i128;
+    let fee_recipient_total_diff =
+        final_fee_recipient_balance as i128 - fee_recipient_balance_before as i128;
+    let recipient_total_diff = final_recipient_balance as i128 - recipient_balance_before as i128;
+    let random_user_total_diff =
+        final_random_user_balance as i128 - random_user_balance_before as i128;
 
     assert_eq!(tree_token_total_diff, 0);
     assert_eq!(
@@ -3789,18 +3882,15 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
 }
 
 #[test]
-fn can_execute_both_deposit_and_withdraw_instruction_with_zero_deposit_fee_and_positive_withdraw_fee_after_withdrawing_full_amount() {
+fn can_execute_both_deposit_and_withdraw_instruction_with_zero_deposit_fee_and_positive_withdraw_fee_after_withdrawing_full_amount(
+) {
     let mut ctx = setup();
     let program_id = Pubkey::from_str_const(PROGRAM_ID);
 
-    let tree_token_account_balance_before =
-        ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
-    let fee_recipient_balance_before =
-        ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
-    let recipient_balance_before =
-        ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
-    let random_user_balance_before =
-        ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
+    let tree_token_account_balance_before = ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
+    let fee_recipient_balance_before = ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
+    let recipient_balance_before = ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
+    let random_user_balance_before = ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
     // -----------------------------
     // Step 1: Deposit
@@ -3824,7 +3914,8 @@ fn can_execute_both_deposit_and_withdraw_instruction_with_zero_deposit_fee_and_p
     let field_size = BigInt::from_str(FIELD_SIZE_DECIMAL).unwrap();
 
     let deposit_public_amount_big =
-        (BigInt::from(deposit_amount) - BigInt::from(actual_deposit_fee) + &field_size) % &field_size;
+        (BigInt::from(deposit_amount) - BigInt::from(actual_deposit_fee) + &field_size)
+            % &field_size;
 
     let deposit_public_amount: u64 = deposit_public_amount_big
         .clone()
@@ -3870,7 +3961,10 @@ fn can_execute_both_deposit_and_withdraw_instruction_with_zero_deposit_fee_and_p
             .to_biguint()
             .expect("deposit public amount should be non-negative"),
         ext_data_hash: deposit_ext_data_hash,
-        in_amount: deposit_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        in_amount: deposit_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         in_private_key: deposit_inputs
             .iter()
             .map(|x| x.keypair.privkey.clone())
@@ -3882,7 +3976,10 @@ fn can_execute_both_deposit_and_withdraw_instruction_with_zero_deposit_fee_and_p
         mint_address: deposit_inputs[0].mint_address.to_string(),
         in_path_indices: deposit_input_merkle_path_indices,
         in_path_elements: deposit_input_merkle_path_elements,
-        out_amount: deposit_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: deposit_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: deposit_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -3899,12 +3996,10 @@ fn can_execute_both_deposit_and_withdraw_instruction_with_zero_deposit_fee_and_p
         .join("transaction2");
 
     let deposit_proof_result = prove(&deposit_proof_input, &key_base_path).unwrap();
-    let deposit_artifacts =
-        deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
-    let deposit_nullifiers =
-        find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
+    let deposit_nullifiers = find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
     let deposit_cross_check_nullifiers =
         find_cross_check_nullifier_pdas(&program_id, &deposit_proof_to_submit);
 
@@ -3965,19 +4060,17 @@ fn can_execute_both_deposit_and_withdraw_instruction_with_zero_deposit_fee_and_p
         ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
     let fee_recipient_balance_after_deposit =
         ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
-    let recipient_balance_after_deposit =
-        ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
-    let random_user_balance_after_deposit =
-        ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
+    let recipient_balance_after_deposit = ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
+    let random_user_balance_after_deposit = ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
     let tree_token_deposit_diff = tree_token_account_balance_after_deposit as i128
         - tree_token_account_balance_before as i128;
-    let fee_recipient_deposit_diff = fee_recipient_balance_after_deposit as i128
-        - fee_recipient_balance_before as i128;
-    let recipient_deposit_diff = recipient_balance_after_deposit as i128
-        - recipient_balance_before as i128;
-    let random_user_deposit_diff = random_user_balance_after_deposit as i128
-        - random_user_balance_before as i128;
+    let fee_recipient_deposit_diff =
+        fee_recipient_balance_after_deposit as i128 - fee_recipient_balance_before as i128;
+    let recipient_deposit_diff =
+        recipient_balance_after_deposit as i128 - recipient_balance_before as i128;
+    let random_user_deposit_diff =
+        random_user_balance_after_deposit as i128 - random_user_balance_before as i128;
 
     assert_eq!(tree_token_deposit_diff, deposit_public_amount as i128);
     assert_eq!(fee_recipient_deposit_diff, actual_deposit_fee as i128);
@@ -3995,8 +4088,7 @@ fn can_execute_both_deposit_and_withdraw_instruction_with_zero_deposit_fee_and_p
 
     let withdraw_fee: u64 = 20;
 
-    let withdraw_ext_amount = BigInt::from(withdraw_fee)
-        + BigInt::from(withdraw_outputs_sum)
+    let withdraw_ext_amount = BigInt::from(withdraw_fee) + BigInt::from(withdraw_outputs_sum)
         - BigInt::from(withdraw_inputs_sum);
 
     let withdraw_public_amount_big =
@@ -4049,7 +4141,10 @@ fn can_execute_both_deposit_and_withdraw_instruction_with_zero_deposit_fee_and_p
             .to_biguint()
             .expect("withdraw public amount should be non-negative"),
         ext_data_hash: withdraw_ext_data_hash,
-        in_amount: withdraw_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        in_amount: withdraw_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         in_private_key: withdraw_inputs
             .iter()
             .map(|x| x.keypair.privkey.clone())
@@ -4061,7 +4156,10 @@ fn can_execute_both_deposit_and_withdraw_instruction_with_zero_deposit_fee_and_p
         mint_address: withdraw_inputs[0].mint_address.to_string(),
         in_path_indices: withdraw_input_merkle_path_indices,
         in_path_elements: withdraw_input_merkle_path_elements,
-        out_amount: withdraw_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: withdraw_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: withdraw_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -4073,12 +4171,10 @@ fn can_execute_both_deposit_and_withdraw_instruction_with_zero_deposit_fee_and_p
     };
 
     let withdraw_proof_result = prove(&withdraw_proof_input, &key_base_path).unwrap();
-    let withdraw_artifacts =
-        deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
-    let withdraw_nullifiers =
-        find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
+    let withdraw_nullifiers = find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
     let withdraw_cross_check_nullifiers =
         find_cross_check_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
 
@@ -4118,23 +4214,19 @@ fn can_execute_both_deposit_and_withdraw_instruction_with_zero_deposit_fee_and_p
         ctx.merkle_tree.insert(commitment);
     }
 
-    let final_tree_token_balance =
-        ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
-    let final_fee_recipient_balance =
-        ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
-    let final_recipient_balance =
-        ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
-    let final_random_user_balance =
-        ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
+    let final_tree_token_balance = ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
+    let final_fee_recipient_balance = ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
+    let final_recipient_balance = ctx.svm.get_balance(&ctx.recipient.pubkey()).unwrap();
+    let final_random_user_balance = ctx.svm.get_balance(&ctx.random_user.pubkey()).unwrap();
 
-    let tree_token_withdraw_diff = final_tree_token_balance as i128
-        - tree_token_account_balance_after_deposit as i128;
-    let fee_recipient_withdraw_diff = final_fee_recipient_balance as i128
-        - fee_recipient_balance_after_deposit as i128;
-    let recipient_withdraw_diff = final_recipient_balance as i128
-        - recipient_balance_after_deposit as i128;
-    let random_user_withdraw_diff = final_random_user_balance as i128
-        - random_user_balance_after_deposit as i128;
+    let tree_token_withdraw_diff =
+        final_tree_token_balance as i128 - tree_token_account_balance_after_deposit as i128;
+    let fee_recipient_withdraw_diff =
+        final_fee_recipient_balance as i128 - fee_recipient_balance_after_deposit as i128;
+    let recipient_withdraw_diff =
+        final_recipient_balance as i128 - recipient_balance_after_deposit as i128;
+    let random_user_withdraw_diff =
+        final_random_user_balance as i128 - random_user_balance_after_deposit as i128;
 
     let withdraw_ext_amount_i128 = withdraw_ext_amount.to_i128().unwrap();
 
@@ -4146,17 +4238,19 @@ fn can_execute_both_deposit_and_withdraw_instruction_with_zero_deposit_fee_and_p
     assert_eq!(recipient_withdraw_diff, -withdraw_ext_amount_i128);
     assert!(random_user_withdraw_diff < 0);
 
-    let tree_token_total_diff = final_tree_token_balance as i128
-        - tree_token_account_balance_before as i128;
-    let fee_recipient_total_diff = final_fee_recipient_balance as i128
-        - fee_recipient_balance_before as i128;
-    let recipient_total_diff = final_recipient_balance as i128
-        - recipient_balance_before as i128;
-    let random_user_total_diff = final_random_user_balance as i128
-        - random_user_balance_before as i128;
+    let tree_token_total_diff =
+        final_tree_token_balance as i128 - tree_token_account_balance_before as i128;
+    let fee_recipient_total_diff =
+        final_fee_recipient_balance as i128 - fee_recipient_balance_before as i128;
+    let recipient_total_diff = final_recipient_balance as i128 - recipient_balance_before as i128;
+    let random_user_total_diff =
+        final_random_user_balance as i128 - random_user_balance_before as i128;
 
     assert_eq!(tree_token_total_diff, 0);
-    assert_eq!(fee_recipient_total_diff, actual_deposit_fee as i128 + withdraw_fee as i128);
+    assert_eq!(
+        fee_recipient_total_diff,
+        actual_deposit_fee as i128 + withdraw_fee as i128
+    );
     assert_eq!(recipient_total_diff, -withdraw_ext_amount_i128);
     assert!(random_user_total_diff < -(actual_deposit_fee as i128));
 }
@@ -4169,13 +4263,7 @@ fn build_failure_fixture(
     recipient: &Keypair,
     authority: &Keypair,
     program_id: &Pubkey,
-) -> (
-    Proof,
-    ExtData,
-    Pubkey,
-    NullifierPdas,
-    (Pubkey, Pubkey),
-) {
+) -> (Proof, ExtData, Pubkey, NullifierPdas, (Pubkey, Pubkey)) {
     let deposit_amount: u64 = 200;
     let actual_deposit_fee = calculate_deposit_fee(deposit_amount);
 
@@ -4195,7 +4283,8 @@ fn build_failure_fixture(
     let field_size = BigInt::from_str(FIELD_SIZE_DECIMAL).unwrap();
 
     let deposit_public_amount_big =
-        (BigInt::from(deposit_amount) - BigInt::from(actual_deposit_fee) + &field_size) % &field_size;
+        (BigInt::from(deposit_amount) - BigInt::from(actual_deposit_fee) + &field_size)
+            % &field_size;
 
     let deposit_public_amount: u64 = deposit_public_amount_big
         .clone()
@@ -4210,10 +4299,8 @@ fn build_failure_fixture(
     ];
 
     let deposit_input_merkle_path_indices = [0usize; 2];
-    let deposit_input_merkle_path_elements = vec![
-        vec![[0u8; 32]; tree_levels],
-        vec![[0u8; 32]; tree_levels],
-    ];
+    let deposit_input_merkle_path_elements =
+        vec![vec![[0u8; 32]; tree_levels], vec![[0u8; 32]; tree_levels]];
 
     let deposit_input_nullifiers = [
         deposit_inputs[0].get_nullifier().unwrap(),
@@ -4240,7 +4327,10 @@ fn build_failure_fixture(
             .to_biguint()
             .expect("deposit public amount should be non-negative"),
         ext_data_hash: deposit_ext_data_hash,
-        in_amount: deposit_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        in_amount: deposit_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         in_private_key: deposit_inputs
             .iter()
             .map(|x| x.keypair.privkey.clone())
@@ -4252,7 +4342,10 @@ fn build_failure_fixture(
         mint_address: deposit_inputs[0].mint_address.to_string(),
         in_path_indices: deposit_input_merkle_path_indices,
         in_path_elements: deposit_input_merkle_path_elements,
-        out_amount: deposit_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: deposit_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: deposit_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -4269,8 +4362,7 @@ fn build_failure_fixture(
         .join("transaction2");
 
     let deposit_proof_result = prove(&deposit_proof_input, &key_base_path).unwrap();
-    let deposit_artifacts =
-        deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let proof = format_proof(deposit_artifacts);
 
     let nullifiers = find_nullifier_pdas(program_id, &proof);
@@ -4282,12 +4374,8 @@ fn build_failure_fixture(
         &FEE_RECIPIENT_ACCOUNT,
     );
 
-    let lookup_table_address = create_global_test_alt(
-        svm,
-        authority,
-        authority,
-        &test_protocol_addresses,
-    );
+    let lookup_table_address =
+        create_global_test_alt(svm, authority, authority, &test_protocol_addresses);
 
     advance_one_slot(svm);
 
@@ -4330,8 +4418,7 @@ fn fails_transact_instruction_for_wrong_ext_data_hash() {
 
     proof.ext_data_hash = get_ext_data_hash(&modified_ext_data);
 
-    let modify_compute_units =
-        ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
+    let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let tx_ix = build_transact_ix(
         program_id,
@@ -4391,8 +4478,7 @@ fn fails_transact_instruction_for_an_unknown_root() {
 
     proof.root = [123u8; 32];
 
-    let modify_compute_units =
-        ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
+    let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let tx_ix = build_transact_ix(
         program_id,
@@ -4454,8 +4540,7 @@ fn fails_transact_instruction_for_zero_root() {
 
     proof.root = [0u8; 32];
 
-    let modify_compute_units =
-        ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
+    let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let tx_ix = build_transact_ix(
         program_id,
@@ -4516,8 +4601,7 @@ pub fn build_update_deposit_limit_ix(
         Pubkey::find_program_address(&[privacy_cash::constants::TREE_ACCOUNT_SEED], &program_id);
 
     assert_eq!(
-        expected_tree_account,
-        tree_account,
+        expected_tree_account, tree_account,
         "tree_account does not match the PDA for TREE_ACCOUNT_SEED"
     );
 
@@ -4570,8 +4654,7 @@ fn authority_can_update_deposit_limit() {
 
     advance_one_slot(&mut ctx.svm);
 
-    let modify_compute_units =
-        ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
+    let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let update_limit_ix = build_update_deposit_limit_ix(
         program_id,
@@ -4634,8 +4717,7 @@ fn non_authority_cannot_update_deposit_limit() {
 
     advance_one_slot(&mut ctx.svm);
 
-    let modify_compute_units =
-        ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
+    let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let update_limit_ix = build_update_deposit_limit_ix(
         program_id,
@@ -4725,9 +4807,9 @@ fn can_deposit_after_increasing_limit() {
     let inputs = [Utxo::empty(), Utxo::empty()];
 
     let field_size = BigInt::from_str(FIELD_SIZE_DECIMAL).unwrap();
-    let public_amount_big =
-        (BigInt::from(deposit_amount) - BigInt::from(actual_deposit_fee) + &field_size)
-            % &field_size;
+    let public_amount_big = (BigInt::from(deposit_amount) - BigInt::from(actual_deposit_fee)
+        + &field_size)
+        % &field_size;
 
     let public_amount: u64 = public_amount_big
         .clone()
@@ -4768,10 +4850,7 @@ fn can_deposit_after_increasing_limit() {
             .expect("public amount should be non-negative"),
         ext_data_hash,
         in_amount: inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
-        in_private_key: inputs
-            .iter()
-            .map(|x| x.keypair.privkey.clone())
-            .collect(),
+        in_private_key: inputs.iter().map(|x| x.keypair.privkey.clone()).collect(),
         in_blinding: inputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -4784,10 +4863,7 @@ fn can_deposit_after_increasing_limit() {
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
             .collect(),
-        out_pubkey: outputs
-            .iter()
-            .map(|x| x.keypair.pubkey.clone())
-            .collect(),
+        out_pubkey: outputs.iter().map(|x| x.keypair.pubkey.clone()).collect(),
     };
 
     let key_base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -4800,8 +4876,7 @@ fn can_deposit_after_increasing_limit() {
     let proof = format_proof(artifacts);
 
     let nullifiers = find_nullifier_pdas(&program_id, &proof);
-    let cross_check_nullifiers =
-        find_cross_check_nullifier_pdas(&program_id, &proof);
+    let cross_check_nullifiers = find_cross_check_nullifier_pdas(&program_id, &proof);
 
     let test_protocol_addresses = get_test_protocol_addresses(
         &Address::from_str_const(PROGRAM_ID),
@@ -4818,8 +4893,7 @@ fn can_deposit_after_increasing_limit() {
 
     advance_one_slot(&mut ctx.svm);
 
-    let modify_compute_units =
-        ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
+    let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let tx_ix = build_transact_ix(
         program_id,
@@ -4883,8 +4957,7 @@ fn withdrawal_has_no_limit_can_withdraw_any_amount() {
         .join("circuits")
         .join("transaction2");
 
-    let modify_compute_units =
-        ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
+    let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     // --------------------------------------------------
     // Deposit: 1 SOL
@@ -4956,7 +5029,10 @@ fn withdrawal_has_no_limit_can_withdraw_any_amount() {
             .to_biguint()
             .expect("deposit public amount should be non-negative"),
         ext_data_hash: deposit_ext_data_hash,
-        in_amount: deposit_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        in_amount: deposit_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         in_private_key: deposit_inputs
             .iter()
             .map(|x| x.keypair.privkey.clone())
@@ -4968,7 +5044,10 @@ fn withdrawal_has_no_limit_can_withdraw_any_amount() {
         mint_address: deposit_inputs[0].mint_address.to_string(),
         in_path_indices: deposit_input_merkle_path_indices,
         in_path_elements: deposit_input_merkle_path_elements,
-        out_amount: deposit_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: deposit_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: deposit_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -4980,12 +5059,10 @@ fn withdrawal_has_no_limit_can_withdraw_any_amount() {
     };
 
     let deposit_proof_result = prove(&deposit_input, &key_base_path).unwrap();
-    let deposit_artifacts =
-        deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
-    let deposit_nullifiers =
-        find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
+    let deposit_nullifiers = find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
     let deposit_cross_check_nullifiers =
         find_cross_check_nullifier_pdas(&program_id, &deposit_proof_to_submit);
 
@@ -5043,23 +5120,16 @@ fn withdrawal_has_no_limit_can_withdraw_any_amount() {
     // --------------------------------------------------
     // Withdrawal: should succeed with no separate withdrawal limit
     // --------------------------------------------------
-    let withdraw_inputs = [
-        deposit_outputs[0].clone(),
-        Utxo::empty(),
-    ];
+    let withdraw_inputs = [deposit_outputs[0].clone(), Utxo::empty()];
 
-    let withdraw_outputs = [
-        Utxo::new(0),
-        Utxo::new(0),
-    ];
+    let withdraw_outputs = [Utxo::new(0), Utxo::new(0)];
 
     let withdraw_inputs_sum: u64 = withdraw_inputs.iter().map(|x| x.amount).sum();
     let withdraw_outputs_sum: u64 = withdraw_outputs.iter().map(|x| x.amount).sum();
     let withdrawal_amount = withdraw_inputs_sum - withdraw_outputs_sum;
     let withdraw_fee = calculate_withdrawal_fee(withdrawal_amount);
 
-    let withdraw_ext_amount = BigInt::from(withdraw_fee)
-        + BigInt::from(withdraw_outputs_sum)
+    let withdraw_ext_amount = BigInt::from(withdraw_fee) + BigInt::from(withdraw_outputs_sum)
         - BigInt::from(withdraw_inputs_sum);
 
     let withdraw_public_amount_big =
@@ -5112,7 +5182,10 @@ fn withdrawal_has_no_limit_can_withdraw_any_amount() {
             .to_biguint()
             .expect("withdraw public amount should be non-negative"),
         ext_data_hash: withdraw_ext_data_hash,
-        in_amount: withdraw_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        in_amount: withdraw_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         in_private_key: withdraw_inputs
             .iter()
             .map(|x| x.keypair.privkey.clone())
@@ -5124,7 +5197,10 @@ fn withdrawal_has_no_limit_can_withdraw_any_amount() {
         mint_address: withdraw_inputs[0].mint_address.to_string(),
         in_path_indices: withdraw_input_merkle_path_indices,
         in_path_elements: withdraw_input_merkle_path_elements,
-        out_amount: withdraw_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: withdraw_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: withdraw_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -5136,12 +5212,10 @@ fn withdrawal_has_no_limit_can_withdraw_any_amount() {
     };
 
     let withdraw_proof_result = prove(&withdraw_input, &key_base_path).unwrap();
-    let withdraw_artifacts =
-        deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
-    let withdraw_nullifiers =
-        find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
+    let withdraw_nullifiers = find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
     let withdraw_cross_check_nullifiers =
         find_cross_check_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
 
@@ -5234,10 +5308,8 @@ fn tests_arithmetic_overflow_protection_in_transact_with_edge_case_balances() {
     ];
 
     let deposit_input_merkle_path_indices = [0usize; 2];
-    let deposit_input_merkle_path_elements = vec![
-        vec![[0u8; 32]; tree.levels],
-        vec![[0u8; 32]; tree.levels],
-    ];
+    let deposit_input_merkle_path_elements =
+        vec![vec![[0u8; 32]; tree.levels], vec![[0u8; 32]; tree.levels]];
 
     let deposit_input_nullifiers = [
         deposit_inputs[0].get_nullifier().unwrap(),
@@ -5265,7 +5337,10 @@ fn tests_arithmetic_overflow_protection_in_transact_with_edge_case_balances() {
             .to_biguint()
             .expect("deposit public amount should be non-negative"),
         ext_data_hash: deposit_ext_data_hash,
-        in_amount: deposit_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        in_amount: deposit_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         in_private_key: deposit_inputs
             .iter()
             .map(|x| x.keypair.privkey.clone())
@@ -5277,7 +5352,10 @@ fn tests_arithmetic_overflow_protection_in_transact_with_edge_case_balances() {
         mint_address: deposit_inputs[0].mint_address.to_string(),
         in_path_indices: deposit_input_merkle_path_indices,
         in_path_elements: deposit_input_merkle_path_elements,
-        out_amount: deposit_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: deposit_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: deposit_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -5294,17 +5372,14 @@ fn tests_arithmetic_overflow_protection_in_transact_with_edge_case_balances() {
         .join("transaction2");
 
     let deposit_proof_result = prove(&deposit_input, &key_base_path).unwrap();
-    let deposit_artifacts =
-        deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
-    let deposit_nullifiers =
-        find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
+    let deposit_nullifiers = find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
     let deposit_cross_check_nullifiers =
         find_cross_check_nullifier_pdas(&program_id, &deposit_proof_to_submit);
 
-    let modify_compute_units =
-        ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
+    let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses(
         &Address::from_str_const(PROGRAM_ID),
@@ -5369,8 +5444,7 @@ fn tests_arithmetic_overflow_protection_in_transact_with_edge_case_balances() {
 
     let withdraw_fee = calculate_withdrawal_fee(withdrawal_amount);
 
-    let valid_ext_amount = BigInt::from(withdraw_fee)
-        + BigInt::from(withdraw_outputs_sum)
+    let valid_ext_amount = BigInt::from(withdraw_fee) + BigInt::from(withdraw_outputs_sum)
         - BigInt::from(withdraw_inputs_sum);
 
     let withdraw_public_amount_big =
@@ -5424,7 +5498,10 @@ fn tests_arithmetic_overflow_protection_in_transact_with_edge_case_balances() {
             .to_biguint()
             .expect("withdraw public amount should be non-negative"),
         ext_data_hash: withdraw_ext_data_hash,
-        in_amount: withdraw_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        in_amount: withdraw_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         in_private_key: withdraw_inputs
             .iter()
             .map(|x| x.keypair.privkey.clone())
@@ -5436,7 +5513,10 @@ fn tests_arithmetic_overflow_protection_in_transact_with_edge_case_balances() {
         mint_address: withdraw_inputs[0].mint_address.to_string(),
         in_path_indices: withdraw_input_merkle_path_indices,
         in_path_elements: withdraw_input_merkle_path_elements,
-        out_amount: withdraw_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
+        out_amount: withdraw_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
         out_blinding: withdraw_outputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -5448,12 +5528,10 @@ fn tests_arithmetic_overflow_protection_in_transact_with_edge_case_balances() {
     };
 
     let withdraw_proof_result = prove(&withdraw_input, &key_base_path).unwrap();
-    let withdraw_artifacts =
-        deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
-    let withdraw_nullifiers =
-        find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
+    let withdraw_nullifiers = find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
     let withdraw_cross_check_nullifiers =
         find_cross_check_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
 
@@ -5520,11 +5598,9 @@ fn fails_transact_instruction_for_invalid_mint_address() {
         fee: 10,
         fee_recipient: FEE_RECIPIENT_ACCOUNT.to_bytes(),
         // Invalid mint (USDC)
-        mint_address: Pubkey::from_str(
-            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-        )
-        .unwrap()
-        .to_bytes(),
+        mint_address: Pubkey::from_str("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
+            .unwrap()
+            .to_bytes(),
     };
 
     let proof = Proof {
@@ -5532,21 +5608,16 @@ fn fails_transact_instruction_for_invalid_mint_address() {
         proof_b: [2u8; 128],
         proof_c: [3u8; 64],
         root: ZERO_BYTES[DEFAULT_HEIGHT],
-        input_nullifiers: [
-            generate_random_nullifier(),
-            generate_random_nullifier(),
-        ],
+        input_nullifiers: [generate_random_nullifier(), generate_random_nullifier()],
         output_commitments: [[3u8; 32], [4u8; 32]],
         public_amount: bn_to_bytes(90),
         ext_data_hash: get_ext_data_hash(&ext_data),
     };
 
     let nullifiers = find_nullifier_pdas(&program_id, &proof);
-    let cross_check_nullifiers =
-        find_cross_check_nullifier_pdas(&program_id, &proof);
+    let cross_check_nullifiers = find_cross_check_nullifier_pdas(&program_id, &proof);
 
-    let modify_compute_units =
-        ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
+    let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let tx_ix = build_transact_ix(
         program_id,
@@ -5591,7 +5662,7 @@ fn fails_transact_instruction_for_invalid_mint_address() {
 }
 
 fn build_update_global_config_ix(
-    program_id: Pubkey, 
+    program_id: Pubkey,
     global_config: Pubkey,
     authority: Pubkey,
     deposit_fee_rate: Option<u64>,
@@ -5602,19 +5673,16 @@ fn build_update_global_config_ix(
 
     data.push(PrivacyCashInstructions::UpdateGlobalConfig as u8);
 
-    let update_mask = 
-        match deposit_fee_rate {
-            Some(_) => constants::UPDATE_DEPOSIT_FEE,
-            None => 0
-        } | 
-        match withdrawal_fee_rate {
-            Some(_) => constants::UPDATE_WITHDRAWAL_FEE,
-            None => 0
-        } |
-        match fee_error_margin {
-            Some(_) => constants::UPDATE_FEE_ERROR_MARGIN,
-            None => 0
-        };
+    let update_mask = match deposit_fee_rate {
+        Some(_) => constants::UPDATE_DEPOSIT_FEE,
+        None => 0,
+    } | match withdrawal_fee_rate {
+        Some(_) => constants::UPDATE_WITHDRAWAL_FEE,
+        None => 0,
+    } | match fee_error_margin {
+        Some(_) => constants::UPDATE_FEE_ERROR_MARGIN,
+        None => 0,
+    };
 
     data.extend_from_slice(&(deposit_fee_rate.unwrap_or(0) as u16).to_le_bytes());
     data.extend_from_slice(&(withdrawal_fee_rate.unwrap_or(0) as u16).to_le_bytes());
@@ -5660,8 +5728,7 @@ fn authority_can_update_global_config() {
 
     advance_one_slot(&mut ctx.svm);
 
-    let modify_compute_units =
-        ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
+    let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let ix = build_update_global_config_ix(
         Pubkey::from_str_const(PROGRAM_ID),
@@ -5701,7 +5768,10 @@ fn authority_can_update_global_config_deposit_fee_rate() {
     );
 
     let tx = Transaction::new_signed_with_payer(
-        &[ComputeBudgetInstruction::set_compute_unit_limit(1_000_000), ix],
+        &[
+            ComputeBudgetInstruction::set_compute_unit_limit(1_000_000),
+            ix,
+        ],
         Some(&ctx.authority.pubkey()),
         &[&ctx.authority],
         ctx.svm.latest_blockhash(),
@@ -5730,7 +5800,10 @@ fn authority_can_update_global_config_withdrawal_fee_rate() {
     );
 
     let tx = Transaction::new_signed_with_payer(
-        &[ComputeBudgetInstruction::set_compute_unit_limit(1_000_000), ix],
+        &[
+            ComputeBudgetInstruction::set_compute_unit_limit(1_000_000),
+            ix,
+        ],
         Some(&ctx.authority.pubkey()),
         &[&ctx.authority],
         ctx.svm.latest_blockhash(),
@@ -5759,7 +5832,10 @@ fn authority_can_update_global_config_fee_error_margin() {
     );
 
     let tx = Transaction::new_signed_with_payer(
-        &[ComputeBudgetInstruction::set_compute_unit_limit(1_000_000), ix],
+        &[
+            ComputeBudgetInstruction::set_compute_unit_limit(1_000_000),
+            ix,
+        ],
         Some(&ctx.authority.pubkey()),
         &[&ctx.authority],
         ctx.svm.latest_blockhash(),
@@ -5790,7 +5866,10 @@ fn authority_can_update_multiple_global_config_parameters() {
     );
 
     let tx = Transaction::new_signed_with_payer(
-        &[ComputeBudgetInstruction::set_compute_unit_limit(1_000_000), ix],
+        &[
+            ComputeBudgetInstruction::set_compute_unit_limit(1_000_000),
+            ix,
+        ],
         Some(&ctx.authority.pubkey()),
         &[&ctx.authority],
         ctx.svm.latest_blockhash(),
@@ -5824,8 +5903,7 @@ fn non_authority_cannot_update_global_config() {
 
     ctx.svm.send_transaction(funding_tx).unwrap();
 
-    let modify_compute_units =
-        ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
+    let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let ix = build_update_global_config_ix(
         Pubkey::from_str_const(PROGRAM_ID),
@@ -6031,25 +6109,20 @@ fn succeeds_with_valid_sol_mint_address() {
     let inputs = [Utxo::empty(), Utxo::empty()];
 
     let field_size = BigInt::from_str(FIELD_SIZE_DECIMAL).unwrap();
-    let public_amount_big =
-        (BigInt::from(deposit_amount) - BigInt::from(actual_deposit_fee) + &field_size)
-            % &field_size;
+    let public_amount_big = (BigInt::from(deposit_amount) - BigInt::from(actual_deposit_fee)
+        + &field_size)
+        % &field_size;
 
     let public_amount: u64 = public_amount_big
         .clone()
         .try_into()
         .expect("public amount should fit into u64");
 
-    let outputs = [
-        Utxo::new(public_amount),
-        Utxo::new(0),
-    ];
+    let outputs = [Utxo::new(public_amount), Utxo::new(0)];
 
     let input_merkle_path_indices = [0usize; 2];
-    let input_merkle_path_elements = vec![
-        vec![[0u8; 32]; tree.levels],
-        vec![[0u8; 32]; tree.levels],
-    ];
+    let input_merkle_path_elements =
+        vec![vec![[0u8; 32]; tree.levels], vec![[0u8; 32]; tree.levels]];
 
     let input_nullifiers = [
         inputs[0].get_nullifier().unwrap(),
@@ -6070,10 +6143,7 @@ fn succeeds_with_valid_sol_mint_address() {
             .expect("public amount should be non-negative"),
         ext_data_hash: get_ext_data_hash(&ext_data),
         in_amount: inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
-        in_private_key: inputs
-            .iter()
-            .map(|x| x.keypair.privkey.clone())
-            .collect(),
+        in_private_key: inputs.iter().map(|x| x.keypair.privkey.clone()).collect(),
         in_blinding: inputs
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
@@ -6086,10 +6156,7 @@ fn succeeds_with_valid_sol_mint_address() {
             .iter()
             .map(|x| BigUint::from(x.blinding.clone()))
             .collect(),
-        out_pubkey: outputs
-            .iter()
-            .map(|x| x.keypair.pubkey.clone())
-            .collect(),
+        out_pubkey: outputs.iter().map(|x| x.keypair.pubkey.clone()).collect(),
     };
 
     let key_base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -6102,8 +6169,7 @@ fn succeeds_with_valid_sol_mint_address() {
     let proof = format_proof(artifacts);
 
     let nullifiers = find_nullifier_pdas(&program_id, &proof);
-    let cross_check_nullifiers =
-        find_cross_check_nullifier_pdas(&program_id, &proof);
+    let cross_check_nullifiers = find_cross_check_nullifier_pdas(&program_id, &proof);
 
     let test_protocol_addresses = get_test_protocol_addresses(
         &Address::from_str_const(PROGRAM_ID),
@@ -6120,8 +6186,7 @@ fn succeeds_with_valid_sol_mint_address() {
 
     advance_one_slot(&mut ctx.svm);
 
-    let modify_compute_units =
-        ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
+    let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let tx_ix = build_transact_ix(
         program_id,

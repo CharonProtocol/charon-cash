@@ -140,6 +140,6 @@ impl Default for Utxo {
     }
 }
 
-fn default_mint_address() -> Address {
+pub fn default_mint_address() -> Address {
     Address::from_str(DEFAULT_MINT_ADDRESS).expect("invalid default mint address")
 }
