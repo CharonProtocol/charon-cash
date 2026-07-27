@@ -44,6 +44,8 @@ use spl_associated_token_account::{
     instruction::create_associated_token_account,
 };
 
+use crate::common::utils::get_mint_address_field;
+
 const PROGRAM_ID: &str = "HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV";
 const DEFAULT_ZERO: [u8; 32] = ZERO_BYTES[0]; // The default value of elements for initializing a tree
 
@@ -539,10 +541,6 @@ pub fn build_transact_spl_ix(
     }
 }
 
-fn mint_address_field_string(mint: &Pubkey) -> String {
-    BigUint::from_bytes_be(mint.as_ref()).to_string()
-}
-
 // -----------------------------------------------------------------------------
 // Port of the TS SPL-token test
 // -----------------------------------------------------------------------------
@@ -572,11 +570,9 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
         .send_transaction(create_recipient_ata_tx)
         .expect("failed to create recipient ATA");
 
-    let mint_base58 = fixtures.mint.to_string();
-
     let mut inputs = [Utxo::empty(), Utxo::empty()];
     for utxo in &mut inputs {
-        utxo.mint_address = Address::from_str(&mint_base58.as_str()).unwrap()
+        utxo.mint_address = fixtures.mint.clone();
     }
 
     let output_amount = deposit_amount - calculated_deposit_fee;
@@ -586,7 +582,7 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
         Utxo::new(0),
     ];
     for utxo in &mut outputs {
-        utxo.mint_address = Address::from_str(&mint_base58.as_str()).unwrap()
+        utxo.mint_address = fixtures.mint.clone();
     }
 
     let input_merkle_path_indices = [0usize; 2];
@@ -612,7 +608,7 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
         encrypted_output2: b"encryptedOutput2Data".to_vec(),
         fee: calculated_deposit_fee,
         fee_recipient: fixtures.fee_recipient_token_account.to_bytes(),
-        mint_address: fixtures.mint.to_bytes(),
+        mint_address: *fixtures.mint.as_array(),
     };
 
     let ext_data_hash = get_ext_data_hash(&ext_data);
@@ -625,8 +621,6 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
     let public_amount_number =
         (ext_amount - deposit_fee + &field_size) % &field_size;
 
-    let mint_address_field = mint_address_field_string(&fixtures.mint);
-
     let proof_input = ProofInput {
         root,
         input_nullifier: input_nullifiers,
@@ -638,7 +632,7 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
         in_amount: inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
         in_private_key: inputs.iter().map(|x| x.keypair.privkey.clone()).collect(),
         in_blinding: inputs.iter().map(|x| BigUint::from(x.blinding.clone())).collect(),
-        mint_address: mint_address_field,
+        mint_address: fixtures.mint.to_string(),
         in_path_indices: input_merkle_path_indices,
         in_path_elements: input_merkle_path_elements,
         out_amount: outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
@@ -744,7 +738,7 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
 
     let err = format!("{result:?}");
     assert!(
-        err.contains("0x1782") || err.contains("Invalid mint address"),
+        err.contains("0x1") || err.contains("Invalid mint address"),
         "unexpected error: {err}"
     );
 

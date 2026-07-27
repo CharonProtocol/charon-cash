@@ -105,6 +105,10 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
         bytemuck::try_from_bytes_mut::<MerkleTreeAccount>(&mut tree_data[..MerkleTreeAccount::LEN])
             .map_err(|e| PrivacyCashError::InvalidMerkleTreeAccount)?;
 
+    if !ALLOW_ALL_SPL_TOKENS && !ALLOWED_TOKENS.contains(&mint_address) {
+        return Err(PrivacyCashError::InvalidMintAddress.into());
+    }
+
     verify_pda(
         tree_account,
         &[TREE_ACCOUNT_SEED, mint_address, &[tree.bump]],
@@ -114,10 +118,6 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
     if !MerkleTree::is_known_root(tree, proof.root) {
         return Err(PrivacyCashError::UnknownRoot.into());
     }
-
-    // if !ALLOW_ALL_SPL_TOKENS && !ALLOWED_TOKENS.contains(&mint_address) {
-    //     return Err(PrivacyCashError::InvalidMintAddress.into());
-    // }
 
     let calculated_ext_data_hash = calculate_complete_ext_data_hash(
         recipient_key,
