@@ -1,5 +1,8 @@
 use crate::{
-    constants::{GLOBAL_CONFIG_SEED, NULLIFIER0_SEED, NULLIFIER1_SEED, TREE_ACCOUNT_SEED},
+    constants::{
+        ALLOWED_TOKENS, ALLOW_ALL_SPL_TOKENS, GLOBAL_CONFIG_SEED, NULLIFIER0_SEED, NULLIFIER1_SEED,
+        TREE_ACCOUNT_SEED,
+    },
     error::PrivacyCashError,
     helper::{
         init_nullifier_account, verify_cross_nullifier, verify_initialized, verify_pda,
