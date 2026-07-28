@@ -34,6 +34,7 @@ import {
   fetchUtxoRange,
   fieldToHex32,
   isNullifierSpent,
+  submitTransaction,
   waitForLeafIndex,
   type RelayerInfo,
 } from "./merkle"
@@ -797,15 +798,7 @@ export class PrivacyCashClient {
     const signed = (await this.signer.signTransaction(
       transaction,
     )) as VersionedTransaction
-    const signature = await this.conn.sendRawTransaction(signed.serialize(), {
-      skipPreflight: false,
-      maxRetries: 5,
-    })
-    try {
-      await this.conn.confirmTransaction(signature, "confirmed")
-    } catch {
-      /* signature still returned for inspection */
-    }
+    const signature = await submitTransaction(signed.serialize())
     return { signature, nullifiers: nullifierHexes }
   }
 }

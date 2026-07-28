@@ -2,6 +2,7 @@ import { AddressLookupTableProgram, PublicKey, SystemProgram, ComputeBudgetProgr
 import { SEED } from "./constants";
 import { TOKEN_PROGRAM_ID, ATA_PROGRAM_ID, deriveSplTreeAccount, } from "./program";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { submitTransaction } from "./merkle";
 const ALT_CACHE_KEY = "privacy-cash:alt-address";
 export function envAltAddress() {
     try {
@@ -79,19 +80,14 @@ export async function fetchAlt(connection, address) {
     return res.value;
 }
 async function sendIx(connection, signer, ixs) {
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+    const { blockhash } = await connection.getLatestBlockhash();
     const msg = new TransactionMessage({
         payerKey: signer.publicKey,
         recentBlockhash: blockhash,
         instructions: ixs,
     }).compileToV0Message();
-    let tx = new VersionedTransaction(msg);
-    tx = await signer.signTransaction(tx);
-    const sig = await connection.sendRawTransaction(tx.serialize(), {
-        skipPreflight: false,
-    });
-    await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
-    return sig;
+    const tx = await signer.signTransaction(new VersionedTransaction(msg));
+    return submitTransaction(tx.serialize());
 }
 /**
  * Ensure an ALT exists that contains the given addresses.

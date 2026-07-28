@@ -46,6 +46,7 @@ export {
   waitForLeafIndex,
   waitForEncryptedOutput,
   isNullifierSpent,
+  submitTransaction,
   fieldToHex32,
   setBackendUrl,
   getBackendUrl,
