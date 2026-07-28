@@ -85,6 +85,11 @@ pub struct UpdateDepositLimitSplRequest {
     pub new_limit: u64,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SubmitRequest {
+    pub transaction: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct RelayResponse {
     pub signature: String,

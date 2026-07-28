@@ -46,6 +46,7 @@ export interface UtxoCheckResult {
 }
 export declare function setBackendUrl(url: string): void;
 export declare function getBackendUrl(): string;
+export declare function submitTransaction(serializedTx: Uint8Array): Promise<string>;
 export declare function bytesToHex(bytes: ArrayLike<number>): string;
 /** Poseidon / Fr decimal string → 32-byte big-endian hex (no 0x). */
 export declare function fieldToHex32(dec: string): string;

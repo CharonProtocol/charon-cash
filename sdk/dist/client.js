@@ -4,7 +4,7 @@ import { PublicKey, } from "@solana/web3.js";
 import BN from "bn.js";
 import { envProgramId, FIELD_SIZE, MERKLE_TREE_DEPTH, SIGN_MESSAGE, SOL_TREE_KEY, WRAPPED_SOL_MINT, } from "./constants";
 import { EncryptionService, Keypair, Utxo, getExtDataHash, getMintAddressField, } from "./crypto";
-import { bytesToHex, fetchMerkleProof, fetchRelayerInfo, fetchTreeState, fetchUtxoRange, fieldToHex32, isNullifierSpent, waitForLeafIndex, } from "./merkle";
+import { bytesToHex, fetchMerkleProof, fetchRelayerInfo, fetchTreeState, fetchUtxoRange, fieldToHex32, isNullifierSpent, submitTransaction, waitForLeafIndex, } from "./merkle";
 import { getSyncOffset, markNoteSpent, newNoteId, saveNote, setSyncOffset, unspentNotes, upsertNote, markNoteSpentByIndex, } from "./notes";
 import { pushEncryptedNotes, pullEncryptedNotes } from "./notestore";
 import { parseProofToBytesArray, parseToBytesArray, prove } from "./prover";
@@ -588,16 +588,7 @@ export class PrivacyCashClient {
             transaction = built.transaction;
         }
         const signed = (await this.signer.signTransaction(transaction));
-        const signature = await this.conn.sendRawTransaction(signed.serialize(), {
-            skipPreflight: false,
-            maxRetries: 5,
-        });
-        try {
-            await this.conn.confirmTransaction(signature, "confirmed");
-        }
-        catch {
-            /* signature still returned for inspection */
-        }
+        const signature = await submitTransaction(signed.serialize());
         return { signature, nullifiers: nullifierHexes };
     }
 }

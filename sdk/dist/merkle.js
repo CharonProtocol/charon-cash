@@ -7,6 +7,47 @@ export function setBackendUrl(url) {
 export function getBackendUrl() {
     return BACKEND_URL;
 }
+function u8ToHex(bytes) {
+    let out = "";
+    for (let i = 0; i < bytes.length; i++) {
+        out += bytes[i].toString(16).padStart(2, "0");
+    }
+    return out;
+}
+export async function submitTransaction(serializedTx) {
+    if (!BACKEND_URL) {
+        throw new Error("backend URL not set — call setBackendUrl() or set VITE_BACKEND_URL");
+    }
+    const res = await fetch(BACKEND_URL + "/api/relayer/submit", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ transaction: u8ToHex(serializedTx) }),
+    });
+    const text = await res.text();
+    let data = null;
+    if (text) {
+        try {
+            data = JSON.parse(text);
+        }
+        catch {
+            data = text;
+        }
+    }
+    if (!res.ok) {
+        const err = data?.error;
+        throw new Error(err?.message ?? `HTTP ${res.status}`);
+    }
+    const payload = data;
+    if (!payload?.signature) {
+        throw new Error("relayer returned no signature");
+    }
+    if (payload.status &&
+        payload.status !== "confirmed" &&
+        payload.status !== "submitted") {
+        throw new Error(`relayer status: ${payload.status}`);
+    }
+    return payload.signature;
+}
 export function bytesToHex(bytes) {
     let out = "0x";
     for (let i = 0; i < bytes.length; i++)

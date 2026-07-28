@@ -17,6 +17,7 @@ import {
   deriveSplTreeAccount,
 } from "./program"
 import { getAssociatedTokenAddressSync } from "@solana/spl-token"
+import { submitTransaction } from "./merkle"
 
 export type AltSigner = {
   publicKey: PublicKey
@@ -124,23 +125,14 @@ async function sendIx(
   signer: AltSigner,
   ixs: TransactionInstruction[],
 ): Promise<string> {
-  const { blockhash, lastValidBlockHeight } =
-    await connection.getLatestBlockhash()
+  const { blockhash } = await connection.getLatestBlockhash()
   const msg = new TransactionMessage({
     payerKey: signer.publicKey,
     recentBlockhash: blockhash,
     instructions: ixs,
   }).compileToV0Message()
-  let tx = new VersionedTransaction(msg)
-  tx = await signer.signTransaction(tx)
-  const sig = await connection.sendRawTransaction(tx.serialize(), {
-    skipPreflight: false,
-  })
-  await connection.confirmTransaction(
-    { signature: sig, blockhash, lastValidBlockHeight },
-    "confirmed",
-  )
-  return sig
+  const tx = await signer.signTransaction(new VersionedTransaction(msg))
+  return submitTransaction(tx.serialize())
 }
 
 /**

@@ -9,12 +9,15 @@ use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signer::Signer;
 use solana_sdk::signer::keypair::Keypair;
 use solana_sdk::transaction::Transaction;
+use solana_rpc_client::api::config::RpcSendTransactionConfig;
+use solana_sdk::transaction::VersionedTransaction;
+use solana_address_lookup_table_interface::state::AddressLookupTable;
 
 use crate::config::Config;
 use crate::db::Db;
 use crate::relayer::accounts as acc;
 use crate::relayer::dto::{
-    tree_key_for, InitializeSplRequest, MintFeeInfo, RelayResponse, RelayerInfo, TransactInput,
+    tree_key_for, InitializeSplRequest, MintFeeInfo, RelayResponse, RelayerInfo, SubmitRequest, TransactInput,
     TransactKind, UpdateConfigRequest, UpdateDepositLimitRequest, UpdateDepositLimitSplRequest,
     WithdrawRequest,
 };
@@ -409,5 +412,84 @@ impl Relayer {
             slot: None,
             status: status.to_string(),
         })
+    }
+
+    pub async fn broadcast(&self, req: SubmitRequest) -> AppResult<RelayResponse> {
+        let bytes = hex::decode(req.transaction.trim())
+            .map_err(|e| AppError::bad_request("INVALID_ENCODING", format!("transaction hex: {e}")))?;
+        let vtx: VersionedTransaction = bincode::deserialize(&bytes)
+            .map_err(|e| AppError::bad_request("INVALID_TRANSACTION", format!("deserialize: {e}")))?;
+
+        self.assert_targets_program(&vtx).await?;
+
+        let config = RpcSendTransactionConfig {
+            skip_preflight: self.config.relayer_skip_preflight,
+            ..Default::default()
+        };
+        let sig = self
+            .rpc
+            .send_transaction_with_config(&vtx, config)
+            .await
+            .map_err(|e| AppError::upstream(format!("send_transaction: {e}")))?;
+
+        let status = match tokio::time::timeout(
+            Duration::from_secs(45),
+            self.rpc.confirm_transaction(&sig),
+        )
+        .await
+        {
+            Ok(Ok(true)) => "confirmed",
+            _ => "submitted",
+        };
+
+        Ok(RelayResponse {
+            signature: sig.to_string(),
+            slot: None,
+            status: status.to_string(),
+        })
+    }
+
+    async fn assert_targets_program(&self, vtx: &VersionedTransaction) -> AppResult<()> {
+        let message = &vtx.message;
+        let mut keys: Vec<Pubkey> = message
+            .static_account_keys()
+            .iter()
+            .map(|a| Pubkey::new_from_array(a.to_bytes()))
+            .collect();
+        if let Some(lookups) = message.address_table_lookups() {
+            for lookup in lookups {
+                let alt_pubkey = Pubkey::new_from_array(lookup.account_key.to_bytes());
+                let account = self
+                    .rpc
+                    .get_account(&alt_pubkey)
+                    .await
+                    .map_err(|e| AppError::upstream(format!("read ALT {alt_pubkey}: {e}")))?;
+                let table = AddressLookupTable::deserialize(&account.data)
+                    .map_err(|e| AppError::bad_request("INVALID_ALT", format!("alt deserialize: {e}")))?;
+                for idx in &lookup.writable_indexes {
+                    if let Some(k) = table.addresses.get(*idx as usize) {
+                        keys.push(*k);
+                    }
+                }
+                for idx in &lookup.readonly_indexes {
+                    if let Some(k) = table.addresses.get(*idx as usize) {
+                        keys.push(*k);
+                    }
+                }
+            }
+        }
+        let alt_program = solana_address_lookup_table_interface::program::ID;
+        let targets_program = message.instructions().iter().any(|ci| {
+            keys.get(ci.program_id_index as usize)
+                .map(|k| *k == self.program_id || *k == alt_program)
+                .unwrap_or(false)
+        });
+        if !targets_program {
+            return Err(AppError::bad_request(
+                "PROGRAM_NOT_ALLOWED",
+                "transaction must contain an instruction for the privacy-cash program",
+            ));
+        }
+        Ok(())
     }
 }

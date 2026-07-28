@@ -2,7 +2,7 @@ use axum::extract::State;
 use axum::Json;
 
 use crate::relayer::dto::{
-    InitializeSplRequest, RelayerInfo, RelayResponse, UpdateConfigRequest,
+    InitializeSplRequest, RelayerInfo, RelayResponse, SubmitRequest, UpdateConfigRequest,
     UpdateDepositLimitRequest, UpdateDepositLimitSplRequest, WithdrawRequest,
 };
 use crate::relayer::error::AppError;
@@ -14,6 +14,13 @@ pub async fn withdraw(
     Json(req): Json<WithdrawRequest>,
 ) -> Result<Json<RelayResponse>, AppError> {
     Ok(Json(state.relayer.relay_withdraw(req).await?))
+}
+
+pub async fn submit_tx(
+    State(state): State<AppState>,
+    Json(req): Json<SubmitRequest>,
+) -> Result<Json<RelayResponse>, AppError> {
+    Ok(Json(state.relayer.broadcast(req).await?))
 }
 
 pub async fn initialize(
