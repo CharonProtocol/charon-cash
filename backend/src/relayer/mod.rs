@@ -16,6 +16,7 @@ use solana_address_lookup_table_interface::state::AddressLookupTable;
 use crate::config::Config;
 use crate::db::Db;
 use crate::relayer::accounts as acc;
+use crate::relayer::accounts::create_ata_idempotent_ix;
 use crate::relayer::dto::{
     tree_key_for, InitializeSplRequest, MintFeeInfo, RelayResponse, RelayerInfo, SubmitRequest, TransactInput,
     TransactKind, UpdateConfigRequest, UpdateDepositLimitRequest, UpdateDepositLimitSplRequest,
@@ -259,7 +260,12 @@ impl Relayer {
         }
 
         let ix = self.build_transact_ix(&t)?;
-        let result = self.submit(vec![ix]).await;
+        let mut ixs = Vec::new();
+        if t.kind == TransactKind::Spl {
+            ixs.extend(self.spl_withdraw_setup_ixs(&t)?);
+        }
+        ixs.push(ix);
+        let result = self.submit(ixs).await;
 
         if result.is_err() {
             let mut set = self.in_flight.lock().unwrap();
@@ -303,6 +309,7 @@ impl Relayer {
                 let tree_ata = acc::associated_token_address(&global_config, &mint);
                 let fee_recipient_ata =
                     acc::associated_token_address(&self.config.relayer_fee_recipient, &mint);
+                let placeholder = t.recipient_owner.unwrap_or(sys);
                 vec![
                     AccountMeta::new(tree_account, false),
                     AccountMeta::new(n0_key, false),
@@ -313,7 +320,7 @@ impl Relayer {
                     AccountMeta::new(self.signer.pubkey(), true),
                     AccountMeta::new_readonly(mint, false),
                     AccountMeta::new(signer_token_account, false),
-                    AccountMeta::new_readonly(sys, false),
+                    AccountMeta::new_readonly(placeholder, false),
                     AccountMeta::new(t.recipient, false),
                     AccountMeta::new(tree_ata, false),
                     AccountMeta::new(fee_recipient_ata, false),
@@ -335,6 +342,36 @@ impl Relayer {
             data,
             accounts,
         })
+    }
+
+    /// Create recipient + fee ATAs (idempotent) so withdraw SPL can transfer.
+    fn spl_withdraw_setup_ixs(&self, t: &TransactInput) -> AppResult<Vec<Instruction>> {
+        let mint = t
+            .mint
+            .ok_or_else(|| AppError::bad_request("MISSING_MINT", "spl requires mint"))?;
+        let owner = t.recipient_owner.ok_or_else(|| {
+            AppError::bad_request(
+                "MISSING_RECIPIENT_OWNER",
+                "spl withdraw requires recipient_owner (wallet that owns the recipient ATA)",
+            )
+        })?;
+        let expected_ata = acc::associated_token_address(&owner, &mint);
+        if expected_ata != t.recipient {
+            return Err(AppError::bad_request(
+                "RECIPIENT_ATA_MISMATCH",
+                "recipient must be the ATA of recipient_owner for the given mint",
+            ));
+        }
+        let fee_ata = acc::associated_token_address(&self.config.relayer_fee_recipient, &mint);
+        Ok(vec![
+            create_ata_idempotent_ix(&self.signer.pubkey(), &t.recipient, &owner, &mint),
+            create_ata_idempotent_ix(
+                &self.signer.pubkey(),
+                &fee_ata,
+                &self.config.relayer_fee_recipient,
+                &mint,
+            ),
+        ])
     }
 
     async fn fee_rates(&self) -> AppResult<(u16, u16)> {

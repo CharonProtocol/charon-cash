@@ -15,15 +15,15 @@ function MerkleHero() {
       aria-label="A Merkle tree of commitments, with one leaf and its path to the root highlighted"
       className="h-auto w-full max-w-[430px]"
     >
-      <g stroke="#e4e7ec" strokeWidth={1.5} fill="none">
+      <g className="stroke-border" strokeWidth={1.5} fill="none">
         <path d="M210 36 L105 112 M210 36 L315 112" />
         <path d="M105 112 L52 188 M105 112 L158 188 M315 112 L262 188 M315 112 L368 188" />
         <path d="M52 188 L26 264 M52 188 L78 264 M158 188 L130 264 M158 188 L186 264 M262 188 L238 264 M262 188 L288 264 M368 188 L342 264 M368 188 L394 264" />
       </g>
-      <g stroke="#5b54e6" strokeWidth={2.2} fill="none">
+      <g className="stroke-primary" strokeWidth={2.2} fill="none">
         <path d="M130 264 L158 188 M158 188 L105 112 M105 112 L210 36" />
       </g>
-      <g fill="#d4d8e0">
+      <g className="fill-muted-foreground/40">
         <circle cx={315} cy={112} r={4.5} />
         <circle cx={262} cy={188} r={4.5} />
         <circle cx={368} cy={188} r={4.5} />
@@ -36,17 +36,21 @@ function MerkleHero() {
         <circle cx={78} cy={264} r={4} />
         <circle cx={186} cy={264} r={4} />
       </g>
-      <g fill="#5b54e6">
+      <g className="fill-primary">
         <circle cx={210} cy={36} r={6} />
         <circle cx={105} cy={112} r={5.5} />
         <circle cx={158} cy={188} r={5.5} />
         <circle cx={130} cy={264} r={6.5} />
       </g>
-      <g fontFamily="'IBM Plex Mono', monospace" fontSize={9} fill="#868f9e">
+      <g
+        fontFamily="'IBM Plex Mono', monospace"
+        fontSize={9}
+        className="fill-muted-foreground"
+      >
         <text x={222} y={32}>
           root
         </text>
-        <text x={140} y={280} fill="#5b54e6">
+        <text x={140} y={280} className="fill-primary">
           your commitment
         </text>
       </g>
@@ -57,28 +61,25 @@ function MerkleHero() {
 const STATS = [
   { k: "Tree", v: "26 levels", s: "Poseidon Merkle" },
   { k: "Proof", v: "Groth16", s: "BN254, client-side" },
-  { k: "Submit", v: "Direct to RPC", s: "self-signed" },
-  { k: "Assets", v: "SOL + SPL", s: "any mint" },
+  { k: "Deposit", v: "Wallet-signed", s: "broadcast via backend" },
+  { k: "Withdraw", v: "Relayer-signed", s: "no browser RPC submit" },
 ]
 
 const FEATURES = [
   {
     icon: Lock,
-    swatch: "#5b54e6",
     title: "100% client-side ZK",
     body: "Your spending key, blinding factor, and the Groth16 witness are generated entirely in your browser. No secret ever leaves your device.",
     tag: "Poseidon + WebAssembly",
   },
   {
     icon: Zap,
-    swatch: "#0e7c86",
-    title: "Direct-to-RPC withdrawals",
-    body: "Your wallet signs and submits withdrawals straight to the chain. The pool pays the recipient and the protocol fee — no relayer in the submit path.",
-    tag: "Self-signed",
+    title: "Relayer-signed withdrawals",
+    body: "You prove in-browser; the backend relayer signs and submits the withdraw. The pool pays the recipient and the protocol fee — no browser RPC submit.",
+    tag: "Relayer-signed",
   },
   {
     icon: ShieldCheck,
-    swatch: "#111827",
     title: "Double-spend proof",
     body: "Nullifiers are written on-chain as PDAs. Once a note is spent it can never be reused — cryptographically enforced.",
     tag: "On-chain nullifier set",
@@ -99,7 +100,7 @@ const STEPS = [
   {
     n: "3",
     title: "Withdraw to a fresh address",
-    body: "Your wallet signs and submits direct to RPC. The pool pays a brand-new address with no link back to the deposit.",
+    body: "Prove ownership in-browser; the relayer signs and lands the withdraw. The pool pays a brand-new address with no link back to the deposit.",
   },
 ]
 
@@ -117,8 +118,9 @@ export function LandingHero({ onNavigate }: LandingHeroProps) {
           </h1>
           <p className="max-w-prose text-lg leading-relaxed text-muted-foreground">
             Deposit SOL or SPL tokens, hold a secret note, and withdraw to a fresh
-            address with a client-side ZK proof. Your wallet signs and submits direct
-            to the chain — the pool pays the recipient and the fee.
+            address with a client-side ZK proof. Deposits are wallet-signed;
+            withdrawals are relayer-signed — the browser never talks to Yellowstone
+            or submits withdraws over a public RPC key.
           </p>
           <div className="flex flex-wrap items-center gap-3 pt-1">
             <Button size="lg" onClick={() => onNavigate("app")} className="px-6">
@@ -162,8 +164,8 @@ export function LandingHero({ onNavigate }: LandingHeroProps) {
           <p className="eyebrow !mb-0">Architecture highlights</p>
           <h2 className="h-display text-3xl text-foreground">Built for privacy and speed</h2>
           <p className="max-w-xl text-sm text-muted-foreground">
-            Everything is computed client-side. The pool only verifies pre-built ZK
-            proofs on-chain.
+            Deposit with your wallet. Withdraw with a client-side proof — the
+            relayer signs and lands the transaction. Secrets never leave the browser.
           </p>
         </div>
 
@@ -173,19 +175,14 @@ export function LandingHero({ onNavigate }: LandingHeroProps) {
             return (
               <div
                 key={f.title}
-                className="space-y-4 rounded-[14px] border border-border bg-card p-6 transition-colors hover:border-[#d4d8e0]"
+                className="space-y-4 rounded-[14px] border border-border bg-card p-6 transition-colors hover:border-primary/40"
               >
-                <div
-                  className="flex size-11 items-center justify-center rounded-xl border"
-                  style={{ borderColor: f.swatch, color: f.swatch, background: `${f.swatch}14` }}
-                >
+                <div className="flex size-11 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary">
                   <Icon className="size-5" />
                 </div>
                 <h3 className="h-display text-lg text-foreground">{f.title}</h3>
                 <p className="text-sm leading-relaxed text-muted-foreground">{f.body}</p>
-                <p className="font-mono text-[11px]" style={{ color: f.swatch }}>
-                  {f.tag}
-                </p>
+                <p className="font-mono text-[11px] text-primary">{f.tag}</p>
               </div>
             )
           })}

@@ -43,7 +43,62 @@ export async function submitTransaction(serializedTx) {
     }
     if (payload.status &&
         payload.status !== "confirmed" &&
-        payload.status !== "submitted") {
+        payload.status !== "submitted" &&
+        payload.status !== "ok") {
+        throw new Error(`relayer status: ${payload.status}`);
+    }
+    return payload.signature;
+}
+/** Relayer-signed withdraw: POST proof fields; backend builds + signs + submits. */
+export async function relayWithdraw(req) {
+    if (!BACKEND_URL) {
+        throw new Error("backend URL not set — call setBackendUrl() or set VITE_BACKEND_URL");
+    }
+    const body = {
+        kind: req.kind,
+        proof_a: bytesToHex(req.proofA),
+        proof_b: bytesToHex(req.proofB),
+        proof_c: bytesToHex(req.proofC),
+        root: bytesToHex(req.root),
+        public_amount: bytesToHex(req.publicAmount),
+        ext_data_hash: bytesToHex(req.extDataHash),
+        input_nullifiers: req.inputNullifiers.map((n) => bytesToHex(n)),
+        output_commitments: req.outputCommitments.map((n) => bytesToHex(n)),
+        ext_amount: req.extAmount,
+        fee: req.fee,
+        encrypted_output1: bytesToHex(req.encryptedOutput1),
+        encrypted_output2: bytesToHex(req.encryptedOutput2),
+        recipient: req.recipient,
+        mint: req.mint,
+        recipient_owner: req.recipientOwner,
+    };
+    const res = await fetch(BACKEND_URL + "/api/relayer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    let data = null;
+    if (text) {
+        try {
+            data = JSON.parse(text);
+        }
+        catch {
+            data = text;
+        }
+    }
+    if (!res.ok) {
+        const err = data?.error;
+        throw new Error(err?.message ?? `HTTP ${res.status}`);
+    }
+    const payload = data;
+    if (!payload?.signature) {
+        throw new Error("relayer returned no signature");
+    }
+    if (payload.status &&
+        payload.status !== "confirmed" &&
+        payload.status !== "submitted" &&
+        payload.status !== "ok") {
         throw new Error(`relayer status: ${payload.status}`);
     }
     return payload.signature;

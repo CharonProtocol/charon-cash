@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { CircleCheck, CircleX } from "lucide-react"
+import { CircleCheck, CircleX, RefreshCw, Shield } from "lucide-react"
 
 import { api, BackendError } from "@/lib/api"
 import { isValidHex32 } from "@/lib/format"
@@ -27,7 +27,7 @@ export function NullifierCard() {
     setError(null)
     setStatus(null)
     if (!isValidHex32(hash)) {
-      setError("expected a 32-byte hex string (64 hex chars, optional 0x)")
+      setError("Expected a 32-byte hex string (64 hex chars, optional 0x)")
       setLoading(false)
       return
     }
@@ -43,37 +43,64 @@ export function NullifierCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Nullifier check</CardTitle>
-        <CardDescription>Has this note already been spent? (queries the indexer's nullifier set)</CardDescription>
+        <CardTitle className="flex items-center gap-2">
+          <Shield className="size-4" /> Nullifier check
+        </CardTitle>
+        <CardDescription>
+          Ask whether a note&apos;s nullifier was already published on-chain (spent).
+          Relayer withdraws create these PDAs before paying the recipient.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="space-y-1.5">
-          <Label htmlFor="nullifier">nullifier hash (hex, 32 bytes)</Label>
-          <div className="flex gap-2">
+          <Label htmlFor="nullifier">Nullifier hash (hex, 32 bytes)</Label>
+          <div className="flex flex-col gap-2 sm:flex-row">
             <Input
               id="nullifier"
               value={hash}
               onChange={(e) => setHash(e.target.value)}
               placeholder="0x…"
-              className="font-mono"
+              className="font-mono text-xs"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void check()
+              }}
             />
-            <Button onClick={check} disabled={loading}>
-              {loading ? "…" : "Check"}
+            <Button onClick={check} disabled={loading} className="shrink-0">
+              {loading ? (
+                <>
+                  <RefreshCw className="mr-1.5 size-3.5 animate-spin" /> Checking
+                </>
+              ) : (
+                "Check"
+              )}
             </Button>
           </div>
         </div>
 
         {status && (
-          <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-3">
-            <span className="text-sm">Spent?</span>
-            <Badge variant={status.spent ? "destructive" : "success"}>
+          <div
+            className={`flex items-center justify-between rounded-xl border p-4 ${
+              status.spent
+                ? "border-destructive/30 bg-destructive/5"
+                : "border-border bg-secondary/40"
+            }`}
+          >
+            <div>
+              <p className="text-sm font-medium text-foreground">
+                {status.spent ? "Already spent" : "Still available"}
+              </p>
+              <p className="mt-0.5 font-mono text-[11px] text-muted-foreground break-all">
+                {hash.trim()}
+              </p>
+            </div>
+            <Badge variant={status.spent ? "destructive" : "outline"} className="shrink-0">
               {status.spent ? (
                 <>
-                  <CircleX /> spent
+                  <CircleX className="size-3" /> spent
                 </>
               ) : (
                 <>
-                  <CircleCheck /> unspent
+                  <CircleCheck className="size-3" /> unspent
                 </>
               )}
             </Badge>

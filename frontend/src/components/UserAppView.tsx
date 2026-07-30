@@ -27,7 +27,7 @@ export function UserAppView({ onChanged }: UserAppViewProps) {
             <ShieldCheck className="size-5 text-primary" /> Privacy Cash Portal
           </h2>
           <p className="text-xs text-muted-foreground">
-            Client-side ZK proof generation · self-signed, direct to RPC
+            Client-side ZK · wallet-signed deposits · relayer-signed withdraws
           </p>
         </div>
 

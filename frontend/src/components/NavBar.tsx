@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react"
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui"
-import { Home, ShieldCheck, Lock, Activity, ShieldAlert } from "lucide-react"
+import { Home, ShieldCheck, Lock, Activity, ShieldAlert, Moon, Sun } from "lucide-react"
 
 import { api } from "@/lib/api"
+import { useTheme } from "@/hooks/useTheme"
+import { Button } from "@/components/ui/button"
 
 type Health = "ok" | "down" | "loading"
 
@@ -14,15 +16,15 @@ interface NavBarProps {
 function BrandMark() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-      <g fill="none" stroke="#5b54e6" strokeWidth="1.6">
+      <g fill="none" stroke="currentColor" strokeWidth="1.6" className="text-primary">
         <path d="M12 3 V9 M12 9 L6 14 M12 9 L18 14 M6 14 L3 20 M6 14 L9 20 M18 14 L15 20 M18 14 L21 20" />
       </g>
-      <g fill="#5b54e6">
+      <g fill="currentColor" className="text-primary">
         <circle cx="12" cy="3" r="1.8" />
         <circle cx="6" cy="14" r="1.5" />
         <circle cx="18" cy="14" r="1.5" />
       </g>
-      <g fill="#d4d8e0">
+      <g fill="currentColor" className="text-muted-foreground">
         <circle cx="3" cy="20" r="1.3" />
         <circle cx="9" cy="20" r="1.3" />
         <circle cx="15" cy="20" r="1.3" />
@@ -34,6 +36,7 @@ function BrandMark() {
 
 export function NavBar({ currentRoute, onNavigate }: NavBarProps) {
   const [health, setHealth] = useState<Health>("loading")
+  const { theme, toggle } = useTheme()
 
   useEffect(() => {
     let alive = true
@@ -76,11 +79,10 @@ export function NavBar({ currentRoute, onNavigate }: NavBarProps) {
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/85 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
-        {/* Brand */}
         <div className="flex items-center gap-6">
           <button
             onClick={() => onNavigate("landing")}
-            className="flex items-center gap-3 text-left focus:outline-none group"
+            className="group flex items-center gap-3 text-left focus:outline-none"
           >
             <div className="flex size-10 items-center justify-center rounded-xl border border-border bg-secondary">
               <BrandMark />
@@ -90,12 +92,11 @@ export function NavBar({ currentRoute, onNavigate }: NavBarProps) {
                 PRIVACY<span className="accent-text">CASH</span>
               </h1>
               <p className="text-[11px] leading-none text-muted-foreground">
-                Solana ZK-SNARK Protocol
+                Solana ZK · relayer withdraws
               </p>
             </div>
           </button>
 
-          {/* Nav links */}
           <nav className="hidden items-center gap-1 rounded-xl border border-border bg-secondary p-1 lg:flex">
             {navItems.map((item) => {
               const Icon = item.icon
@@ -118,8 +119,7 @@ export function NavBar({ currentRoute, onNavigate }: NavBarProps) {
           </nav>
         </div>
 
-        {/* Status + wallet */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <div
             className="flex items-center gap-2 rounded-full border border-border bg-secondary px-3 py-1 text-xs text-muted-foreground"
             title={label}
@@ -127,6 +127,17 @@ export function NavBar({ currentRoute, onNavigate }: NavBarProps) {
             <span className={`size-2 rounded-full ${dot}`} />
             <span className="hidden font-mono text-[11px] sm:inline">{label}</span>
           </div>
+
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={toggle}
+            title={theme === "dark" ? "Switch to light" : "Switch to dark"}
+            aria-label="Toggle color theme"
+            className="size-9"
+          >
+            {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+          </Button>
 
           <button
             onClick={() => onNavigate("admin")}
@@ -145,7 +156,6 @@ export function NavBar({ currentRoute, onNavigate }: NavBarProps) {
         </div>
       </div>
 
-      {/* Mobile nav */}
       <div className="flex gap-1 overflow-x-auto border-t border-border bg-background px-4 py-2 lg:hidden">
         {navItems.map((item) => {
           const Icon = item.icon

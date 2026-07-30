@@ -62,7 +62,7 @@ export function DepositSplCard({ onChanged }: { onChanged?: () => void }) {
       const mintStr = mint.trim()
       const raw = BigInt(amount.trim() || "0")
       if (raw <= 0n) throw new Error("enter a valid raw amount")
-      setStatus("generating ZK proof + signing tx…")
+      setStatus("generating ZK proof + wallet signing…")
       const res = await client.depositSPL(mintStr, raw.toString())
       setResult({
         signature: res.signature,
@@ -92,9 +92,9 @@ export function DepositSplCard({ onChanged }: { onChanged?: () => void }) {
           <Coins className="size-4" /> Deposit SPL
         </CardTitle>
         <CardDescription>
-          Client-side SPL shield. First SPL tx may ask you to sign 1–2 extra
-          wallet approvals to create/extend an Address Lookup Table (required
-          so the proof fits in a Solana transaction). Amount is in the
+          Client-side SPL shield + wallet-signed deposit, submitted via the
+          backend broadcast API. First SPL tx may ask for extra wallet approvals
+          to create/extend an Address Lookup Table. Amount is in the
           token&apos;s smallest units (e.g. 1 USDC = 1_000_000).
         </CardDescription>
       </CardHeader>

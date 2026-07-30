@@ -38,8 +38,12 @@ pub struct WithdrawRequest {
     pub fee: u64,
     pub encrypted_output1: String,
     pub encrypted_output2: String,
+    /// SOL: recipient wallet. SPL: recipient **token account (ATA)** (hashed on-chain).
     pub recipient: String,
     pub mint: Option<String>,
+    /// SPL only: wallet that owns `recipient` ATA (for idempotent ATA create).
+    #[serde(default)]
+    pub recipient_owner: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -59,6 +63,8 @@ pub struct TransactInput {
     pub encrypted_output2: Vec<u8>,
     pub recipient: Pubkey,
     pub mint: Option<Pubkey>,
+    /// SPL: owner of the recipient ATA (optional; used to create ATA if missing).
+    pub recipient_owner: Option<Pubkey>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -185,6 +191,10 @@ impl WithdrawRequest {
             encrypted_output2: hex_vec(&self.encrypted_output2, "encrypted_output2")?,
             recipient,
             mint,
+            recipient_owner: match self.recipient_owner.as_deref() {
+                Some(s) => Some(parse_pubkey(s, "recipient_owner")?),
+                None => None,
+            },
         })
     }
 }

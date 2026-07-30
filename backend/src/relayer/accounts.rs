@@ -58,3 +58,25 @@ pub fn associated_token_address(wallet: &Pubkey, mint: &Pubkey) -> Pubkey {
     )
     .0
 }
+
+/// Associated Token Account program: CreateIdempotent (discriminator = 1).
+pub fn create_ata_idempotent_ix(
+    payer: &Pubkey,
+    ata: &Pubkey,
+    owner: &Pubkey,
+    mint: &Pubkey,
+) -> solana_sdk::instruction::Instruction {
+    use solana_sdk::instruction::{AccountMeta, Instruction};
+    Instruction {
+        program_id: associated_token_program_id(),
+        accounts: vec![
+            AccountMeta::new(*payer, true),
+            AccountMeta::new(*ata, false),
+            AccountMeta::new_readonly(*owner, false),
+            AccountMeta::new_readonly(*mint, false),
+            AccountMeta::new_readonly(system_program_id(), false),
+            AccountMeta::new_readonly(token_program_id(), false),
+        ],
+        data: vec![1],
+    }
+}

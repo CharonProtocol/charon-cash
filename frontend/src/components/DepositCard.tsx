@@ -42,7 +42,7 @@ export function DepositCard({ onChanged }: { onChanged?: () => void }) {
     setStatus("unlocking (approve the wallet signature)…")
     try {
       const lamports = solToLamports(Number(amount) || 0)
-      setStatus("generating ZK proof + signing tx…")
+      setStatus("generating ZK proof + wallet signing…")
       const res = await client.depositSOL(lamports)
       setResult(res)
       setStatus(null)
@@ -66,8 +66,8 @@ export function DepositCard({ onChanged }: { onChanged?: () => void }) {
           <ArrowDownToLine className="size-4" /> Deposit SOL
         </CardTitle>
         <CardDescription>
-          Client-side: the SDK generates the ZK proof, your wallet signs + pays,
-          the tx is submitted straight to the RPC. No relayer.
+          Client-side ZK proof, then your wallet signs the deposit. The signed
+          tx is submitted via the backend broadcast API (no browser RPC submit).
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

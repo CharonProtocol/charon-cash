@@ -39,6 +39,38 @@
   --ring: #5b54e6;
 }
 
+.dark {
+  --paper: #0c0e12;
+  --panel: #141820;
+  --panel-2: #1a1f2a;
+  --line: #2a3140;
+  --line-2: #3a4254;
+  --ink: #e8eaef;
+  --body-ink: #b4bac8;
+  --mute: #8b93a7;
+  --accent: #8b85f0;
+  --accent-soft: #1e1c3a;
+
+  --background: #0c0e12;
+  --foreground: #e8eaef;
+  --card: #141820;
+  --card-foreground: #e8eaef;
+  --popover: #141820;
+  --popover-foreground: #e8eaef;
+  --primary: #8b85f0;
+  --primary-foreground: #0c0e12;
+  --secondary: #1a1f2a;
+  --secondary-foreground: #e8eaef;
+  --muted: #1a1f2a;
+  --muted-foreground: #8b93a7;
+  --accent-2: #8b85f0;
+  --accent-foreground: #0c0e12;
+  --destructive: #f87171;
+  --border: #2a3140;
+  --input: #2a3140;
+  --ring: #8b85f0;
+}
+
 /*
  * Map the semantic tokens to Tailwind v4 color utilities so the shadcn
  * primitives resolve (bg-primary, bg-card, text-muted-foreground, border-input,
@@ -148,7 +180,7 @@ body {
   border: 1px solid var(--line);
 }
 .tag--pub {
-  border-color: #c9c5fb;
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
   color: var(--accent);
   background: var(--accent-soft);
 }
