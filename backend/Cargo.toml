@@ -19,6 +19,8 @@ sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls-ring", "postg
 # Solana types + relayer (signing, tx, rpc). sdk 4.0.1 is the umbrella for the 4.x family.
 solana-sdk = "4.0.1"
 solana-rpc-client = "4.1.2"
+solana-address-lookup-table-interface = "3.1.0"
+bincode = "1"
 
 # Merkle / field-arithmetic — must match the on-chain program exactly.
 light-hasher = "4.0.0"

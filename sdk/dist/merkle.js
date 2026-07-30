@@ -7,6 +7,47 @@ export function setBackendUrl(url) {
 export function getBackendUrl() {
     return BACKEND_URL;
 }
+function u8ToHex(bytes) {
+    let out = "";
+    for (let i = 0; i < bytes.length; i++) {
+        out += bytes[i].toString(16).padStart(2, "0");
+    }
+    return out;
+}
+export async function submitTransaction(serializedTx) {
+    if (!BACKEND_URL) {
+        throw new Error("backend URL not set — call setBackendUrl() or set VITE_BACKEND_URL");
+    }
+    const res = await fetch(BACKEND_URL + "/api/relayer/submit", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ transaction: u8ToHex(serializedTx) }),
+    });
+    const text = await res.text();
+    let data = null;
+    if (text) {
+        try {
+            data = JSON.parse(text);
+        }
+        catch {
+            data = text;
+        }
+    }
+    if (!res.ok) {
+        const err = data?.error;
+        throw new Error(err?.message ?? `HTTP ${res.status}`);
+    }
+    const payload = data;
+    if (!payload?.signature) {
+        throw new Error("relayer returned no signature");
+    }
+    if (payload.status &&
+        payload.status !== "confirmed" &&
+        payload.status !== "submitted") {
+        throw new Error(`relayer status: ${payload.status}`);
+    }
+    return payload.signature;
+}
 export function bytesToHex(bytes) {
     let out = "0x";
     for (let i = 0; i < bytes.length; i++)
@@ -56,6 +97,16 @@ export async function fetchRelayerInfo() {
             feeAta: m.fee_ata,
         })),
     };
+}
+/** Latest blockhash + slot from the backend — no client RPC needed to build a tx. */
+export async function fetchBlockhash() {
+    const r = await getJson("/api/relayer/blockhash");
+    return { blockhash: r.blockhash, slot: Number(r.slot) };
+}
+/** Raw Address Lookup Table account bytes (hex), or null if it doesn't exist. */
+export async function fetchAltAccount(address) {
+    const r = await getJson(`/api/relayer/alt/${encodeURIComponent(address)}`);
+    return r.exists ? r.data_hex : null;
 }
 export async function fetchTreeState(treeKey) {
     const s = await getJson(`/api/merkle/${encodeURIComponent(treeKey)}`);

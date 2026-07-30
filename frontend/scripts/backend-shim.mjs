@@ -302,10 +302,31 @@ Bun.serve({
         return json({ nullifier: hex, spent })
       }
 
+      // ---- relay endpoints the backend-only client SDK calls ----
+      if (p === "/api/relayer/blockhash" && method === "GET") {
+        const { blockhash } = await conn.getLatestBlockhash()
+        const slot = await conn.getSlot("confirmed")
+        return json({ blockhash, last_valid_block_height: 0, slot })
+      }
+      const altm = p.match(/^\/api\/relayer\/alt\/([^/]+)$/)
+      if (altm && method === "GET") {
+        const acct = await conn.getAccountInfo(new PublicKey(altm[1]))
+        if (!acct) return json({ exists: false, data_hex: "" })
+        return json({ exists: true, data_hex: Buffer.from(acct.data).toString("hex") })
+      }
+
       // ---- POST setup/config (payer = authority signs) ----
       if (method === "POST") {
         let body = {}
         try { const text = await req.text(); if (text.trim()) body = JSON.parse(text) } catch {}
+        if (p === "/api/relayer/submit") {
+          const bytes = Buffer.from(String(body.transaction).replace(/^0x/i, ""), "hex")
+          const vtx = VersionedTransaction.deserialize(bytes)
+          const sig = await conn.sendTransaction(vtx, { skipPreflight: true, maxRetries: 5 })
+          let status = "submitted"
+          try { await conn.confirmTransaction(sig, "confirmed"); status = "confirmed" } catch {}
+          return json({ signature: sig, slot: await conn.getSlot("confirmed"), status })
+        }
         if (p === "/api/relayer/initialize") {
           if (await conn.getAccountInfo(solTree)) return json({ signature: "-", slot: null, status: "already-initialized" })
           return json(await sendIx(buildInitializeSolIx()))

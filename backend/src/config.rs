@@ -15,6 +15,7 @@ pub struct Config {
     pub relayer_keypair_path: String,
     pub relayer_fee_recipient: Pubkey,
     pub relayer_fee_rate_bps: u16,
+    pub relayer_skip_preflight: bool,
     pub supported_mints: Vec<Pubkey>,
     /// Operator password for the admin/operator endpoints (`ADMIN_PASSWORD` env).
     /// When `None`, operator routes fail closed (403/401).
@@ -58,6 +59,15 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(25),
+            relayer_skip_preflight: std::env::var("RELAYER_SKIP_PREFLIGHT")
+                .ok()
+                .map(|v| {
+                    matches!(
+                        v.trim().to_ascii_lowercase().as_str(),
+                        "1" | "true" | "yes" | "on"
+                    )
+                })
+                .unwrap_or(false),
             supported_mints: parse_supported_mints(),
             admin_password: std::env::var("ADMIN_PASSWORD").ok().filter(|s| !s.is_empty()),
         })

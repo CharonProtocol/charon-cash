@@ -9,14 +9,17 @@ use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signer::Signer;
 use solana_sdk::signer::keypair::Keypair;
 use solana_sdk::transaction::Transaction;
+use solana_rpc_client::api::config::RpcSendTransactionConfig;
+use solana_sdk::transaction::VersionedTransaction;
+use solana_address_lookup_table_interface::state::AddressLookupTable;
 
 use crate::config::Config;
 use crate::db::Db;
 use crate::relayer::accounts as acc;
 use crate::relayer::dto::{
-    tree_key_for, InitializeSplRequest, MintFeeInfo, RelayResponse, RelayerInfo, TransactInput,
-    TransactKind, UpdateConfigRequest, UpdateDepositLimitRequest, UpdateDepositLimitSplRequest,
-    WithdrawRequest,
+    tree_key_for, AltAccountResponse, BlockhashResponse, InitializeSplRequest, MintFeeInfo, RelayResponse,
+    RelayerInfo, SubmitRequest, TransactInput, TransactKind, UpdateConfigRequest, UpdateDepositLimitRequest,
+    UpdateDepositLimitSplRequest, WithdrawRequest,
 };
 use crate::relayer::error::{AppError, AppResult};
 use crate::relayer::instruction as ixenc;
@@ -73,7 +76,8 @@ impl Relayer {
     }
 
     pub fn info(&self) -> RelayerInfo {
-        let (withdrawal_fee_rate_bps, fee_error_margin_bps) = self.fee_cache.lock().unwrap().unwrap_or((25, 500));
+        let (withdrawal_fee_rate_bps, fee_error_margin_bps) =
+            self.fee_cache.lock().unwrap().unwrap_or((25, 500));
         let supported_mints = self
             .config
             .supported_mints
@@ -90,6 +94,40 @@ impl Relayer {
             withdrawal_fee_rate_bps,
             fee_error_margin_bps,
             supported_mints,
+        }
+    }
+
+    /// Latest blockhash + slot, so the client can build a tx without its own RPC.
+    pub async fn latest_blockhash(&self) -> AppResult<BlockhashResponse> {
+        let blockhash = self
+            .rpc
+            .get_latest_blockhash()
+            .await
+            .map_err(|e| AppError::upstream(format!("get_latest_blockhash: {e}")))?;
+        let slot = self
+            .rpc
+            .get_slot()
+            .await
+            .map_err(|e| AppError::upstream(format!("get_slot: {e}")))?;
+        Ok(BlockhashResponse {
+            blockhash: blockhash.to_string(),
+            slot,
+        })
+    }
+
+    /// Raw Address Lookup Table account bytes (hex) so the client can compress
+    /// an SPL tx without its own RPC. Returns exists=false when not found.
+    pub async fn alt_account(&self, address: &Pubkey) -> AppResult<AltAccountResponse> {
+        match self.rpc.get_account(address).await {
+            Ok(Some(acct)) => Ok(AltAccountResponse {
+                exists: true,
+                data_hex: hex::encode(&acct.data),
+            }),
+            Ok(None) => Ok(AltAccountResponse {
+                exists: false,
+                data_hex: String::new(),
+            }),
+            Err(e) => Err(AppError::upstream(format!("get_account {address}: {e}"))),
         }
     }
 
@@ -409,5 +447,84 @@ impl Relayer {
             slot: None,
             status: status.to_string(),
         })
+    }
+
+    pub async fn broadcast(&self, req: SubmitRequest) -> AppResult<RelayResponse> {
+        let bytes = hex::decode(req.transaction.trim())
+            .map_err(|e| AppError::bad_request("INVALID_ENCODING", format!("transaction hex: {e}")))?;
+        let vtx: VersionedTransaction = bincode::deserialize(&bytes)
+            .map_err(|e| AppError::bad_request("INVALID_TRANSACTION", format!("deserialize: {e}")))?;
+
+        self.assert_targets_program(&vtx).await?;
+
+        let config = RpcSendTransactionConfig {
+            skip_preflight: self.config.relayer_skip_preflight,
+            ..Default::default()
+        };
+        let sig = self
+            .rpc
+            .send_transaction_with_config(&vtx, config)
+            .await
+            .map_err(|e| AppError::upstream(format!("send_transaction: {e}")))?;
+
+        let status = match tokio::time::timeout(
+            Duration::from_secs(45),
+            self.rpc.confirm_transaction(&sig),
+        )
+        .await
+        {
+            Ok(Ok(true)) => "confirmed",
+            _ => "submitted",
+        };
+
+        Ok(RelayResponse {
+            signature: sig.to_string(),
+            slot: None,
+            status: status.to_string(),
+        })
+    }
+
+    async fn assert_targets_program(&self, vtx: &VersionedTransaction) -> AppResult<()> {
+        let message = &vtx.message;
+        let mut keys: Vec<Pubkey> = message
+            .static_account_keys()
+            .iter()
+            .map(|a| Pubkey::new_from_array(a.to_bytes()))
+            .collect();
+        if let Some(lookups) = message.address_table_lookups() {
+            for lookup in lookups {
+                let alt_pubkey = Pubkey::new_from_array(lookup.account_key.to_bytes());
+                let account = self
+                    .rpc
+                    .get_account(&alt_pubkey)
+                    .await
+                    .map_err(|e| AppError::upstream(format!("read ALT {alt_pubkey}: {e}")))?;
+                let table = AddressLookupTable::deserialize(&account.data)
+                    .map_err(|e| AppError::bad_request("INVALID_ALT", format!("alt deserialize: {e}")))?;
+                for idx in &lookup.writable_indexes {
+                    if let Some(k) = table.addresses.get(*idx as usize) {
+                        keys.push(*k);
+                    }
+                }
+                for idx in &lookup.readonly_indexes {
+                    if let Some(k) = table.addresses.get(*idx as usize) {
+                        keys.push(*k);
+                    }
+                }
+            }
+        }
+        let alt_program = solana_address_lookup_table_interface::program::ID;
+        let targets_program = message.instructions().iter().any(|ci| {
+            keys.get(ci.program_id_index as usize)
+                .map(|k| *k == self.program_id || *k == alt_program)
+                .unwrap_or(false)
+        });
+        if !targets_program {
+            return Err(AppError::bad_request(
+                "PROGRAM_NOT_ALLOWED",
+                "transaction must contain an instruction for the privacy-cash program",
+            ));
+        }
+        Ok(())
     }
 }

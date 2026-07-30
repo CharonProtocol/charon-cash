@@ -313,7 +313,7 @@
         </div>
         <div class="card">
           <h4 style="--cc:var(--c-relayer)">03 &middot; Withdraw</h4>
-          <p>Prove you own a note and withdraw to a fresh address. Your wallet signs and sends it straight to the RPC &mdash; no relayer in the path.</p>
+          <p>Prove you own a note and withdraw to a fresh address. Your wallet signs it; the SDK hands the signed tx to the backend to broadcast &mdash; the relayer never holds your keys.</p>
         </div>
       </div>
       <p class="footnote">Not fixed denominations &mdash; a 2-input / 2-output UTXO model, so amounts are flexible and can be split or joined.</p>
@@ -325,7 +325,7 @@
     <div class="slide__inner">
       <p class="eyebrow">System map</p>
       <h2 class="h2">Four parts. One proof.</h2>
-      <svg class="diagram" viewBox="0 0 1040 470" role="img" aria-label="Architecture: the client SDK generates the proof, the wallet signs, and the SDK submits deposit and withdraw straight to the Solana program via RPC. The backend is a read-only indexer — it decodes the program over Yellowstone gRPC, writes leaves and nullifiers to Postgres, and serves merkle proofs, roots, nullifier status and fees back to the SDK. No relayer submits anything.">
+      <svg class="diagram" viewBox="0 0 1040 470" role="img" aria-label="Architecture: the client SDK builds the Groth16 proof and the wallet signs it. The SDK then posts the signed transaction to the backend's /api/relayer/submit endpoint; the backend validates that it targets the privacy-cash program and broadcasts it to the chain. The same backend also serves read-only data over its API — merkle proofs, roots, nullifier status and fees — and indexes the program over a Yellowstone gRPC stream into Postgres. The backend holds no user signing key and cannot redirect a withdrawal.">
         <defs>
           <marker id="ah" markerWidth="9" markerHeight="9" refX="7.6" refY="4.5" orient="auto" markerUnits="userSpaceOnUse">
             <path d="M0,0 L9,4.5 L0,9 z" fill="#9aa2b0"/>
@@ -334,25 +334,28 @@
 
         <!-- arrows (drawn before nodes so nodes sit on top) -->
         <g fill="none" stroke="#9aa2b0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <!-- A: SDK -> Program (deposit + withdraw, sign + send to RPC) -->
-          <path d="M520 250 V108" marker-end="url(#ah)"/>
-          <!-- B: SDK -> Backend (GET merkle/root/fees) dashed -->
-          <path d="M390 305 H335 V226 H280" stroke-dasharray="5 5" marker-end="url(#ah)"/>
+          <!-- A1: SDK -> Backend (POST signed tx) solid -->
+          <path d="M390 245 H284" marker-end="url(#ah)"/>
+          <!-- B: Backend -> SDK (GET proofs/root/fees) dashed -->
+          <path d="M284 295 H390" stroke-dasharray="5 5" marker-end="url(#ah)"/>
           <!-- C: SDK -> Wallet (sign request) solid -->
-          <path d="M650 305 H705 V226 H760" marker-end="url(#ah)"/>
+          <path d="M650 270 H758" marker-end="url(#ah)"/>
+          <!-- A2: Backend -> Program (broadcast) solid -->
+          <path d="M180 215 V155 H380 V112" marker-end="url(#ah)"/>
           <!-- D: Program -> Backend (gRPC stream) solid -->
-          <path d="M380 108 V140 H155 V178" marker-end="url(#ah)"/>
+          <path d="M440 108 V140 H210 V215" marker-end="url(#ah)"/>
           <!-- E: Backend -> Postgres (writes) solid -->
-          <path d="M155 272 V360" marker-end="url(#ah)"/>
+          <path d="M155 325 V358" marker-end="url(#ah)"/>
         </g>
 
         <!-- arrow labels -->
         <g font-family="IBM Plex Mono, monospace" font-size="11" fill="#5b6270">
-          <text x="534" y="182">deposit + withdraw · sign + send to RPC</text>
-          <text x="300" y="200" text-anchor="end">GET merkle · root · fees</text>
-          <text x="715" y="200">sign msg + tx</text>
-          <text x="172" y="132">gRPC tx stream</text>
-          <text x="165" y="318">writes leaves + nullifiers</text>
+          <text x="337" y="238" text-anchor="middle">POST signed tx</text>
+          <text x="337" y="313" text-anchor="middle">GET proofs · fees</text>
+          <text x="704" y="262" text-anchor="middle">sign msg + tx</text>
+          <text x="296" y="172" text-anchor="middle">broadcast signed tx</text>
+          <text x="330" y="132" text-anchor="middle">gRPC tx stream</text>
+          <text x="165" y="346">writes leaves + nullifiers</text>
         </g>
 
         <!-- nodes -->
@@ -364,30 +367,31 @@
           <text x="352" y="74" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="#868f9e">Poseidon Merkle tree &middot; nullifier set &middot; Groth16 / BN254</text>
           <text x="352" y="92" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="#868f9e">7 instructions &middot; 2-in / 2-out UTXO model</text>
         </g>
-        <!-- Indexer -->
+        <!-- Indexer / relayer -->
         <g>
-          <rect x="30" y="178" width="250" height="94" rx="14" fill="#f5f6f8" stroke="#e4e7ec"/>
-          <rect x="30" y="178" width="5" height="94" rx="2" fill="#0e7c86"/>
-          <text x="52" y="210" font-family="Space Grotesk, sans-serif" font-size="16" font-weight="600" fill="#0e1116">Backend</text>
-          <text x="52" y="232" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">indexer + read-only API</text>
-          <text x="52" y="250" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">Yellowstone gRPC &rarr; Postgres</text>
+          <rect x="30" y="215" width="250" height="110" rx="14" fill="#f5f6f8" stroke="#e4e7ec"/>
+          <rect x="30" y="215" width="5" height="110" rx="2" fill="#0e7c86"/>
+          <text x="52" y="245" font-family="Space Grotesk, sans-serif" font-size="16" font-weight="600" fill="#0e1116">Backend</text>
+          <text x="52" y="265" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">indexer &middot; read API &middot; relay</text>
+          <text x="52" y="283" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">Yellowstone gRPC &rarr; Postgres</text>
+          <text x="52" y="301" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">validates + relays signed txs</text>
         </g>
         <!-- Wallet -->
         <g>
-          <rect x="760" y="178" width="250" height="94" rx="14" fill="#f5f6f8" stroke="#e4e7ec"/>
-          <rect x="760" y="178" width="5" height="94" rx="2" fill="#5b54e6"/>
-          <text x="782" y="210" font-family="Space Grotesk, sans-serif" font-size="16" font-weight="600" fill="#0e1116">Wallet &middot; Phantom</text>
-          <text x="782" y="232" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">signs the note-derive message</text>
-          <text x="782" y="250" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">signs the versioned tx</text>
+          <rect x="760" y="215" width="250" height="110" rx="14" fill="#f5f6f8" stroke="#e4e7ec"/>
+          <rect x="760" y="215" width="5" height="110" rx="2" fill="#5b54e6"/>
+          <text x="782" y="245" font-family="Space Grotesk, sans-serif" font-size="16" font-weight="600" fill="#0e1116">Wallet &middot; Phantom</text>
+          <text x="782" y="267" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">signs the note-derive message</text>
+          <text x="782" y="285" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">signs the versioned tx</text>
         </g>
         <!-- SDK (hub) -->
         <g>
-          <rect x="390" y="250" width="260" height="110" rx="14" fill="#f5f6f8" stroke="#e4e7ec"/>
-          <rect x="390" y="250" width="5" height="110" rx="2" fill="#b45309"/>
-          <text x="412" y="282" font-family="Space Grotesk, sans-serif" font-size="16" font-weight="600" fill="#0e1116">Client SDK &middot; pcash</text>
-          <text x="412" y="304" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">note &middot; Groth16 proof &middot; build tx</text>
-          <text x="412" y="322" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">deposit + withdraw, self-signed</text>
-          <text x="412" y="342" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">runs entirely off-chain, client-side</text>
+          <rect x="390" y="215" width="260" height="110" rx="14" fill="#f5f6f8" stroke="#e4e7ec"/>
+          <rect x="390" y="215" width="5" height="110" rx="2" fill="#b45309"/>
+          <text x="412" y="247" font-family="Space Grotesk, sans-serif" font-size="16" font-weight="600" fill="#0e1116">Client SDK &middot; pcash</text>
+          <text x="412" y="269" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">note &middot; Groth16 proof &middot; build tx</text>
+          <text x="412" y="287" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">wallet signs; relays via backend</text>
+          <text x="412" y="305" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">runs entirely off-chain, client-side</text>
         </g>
         <!-- Postgres -->
         <g>
@@ -398,7 +402,7 @@
         </g>
       </svg>
       <div class="legend">
-        <span><i></i> submit / write</span>
+        <span><i></i> submit / broadcast</span>
         <span><i class="dash"></i> query / read</span>
         <span><span class="sw" style="background:#0e7c86"></span> backend</span>
         <span><span class="sw" style="background:#5b54e6"></span> wallet</span>
@@ -468,21 +472,23 @@
   <section class="slide" aria-label="Deposit flow">
     <div class="slide__inner">
       <p class="eyebrow">Deposit &middot; <span class="mono">pcash deposit</span></p>
-      <h2 class="h2">Deposit goes straight to the chain</h2>
-      <p class="lead" style="margin-bottom:1.3rem">Your wallet signs and sends it straight to the RPC &mdash; no relayer in the path.</p>
+      <h2 class="h2">Deposit &mdash; wallet signs, backend broadcasts</h2>
+      <p class="lead" style="margin-bottom:1.3rem">Your wallet signs locally; the SDK posts the signed tx to the backend&rsquo;s <span class="mono">/api/relayer/submit</span>, which checks it targets the program and broadcasts it.</p>
 
       <ol class="steps">
         <li><span><b>Generate a shielded key and secret note</b> &mdash; a random blinding factor, full field entropy.</span></li>
         <li><span><b>Compute the commitment</b> &mdash; <span class="mono">Poseidon(amount, pubkey, blinding, mint)</span>.</span></li>
         <li><span><b>Build a Groth16 proof</b> with <span class="mono">ext_amount &gt; 0</span> (this is a deposit).</span></li>
-        <li><span><b>Build &amp; sign the <code>Transact</code> instruction</b>, send it directly to the program &mdash; your wallet pays the gas.</span></li>
+        <li><span><b>Build &amp; sign the <code>Transact</code> instruction</b>, then post the signed tx to the backend&rsquo;s <span class="mono">/api/relayer/submit</span> &mdash; your wallet pays the gas.</span></li>
         <li><span><b>The program verifies the proof</b>, appends the commitment as a new leaf, and initializes the nullifier.</span></li>
         <li><span><b>The indexer records</b> the new leaf and nullifier in Postgres.</span></li>
       </ol>
 
       <div class="flow" style="margin-top:1.3rem">
         <div class="fnode" style="--cc:var(--c-sdk)"><h5>pcash</h5><p>builds proof + ix</p></div>
-        <div class="farrow">sign + send</div>
+        <div class="farrow">wallet signs</div>
+        <div class="fnode" style="--cc:var(--c-indexer)"><h5>Backend</h5><p>/submit &middot; broadcast</p></div>
+        <div class="farrow">on-chain</div>
         <div class="fnode" style="--cc:var(--c-program)"><h5>Program</h5><p>verify &middot; append leaf</p></div>
         <div class="farrow dash">records</div>
         <div class="fnode" style="--cc:var(--c-indexer)"><h5>Indexer</h5><p>leaf + nullifier &rarr; DB</p></div>
@@ -494,13 +500,13 @@
   <section class="slide" aria-label="Withdraw flow">
     <div class="slide__inner">
       <p class="eyebrow">Withdraw &middot; <span class="mono">pcash withdraw</span> &mdash; the centerpiece</p>
-      <h2 class="h2">Withdraw goes straight to the chain too</h2>
+      <h2 class="h2">Withdraw &mdash; wallet signs, backend broadcasts</h2>
 
       <ol class="steps">
         <li><span><b>Fetch the Merkle path</b> for your note from the backend&rsquo;s read-only API &mdash; <span class="mono">/api/merkle/&hellip;/proof</span>.</span></li>
         <li><span><b>Build a Groth16 withdrawal proof</b> (<span class="mono">ext_amount &lt; 0</span>), bound to the recipient and fee.</span></li>
         <li><span><b>Build the <code>Transact</code> / <code>TransactSpl</code> instruction</b> &mdash; prepends idempotent ATA creation for recipient &amp; fee recipient, pool pays funds &amp; fee.</span></li>
-        <li><span><b>Your wallet signs the versioned tx</b> and the SDK submits it direct to the RPC.</span></li>
+        <li><span><b>Your wallet signs the versioned tx</b>; the SDK posts it to the backend&rsquo;s <span class="mono">/api/relayer/submit</span>, which validates and broadcasts it.</span></li>
         <li><span><b>The program verifies the proof</b>, checks the nullifier isn&rsquo;t spent, and pays the recipient.</span></li>
       </ol>
 
@@ -510,10 +516,12 @@
         <div class="fnode" style="--cc:var(--c-sdk)"><h5>pcash</h5><p>proof bound to recipient</p></div>
         <div class="farrow">wallet signs</div>
         <div class="fnode" style="--cc:var(--c-relayer)"><h5>Wallet</h5><p>sign versioned tx</p></div>
-        <div class="farrow">send to RPC</div>
+        <div class="farrow">POST /submit</div>
+        <div class="fnode" style="--cc:var(--c-indexer)"><h5>Backend</h5><p>validate &middot; broadcast</p></div>
+        <div class="farrow">on-chain</div>
         <div class="fnode" style="--cc:var(--c-program)"><h5>Program</h5><p>verify &middot; pay recipient</p></div>
       </div>
-      <p class="footnote">No relayer submits on your behalf &mdash; your wallet signs and sends direct to the RPC. The pool pays the recipient and the fee; the backend only ever serves read-only data (merkle proofs, roots, nullifier status, fees).</p>
+      <p class="footnote">The backend only broadcasts a tx your wallet has already signed &mdash; it holds no key for your funds and can&rsquo;t redirect a withdrawal (the recipient is baked into the proof). The pool pays the recipient and the fee; the same backend also serves the read-only data (proofs, roots, nullifier status, fees).</p>
     </div>
   </section>
 
@@ -553,20 +561,20 @@
   <section class="slide" aria-label="Backend">
     <div class="slide__inner">
       <p class="eyebrow"><span class="chip chip--indexer" style="padding:.2em .6em">feat/backend</span></p>
-      <h2 class="h2">Backend &mdash; read-only chain mirror</h2>
-      <p class="lead" style="margin-bottom:1.3rem">No relayer. The backend only indexes the program and serves data &mdash; it never signs or submits a transaction.</p>
+      <h2 class="h2">Backend &mdash; indexer + broadcast relay</h2>
+      <p class="lead" style="margin-bottom:1.3rem">The backend indexes the chain, serves read-only data, and broadcasts wallet-signed transactions. It signs nothing on the user&rsquo;s behalf.</p>
 
       <div class="grid-2">
         <ol class="steps" style="gap:9px">
           <li><span><b>Yellowstone gRPC</b> streams every <span class="mono">Transact</span> from the program.</span></li>
           <li><span><b>Decode</b> the proof, ext-data, nullifiers and output commitments.</span></li>
           <li><span><b>Mirror the Poseidon Merkle tree</b>; write leaves + nullifiers to Postgres.</span></li>
-          <li><span><b>Serve read-only</b>: <span class="mono">/api/merkle/&hellip;/proof</span>, root, nullifier status, fees.</span></li>
+          <li><span><b>Serve read-only data &amp; relay</b>: <span class="mono">/api/merkle/&hellip;/proof</span>, root, nullifier status, fees &mdash; plus <span class="mono">/api/relayer/submit</span> to broadcast signed txs.</span></li>
         </ol>
         <div class="col">
           <div class="card">
             <h4 style="--cc:var(--c-indexer)">What it does <i>not</i> do</h4>
-            <p>It holds no signing key for your funds, never pays gas, and can&rsquo;t redirect a withdrawal &mdash; the recipient is baked into the proof your wallet signs. The submit path lives entirely in the client SDK.</p>
+            <p>It holds no signing key for your funds, never pays your gas, and can&rsquo;t redirect a withdrawal &mdash; the recipient is baked into the proof your wallet signs. For deposits &amp; withdrawals it only relays a tx your wallet already signed.</p>
           </div>
           <div class="card">
             <h4 style="--cc:var(--c-indexer)">Why we still run it</h4>
@@ -651,7 +659,7 @@
       <div class="cards">
         <div class="card"><h4 style="--cc:var(--c-program)"><span class="mono">main</span></h4><p>The on-chain program &mdash; Pinocchio, Groth16 verification, <span class="mono">Transact</span> / <span class="mono">TransactSpl</span>.</p></div>
         <div class="card"><h4 style="--cc:var(--c-indexer)"><span class="mono">feat/backend</span></h4><p>The indexer &mdash; Yellowstone gRPC into Postgres, serves Merkle proofs.</p></div>
-        <div class="card"><h4 style="--cc:var(--c-relayer)"><span class="mono">feat/backend_relayer</span></h4><p>Backend service &mdash; indexer + read-only data API. The relayer submit path is retired: the client SDK self-signs and submits direct to RPC.</p></div>
+        <div class="card"><h4 style="--cc:var(--c-relayer)"><span class="mono">feat/backend_relayer</span></h4><p>Backend service &mdash; indexer + read-only API + broadcast relay. Wallet-signed deposit/withdraw txs are POSTed to <span class="mono">/api/relayer/submit</span> and broadcast by the backend; the client needs no public RPC.</p></div>
         <div class="card"><h4 style="--cc:var(--c-sdk)"><span class="mono">feat/offchain-rust</span></h4><p>The client SDK &mdash; pc-* crates, the <span class="mono">pcash</span> CLI, and the leaf-index event fix.</p></div>
       </div>
     </div>
@@ -665,11 +673,11 @@
       <div class="grid-2" style="margin-top:.4rem">
         <div class="card" style="--cc:var(--c-sdk)">
           <h4 style="--cc:#0e7c86">Proven end-to-end</h4>
-          <p>The full deposit &rarr; scan &rarr; withdraw cycle runs with real Groth16 proofs (an e2e test on surfpool, SOL &amp; SPL, multi-account). The client SDK builds the proof, the wallet signs, and the SDK submits direct to RPC; the backend mirrors the chain; the recipient is paid.</p>
+          <p>The full deposit &rarr; scan &rarr; withdraw cycle runs with real Groth16 proofs (an e2e test on surfpool, SOL &amp; SPL, multi-account). The client SDK builds the proof, the wallet signs, and the SDK relays the signed tx through the backend; the backend mirrors the chain and broadcasts; the recipient is paid.</p>
         </div>
         <div class="card">
           <h4 style="--cc:var(--c-sdk)">Today&rsquo;s surface</h4>
-          <p>Deposit and withdraw run through the <span class="mono">pcash</span> client SDK. The protocol, backend, and SDK are real and wired together &mdash; no relayer in the submit path.</p>
+          <p>Deposit and withdraw run through the <span class="mono">pcash</span> client SDK. The protocol, backend, and SDK are real and wired together &mdash; the backend relays signed txs to the chain.</p>
         </div>
       </div>
       <p class="footnote" style="margin-top:2rem; font-size:.9rem">Thank you &mdash; questions?</p>

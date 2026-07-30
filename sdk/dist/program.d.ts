@@ -1,4 +1,4 @@
-import { Connection, PublicKey, TransactionInstruction, VersionedTransaction, type AddressLookupTableAccount } from "@solana/web3.js";
+import { PublicKey, TransactionInstruction, VersionedTransaction, type AddressLookupTableAccount } from "@solana/web3.js";
 import BN from "bn.js";
 /** Byte layout the Pinocchio program's TransactArgs expects (see state/transact.rs). */
 export interface ProofBytes {
@@ -25,7 +25,7 @@ export interface TransactAccounts {
 export declare function deriveAccounts(programId: PublicKey, nullifierHash0: Uint8Array, nullifierHash1: Uint8Array): TransactAccounts;
 export declare function buildTransactIxData(isSpl: boolean, proof: ProofBytes, extAmount: BN, fee: BN, encryptedOutput1: Uint8Array, encryptedOutput2: Uint8Array, bump0: number, bump1: number): Buffer;
 export interface BuildTxParams {
-    connection: Connection;
+    blockhash: string;
     programId: PublicKey;
     signer: PublicKey;
     isSpl: boolean;

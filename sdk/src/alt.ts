@@ -1,7 +1,6 @@
 import {
   AddressLookupTableAccount,
   AddressLookupTableProgram,
-  Connection,
   PublicKey,
   SystemProgram,
   ComputeBudgetProgram,
@@ -17,6 +16,7 @@ import {
   deriveSplTreeAccount,
 } from "./program"
 import { getAssociatedTokenAddressSync } from "@solana/spl-token"
+import { fetchAltAccount, fetchBlockhash, submitTransaction } from "./merkle"
 
 export type AltSigner = {
   publicKey: PublicKey
@@ -111,36 +111,28 @@ function dedupe(keys: PublicKey[]): PublicKey[] {
   return out
 }
 
+/** Fetch + deserialize an on-chain ALT via the backend (no client RPC). */
 export async function fetchAlt(
-  connection: Connection,
   address: PublicKey,
 ): Promise<AddressLookupTableAccount | null> {
-  const res = await connection.getAddressLookupTable(address)
-  return res.value
+  const hex = await fetchAltAccount(address.toBase58())
+  if (!hex) return null
+  const state = AddressLookupTableAccount.deserialize(Buffer.from(hex, "hex"))
+  return new AddressLookupTableAccount({ key: address, state })
 }
 
 async function sendIx(
-  connection: Connection,
   signer: AltSigner,
   ixs: TransactionInstruction[],
 ): Promise<string> {
-  const { blockhash, lastValidBlockHeight } =
-    await connection.getLatestBlockhash()
+  const { blockhash } = await fetchBlockhash()
   const msg = new TransactionMessage({
     payerKey: signer.publicKey,
     recentBlockhash: blockhash,
     instructions: ixs,
   }).compileToV0Message()
-  let tx = new VersionedTransaction(msg)
-  tx = await signer.signTransaction(tx)
-  const sig = await connection.sendRawTransaction(tx.serialize(), {
-    skipPreflight: false,
-  })
-  await connection.confirmTransaction(
-    { signature: sig, blockhash, lastValidBlockHeight },
-    "confirmed",
-  )
-  return sig
+  const tx = await signer.signTransaction(new VersionedTransaction(msg))
+  return submitTransaction(tx.serialize())
 }
 
 /**
@@ -149,20 +141,19 @@ async function sendIx(
  * Falls back to a per-wallet ALT in localStorage, creating/extending as needed.
  */
 export async function ensureAlt(params: {
-  connection: Connection
   signer: AltSigner
   addresses: PublicKey[]
   preferred?: PublicKey | null
 }): Promise<AddressLookupTableAccount> {
   const fromEnv = params.preferred ?? envAltAddress()
   if (fromEnv) {
-    const existing = await fetchAlt(params.connection, fromEnv)
+    const existing = await fetchAlt(fromEnv)
     if (existing) return existing
   }
 
   const cached = cachedAltAddress(params.signer.publicKey)
   if (cached) {
-    const existing = await fetchAlt(params.connection, cached)
+    const existing = await fetchAlt(cached)
     if (existing) {
       const have = new Set(existing.state.addresses.map((a) => a.toBase58()))
       const missing = params.addresses.filter((a) => !have.has(a.toBase58()))
@@ -175,23 +166,23 @@ export async function ensureAlt(params: {
           lookupTable: cached,
           addresses: chunk,
         })
-        await sendIx(params.connection, params.signer, [ix])
+        await sendIx(params.signer, [ix])
       }
       await sleep(600)
-      const updated = await fetchAlt(params.connection, cached)
+      const updated = await fetchAlt(cached)
       if (!updated) throw new Error("ALT disappeared after extend")
       return updated
     }
   }
 
   // Create a new ALT under the connected wallet.
-  const slot = await params.connection.getSlot()
+  const { slot } = await fetchBlockhash()
   const [createIx, altAddress] = AddressLookupTableProgram.createLookupTable({
     authority: params.signer.publicKey,
     payer: params.signer.publicKey,
     recentSlot: slot - 1,
   })
-  await sendIx(params.connection, params.signer, [createIx])
+  await sendIx(params.signer, [createIx])
   cacheAltAddress(altAddress, params.signer.publicKey)
 
   for (let i = 0; i < params.addresses.length; i += 20) {
@@ -202,10 +193,10 @@ export async function ensureAlt(params: {
       lookupTable: altAddress,
       addresses: chunk,
     })
-    await sendIx(params.connection, params.signer, [ix])
+    await sendIx(params.signer, [ix])
   }
   await sleep(600)
-  const created = await fetchAlt(params.connection, altAddress)
+  const created = await fetchAlt(altAddress)
   if (!created) throw new Error("failed to create ALT")
   return created
 }

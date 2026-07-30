@@ -85,11 +85,28 @@ pub struct UpdateDepositLimitSplRequest {
     pub new_limit: u64,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SubmitRequest {
+    pub transaction: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct RelayResponse {
     pub signature: String,
     pub slot: Option<u64>,
     pub status: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BlockhashResponse {
+    pub blockhash: String,
+    pub slot: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AltAccountResponse {
+    pub exists: bool,
+    pub data_hex: String,
 }
 
 #[derive(Debug, Serialize)]

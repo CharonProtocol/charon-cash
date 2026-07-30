@@ -4,7 +4,6 @@ import {
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token"
 import {
-  Connection,
   PublicKey,
   TransactionInstruction,
   VersionedTransaction,
@@ -30,10 +29,12 @@ import {
   bytesToHex,
   fetchMerkleProof,
   fetchRelayerInfo,
+  fetchBlockhash,
   fetchTreeState,
   fetchUtxoRange,
   fieldToHex32,
   isNullifierSpent,
+  submitTransaction,
   waitForLeafIndex,
   type RelayerInfo,
 } from "./merkle"
@@ -53,7 +54,6 @@ import { parseProofToBytesArray, parseToBytesArray, prove } from "./prover"
 import {
   buildTransactSplTransaction,
   buildTransactTransaction,
-  deriveSplTreeAccount,
   type ProofBytes,
 } from "./program"
 import {
@@ -62,7 +62,6 @@ import {
   splAltAddresses,
   type AltSigner,
 } from "./alt"
-import { readTreeState } from "./local-provider"
 
 export interface Signer {
   publicKey: PublicKey
@@ -99,7 +98,6 @@ function toPubkey(value: PublicKey | string): PublicKey {
 }
 
 export class PrivacyCashClient {
-  private conn: Connection
   private signer: Signer
   private wasm?: LightWasm
   private enc?: EncryptionService
@@ -108,8 +106,7 @@ export class PrivacyCashClient {
   private info?: RelayerInfo
   private unlocking: Promise<void> | null = null
 
-  constructor(conn: Connection, signer: Signer, programId?: PublicKey) {
-    this.conn = conn
+  constructor(signer: Signer, programId?: PublicKey) {
     this.signer = signer
     this.programId = programId ?? envProgramId() ?? undefined
   }
@@ -238,8 +235,7 @@ export class PrivacyCashClient {
   async depositSOL(amountLamports: number): Promise<DepositResult> {
     await this.unlock()
     const treeKey = SOL_TREE_KEY
-    // Prefer on-chain tree state (shim can lag / mix trees).
-    const onChain = await readTreeState(this.conn, this.programId!, treeKey)
+    const onChain = await fetchTreeState(treeKey)
     const root = onChain.root
     const nextLeafIndex = onChain.nextLeafIndex
 
@@ -328,15 +324,7 @@ export class PrivacyCashClient {
     const mintStr = mintPk.toBase58()
     const treeKey = mintStr
 
-    // Fail fast if Admin → Initialize SPL hasn't been run for this mint.
-    const [treePda] = deriveSplTreeAccount(this.programId!, mintPk)
-    if (!(await this.conn.getAccountInfo(treePda))) {
-      throw new Error(
-        `SPL tree for mint ${mintStr} is not initialized — open Admin and click "Initialize SPL" first`,
-      )
-    }
-
-    const onChain = await readTreeState(this.conn, this.programId!, treeKey)
+    const onChain = await fetchTreeState(treeKey)
     const root = onChain.root
     const nextLeafIndex = onChain.nextLeafIndex
 
@@ -442,20 +430,15 @@ export class PrivacyCashClient {
     return this.balanceForMint(m)
   }
 
-  /** Poll on-chain next_index (falls back to indexer). Never throws — deposit already settled. */
+  /** Poll the indexer's next_leaf_index. Never throws — deposit already settled. */
   private async waitForLeaves(treeKey: string, minLeafIndex: number): Promise<void> {
     const deadline = Date.now() + 45_000
     while (Date.now() < deadline) {
       try {
-        const st = await readTreeState(this.conn, this.programId!, treeKey)
+        const st = await fetchTreeState(treeKey)
         if (st.nextLeafIndex > minLeafIndex) return
       } catch {
-        try {
-          const st = await fetchTreeState(treeKey)
-          if (st.nextLeafIndex > minLeafIndex) return
-        } catch {
-          /* keep polling */
-        }
+        /* keep polling */
       }
       await new Promise((r) => setTimeout(r, 750))
     }
@@ -738,11 +721,11 @@ export class PrivacyCashClient {
 
     const nullifierHexes = [pub[3], pub[4]].map((b) => bytesToHex(b))
 
+    const { blockhash } = await fetchBlockhash()
     let transaction: VersionedTransaction
     if (args.isSpl) {
       const mint = args.mint!
       const alt = await ensureAlt({
-        connection: this.conn,
         signer: this.signer as AltSigner,
         preferred: envAltAddress(),
         addresses: [
@@ -758,7 +741,7 @@ export class PrivacyCashClient {
         ],
       })
       const built = await buildTransactSplTransaction({
-        connection: this.conn,
+        blockhash,
         programId: this.programId!,
         signer: this.publicKey,
         isSpl: true,
@@ -779,7 +762,7 @@ export class PrivacyCashClient {
       transaction = built.transaction
     } else {
       const built = await buildTransactTransaction({
-        connection: this.conn,
+        blockhash,
         programId: this.programId!,
         signer: this.publicKey,
         isSpl: false,
@@ -797,15 +780,7 @@ export class PrivacyCashClient {
     const signed = (await this.signer.signTransaction(
       transaction,
     )) as VersionedTransaction
-    const signature = await this.conn.sendRawTransaction(signed.serialize(), {
-      skipPreflight: false,
-      maxRetries: 5,
-    })
-    try {
-      await this.conn.confirmTransaction(signature, "confirmed")
-    } catch {
-      /* signature still returned for inspection */
-    }
+    const signature = await submitTransaction(signed.serialize())
     return { signature, nullifiers: nullifierHexes }
   }
 }

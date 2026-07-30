@@ -34,6 +34,9 @@ pub fn router(state: AppState) -> Router {
         .route("/indexer/status", get(indexer_status::indexer_status))
         .route("/api/admin/verify", post(admin::verify))
         .route("/api/relayer/info", get(relayer::info))
+        .route("/api/relayer/submit", post(relayer::submit_tx))
+        .route("/api/relayer/blockhash", get(relayer::blockhash))
+        .route("/api/relayer/alt/{address}", get(relayer::alt_account))
         // Retired: deposit & withdraw are client-signed and submitted direct to
         // RPC. The relayer submit path is removed; handlers are retained but the
         // routes stay commented (see relayer::withdraw).
