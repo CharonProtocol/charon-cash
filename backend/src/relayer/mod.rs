@@ -17,9 +17,9 @@ use crate::config::Config;
 use crate::db::Db;
 use crate::relayer::accounts as acc;
 use crate::relayer::dto::{
-    tree_key_for, InitializeSplRequest, MintFeeInfo, RelayResponse, RelayerInfo, SubmitRequest, TransactInput,
-    TransactKind, UpdateConfigRequest, UpdateDepositLimitRequest, UpdateDepositLimitSplRequest,
-    WithdrawRequest,
+    tree_key_for, AltAccountResponse, BlockhashResponse, InitializeSplRequest, MintFeeInfo, RelayResponse,
+    RelayerInfo, SubmitRequest, TransactInput, TransactKind, UpdateConfigRequest, UpdateDepositLimitRequest,
+    UpdateDepositLimitSplRequest, WithdrawRequest,
 };
 use crate::relayer::error::{AppError, AppResult};
 use crate::relayer::instruction as ixenc;
@@ -76,7 +76,8 @@ impl Relayer {
     }
 
     pub fn info(&self) -> RelayerInfo {
-        let (withdrawal_fee_rate_bps, fee_error_margin_bps) = self.fee_cache.lock().unwrap().unwrap_or((25, 500));
+        let (withdrawal_fee_rate_bps, fee_error_margin_bps) =
+            self.fee_cache.lock().unwrap().unwrap_or((25, 500));
         let supported_mints = self
             .config
             .supported_mints
@@ -93,6 +94,40 @@ impl Relayer {
             withdrawal_fee_rate_bps,
             fee_error_margin_bps,
             supported_mints,
+        }
+    }
+
+    /// Latest blockhash + slot, so the client can build a tx without its own RPC.
+    pub async fn latest_blockhash(&self) -> AppResult<BlockhashResponse> {
+        let blockhash = self
+            .rpc
+            .get_latest_blockhash()
+            .await
+            .map_err(|e| AppError::upstream(format!("get_latest_blockhash: {e}")))?;
+        let slot = self
+            .rpc
+            .get_slot()
+            .await
+            .map_err(|e| AppError::upstream(format!("get_slot: {e}")))?;
+        Ok(BlockhashResponse {
+            blockhash: blockhash.to_string(),
+            slot,
+        })
+    }
+
+    /// Raw Address Lookup Table account bytes (hex) so the client can compress
+    /// an SPL tx without its own RPC. Returns exists=false when not found.
+    pub async fn alt_account(&self, address: &Pubkey) -> AppResult<AltAccountResponse> {
+        match self.rpc.get_account(address).await {
+            Ok(Some(acct)) => Ok(AltAccountResponse {
+                exists: true,
+                data_hex: hex::encode(&acct.data),
+            }),
+            Ok(None) => Ok(AltAccountResponse {
+                exists: false,
+                data_hex: String::new(),
+            }),
+            Err(e) => Err(AppError::upstream(format!("get_account {address}: {e}"))),
         }
     }
 

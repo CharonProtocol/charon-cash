@@ -1,4 +1,4 @@
-import { Connection, PublicKey, VersionedTransaction } from "@solana/web3.js";
+import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { type Note } from "./notes";
 export interface Signer {
     publicKey: PublicKey;
@@ -24,7 +24,6 @@ export interface SyncResult {
     spent: number;
 }
 export declare class PrivacyCashClient {
-    private conn;
     private signer;
     private wasm?;
     private enc?;
@@ -32,7 +31,7 @@ export declare class PrivacyCashClient {
     private programId?;
     private info?;
     private unlocking;
-    constructor(conn: Connection, signer: Signer, programId?: PublicKey);
+    constructor(signer: Signer, programId?: PublicKey);
     get publicKey(): PublicKey;
     get feeRecipient(): PublicKey;
     init(): Promise<void>;
@@ -54,7 +53,7 @@ export declare class PrivacyCashClient {
     withdrawSPL(mint: PublicKey | string, grossRaw: number | string, recipient: PublicKey | string): Promise<WithdrawResult>;
     getPrivateBalanceSOL(): bigint;
     getPrivateBalanceSPL(mint: PublicKey | string): bigint;
-    /** Poll on-chain next_index (falls back to indexer). Never throws — deposit already settled. */
+    /** Poll the indexer's next_leaf_index. Never throws — deposit already settled. */
     private waitForLeaves;
     private balanceForMint;
     private feeAta;

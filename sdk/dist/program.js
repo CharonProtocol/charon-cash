@@ -73,7 +73,7 @@ export async function buildTransactTransaction(params) {
         ],
         data: ixData,
     });
-    const { blockhash } = await params.connection.getLatestBlockhash();
+    const blockhash = params.blockhash;
     const limitIx = ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 });
     const priceIx = ComputeBudgetProgram.setComputeUnitPrice({
         microLamports: 5_000,
@@ -141,7 +141,7 @@ export function buildTransactSplInstruction(params) {
 /** Assemble an unsigned v0 SPL transaction (uses ALT — required to fit proof + 16 accounts). */
 export async function buildTransactSplTransaction(params) {
     const { ix, accounts } = buildTransactSplInstruction(params);
-    const { blockhash } = await params.connection.getLatestBlockhash();
+    const blockhash = params.blockhash;
     const limitIx = ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 });
     const priceIx = ComputeBudgetProgram.setComputeUnitPrice({
         microLamports: 5_000,

@@ -98,6 +98,18 @@ pub struct RelayResponse {
 }
 
 #[derive(Debug, Serialize)]
+pub struct BlockhashResponse {
+    pub blockhash: String,
+    pub slot: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AltAccountResponse {
+    pub exists: bool,
+    pub data_hex: String,
+}
+
+#[derive(Debug, Serialize)]
 pub struct RelayerInfo {
     pub program_id: String,
     pub fee_recipient: String,

@@ -46,11 +46,6 @@ export function backendUrl(): string {
   )
 }
 
-export function rpcUrl(): string {
-  const env = getEnv()
-  return env.VITE_SOLANA_RPC_URL ?? "http://localhost:8899"
-}
-
 export function envProgramId(): PublicKey | null {
   const env = getEnv()
   const v = env.VITE_PROGRAM_ID

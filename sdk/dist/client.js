@@ -4,20 +4,18 @@ import { PublicKey, } from "@solana/web3.js";
 import BN from "bn.js";
 import { envProgramId, FIELD_SIZE, MERKLE_TREE_DEPTH, SIGN_MESSAGE, SOL_TREE_KEY, WRAPPED_SOL_MINT, } from "./constants";
 import { EncryptionService, Keypair, Utxo, getExtDataHash, getMintAddressField, } from "./crypto";
-import { bytesToHex, fetchMerkleProof, fetchRelayerInfo, fetchTreeState, fetchUtxoRange, fieldToHex32, isNullifierSpent, submitTransaction, waitForLeafIndex, } from "./merkle";
+import { bytesToHex, fetchMerkleProof, fetchRelayerInfo, fetchBlockhash, fetchTreeState, fetchUtxoRange, fieldToHex32, isNullifierSpent, submitTransaction, waitForLeafIndex, } from "./merkle";
 import { getSyncOffset, markNoteSpent, newNoteId, saveNote, setSyncOffset, unspentNotes, upsertNote, markNoteSpentByIndex, } from "./notes";
 import { pushEncryptedNotes, pullEncryptedNotes } from "./notestore";
 import { parseProofToBytesArray, parseToBytesArray, prove } from "./prover";
-import { buildTransactSplTransaction, buildTransactTransaction, deriveSplTreeAccount, } from "./program";
+import { buildTransactSplTransaction, buildTransactTransaction, } from "./program";
 import { ensureAlt, envAltAddress, splAltAddresses, } from "./alt";
-import { readTreeState } from "./local-provider";
 const DEPOSIT_FEE = 0;
 const RANGE_PAGE = 2_000;
 function toPubkey(value) {
     return value instanceof PublicKey ? value : new PublicKey(value);
 }
 export class PrivacyCashClient {
-    conn;
     signer;
     wasm;
     enc;
@@ -25,8 +23,7 @@ export class PrivacyCashClient {
     programId;
     info;
     unlocking = null;
-    constructor(conn, signer, programId) {
-        this.conn = conn;
+    constructor(signer, programId) {
         this.signer = signer;
         this.programId = programId ?? envProgramId() ?? undefined;
     }
@@ -142,8 +139,7 @@ export class PrivacyCashClient {
     async depositSOL(amountLamports) {
         await this.unlock();
         const treeKey = SOL_TREE_KEY;
-        // Prefer on-chain tree state (shim can lag / mix trees).
-        const onChain = await readTreeState(this.conn, this.programId, treeKey);
+        const onChain = await fetchTreeState(treeKey);
         const root = onChain.root;
         const nextLeafIndex = onChain.nextLeafIndex;
         const extAmount = new BN(amountLamports);
@@ -216,12 +212,7 @@ export class PrivacyCashClient {
         const mintPk = toPubkey(mint);
         const mintStr = mintPk.toBase58();
         const treeKey = mintStr;
-        // Fail fast if Admin → Initialize SPL hasn't been run for this mint.
-        const [treePda] = deriveSplTreeAccount(this.programId, mintPk);
-        if (!(await this.conn.getAccountInfo(treePda))) {
-            throw new Error(`SPL tree for mint ${mintStr} is not initialized — open Admin and click "Initialize SPL" first`);
-        }
-        const onChain = await readTreeState(this.conn, this.programId, treeKey);
+        const onChain = await fetchTreeState(treeKey);
         const root = onChain.root;
         const nextLeafIndex = onChain.nextLeafIndex;
         const extAmount = new BN(amountRaw.toString());
@@ -311,24 +302,17 @@ export class PrivacyCashClient {
         const m = mint instanceof PublicKey ? mint.toBase58() : mint;
         return this.balanceForMint(m);
     }
-    /** Poll on-chain next_index (falls back to indexer). Never throws — deposit already settled. */
+    /** Poll the indexer's next_leaf_index. Never throws — deposit already settled. */
     async waitForLeaves(treeKey, minLeafIndex) {
         const deadline = Date.now() + 45_000;
         while (Date.now() < deadline) {
             try {
-                const st = await readTreeState(this.conn, this.programId, treeKey);
+                const st = await fetchTreeState(treeKey);
                 if (st.nextLeafIndex > minLeafIndex)
                     return;
             }
             catch {
-                try {
-                    const st = await fetchTreeState(treeKey);
-                    if (st.nextLeafIndex > minLeafIndex)
-                        return;
-                }
-                catch {
-                    /* keep polling */
-                }
+                /* keep polling */
             }
             await new Promise((r) => setTimeout(r, 750));
         }
@@ -531,11 +515,11 @@ export class PrivacyCashClient {
             outputCommitments: [pub[5], pub[6]],
         };
         const nullifierHexes = [pub[3], pub[4]].map((b) => bytesToHex(b));
+        const { blockhash } = await fetchBlockhash();
         let transaction;
         if (args.isSpl) {
             const mint = args.mint;
             const alt = await ensureAlt({
-                connection: this.conn,
                 signer: this.signer,
                 preferred: envAltAddress(),
                 addresses: [
@@ -551,7 +535,7 @@ export class PrivacyCashClient {
                 ],
             });
             const built = await buildTransactSplTransaction({
-                connection: this.conn,
+                blockhash,
                 programId: this.programId,
                 signer: this.publicKey,
                 isSpl: true,
@@ -573,7 +557,7 @@ export class PrivacyCashClient {
         }
         else {
             const built = await buildTransactTransaction({
-                connection: this.conn,
+                blockhash,
                 programId: this.programId,
                 signer: this.publicKey,
                 isSpl: false,

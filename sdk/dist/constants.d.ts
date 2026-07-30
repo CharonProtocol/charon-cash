@@ -20,6 +20,5 @@ export declare const CIRCUIT: {
     ZKEY_URL: string;
 };
 export declare function backendUrl(): string;
-export declare function rpcUrl(): string;
 export declare function envProgramId(): PublicKey | null;
 //# sourceMappingURL=constants.d.ts.map
