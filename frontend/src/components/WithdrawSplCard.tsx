@@ -70,7 +70,7 @@ export function WithdrawSplCard({ onChanged }: { onChanged?: () => void }) {
       const mintStr = mint.trim()
       const raw = BigInt(amount.trim() || "0")
       if (raw <= 0n) throw new Error("enter a valid raw amount")
-      setStatus("generating ZK proof + signing tx…")
+      setStatus("generating ZK proof + posting to relayer…")
       const res = await client.withdrawSPL(
         mintStr,
         raw.toString(),
@@ -105,9 +105,8 @@ export function WithdrawSplCard({ onChanged }: { onChanged?: () => void }) {
           <Coins className="size-4" /> Withdraw SPL
         </CardTitle>
         <CardDescription>
-          Spend a local SPL note for this mint: SDK syncs the mint tree, fetches
-          the Merkle proof, generates the ZK proof, then your wallet signs +
-          submits.
+          Spend a local SPL note: SDK syncs the mint tree, proves ownership, then
+          the backend relayer signs and submits (no wallet tx for the withdraw).
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

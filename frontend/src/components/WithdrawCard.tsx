@@ -49,7 +49,7 @@ export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
     try {
       const lamports = Math.round(Number(amount) * 1_000_000_000)
       if (!lamports || lamports <= 0) throw new Error("enter a valid amount")
-      setStatus("generating ZK proof + signing tx…")
+      setStatus("generating ZK proof + posting to relayer…")
       const res = await client.withdrawSOL(lamports, recipient.trim())
       setResult({
         signature: res.signature,
@@ -79,9 +79,9 @@ export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
           <ArrowUpFromLine className="size-4" /> Withdraw SOL
         </CardTitle>
         <CardDescription>
-          Spend a local note: SDK fetches the Merkle proof, generates the ZK
-          proof, your wallet signs + submits. The pool pays the recipient and
-          the fee — no relayer involved.
+          Spend a local note: SDK fetches the Merkle path and generates the ZK
+          proof. The backend relayer signs and submits the withdraw (no wallet
+          tx signature for the transact).
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

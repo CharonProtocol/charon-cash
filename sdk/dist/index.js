@@ -4,7 +4,7 @@ export { prove, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers, } 
 export { buildTransactTransaction, buildTransactIxData, buildTransactSplTransaction, buildTransactSplInstruction, deriveAccounts, deriveSplTreeAccount, } from "./program";
 export { ensureAlt, fetchAlt, splAltAddresses, envAltAddress, cachedAltAddress, cacheAltAddress, } from "./alt";
 export { LocalMirror, readSolTreeState, readTreeState, readGlobalFees } from "./local-provider";
-export { fetchRelayerInfo, fetchTreeState, fetchMerkleProof, fetchUtxoRange, checkEncryptedOutput, waitForLeafIndex, waitForEncryptedOutput, isNullifierSpent, submitTransaction, fieldToHex32, setBackendUrl, getBackendUrl, solTreeKey, splTreeKey, } from "./merkle";
+export { fetchRelayerInfo, fetchTreeState, fetchMerkleProof, fetchUtxoRange, checkEncryptedOutput, waitForLeafIndex, waitForEncryptedOutput, isNullifierSpent, submitTransaction, relayWithdraw, fieldToHex32, setBackendUrl, getBackendUrl, solTreeKey, splTreeKey, } from "./merkle";
 export { loadNotes, unspentNotes, saveNote, upsertNote, markNoteSpent, totalBalance, exportNotes, importNotes, clearNotes, newNoteId, getSyncOffset, setSyncOffset, resetSyncOffset, } from "./notes";
 export { encryptNotesBlob, decryptNotesBlob, pushEncryptedNotes, pullEncryptedNotes, } from "./notestore";
 export { setOperatorPassword, getOperatorPassword, verifyOperator, operatorInitialize, operatorInitializeSpl, operatorUpdateConfig, operatorUpdateDepositLimit, operatorUpdateDepositLimitSpl, OperatorError, } from "./admin";

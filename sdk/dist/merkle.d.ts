@@ -47,6 +47,27 @@ export interface UtxoCheckResult {
 export declare function setBackendUrl(url: string): void;
 export declare function getBackendUrl(): string;
 export declare function submitTransaction(serializedTx: Uint8Array): Promise<string>;
+/** Relayer-signed withdraw: POST proof fields; backend builds + signs + submits. */
+export declare function relayWithdraw(req: {
+    kind: "sol" | "spl";
+    proofA: number[];
+    proofB: number[];
+    proofC: number[];
+    root: number[];
+    publicAmount: number[];
+    extDataHash: number[];
+    inputNullifiers: number[][];
+    outputCommitments: number[][];
+    extAmount: number;
+    fee: number;
+    encryptedOutput1: Uint8Array;
+    encryptedOutput2: Uint8Array;
+    /** SOL: wallet. SPL: recipient ATA. */
+    recipient: string;
+    mint?: string;
+    /** SPL: wallet that owns the recipient ATA. */
+    recipientOwner?: string;
+}): Promise<string>;
 export declare function bytesToHex(bytes: ArrayLike<number>): string;
 /** Poseidon / Fr decimal string → 32-byte big-endian hex (no 0x). */
 export declare function fieldToHex32(dec: string): string;

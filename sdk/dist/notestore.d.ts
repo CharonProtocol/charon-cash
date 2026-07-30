@@ -19,7 +19,7 @@ export declare function decryptNotesBlob(enc: EncryptionService, hex: string): P
 export declare function pushEncryptedNotes(wallet: PublicKey, enc: EncryptionService): Promise<void>;
 /**
  * GET the encrypted blob, decrypt it, and upsert into local storage.
- * Returns the merged local note set. 404 (no backup yet) → empty, no throw.
+ * Returns the merged local note set. Missing backup (404 or empty) → [].
  */
 export declare function pullEncryptedNotes(wallet: PublicKey, enc: EncryptionService): Promise<Note[]>;
 //# sourceMappingURL=notestore.d.ts.map

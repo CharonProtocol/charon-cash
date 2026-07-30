@@ -59,6 +59,8 @@ export declare class PrivacyCashClient {
     private balanceForMint;
     private feeAta;
     private withdrawInternal;
+    /** Prove + POST to relayer (backend signs with RELAYER_KEYPAIR). No wallet tx. */
+    private proveAndRelay;
     private proveAndSend;
 }
 //# sourceMappingURL=client.d.ts.map

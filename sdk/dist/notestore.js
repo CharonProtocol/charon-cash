@@ -24,7 +24,7 @@ export async function pushEncryptedNotes(wallet, enc) {
 }
 /**
  * GET the encrypted blob, decrypt it, and upsert into local storage.
- * Returns the merged local note set. 404 (no backup yet) → empty, no throw.
+ * Returns the merged local note set. Missing backup (404 or empty) → [].
  */
 export async function pullEncryptedNotes(wallet, enc) {
     const res = await fetch(`${backendUrl()}/api/notes/${wallet.toBase58()}`);
@@ -33,6 +33,8 @@ export async function pullEncryptedNotes(wallet, enc) {
     if (!res.ok)
         throw new Error(`notes restore failed: HTTP ${res.status}`);
     const data = (await res.json());
+    if (!data.ciphertext)
+        return [];
     const notes = await decryptNotesBlob(enc, data.ciphertext);
     for (const n of notes)
         upsertNote(wallet, n);

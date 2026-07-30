@@ -11,6 +11,20 @@
       rel="stylesheet"
     />
     <title>Privacy Cash · client-side ZK privacy on Solana</title>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("privacy-cash-theme");
+          if (t !== "dark" && t !== "light") {
+            t = window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+          }
+          if (t === "dark") document.documentElement.classList.add("dark");
+          document.documentElement.style.colorScheme = t;
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

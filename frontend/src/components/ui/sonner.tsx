@@ -1,10 +1,13 @@
 import type { CSSProperties } from "react"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 
+import { useTheme } from "@/hooks/useTheme"
+
 function Toaster({ ...props }: ToasterProps) {
+  const { theme } = useTheme()
   return (
     <Sonner
-      theme="dark"
+      theme={theme}
       className="toaster group"
       richColors
       closeButton

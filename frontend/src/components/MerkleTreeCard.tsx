@@ -1,5 +1,6 @@
-import { useState } from "react"
-import { TreePine } from "lucide-react"
+import { useEffect, useState } from "react"
+import { RefreshCw, TreePine } from "lucide-react"
+import { toast } from "sonner"
 
 import { api, BackendError } from "@/lib/api"
 import { shortHash } from "@/lib/format"
@@ -16,7 +17,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ErrorBlock, JsonBlock } from "@/components/ResponsePanel"
 
-export function MerkleTreeCard() {
+export function MerkleTreeCard({ refreshKey = 0 }: { refreshKey?: number }) {
   const [treeKey, setTreeKey] = useState("sol")
   const [leafIndex, setLeafIndex] = useState("0")
   const [state, setState] = useState<TreeState | null>(null)
@@ -51,80 +52,144 @@ export function MerkleTreeCard() {
     }
   }
 
+  useEffect(() => {
+    if (refreshKey > 0) void loadState()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey])
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <TreePine className="size-4" /> Merkle tree
+        <CardTitle className="flex items-center justify-between gap-2">
+          <span className="flex items-center gap-2">
+            <TreePine className="size-4" /> Merkle tree
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={loadState}
+            disabled={loading === "state"}
+            title="Refresh tree state"
+          >
+            <RefreshCw className={loading === "state" ? "size-4 animate-spin" : "size-4"} />
+          </Button>
         </CardTitle>
         <CardDescription>
-          Tree state served by the indexer-backed mirror, and Poseidon Merkle paths for the circuit.
+          Indexer-backed Poseidon tree (height 26). Use <code className="text-xs">sol</code> or
+          an SPL mint address as the tree key.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-end gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
           <div className="flex-1 space-y-1.5">
-            <Label htmlFor="tree-key">tree key</Label>
+            <Label htmlFor="tree-key">Tree key</Label>
             <Input
               id="tree-key"
               value={treeKey}
               onChange={(e) => setTreeKey(e.target.value)}
-              placeholder="sol or a mint base58"
+              placeholder="sol or mint base58"
+              className="font-mono text-xs"
             />
           </div>
           <Button onClick={loadState} disabled={loading === "state"}>
-            {loading === "state" ? "…" : "Load state"}
+            {loading === "state" ? (
+              <>
+                <RefreshCw className="mr-1.5 size-3.5 animate-spin" /> Loading
+              </>
+            ) : (
+              "Load state"
+            )}
           </Button>
         </div>
 
         {state && (
-          <div className="space-y-1 rounded-lg border bg-muted/30 p-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">current root</span>
-              <span className="font-mono text-xs">{shortHash(state.current_root, 12, 8)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">next leaf index</span>
-              <span className="font-mono">{state.next_leaf_index}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">leaf count</span>
-              <span className="font-mono">{state.leaf_count}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">known roots</span>
-              <span className="font-mono">{state.known_roots.length}</span>
-            </div>
+          <div className="space-y-2 rounded-xl border border-border bg-secondary/40 p-3 text-sm">
+            <Row
+              label="Current root"
+              value={shortHash(state.current_root, 12, 8)}
+              full={state.current_root}
+            />
+            <Row label="Next leaf index" value={String(state.next_leaf_index)} />
+            <Row label="Leaf count" value={String(state.leaf_count)} />
+            <Row label="Known roots" value={String(state.known_roots.length)} />
           </div>
         )}
 
-        <div className="border-t pt-3">
-          <Label className="mb-1.5 block">Merkle proof for leaf</Label>
-          <div className="flex items-end gap-2">
+        <div className="space-y-2 border-t border-border pt-3">
+          <Label className="block">Merkle proof for leaf</Label>
+          <div className="flex flex-wrap items-end gap-2">
             <Input
               value={leafIndex}
               onChange={(e) => setLeafIndex(e.target.value)}
               placeholder="leaf index"
               inputMode="numeric"
-              className="w-32"
+              className="w-28 font-mono"
             />
             <Button variant="secondary" onClick={loadProof} disabled={loading === "proof"}>
-              {loading === "proof" ? "…" : "Get proof"}
+              {loading === "proof" ? (
+                <>
+                  <RefreshCw className="mr-1.5 size-3.5 animate-spin" /> Fetching
+                </>
+              ) : (
+                "Get proof"
+              )}
             </Button>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Returns 26 path elements + 26 path indices (height-26 Poseidon tree).
+          <p className="text-xs text-muted-foreground">
+            Returns 26 path elements + indices for the circuit witness.
           </p>
         </div>
 
         {path && (
-          <JsonBlock
-            value={{ path_elements: path.path_elements, path_indices: path.path_indices }}
-          />
+          <div className="space-y-2">
+            <div className="flex justify-end">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  navigator.clipboard?.writeText(JSON.stringify(path, null, 2))
+                  toast.success("Proof JSON copied")
+                }}
+              >
+                Copy proof JSON
+              </Button>
+            </div>
+            <JsonBlock
+              value={{ path_elements: path.path_elements, path_indices: path.path_indices }}
+            />
+          </div>
         )}
         {error && <ErrorBlock code="REQUEST_FAILED" message={error} />}
       </CardContent>
     </Card>
+  )
+}
+
+function Row({
+  label,
+  value,
+  full,
+}: {
+  label: string
+  value: string
+  full?: string
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-muted-foreground">{label}</span>
+      <button
+        type="button"
+        className="font-mono text-xs text-foreground hover:text-primary"
+        title={full ?? value}
+        onClick={() => {
+          if (!full) return
+          navigator.clipboard?.writeText(full)
+          toast.success("Copied")
+        }}
+      >
+        {value}
+      </button>
+    </div>
   )
 }
 

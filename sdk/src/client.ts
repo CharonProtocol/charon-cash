@@ -1,8 +1,5 @@
 import { WasmFactory, type LightWasm } from "@lightprotocol/hasher.rs"
-import {
-  createAssociatedTokenAccountIdempotentInstruction,
-  getAssociatedTokenAddressSync,
-} from "@solana/spl-token"
+import { getAssociatedTokenAddressSync } from "@solana/spl-token"
 import {
   Connection,
   PublicKey,
@@ -35,6 +32,7 @@ import {
   fieldToHex32,
   isNullifierSpent,
   submitTransaction,
+  relayWithdraw,
   waitForLeafIndex,
   type RelayerInfo,
 } from "./merkle"
@@ -578,45 +576,23 @@ export class PrivacyCashClient {
     const enc2 = await this.enc!.encryptUtxo(outputs[1])
 
     let feeRecipientForHash: PublicKey = this.feeRecipient
-    let splExtras:
-      | {
-        mint: PublicKey
-        signerTokenAccount: PublicKey
-        recipientTokenAccount: PublicKey
-        feeRecipientAta: PublicKey
-        preIxs?: TransactionInstruction[]
-      }
-      | undefined
+    let hashRecipient: PublicKey = args.recipient
+    let relayRecipient = args.recipient.toBase58()
+    let recipientOwner: string | undefined
+    let mintStr: string | undefined
 
     if (args.isSpl && args.mint) {
       const mint = args.mint
       const feeAta = this.feeAta(mint)
       const recipientAta = getAssociatedTokenAddressSync(mint, args.recipient)
-      const signerAta = getAssociatedTokenAddressSync(mint, this.publicKey)
       feeRecipientForHash = feeAta
-      splExtras = {
-        mint,
-        signerTokenAccount: signerAta,
-        recipientTokenAccount: recipientAta,
-        feeRecipientAta: feeAta,
-        preIxs: [
-          createAssociatedTokenAccountIdempotentInstruction(
-            this.publicKey,
-            recipientAta,
-            args.recipient,
-            mint,
-          ),
-          createAssociatedTokenAccountIdempotentInstruction(
-            this.publicKey,
-            feeAta,
-            this.feeRecipient,
-            mint,
-          ),
-        ],
-      }
+      hashRecipient = recipientAta
+      relayRecipient = recipientAta.toBase58()
+      recipientOwner = args.recipient.toBase58()
+      mintStr = mint.toBase58()
     }
 
-    const { signature, nullifiers } = await this.proveAndSend({
+    const { signature, nullifiers } = await this.proveAndRelay({
       root,
       inputs,
       outputs,
@@ -626,11 +602,13 @@ export class PrivacyCashClient {
       inputPathIndices: inputs.map((u) => u.index),
       extAmount,
       fee,
-      recipient: args.recipient,
+      hashRecipient,
       feeRecipientForHash,
       mintAddress: args.mintAddress,
       isSpl: args.isSpl,
-      ...splExtras,
+      relayRecipient,
+      recipientOwner,
+      mint: mintStr,
     })
 
     for (const n of inputNotes) markNoteSpent(this.publicKey, n.id, signature)
@@ -655,6 +633,91 @@ export class PrivacyCashClient {
       changeLamports: change.toString(),
       nullifiers,
     }
+  }
+
+  /** Prove + POST to relayer (backend signs with RELAYER_KEYPAIR). No wallet tx. */
+  private async proveAndRelay(args: {
+    root: string
+    inputs: Utxo[]
+    outputs: Utxo[]
+    encryptedOutput1: Uint8Array
+    encryptedOutput2: Uint8Array
+    inputPathElements: string[][]
+    inputPathIndices: number[]
+    extAmount: BN
+    fee: BN
+    hashRecipient: PublicKey
+    feeRecipientForHash: PublicKey
+    mintAddress: string
+    isSpl: boolean
+    relayRecipient: string
+    recipientOwner?: string
+    mint?: string
+  }): Promise<{ signature: string; nullifiers: string[] }> {
+    const inputNullifiers = await Promise.all(
+      args.inputs.map((x) => x.getNullifier()),
+    )
+    const outputCommitments = args.outputs.map((x) => x.getCommitment())
+
+    const extDataHash = getExtDataHash({
+      recipient: args.hashRecipient,
+      extAmount: args.extAmount,
+      encryptedOutput1: args.encryptedOutput1,
+      encryptedOutput2: args.encryptedOutput2,
+      fee: args.fee,
+      feeRecipient: args.feeRecipientForHash,
+      mintAddress: args.mintAddress,
+    })
+
+    const publicAmount = args.extAmount
+      .sub(args.fee)
+      .add(FIELD_SIZE)
+      .mod(FIELD_SIZE)
+
+    const circuitInput = {
+      root: args.root,
+      inputNullifier: inputNullifiers,
+      outputCommitment: outputCommitments,
+      publicAmount: publicAmount.toString(),
+      extDataHash,
+      inAmount: args.inputs.map((x) => x.amount.toString(10)),
+      inPrivateKey: args.inputs.map((x) => x.keypair.privkey),
+      inBlinding: args.inputs.map((x) => x.blinding.toString(10)),
+      inPathIndices: args.inputPathIndices,
+      inPathElements: args.inputPathElements,
+      outAmount: args.outputs.map((x) => x.amount.toString(10)),
+      outBlinding: args.outputs.map((x) => x.blinding.toString(10)),
+      outPubkey: args.outputs.map((x) => x.keypair.pubkey),
+      mintAddress: getMintAddressField(args.mintAddress),
+    }
+
+    const { proof, publicSignals } = await prove(
+      circuitInput as unknown as Record<string, unknown>,
+    )
+    const proofBytes = parseProofToBytesArray(proof)
+    const pub = parseToBytesArray(publicSignals)
+    const nullifierHexes = [pub[3], pub[4]].map((b) => bytesToHex(b))
+
+    const signature = await relayWithdraw({
+      kind: args.isSpl ? "spl" : "sol",
+      proofA: proofBytes.proofA,
+      proofB: proofBytes.proofB,
+      proofC: proofBytes.proofC,
+      root: pub[0],
+      publicAmount: pub[1],
+      extDataHash: pub[2],
+      inputNullifiers: [pub[3], pub[4]],
+      outputCommitments: [pub[5], pub[6]],
+      extAmount: args.extAmount.toNumber(),
+      fee: args.fee.toNumber(),
+      encryptedOutput1: args.encryptedOutput1,
+      encryptedOutput2: args.encryptedOutput2,
+      recipient: args.relayRecipient,
+      mint: args.mint,
+      recipientOwner: args.recipientOwner,
+    })
+
+    return { signature, nullifiers: nullifierHexes }
   }
 
   private async proveAndSend(args: {

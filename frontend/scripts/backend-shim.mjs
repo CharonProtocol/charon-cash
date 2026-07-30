@@ -11,9 +11,16 @@ import {
   Connection, Keypair, PublicKey, SystemProgram, TransactionInstruction,
   TransactionMessage, VersionedTransaction, ComputeBudgetProgram,
 } from "@solana/web3.js"
+import {
+  createAssociatedTokenAccountIdempotentInstruction,
+  getAssociatedTokenAddressSync,
+} from "@solana/spl-token"
 import { WasmFactory } from "@lightprotocol/hasher.rs"
 
-import { LocalMirror, readGlobalFees, readTreeState, deriveAccounts, MERKLE_TREE_DEPTH } from "privacy-cash-sdk"
+import {
+  LocalMirror, readGlobalFees, readTreeState, deriveAccounts,
+  MERKLE_TREE_DEPTH, buildTransactIxData, buildTransactSplInstruction,
+} from "privacy-cash-sdk"
 
 const PROGRAM = new PublicKey(process.env.PROGRAM_ID ?? "5GcqZ4aZ3xF87wQF5pFmHHYAk73Hcww1r8414KdeUJ9P")
 const RPC = process.env.SOLANA_RPC_URL ?? "http://localhost:8899"
@@ -27,16 +34,27 @@ const wasm = await WasmFactory.getInstance()
 const dec2hex = (dec) => "0x" + BigInt(dec).toString(16).padStart(64, "0")
 const dec2hexU = (dec) => BigInt(dec).toString(16).padStart(64, "0").toUpperCase()
 const be = (b) => { let r = 0n; for (const x of b) r = (r << 8n) + BigInt(x); return r }
-const json = (v, status = 200) => new Response(JSON.stringify(v), { status, headers: { "content-type": "application/json", "access-control-allow-origin": "*", "access-control-allow-methods": "*", "access-control-allow-headers": "*" } })
+const corsHeaders = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET,POST,PUT,OPTIONS",
+  "access-control-allow-headers": "content-type,x-admin-password",
+  "access-control-max-age": "86400",
+}
+const json = (v, status = 200) => new Response(JSON.stringify(v), {
+  status,
+  headers: { "content-type": "application/json", ...corsHeaders },
+})
+/** @type {Map<string, { ciphertext: string, updatedAt: string }>} */
+const noteBlobs = new Map()
 
 async function sendIx(ix) {
   const { blockhash } = await conn.getLatestBlockhash()
   const msg = new TransactionMessage({ payerKey: payer.publicKey, recentBlockhash: blockhash, instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 }), ix] }).compileToV0Message()
   const tx = new VersionedTransaction(msg); tx.sign([payer])
   const sig = await conn.sendRawTransaction(tx.serialize(), { skipPreflight: true, maxRetries: 5 })
-  try { await conn.confirmTransaction(sig, "confirmed") } catch {}
+  try { await conn.confirmTransaction(sig, "confirmed") } catch { }
   const slot = await conn.getSlot("confirmed")
-  return { signature: sig, slot, status: "ok" }
+  return { signature: sig, slot, status: "confirmed" }
 }
 
 // ---- ensure the SOL pool is initialized ----
@@ -108,7 +126,7 @@ async function rescan() {
     for (const ix of ixs) {
       const prog =
         allKeys[ix.programIdIndex] ??
-        allKeys[ix.programIdIndex?.toString?.()] 
+        allKeys[ix.programIdIndex?.toString?.()]
       if (!prog || !prog.equals?.(PROGRAM)) {
         // legacy: may not have programIdIndex resolution — check data disc only
       }
@@ -208,18 +226,46 @@ Bun.serve({
     const url = new URL(req.url)
     const p = url.pathname
     const method = req.method
-    // CORS preflight: browsers send OPTIONS before a JSON POST
+    // CORS preflight
     if (method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET,POST,OPTIONS", "access-control-allow-headers": "content-type", "access-control-max-age": "86400" } })
+      return new Response(null, { status: 204, headers: corsHeaders })
     }
     try {
       if (p === "/health") return json({ status: "ok" })
 
       if (p === "/indexer/status") return json({ last_signature: lastSig, last_slot: lastSlot, sol_utxo_count: utxos.length })
 
+      // Encrypted note blob backup (in-memory for local shim)
+      if (p === "/api/notes" && method === "PUT") {
+        let body = {}
+        try { const text = await req.text(); if (text.trim()) body = JSON.parse(text) } catch { }
+        const wallet = String(body.wallet || "").trim()
+        const ciphertext = String(body.ciphertext || "").trim()
+        if (!wallet || !ciphertext) {
+          return json({ error: { code: "BAD_REQUEST", message: "wallet and ciphertext required" } }, 400)
+        }
+        noteBlobs.set(wallet, { ciphertext, updatedAt: new Date().toISOString() })
+        return new Response(null, { status: 204, headers: corsHeaders })
+      }
+      const notesGet = p.match(/^\/api\/notes\/([^/]+)$/)
+      if (notesGet && method === "GET") {
+        const wallet = decodeURIComponent(notesGet[1])
+        const hit = noteBlobs.get(wallet)
+        // 200 (not 404) so the browser console stays quiet when no backup yet.
+        if (!hit) {
+          return json({ wallet, ciphertext: null, updated_at: null, exists: false })
+        }
+        return json({
+          wallet,
+          ciphertext: hit.ciphertext,
+          updated_at: hit.updatedAt,
+          exists: true,
+        })
+      }
+
       if (p === "/api/relayer/info") {
         let fees = { withdrawalFeeRateBps: 25, feeErrorMarginBps: 500 }
-        try { fees = await readGlobalFees(conn, PROGRAM) } catch {}
+        try { fees = await readGlobalFees(conn, PROGRAM) } catch { }
         return json({ program_id: PROGRAM.toBase58(), fee_recipient: payer.publicKey.toBase58(), fee_rate_bps: 0, withdrawal_fee_rate_bps: fees.withdrawalFeeRateBps, fee_error_margin_bps: fees.feeErrorMarginBps, supported_mints: [] })
       }
 
@@ -278,13 +324,13 @@ Bun.serve({
         return json(
           hit
             ? {
-                exists: true,
-                tree_key: hit.treeKey,
-                leaf_index: hit.leafIndex,
-                commitment: hit.commitment,
-                signature: hit.signature,
-                slot: hit.slot,
-              }
+              exists: true,
+              tree_key: hit.treeKey,
+              leaf_index: hit.leafIndex,
+              commitment: hit.commitment,
+              signature: hit.signature,
+              slot: hit.slot,
+            }
             : { exists: false },
         )
       }
@@ -305,7 +351,23 @@ Bun.serve({
       // ---- POST setup/config (payer = authority signs) ----
       if (method === "POST") {
         let body = {}
-        try { const text = await req.text(); if (text.trim()) body = JSON.parse(text) } catch {}
+        try { const text = await req.text(); if (text.trim()) body = JSON.parse(text) } catch { }
+
+        // Deposit path: client wallet-signed VersionedTransaction hex → broadcast
+        if (p === "/api/relayer/submit") {
+          const hex = String(body.transaction || "").replace(/^0x/i, "")
+          const bytes = Buffer.from(hex, "hex")
+          const vtx = VersionedTransaction.deserialize(bytes)
+          const sig = await conn.sendRawTransaction(vtx.serialize(), { skipPreflight: true, maxRetries: 5 })
+          try { await conn.confirmTransaction(sig, "confirmed") } catch { }
+          return json({ signature: sig, slot: null, status: "submitted" })
+        }
+
+        // Withdraw path: proof JSON → shim signs with local payer (relayer role)
+        if (p === "/api/relayer" || p === "/api/relayer/transact") {
+          return json(await relayWithdraw(body))
+        }
+
         if (p === "/api/relayer/initialize") {
           if (await conn.getAccountInfo(solTree)) return json({ signature: "-", slot: null, status: "already-initialized" })
           return json(await sendIx(buildInitializeSolIx()))
@@ -316,13 +378,15 @@ Bun.serve({
           const [treeAccount, tb] = PublicKey.findProgramAddressSync([Buffer.from("merkle_tree"), mint.toBytes()], PROGRAM)
           const [gC] = PublicKey.findProgramAddressSync([Buffer.from("global_config")], PROGRAM)
           const data = Buffer.alloc(17); data[0] = 1; data.writeBigUInt64LE(max, 1); data[9] = tb
-          return json(await sendIx(new TransactionInstruction({ programId: PROGRAM, keys: [
-            { pubkey: treeAccount, isSigner: false, isWritable: true },
-            { pubkey: mint, isSigner: false, isWritable: false },
-            { pubkey: gC, isSigner: false, isWritable: false },
-            { pubkey: payer.publicKey, isSigner: true, isWritable: true },
-            { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-          ], data })))
+          return json(await sendIx(new TransactionInstruction({
+            programId: PROGRAM, keys: [
+              { pubkey: treeAccount, isSigner: false, isWritable: true },
+              { pubkey: mint, isSigner: false, isWritable: false },
+              { pubkey: gC, isSigner: false, isWritable: false },
+              { pubkey: payer.publicKey, isSigner: true, isWritable: true },
+              { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+            ], data
+          })))
         }
         if (p === "/api/relayer/update-config") {
           const [gC] = PublicKey.findProgramAddressSync([Buffer.from("global_config")], PROGRAM)
@@ -331,27 +395,33 @@ Bun.serve({
           if (body.withdrawal_fee_rate != null) mask |= 2
           if (body.fee_error_margin != null) mask |= 4
           const data = Buffer.alloc(7); data[0] = 4; data.writeUInt16LE(body.deposit_fee_rate ?? 0, 1); data.writeUInt16LE(body.withdrawal_fee_rate ?? 0, 3); data.writeUInt16LE(body.fee_error_margin ?? 0, 5); data[6] = mask
-          return json(await sendIx(new TransactionInstruction({ programId: PROGRAM, keys: [
-            { pubkey: gC, isSigner: false, isWritable: true },
-            { pubkey: payer.publicKey, isSigner: true, isWritable: true },
-          ], data })))
+          return json(await sendIx(new TransactionInstruction({
+            programId: PROGRAM, keys: [
+              { pubkey: gC, isSigner: false, isWritable: true },
+              { pubkey: payer.publicKey, isSigner: true, isWritable: true },
+            ], data
+          })))
         }
         if (p === "/api/relayer/update-deposit-limit") {
           const [tA, tb] = PublicKey.findProgramAddressSync([Buffer.from("merkle_tree")], PROGRAM)
           const data = Buffer.alloc(10); data[0] = 5; data.writeBigUInt64LE(BigInt(body.new_limit), 1); data[9] = tb
-          return json(await sendIx(new TransactionInstruction({ programId: PROGRAM, keys: [
-            { pubkey: tA, isSigner: false, isWritable: true },
-            { pubkey: payer.publicKey, isSigner: true, isWritable: true },
-          ], data })))
+          return json(await sendIx(new TransactionInstruction({
+            programId: PROGRAM, keys: [
+              { pubkey: tA, isSigner: false, isWritable: true },
+              { pubkey: payer.publicKey, isSigner: true, isWritable: true },
+            ], data
+          })))
         }
         if (p === "/api/relayer/update-deposit-limit-spl") {
           const mint = new PublicKey(body.mint)
           const [tA, tb] = PublicKey.findProgramAddressSync([Buffer.from("merkle_tree"), mint.toBytes()], PROGRAM)
           const data = Buffer.alloc(10); data[0] = 6; data.writeBigUInt64LE(BigInt(body.new_limit), 1); data[9] = tb
-          return json(await sendIx(new TransactionInstruction({ programId: PROGRAM, keys: [
-            { pubkey: tA, isSigner: false, isWritable: true },
-            { pubkey: payer.publicKey, isSigner: true, isWritable: true },
-          ], data })))
+          return json(await sendIx(new TransactionInstruction({
+            programId: PROGRAM, keys: [
+              { pubkey: tA, isSigner: false, isWritable: true },
+              { pubkey: payer.publicKey, isSigner: true, isWritable: true },
+            ], data
+          })))
         }
       }
 
@@ -367,11 +437,119 @@ function buildInitializeSolIx() {
   const [tA, tb] = PublicKey.findProgramAddressSync([Buffer.from("merkle_tree")], PROGRAM)
   const [tT, ttb] = PublicKey.findProgramAddressSync([Buffer.from("tree_token")], PROGRAM)
   const [gC, gb] = PublicKey.findProgramAddressSync([Buffer.from("global_config")], PROGRAM)
-  return new TransactionInstruction({ programId: PROGRAM, keys: [
-    { pubkey: tA, isSigner: false, isWritable: true },
-    { pubkey: tT, isSigner: false, isWritable: true },
-    { pubkey: gC, isSigner: false, isWritable: true },
-    { pubkey: payer.publicKey, isSigner: true, isWritable: true },
-    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-  ], data: Buffer.from([0, tb, ttb, gb]) })
+  return new TransactionInstruction({
+    programId: PROGRAM, keys: [
+      { pubkey: tA, isSigner: false, isWritable: true },
+      { pubkey: tT, isSigner: false, isWritable: true },
+      { pubkey: gC, isSigner: false, isWritable: true },
+      { pubkey: payer.publicKey, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ], data: Buffer.from([0, tb, ttb, gb])
+  })
+}
+
+function hexToBuf(h) {
+  return Buffer.from(String(h).replace(/^0x/i, ""), "hex")
+}
+
+async function relayWithdraw(body) {
+  const kind = String(body.kind || "").toLowerCase()
+  if (Number(body.ext_amount) >= 0) {
+    throw new Error("relayer only handles withdrawals (ext_amount must be negative)")
+  }
+  const proof = {
+    proofA: [...hexToBuf(body.proof_a)],
+    proofB: [...hexToBuf(body.proof_b)],
+    proofC: [...hexToBuf(body.proof_c)],
+    root: [...hexToBuf(body.root)],
+    publicAmount: [...hexToBuf(body.public_amount)],
+    extDataHash: [...hexToBuf(body.ext_data_hash)],
+    inputNullifiers: [[...hexToBuf(body.input_nullifiers[0])], [...hexToBuf(body.input_nullifiers[1])]],
+    outputCommitments: [[...hexToBuf(body.output_commitments[0])], [...hexToBuf(body.output_commitments[1])]],
+  }
+  const enc1 = hexToBuf(body.encrypted_output1)
+  const enc2 = hexToBuf(body.encrypted_output2)
+  const extAmount = BigInt(body.ext_amount)
+  const fee = BigInt(body.fee)
+  const BN = (await import("bn.js")).default
+  const extBN = new BN(extAmount.toString())
+  const feeBN = new BN(fee.toString())
+
+  const n0 = Uint8Array.from(proof.inputNullifiers[0])
+  const n1 = Uint8Array.from(proof.inputNullifiers[1])
+  const accounts = deriveAccounts(PROGRAM, n0, n1)
+
+  const ixs = [ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 })]
+
+  if (kind === "sol") {
+    const recipient = new PublicKey(body.recipient)
+    const feeRecipient = payer.publicKey
+    const data = buildTransactIxData(false, proof, extBN, feeBN, enc1, enc2, accounts.bump0, accounts.bump1)
+    ixs.push(new TransactionInstruction({
+      programId: PROGRAM,
+      keys: [
+        { pubkey: accounts.treeAccount, isSigner: false, isWritable: true },
+        { pubkey: accounts.nullifier0, isSigner: false, isWritable: true },
+        { pubkey: accounts.nullifier1, isSigner: false, isWritable: true },
+        { pubkey: accounts.nullifier2, isSigner: false, isWritable: false },
+        { pubkey: accounts.nullifier3, isSigner: false, isWritable: false },
+        { pubkey: accounts.treeTokenAccount, isSigner: false, isWritable: true },
+        { pubkey: accounts.globalConfig, isSigner: false, isWritable: false },
+        { pubkey: recipient, isSigner: false, isWritable: true },
+        { pubkey: feeRecipient, isSigner: false, isWritable: true },
+        { pubkey: payer.publicKey, isSigner: true, isWritable: true },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      ],
+      data,
+    }))
+  } else if (kind === "spl") {
+    const mint = new PublicKey(body.mint)
+    const owner = new PublicKey(body.recipient_owner)
+    const recipientAta = new PublicKey(body.recipient)
+    const feeAta = getAssociatedTokenAddressSync(mint, payer.publicKey, true)
+    const signerAta = getAssociatedTokenAddressSync(mint, payer.publicKey)
+
+    ixs.push(
+      createAssociatedTokenAccountIdempotentInstruction(payer.publicKey, recipientAta, owner, mint),
+      createAssociatedTokenAccountIdempotentInstruction(payer.publicKey, feeAta, payer.publicKey, mint),
+    )
+
+    const { ix: splIx } = buildTransactSplInstruction({
+      connection: conn,
+      programId: PROGRAM,
+      signer: payer.publicKey,
+      isSpl: true,
+      proof,
+      extAmount: extBN,
+      fee: feeBN,
+      encryptedOutput1: enc1,
+      encryptedOutput2: enc2,
+      recipient: owner,
+      feeRecipient: payer.publicKey,
+      mint,
+      signerTokenAccount: signerAta,
+      recipientTokenAccount: recipientAta,
+      feeRecipientAta: feeAta,
+    })
+    ixs.push(splIx)
+  } else {
+    throw new Error(`kind must be sol or spl, got ${kind}`)
+  }
+
+  return sendIxMany(ixs)
+}
+
+async function sendIxMany(ixs) {
+  const { blockhash } = await conn.getLatestBlockhash()
+  const msg = new TransactionMessage({
+    payerKey: payer.publicKey,
+    recentBlockhash: blockhash,
+    instructions: ixs,
+  }).compileToV0Message()
+  const tx = new VersionedTransaction(msg)
+  tx.sign([payer])
+  const sig = await conn.sendRawTransaction(tx.serialize(), { skipPreflight: true, maxRetries: 5 })
+  try { await conn.confirmTransaction(sig, "confirmed") } catch { }
+  const slot = await conn.getSlot("confirmed")
+  return { signature: sig, slot, status: "confirmed" }
 }

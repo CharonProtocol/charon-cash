@@ -1,10 +1,10 @@
 import { WasmFactory } from "@lightprotocol/hasher.rs";
-import { createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync, } from "@solana/spl-token";
+import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { PublicKey, } from "@solana/web3.js";
 import BN from "bn.js";
 import { envProgramId, FIELD_SIZE, MERKLE_TREE_DEPTH, SIGN_MESSAGE, SOL_TREE_KEY, WRAPPED_SOL_MINT, } from "./constants";
 import { EncryptionService, Keypair, Utxo, getExtDataHash, getMintAddressField, } from "./crypto";
-import { bytesToHex, fetchMerkleProof, fetchRelayerInfo, fetchTreeState, fetchUtxoRange, fieldToHex32, isNullifierSpent, submitTransaction, waitForLeafIndex, } from "./merkle";
+import { bytesToHex, fetchMerkleProof, fetchRelayerInfo, fetchTreeState, fetchUtxoRange, fieldToHex32, isNullifierSpent, submitTransaction, relayWithdraw, waitForLeafIndex, } from "./merkle";
 import { getSyncOffset, markNoteSpent, newNoteId, saveNote, setSyncOffset, unspentNotes, upsertNote, markNoteSpentByIndex, } from "./notes";
 import { pushEncryptedNotes, pullEncryptedNotes } from "./notestore";
 import { parseProofToBytesArray, parseToBytesArray, prove } from "./prover";
@@ -423,25 +423,21 @@ export class PrivacyCashClient {
         const enc1 = await this.enc.encryptUtxo(outputs[0]);
         const enc2 = await this.enc.encryptUtxo(outputs[1]);
         let feeRecipientForHash = this.feeRecipient;
-        let splExtras;
+        let hashRecipient = args.recipient;
+        let relayRecipient = args.recipient.toBase58();
+        let recipientOwner;
+        let mintStr;
         if (args.isSpl && args.mint) {
             const mint = args.mint;
             const feeAta = this.feeAta(mint);
             const recipientAta = getAssociatedTokenAddressSync(mint, args.recipient);
-            const signerAta = getAssociatedTokenAddressSync(mint, this.publicKey);
             feeRecipientForHash = feeAta;
-            splExtras = {
-                mint,
-                signerTokenAccount: signerAta,
-                recipientTokenAccount: recipientAta,
-                feeRecipientAta: feeAta,
-                preIxs: [
-                    createAssociatedTokenAccountIdempotentInstruction(this.publicKey, recipientAta, args.recipient, mint),
-                    createAssociatedTokenAccountIdempotentInstruction(this.publicKey, feeAta, this.feeRecipient, mint),
-                ],
-            };
+            hashRecipient = recipientAta;
+            relayRecipient = recipientAta.toBase58();
+            recipientOwner = args.recipient.toBase58();
+            mintStr = mint.toBase58();
         }
-        const { signature, nullifiers } = await this.proveAndSend({
+        const { signature, nullifiers } = await this.proveAndRelay({
             root,
             inputs,
             outputs,
@@ -451,11 +447,13 @@ export class PrivacyCashClient {
             inputPathIndices: inputs.map((u) => u.index),
             extAmount,
             fee,
-            recipient: args.recipient,
+            hashRecipient,
             feeRecipientForHash,
             mintAddress: args.mintAddress,
             isSpl: args.isSpl,
-            ...splExtras,
+            relayRecipient,
+            recipientOwner,
+            mint: mintStr,
         });
         for (const n of inputNotes)
             markNoteSpent(this.publicKey, n.id, signature);
@@ -479,6 +477,63 @@ export class PrivacyCashClient {
             changeLamports: change.toString(),
             nullifiers,
         };
+    }
+    /** Prove + POST to relayer (backend signs with RELAYER_KEYPAIR). No wallet tx. */
+    async proveAndRelay(args) {
+        const inputNullifiers = await Promise.all(args.inputs.map((x) => x.getNullifier()));
+        const outputCommitments = args.outputs.map((x) => x.getCommitment());
+        const extDataHash = getExtDataHash({
+            recipient: args.hashRecipient,
+            extAmount: args.extAmount,
+            encryptedOutput1: args.encryptedOutput1,
+            encryptedOutput2: args.encryptedOutput2,
+            fee: args.fee,
+            feeRecipient: args.feeRecipientForHash,
+            mintAddress: args.mintAddress,
+        });
+        const publicAmount = args.extAmount
+            .sub(args.fee)
+            .add(FIELD_SIZE)
+            .mod(FIELD_SIZE);
+        const circuitInput = {
+            root: args.root,
+            inputNullifier: inputNullifiers,
+            outputCommitment: outputCommitments,
+            publicAmount: publicAmount.toString(),
+            extDataHash,
+            inAmount: args.inputs.map((x) => x.amount.toString(10)),
+            inPrivateKey: args.inputs.map((x) => x.keypair.privkey),
+            inBlinding: args.inputs.map((x) => x.blinding.toString(10)),
+            inPathIndices: args.inputPathIndices,
+            inPathElements: args.inputPathElements,
+            outAmount: args.outputs.map((x) => x.amount.toString(10)),
+            outBlinding: args.outputs.map((x) => x.blinding.toString(10)),
+            outPubkey: args.outputs.map((x) => x.keypair.pubkey),
+            mintAddress: getMintAddressField(args.mintAddress),
+        };
+        const { proof, publicSignals } = await prove(circuitInput);
+        const proofBytes = parseProofToBytesArray(proof);
+        const pub = parseToBytesArray(publicSignals);
+        const nullifierHexes = [pub[3], pub[4]].map((b) => bytesToHex(b));
+        const signature = await relayWithdraw({
+            kind: args.isSpl ? "spl" : "sol",
+            proofA: proofBytes.proofA,
+            proofB: proofBytes.proofB,
+            proofC: proofBytes.proofC,
+            root: pub[0],
+            publicAmount: pub[1],
+            extDataHash: pub[2],
+            inputNullifiers: [pub[3], pub[4]],
+            outputCommitments: [pub[5], pub[6]],
+            extAmount: args.extAmount.toNumber(),
+            fee: args.fee.toNumber(),
+            encryptedOutput1: args.encryptedOutput1,
+            encryptedOutput2: args.encryptedOutput2,
+            recipient: args.relayRecipient,
+            mint: args.mint,
+            recipientOwner: args.recipientOwner,
+        });
+        return { signature, nullifiers: nullifierHexes };
     }
     async proveAndSend(args) {
         const inputNullifiers = await Promise.all(args.inputs.map((x) => x.getNullifier()));

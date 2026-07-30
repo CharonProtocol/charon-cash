@@ -47,6 +47,7 @@ export {
   waitForEncryptedOutput,
   isNullifierSpent,
   submitTransaction,
+  relayWithdraw,
   fieldToHex32,
   setBackendUrl,
   getBackendUrl,
