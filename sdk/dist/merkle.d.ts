@@ -51,6 +51,14 @@ export declare function bytesToHex(bytes: ArrayLike<number>): string;
 /** Poseidon / Fr decimal string → 32-byte big-endian hex (no 0x). */
 export declare function fieldToHex32(dec: string): string;
 export declare function fetchRelayerInfo(): Promise<RelayerInfo>;
+export interface BlockhashInfo {
+    blockhash: string;
+    slot: number;
+}
+/** Latest blockhash + slot from the backend — no client RPC needed to build a tx. */
+export declare function fetchBlockhash(): Promise<BlockhashInfo>;
+/** Raw Address Lookup Table account bytes (hex), or null if it doesn't exist. */
+export declare function fetchAltAccount(address: string): Promise<string | null>;
 export declare function fetchTreeState(treeKey: string): Promise<TreeState>;
 export declare function fetchMerkleProof(treeKey: string, leafIndex: number): Promise<MerkleProof>;
 export declare function isNullifierSpent(hashHex: string): Promise<boolean>;

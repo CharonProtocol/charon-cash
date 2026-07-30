@@ -39,6 +39,8 @@ export type { AltSigner } from "./alt"
 export { LocalMirror, readSolTreeState, readTreeState, readGlobalFees } from "./local-provider"
 export {
   fetchRelayerInfo,
+  fetchBlockhash,
+  fetchAltAccount,
   fetchTreeState,
   fetchMerkleProof,
   fetchUtxoRange,
@@ -55,6 +57,7 @@ export {
 } from "./merkle"
 export type {
   RelayerInfo,
+  BlockhashInfo,
   TreeState,
   MerkleProof,
   IndexedUtxo,
