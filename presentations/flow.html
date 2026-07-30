@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Privacy Cash · animated action flows</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --paper:#ffffff; --panel:#f5f6f8; --panel-2:#eef0f4;
+    --line:#e4e7ec; --line-2:#d4d8e0;
+    --ink:#0e1116; --body:#3f4757; --mute:#868f9e;
+    --accent:#5b54e6; --accent-soft:#ecebfc;
+    --c-program:#111827; --c-indexer:#0e7c86; --c-wallet:#5b54e6;
+    --c-sdk:#b45309; --c-data:#424a57; --c-chain:#6b7280; --c-operator:#7c3aed;
+    --f-display:"Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+    --f-body:"IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --f-mono:"IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --maxw:1180px; --radius:14px;
+    --shadow:0 1px 2px rgba(16,20,28,.04), 0 10px 30px rgba(16,20,28,.06);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0; background:var(--paper); color:var(--ink); font-family:var(--f-body);
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;}
+  .mono{font-family:var(--f-mono)}
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 clamp(16px,4vw,40px)}
+
+  /* topbar */
+  .topbar{position:sticky; top:0; z-index:30; background:rgba(255,255,255,.88); backdrop-filter:saturate(180%) blur(12px); border-bottom:1px solid var(--line)}
+  .topbar__inner{display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:13px 0}
+  .brand{display:flex; align-items:center; gap:.6rem; font-family:var(--f-mono); font-size:.74rem; letter-spacing:.1em; text-transform:uppercase; color:var(--mute)}
+  .brand b{color:var(--ink); font-weight:600; letter-spacing:.02em; text-transform:none; font-family:var(--f-display); font-size:.95rem}
+  .topbar__meta{display:flex; align-items:center; gap:.7rem; font-family:var(--f-mono); font-size:.72rem; color:var(--mute)}
+  .topbar__meta a{color:var(--accent); text-decoration:none}
+  .topbar__meta a:hover{text-decoration:underline}
+
+  /* flow switcher */
+  .flowswitch{display:flex; flex-wrap:wrap; gap:6px; padding:16px 0 2px}
+  .flowswitch button{appearance:none; border:1px solid var(--line); background:var(--paper); color:var(--body);
+    font-family:var(--f-mono); font-size:.78rem; padding:.5em .9em; border-radius:999px; cursor:pointer; transition:.15s}
+  .flowswitch button:hover{border-color:var(--line-2); color:var(--ink)}
+  .flowswitch button.on{background:var(--ink); border-color:var(--ink); color:#fff}
+
+  /* stage */
+  .stage-wrap{margin-top:14px; border:1px solid var(--line); border-radius:var(--radius); background:linear-gradient(180deg,#fff,#fafafb); box-shadow:var(--shadow); overflow:hidden}
+  .stage-head{display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; padding:16px 20px 4px}
+  .stage-head h2{margin:0; font-family:var(--f-display); font-weight:600; font-size:clamp(1.15rem,2vw,1.5rem); letter-spacing:-.01em}
+  .stage-head .eyebrow{font-family:var(--f-mono); font-size:.72rem; letter-spacing:.12em; text-transform:uppercase; color:var(--mute); margin:0 0 .35rem}
+  .stage-head .eyebrow::before{content:""; display:inline-block; width:7px; height:7px; border-radius:2px; background:var(--accent); margin-right:.55em; transform:translateY(-1px)}
+  .progress-track{height:4px; background:var(--panel-2); position:relative}
+  .progress-bar{position:absolute; left:0; top:0; bottom:0; width:0; background:var(--accent); border-radius:0 3px 3px 0}
+  .progress-bar.run{transition:width var(--step-ms,2200ms) linear}
+  svg.stage{display:block; width:100%; height:auto}
+
+  /* svg node states */
+  .node rect.body{fill:#fff; stroke:var(--line); stroke-width:1.4; transition:stroke .25s, filter .25s}
+  .node.done rect.body{fill:var(--panel)}
+  .node.active rect.body{stroke:var(--cc); stroke-width:2; filter:drop-shadow(0 0 0 var(--cc))}
+  .node.active{animation:nodepulse 1.8s ease-in-out infinite}
+  @keyframes nodepulse{0%,100%{filter:drop-shadow(0 0 0 rgba(0,0,0,0))}50%{filter:drop-shadow(0 5px 14px color-mix(in srgb,var(--cc) 35%, transparent))}}
+  .node .icon{stroke:var(--cc); fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; opacity:.85}
+  .node.done .icon{opacity:.4}
+  .node text.lab{font-family:var(--f-mono); font-size:11px; fill:var(--ink); font-weight:500}
+  .node.done text.lab{fill:var(--mute)}
+  .node text.sub{font-family:var(--f-mono); font-size:9.5px; fill:var(--mute)}
+  .connector{stroke:var(--line-2); stroke-width:1.6; stroke-dasharray:4 5}
+  .connector.lit{stroke:var(--cc); stroke-dasharray:none; transition:stroke .4s}
+
+  /* packet */
+  .packet{transition:none}
+  .packet rect{fill:var(--ink); stroke:#fff; stroke-width:1.5}
+  .packet text{font-family:var(--f-mono); font-size:10.5px; fill:#fff; font-weight:500}
+  .payload{font-family:var(--f-mono); font-size:10.5px; fill:var(--cc); font-weight:500}
+
+  /* chain effects */
+  .ripple{fill:none; stroke:var(--c-chain); stroke-width:1.6; opacity:0}
+  .send .ripple{animation:ripple 1s ease-out}
+  @keyframes ripple{0%{r:14; opacity:.7}100%{r:46; opacity:0}}
+  .sendtag{font-family:var(--f-mono); font-size:10px; fill:var(--c-chain); opacity:0}
+  .send .sendtag{animation:fadein .5s .15s both}
+  .vstamp text{font-family:var(--f-display); font-size:11px; font-weight:700; fill:#fff}
+  .vstamp{opacity:0; transform-origin:center; transform-box:fill-box}
+  .node.verify .vstamp{animation:stamp 1s ease-out}
+  @keyframes stamp{0%{opacity:0; transform:scale(.4)}18%{opacity:1; transform:scale(1.12)}40%{opacity:1; transform:scale(1)}72%{opacity:1}100%{opacity:0}}
+  .chainblock{fill:#fff; stroke:var(--line-2); stroke-width:1.4}
+  .chainblock.lit{fill:var(--c-program); stroke:var(--c-program); animation:blocklit .5s ease-out}
+  @keyframes blocklit{from{transform:translateY(-4px); opacity:0}to{transform:none; opacity:1}}
+  .dbpulse{animation:dbpulse 1s ease-out}
+  @keyframes dbpulse{0%{stroke-width:1.4}50%{stroke-width:3.5}100%{stroke-width:1.4}}
+  @keyframes fadein{from{opacity:0; transform:translateY(4px)}to{opacity:1; transform:none}}
+
+  /* detail strip */
+  .detail{display:grid; grid-template-columns:1.1fr .9fr; gap:0; border-top:1px solid var(--line)}
+  .detail__left{padding:16px 20px; border-right:1px solid var(--line)}
+  .detail__right{padding:14px 16px; background:var(--panel)}
+  .step-num{font-family:var(--f-mono); font-size:.72rem; color:var(--mute); letter-spacing:.08em}
+  .detail h3{margin:.2rem 0 .5rem; font-family:var(--f-display); font-weight:600; font-size:1.1rem}
+  .actor{display:inline-flex; align-items:center; gap:.45em; font-family:var(--f-mono); font-size:.72rem; color:var(--cc); margin-bottom:.5rem}
+  .actor::before{content:""; width:8px; height:8px; border-radius:2px; background:var(--cc)}
+  .detail p.sum{margin:0; color:var(--body); font-size:.92rem; line-height:1.55}
+  .code pre{margin:0; font-family:var(--f-mono); font-size:.78rem; line-height:1.55; color:var(--ink); white-space:pre; overflow-x:auto}
+  .code .src{font-family:var(--f-mono); font-size:.68rem; color:var(--mute); margin-bottom:.4rem}
+  .tok-com{color:var(--mute)} .tok-kw{color:var(--accent)}
+
+  /* controls */
+  .navbar{display:flex; align-items:center; gap:8px; padding:12px 20px; border-top:1px solid var(--line); background:#fff}
+  .navbar button{appearance:none; border:1px solid var(--line); background:#fff; color:var(--body); height:34px; padding:0 12px; border-radius:8px; cursor:pointer; font-family:var(--f-mono); font-size:.82rem; transition:.15s; display:inline-flex; align-items:center; gap:.4em}
+  .navbar button:hover:not(:disabled){border-color:var(--line-2); color:var(--ink)}
+  .navbar button:disabled{opacity:.4; cursor:default}
+  .navbar .play{background:var(--ink); color:#fff; border-color:var(--ink)}
+  .navbar .dots{display:flex; align-items:center; gap:5px; margin-left:auto}
+  .navbar .dots i{width:7px;height:7px;border-radius:50%;background:var(--line-2);cursor:pointer;transition:.2s;display:block}
+  .navbar .dots i.on{background:var(--accent); width:20px; border-radius:4px}
+  .navbar .counter{font-family:var(--f-mono); font-size:.74rem; color:var(--mute); min-width:46px; text-align:right}
+  .navbar .counter b{color:var(--ink)}
+
+  .legend{display:flex; flex-wrap:wrap; gap:1rem; padding:10px 20px; font-family:var(--f-mono); font-size:.7rem; color:var(--mute); border-top:1px solid var(--line); background:var(--panel)}
+  .legend span{display:inline-flex; align-items:center; gap:.4em}
+  .legend i{width:10px;height:10px;border-radius:2px;display:inline-block}
+
+  @media (max-width:760px){
+    .detail{grid-template-columns:1fr}
+    .detail__left{border-right:0; border-bottom:1px solid var(--line)}
+    .legend{font-size:.64rem}
+  }
+  @media (prefers-reduced-motion:reduce){*{animation:none !important; transition:none !important}}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap topbar__inner">
+    <div class="brand">
+      <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+        <g fill="none" stroke="#5b54e6" stroke-width="1.6"><path d="M12 3 V9 M12 9 L6 14 M12 9 L18 14 M6 14 L3 20 M6 14 L9 20 M18 14 L15 20 M18 14 L21 20"/></g>
+        <g fill="#5b54e6"><circle cx="12" cy="3" r="1.8"/><circle cx="6" cy="14" r="1.5"/><circle cx="18" cy="14" r="1.5"/></g>
+        <g fill="#d4d8e0"><circle cx="3" cy="20" r="1.3"/><circle cx="9" cy="20" r="1.3"/><circle cx="15" cy="20" r="1.3"/><circle cx="21" cy="20" r="1.3"/></g>
+      </svg>
+      <b>Privacy&nbsp;Cash</b> · action flows
+    </div>
+    <div class="topbar__meta">
+      <span>client-side, direct to RPC</span><span aria-hidden="true">·</span>
+      <a href="presentation.html">system deck ↗</a>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="flowswitch" id="flowswitch" aria-label="Action flows"></nav>
+
+  <section class="stage-wrap">
+    <div class="stage-head">
+      <div>
+        <p class="eyebrow" id="f-eyebrow"></p>
+        <h2 id="f-title"></h2>
+      </div>
+      <p class="mono" id="f-lead" style="margin:0;color:var(--mute);font-size:.78rem;max-width:34ch;text-align:right"></p>
+    </div>
+    <div class="progress-track"><div class="progress-bar" id="progress"></div></div>
+
+    <svg class="stage" id="stage" viewBox="0 0 1000 320" preserveAspectRatio="xMidYMid meet" aria-label="Animated pipeline"></svg>
+
+    <div class="detail">
+      <div class="detail__left">
+        <div class="step-num" id="f-stepnum"></div>
+        <div class="actor" id="f-actor"></div>
+        <h3 id="f-detail-title"></h3>
+        <p class="sum" id="f-summary"></p>
+      </div>
+      <div class="detail__right code">
+        <div class="src" id="f-code-src"></div>
+        <pre id="f-code-body"></pre>
+      </div>
+    </div>
+
+    <div class="legend" id="legend"></div>
+
+    <div class="navbar">
+      <button class="play" id="play" title="Play / Pause (Space)">▶ Play</button>
+      <button id="prev" title="Previous (←)">‹ Prev</button>
+      <button id="next" title="Next (→)">Next ›</button>
+      <div class="dots" id="dots"></div>
+      <span class="counter"><b id="cur">1</b>/<span id="tot">1</span></span>
+    </div>
+  </section>
+  <div style="height:40px"></div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var ROLE = { program:"#111827", indexer:"#0e7c86", wallet:"#5b54e6", sdk:"#b45309", data:"#424a57", chain:"#6b7280", operator:"#7c3aed" };
+
+  // monoline icons (24x24 space) per role
+  var ICON = {
+    sdk:"<path d='M9 8 L4 12 L9 16'/><path d='M15 8 L20 12 L15 16'/>",
+    wallet:"<rect x='4' y='6' width='16' height='12' rx='2'/><circle cx='15' cy='12' r='1.4'/>",
+    chain:"<path d='M12 4 L6 19'/><path d='M12 4 L18 19'/><path d='M7.5 13 H16.5'/>",
+    program:"<path d='M12 3 L20 6 V12 C20 17 16 20 12 21 C8 20 4 17 4 12 V6 Z'/>",
+    indexer:"<ellipse cx='12' cy='6' rx='7' ry='2.4'/><path d='M5 6 V18 C5 19.3 8.1 20.4 12 20.4 C15.9 20.4 19 19.3 19 18 V6'/><path d='M5 12 C5 13.3 8.1 14.4 12 14.4 C15.9 14.4 19 13.3 19 12'/>",
+    data:"<rect x='4' y='4' width='16' height='16' rx='2'/><path d='M4 10 H20 M4 15 H20'/>",
+    operator:"<circle cx='12' cy='12' r='3.2'/><path d='M12 3 V6 M12 18 V21 M3 12 H6 M18 12 H21 M5.6 5.6 L7.7 7.7 M16.3 16.3 L18.4 18.4 M18.4 5.6 L16.3 7.7 M7.7 16.3 L5.6 18.4'/>"
+  };
+
+  var FLOWS = {
+    "deposit-sol": {
+      label:"Deposit SOL",
+      eyebrow:"Deposit · Transact  (ext_amount > 0)",
+      title:"Deposit SOL — straight to the chain",
+      lead:"Wallet signs, SDK submits direct to RPC. The pool escrows SOL and appends a commitment leaf.",
+      stages:[
+        {label:"pcash", sub:"note + proof", role:"sdk"},
+        {label:"Wallet", sub:"sign tx", role:"wallet"},
+        {label:"RPC", sub:"broadcast", role:"chain"},
+        {label:"Program", sub:"verify · leaf", role:"program"},
+        {label:"Indexer", sub:"leaf → DB", role:"indexer"}
+      ],
+      steps:[
+        {stage:"pcash", role:"sdk", actor:"Client SDK", payload:"spending key", title:"Unlock & derive key", summary:"The wallet signs the note-derive message; the SDK derives your shielded spending key locally.", src:"sdk/src/client.ts", code:"await client.unlock()\n// signer.signMessage(...) → spending key"},
+        {stage:"pcash", role:"sdk", actor:"Client SDK", payload:"commitment", title:"Build the note & commitment", summary:"Random blinding factor; commitment = Poseidon(amount, pubkey, blinding, mint). Note encrypted locally.", src:"sdk/src/client.ts", code:"note = makeNote({ amount, mint, ... })\ncommitment = poseidon([amount, pubkey, blinding, mint])"},
+        {stage:"pcash", role:"sdk", actor:"Client SDK · WASM", payload:"Groth16 proof", title:"Prove (deposit)", summary:"Build a Groth16 proof with ext_amount > 0 — the sign that marks a deposit.", src:"sdk/src/client.ts", code:"proof = await groth16.prove({\n  ext_amount: +lamports, root,\n  inputs, outputs,\n})"},
+        {stage:"Wallet", role:"wallet", actor:"Wallet · Phantom", payload:"signed tx", title:"Sign the transaction", summary:"Build the Transact instruction and sign the versioned transaction.", src:"sdk/src/client.ts", code:"const tx = buildTransact(proof, extData)\nconst signed = await signer.signTransaction(tx)"},
+        {stage:"RPC", role:"chain", actor:"Solana RPC", payload:"raw tx → chain", title:"Submit direct to RPC", summary:"The SDK submits the signed transaction straight to the RPC (no relayer).", src:"sdk/src/client.ts", code:"const sig = await conn.sendRawTransaction(\n  signed.serialize(), { maxRetries: 5 }\n)"},
+        {stage:"Program", role:"program", actor:"Program · Pinocchio", payload:"leaf + nullifier", title:"Verify & insert leaf", summary:"Verify the proof, append the commitment leaf (height-26 tree), init the nullifier, emit leaf-index.", src:"program", code:"verify_groth16(&proof, &pub)?;\nlet idx = tree.insert(commitment)?;\nemit!(LeafIndex { idx });"},
+        {stage:"Indexer", role:"indexer", actor:"Backend indexer", payload:"leaf, nullifier → DB", title:"Index & save note", summary:"Decode the event; write leaf + nullifier to Postgres. Client saves the encrypted note locally.", src:"backend/indexer", code:"indexer.record(leaf, nullifier)\nsaveNote(wallet, note)"}
+      ]
+    },
+    "deposit-spl": {
+      label:"Deposit SPL",
+      eyebrow:"Deposit · TransactSpl  (ext_amount > 0)",
+      title:"Deposit an SPL token — straight to the chain",
+      lead:"Same client-side path, bound to a per-mint tree (USDC, USDT…) and SPL transfers.",
+      stages:[
+        {label:"pcash", sub:"note + proof", role:"sdk"},
+        {label:"Wallet", sub:"sign tx", role:"wallet"},
+        {label:"RPC", sub:"broadcast", role:"chain"},
+        {label:"Program", sub:"verify · leaf", role:"program"},
+        {label:"Indexer", sub:"leaf → DB", role:"indexer"}
+      ],
+      steps:[
+        {stage:"pcash", role:"sdk", actor:"Client SDK", payload:"spending key", title:"Unlock & derive key", summary:"Wallet signs the note-derive message; SDK derives the spending key.", src:"sdk/src/client.ts", code:"await client.unlock()"},
+        {stage:"pcash", role:"sdk", actor:"Client SDK", payload:"commitment", title:"Build note for this mint", summary:"Blinding factor + commitment (incl. mint); encrypt the output note locally.", src:"sdk/src/client.ts", code:"note = makeNote({ amount, mint, ... })\ncommitment = poseidon([amount, pubkey, blinding, mint])"},
+        {stage:"pcash", role:"sdk", actor:"Client SDK · WASM", payload:"Groth16 proof", title:"Prove (deposit)", summary:"Groth16 proof, ext_amount > 0, scoped to the mint's tree.", src:"sdk/src/client.ts", code:"proof = await groth16.prove({\n  ext_amount: +amount, root, inputs, outputs,\n})"},
+        {stage:"Wallet", role:"wallet", actor:"Wallet · Phantom", payload:"signed tx", title:"Sign TransactSpl", summary:"Ensure vault + recipient ATAs, build TransactSpl, sign the versioned tx.", src:"sdk/src/client.ts", code:"const tx = buildTransactSpl(proof, extData, mint)\nconst signed = await signer.signTransaction(tx)"},
+        {stage:"RPC", role:"chain", actor:"Solana RPC", payload:"raw tx → chain", title:"Submit direct to RPC", summary:"SDK submits the signed tx straight to the RPC (no relayer).", src:"sdk/src/client.ts", code:"sig = await conn.sendRawTransaction(signed.serialize())"},
+        {stage:"Program", role:"program", actor:"Program · Pinocchio", payload:"leaf + nullifier", title:"Verify & insert leaf", summary:"Verify against the per-mint tree, insert the commitment leaf, init the nullifier.", src:"program", code:"verify_groth16(...)?;\ntree_for(mint).insert(commitment)?;"},
+        {stage:"Indexer", role:"indexer", actor:"Backend indexer", payload:"leaf, nullifier → DB", title:"Index & save note", summary:"Record leaf + nullifier in Postgres; client saves the encrypted note.", src:"backend/indexer", code:"indexer.record(leaf, nullifier)\nsaveNote(wallet, note)"}
+      ]
+    },
+    "withdraw-sol": {
+      label:"Withdraw SOL",
+      eyebrow:"Withdraw · Transact  (ext_amount < 0)",
+      title:"Withdraw SOL — to a fresh address",
+      lead:"Fetch a Merkle path, prove ownership without revealing the leaf, sign & submit direct. The pool pays recipient + fee.",
+      stages:[
+        {label:"pcash", sub:"proof", role:"sdk"},
+        {label:"Backend", sub:"merkle path", role:"indexer"},
+        {label:"Wallet", sub:"sign tx", role:"wallet"},
+        {label:"RPC", sub:"broadcast", role:"chain"},
+        {label:"Program", sub:"pay recipient", role:"program"}
+      ],
+      steps:[
+        {stage:"pcash", role:"sdk", actor:"Client SDK", payload:"spending key", title:"Unlock & derive key", summary:"Wallet signs the note-derive message; SDK derives the key bound to the note.", src:"sdk/src/client.ts", code:"await client.unlock()"},
+        {stage:"Backend", role:"indexer", actor:"Backend (read-only)", payload:"merkle path + root", title:"Fetch Merkle path + root", summary:"Read-only query for the inclusion path + a known root. Backend never learns which notes are yours.", src:"frontend/src/lib/api.ts", code:"const path = await api.merkleProof(treeKey, leafIndex)\nconst root  = (await api.merkleState(treeKey)).root"},
+        {stage:"pcash", role:"sdk", actor:"Client SDK · WASM", payload:"Groth16 proof", title:"Prove (withdraw)", summary:"Groth16 withdraw proof (ext_amount < 0), bound to recipient + fee — leaf stays hidden.", src:"sdk/src/client.ts", code:"proof = await groth16.prove({\n  ext_amount: -lamports,\n  recipient, fee, root, path,\n})"},
+        {stage:"Wallet", role:"wallet", actor:"Wallet · Phantom", payload:"signed tx", title:"Sign the transaction", summary:"Build Transact (pool pays recipient + fee); sign the versioned tx.", src:"sdk/src/client.ts", code:"const tx = buildTransact(proof, extData)\nconst signed = await signer.signTransaction(tx)"},
+        {stage:"RPC", role:"chain", actor:"Solana RPC", payload:"raw tx → chain", title:"Submit direct to RPC", summary:"SDK submits the signed tx straight to the RPC (no relayer) and confirms.", src:"sdk/src/client.ts", code:"sig = await conn.sendRawTransaction(signed.serialize(), { maxRetries: 5 })"},
+        {stage:"Program", role:"program", actor:"Program · Pinocchio", payload:"pays recipient + fee", title:"Verify, nullify, pay", summary:"Verify the proof, assert nullifier unspent, create the nullifier PDA, pay recipient + fee from the vault.", src:"program", code:"verify_groth16(...)?;\nensure_nullifier_unused(...)?;\ncreate_nullifier_pda(...)?;\nvault.pay(recipient, fee)?;"}
+      ]
+    },
+    "withdraw-spl": {
+      label:"Withdraw SPL",
+      eyebrow:"Withdraw · TransactSpl  (ext_amount < 0)",
+      title:"Withdraw an SPL token — to a fresh address",
+      lead:"Same proof path; the program creates recipient + fee-recipient ATAs idempotently and pays SPL tokens.",
+      stages:[
+        {label:"pcash", sub:"proof", role:"sdk"},
+        {label:"Backend", sub:"merkle path", role:"indexer"},
+        {label:"Wallet", sub:"sign tx", role:"wallet"},
+        {label:"RPC", sub:"broadcast", role:"chain"},
+        {label:"Program", sub:"pay SPL", role:"program"}
+      ],
+      steps:[
+        {stage:"pcash", role:"sdk", actor:"Client SDK", payload:"spending key", title:"Unlock & derive key", summary:"Wallet signs the note-derive message; derive the spending key.", src:"sdk/src/client.ts", code:"await client.unlock()"},
+        {stage:"Backend", role:"indexer", actor:"Backend (read-only)", payload:"merkle path + root", title:"Fetch Merkle path + root", summary:"Read-only query for the inclusion path + known root for the mint's tree.", src:"frontend/src/lib/api.ts", code:"const path = await api.merkleProof(treeKey, leafIndex)"},
+        {stage:"pcash", role:"sdk", actor:"Client SDK · WASM", payload:"Groth16 proof", title:"Prove (withdraw)", summary:"Groth16 withdraw proof, ext_amount < 0, bound to recipient + fee.", src:"sdk/src/client.ts", code:"proof = await groth16.prove({\n  ext_amount: -amount, recipient, fee, root, path,\n})"},
+        {stage:"Wallet", role:"wallet", actor:"Wallet · Phantom", payload:"signed tx", title:"Sign TransactSpl", summary:"Prepend idempotent recipient + fee-recipient ATA creation; sign the versioned tx.", src:"sdk/src/client.ts", code:"const tx = buildTransactSpl(proof, extData, mint)\nconst signed = await signer.signTransaction(tx)"},
+        {stage:"RPC", role:"chain", actor:"Solana RPC", payload:"raw tx → chain", title:"Submit direct to RPC", summary:"SDK submits straight to the RPC (no relayer).", src:"sdk/src/client.ts", code:"sig = await conn.sendRawTransaction(signed.serialize())"},
+        {stage:"Program", role:"program", actor:"Program · Pinocchio", payload:"pays SPL out", title:"Verify, nullify, pay SPL", summary:"Verify the proof, check the nullifier, create the nullifier PDA, pay SPL to recipient + fee.", src:"program", code:"verify_groth16(...)?;\nensure_ata(recipient, feeRecipient)?;\nvault.pay_spl(recipient, fee)?;"}
+      ]
+    },
+    "scan": {
+      label:"Scan notes",
+      eyebrow:"Scan · syncNotes",
+      title:"Download everything, decrypt locally",
+      lead:"The indexer never learns which notes are yours — the client downloads leaves and scans them itself.",
+      stages:[
+        {label:"Client", sub:"fetch range", role:"sdk"},
+        {label:"Backend", sub:"encrypted leaves", role:"indexer"},
+        {label:"Decrypt", sub:"keep owned", role:"data"}
+      ],
+      steps:[
+        {stage:"Client", role:"sdk", actor:"Client SDK", payload:"leaf range", title:"Fetch the next leaf range", summary:"Page through encrypted leaves from the read-only backend, starting at the stored offset.", src:"sdk/src/client.ts", code:"const page = await api.utxoRange(treeKey, offset, offset + SIZE)"},
+        {stage:"Backend", role:"indexer", actor:"Backend (read-only)", payload:"encrypted outputs", title:"Return encrypted outputs only", summary:"The backend returns ciphertext — it cannot tell which leaves are yours, by design.", src:"backend", code:"GET /api/utxos/range?tree_key=..&start=..&end=.."},
+        {stage:"Decrypt", role:"data", actor:"Client SDK", payload:"owned notes", title:"Decrypt & keep owned notes", summary:"Decrypt each output with the derived key; keep the ones you own; advance the offset.", src:"sdk/src/client.ts", code:"for (const e of page) {\n  const n = decrypt(e, key)\n  if (owns(n)) saveNote(n)\n}\nsetSyncOffset(treeKey, page.end)"},
+        {stage:"Decrypt", role:"data", actor:"Client SDK", payload:"spent flags", title:"Mark spent notes", summary:"Notes whose nullifier is already on-chain are marked spent.", src:"sdk/src/client.ts", code:"if (await api.nullifier(n.nullifier).spent)\n  markNoteSpent(n)"}
+      ]
+    },
+    "admin": {
+      label:"Admin",
+      eyebrow:"Operator only · /api/relayer/* operator endpoints",
+      title:"Operator setup & limits",
+      lead:"Operator actions through the backend's operator endpoints — distinct from user deposit/withdraw (client-signed, direct to RPC).",
+      stages:[
+        {label:"Operator", sub:"request", role:"operator"},
+        {label:"Backend", sub:"build ix", role:"indexer"},
+        {label:"Program", sub:"configure", role:"program"}
+      ],
+      steps:[
+        {stage:"Operator", role:"operator", actor:"Operator", payload:"signed request", title:"Operator authorizes", summary:"The operator signs a config request — initialize the pool, add a per-mint tree, or update fees / deposit limits.", src:"backend/routes/relayer.rs", code:"POST /api/relayer/{\n  initialize, initialize-spl,\n  update-config,\n  update-deposit-limit(-spl)\n}"},
+        {stage:"Backend", role:"indexer", actor:"Backend (operator endpoint)", payload:"program instruction", title:"Backend builds + submits", summary:"The backend assembles the program instruction and submits it — it signs and pays as the operator (self.submit).", src:"backend/src/relayer/mod.rs", code:"let ix = self.build_transact_ix(&t)?;\nlet result = self.submit(vec![ix]).await;"},
+        {stage:"Program", role:"program", actor:"Program · Pinocchio", payload:"config applied", title:"Program applies the change", summary:"The program boots a tree, or updates fee rates / deposit limits in global config.", src:"program", code:"match action {\n  Initialize => tree.init()?,\n  UpdateConfig => cfg.set_fees(..)?,\n}"}
+      ]
+    }
+  };
+  var ORDER = ["deposit-sol","deposit-spl","withdraw-sol","withdraw-spl","scan","admin"];
+
+  // ---- DOM ----
+  var switchEl = document.getElementById("flowswitch");
+  var stageEl  = document.getElementById("stage");
+  var eyebrowEl= document.getElementById("f-eyebrow");
+  var titleEl  = document.getElementById("f-title");
+  var leadEl   = document.getElementById("f-lead");
+  var progressEl = document.getElementById("progress");
+  var stepnumEl= document.getElementById("f-stepnum");
+  var actorEl  = document.getElementById("f-actor");
+  var detailTit = document.getElementById("f-detail-title");
+  var summaryEl= document.getElementById("f-summary");
+  var codeSrc  = document.getElementById("f-code-src");
+  var codeBody = document.getElementById("f-code-body");
+  var dotsEl   = document.getElementById("dots");
+  var curEl    = document.getElementById("cur");
+  var totEl    = document.getElementById("tot");
+  var prevBtn  = document.getElementById("prev");
+  var nextBtn  = document.getElementById("next");
+  var playBtn  = document.getElementById("play");
+  var legendEl = document.getElementById("legend");
+
+  var STEP_MS = 2600;
+  var VB_W = 1000, VB_H = 320, NODE_Y = 132, MARGIN_X = 110, USABLE_W = 780;
+
+  var flowId = ORDER[0], stepIdx = 0, prevStageIndex = -1;
+  var nodePos = [];          // [{x,y}] per stage
+  var stageGroups = [];      // <g class="node"> per stage
+  var connectors = [];       // <line>/<path> per gap
+  var packetEl = null, payloadEl = null, chainBlocks = [];
+  var dots = [];
+  var playing = true, playTimer = null, rafId = null;
+
+  document.documentElement.style.setProperty("--step-ms", STEP_MS + "ms");
+
+  // ---- helpers ----
+  function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+  function highlight(code){
+    return esc(code)
+      .replace(/(^|\n)(\/\/[^\n]*)/g, '$1<span class="tok-com">$2</span>')
+      .replace(/\b(await|const|let|for|of|if|return|new)\b/g, '<span class="tok-kw">$1</span>');
+  }
+  function svgEl(name, attrs){
+    var el = document.createElementNS("http://www.w3.org/2000/svg", name);
+    if (attrs) for (var k in attrs) el.setAttribute(k, attrs[k]);
+    return el;
+  }
+  function stageIndexOf(step){ var st = FLOWS[flowId].stages; for (var i=0;i<st.length;i++) if (st[i].label===step.stage) return i; return 0; }
+
+  // ---- build switcher + legend ----
+  ORDER.forEach(function(id){
+    var b = document.createElement("button");
+    b.type = "button"; b.textContent = FLOWS[id].label; b.dataset.flow = id;
+    b.addEventListener("click", function(){ setFlow(id); });
+    switchEl.appendChild(b);
+  });
+  function buildLegend(){
+    var seen = {};
+    legendEl.innerHTML = "";
+    FLOWS[flowId].stages.forEach(function(st){
+      if (seen[st.role]) return; seen[st.role] = 1;
+      var s = document.createElement("span");
+      s.innerHTML = '<i style="background:'+ROLE[st.role]+'"></i>'+st.role;
+      legendEl.appendChild(s);
+    });
+  }
+
+  // ---- build the SVG stage for the current flow ----
+  function buildStage(){
+    var f = FLOWS[flowId];
+    var n = f.stages.length;
+    stageEl.innerHTML = "";
+    nodePos = []; stageGroups = []; connectors = []; chainBlocks = [];
+
+    // positions
+    for (var i=0;i<n;i++){
+      var x = (n===1)?VB_W/2 : MARGIN_X + i*(USABLE_W/(n-1));
+      nodePos.push({x:x, y:NODE_Y});
+    }
+    // defs (ripple/stamp reuse via classes; nothing needed)
+
+    // connectors
+    for (var c=0;c<n-1;c++){
+      var a = nodePos[c], b = nodePos[c+1];
+      var ln = svgEl("line",{x1:a.x+30, y1:NODE_Y, x2:b.x-30, y2:NODE_Y, class:"connector"});
+      stageEl.appendChild(ln); connectors.push(ln);
+    }
+
+    // chain cluster near the last 'chain'/'program' stage (decorative blocks)
+    var chainAnchor = null;
+    for (var k=n-1;k>=0;k--){ if (f.stages[k].role==="program"||f.stages[k].role==="chain"){ chainAnchor = nodePos[k]; break; } }
+    if (chainAnchor){
+      var bx = chainAnchor.x, by = VB_H-40;
+      var g = svgEl("g",{class:"chaincluster"});
+      for (var cb=0;cb<3;cb++){
+        var rect = svgEl("rect",{x:bx-30+cb*30, y:by, width:24, height:24, rx:4, class:"chainblock"});
+        g.appendChild(rect); chainBlocks.push(rect);
+      }
+      var lbl = svgEl("text",{x:bx, y:by+38, "text-anchor":"middle", class:"sub"});
+      lbl.setAttribute("fill","#868f9e"); lbl.textContent = "Solana ledger";
+      g.appendChild(lbl);
+      stageEl.appendChild(g);
+    }
+
+    // nodes
+    f.stages.forEach(function(st, i){
+      var p = nodePos[i];
+      var g = svgEl("g",{class:"node", transform:"translate("+(p.x-30)+","+(p.y-30)+")"});
+      g.style.setProperty("--cc", ROLE[st.role]);
+      g.appendChild(svgEl("rect",{x:0,y:0,width:60,height:60,rx:12,class:"body"}));
+      // icon centered at (30,30) -> translate icon to (18,18)
+      var ig = svgEl("g",{transform:"translate(18,18)", class:"icon", stroke:ROLE[st.role]});
+      ig.innerHTML = ICON[st.role] || "";
+      g.appendChild(ig);
+      var lab = svgEl("text",{x:30,y:78,"text-anchor":"middle",class:"lab"}); lab.textContent = st.label; g.appendChild(lab);
+      var sub = svgEl("text",{x:30,y:92,"text-anchor":"middle",class:"sub"}); sub.textContent = st.sub; g.appendChild(sub);
+
+      // role-specific effect decoration
+      if (st.role==="chain"){
+        var rip = svgEl("circle",{cx:30,cy:30,r:14,class:"ripple",stroke:ROLE.chain});
+        g.appendChild(rip);
+        var tag = svgEl("text",{x:30,y:-6,"text-anchor":"middle",class:"sendtag"}); tag.textContent = "↑ broadcast"; g.appendChild(tag);
+      }
+      if (st.role==="program"){
+        var stamp = svgEl("g",{class:"vstamp",transform:"translate(8,6)"});
+        stamp.appendChild(svgEl("rect",{x:0,y:0,width:44,height:18,rx:4,fill:ROLE.program}));
+        var stxt = svgEl("text",{x:22,y:13,"text-anchor":"middle"}); stxt.textContent="VERIFIED"; stamp.appendChild(stxt);
+        g.appendChild(stamp);
+      }
+      stageEl.appendChild(g);
+      stageGroups.push(g);
+    });
+
+    // packet + payload label (drawn last, on top)
+    payloadEl = svgEl("text",{class:"payload","text-anchor":"middle"});
+    payloadEl.setAttribute("y", NODE_Y-44);
+    payloadEl.textContent="";
+    stageEl.appendChild(payloadEl);
+
+    packetEl = svgEl("g",{class:"packet",transform:"translate("+nodePos[0].x+","+NODE_Y+")"});
+    packetEl.appendChild(svgEl("rect",{x:-26,y:-11,width:52,height:22,rx:11}));
+    var pt = svgEl("text",{x:0,y:4,"text-anchor":"middle"}); pt.textContent="tx"; packetEl.appendChild(pt);
+    stageEl.appendChild(packetEl);
+  }
+
+  // ---- animate packet along x ----
+  function movePacketToX(targetX, done){
+    if (!packetEl){ done && done(); return; }
+    var m = packetEl.getAttribute("transform").match(/translate\(([-0-9.]+),/);
+    var fromX = m ? parseFloat(m[1]) : nodePos[0].x;
+    var toX = targetX;
+    if (rafId) cancelAnimationFrame(rafId);
+    var dur = 650, start = performance.now();
+    function frame(now){
+      var t = Math.min(1,(now-start)/dur);
+      var e = t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
+      packetEl.setAttribute("transform", "translate("+(fromX+(toX-fromX)*e)+","+NODE_Y+")");
+      if (t<1){ rafId = requestAnimationFrame(frame); } else { rafId = null; done && done(); }
+    }
+    rafId = requestAnimationFrame(frame);
+  }
+
+  // ---- render a step ----
+  function renderStep(animate){
+    var f = FLOWS[flowId];
+    var s = f.steps[stepIdx];
+    var si = stageIndexOf(s);
+    var p = nodePos[si];
+
+    eyebrowEl.textContent = f.eyebrow;
+    titleEl.textContent = f.title;
+    leadEl.textContent = f.lead;
+
+    // nodes
+    stageGroups.forEach(function(g, i){
+      g.classList.remove("active","send","verify","done");
+      if (i===si) g.classList.add("active");
+      else if (i<si) g.classList.add("done");
+    });
+    // program verify stamp: re-trigger by removing/re-adding class
+    if (stageGroups[si]){
+      var role = f.stages[si].role;
+      var sg = stageGroups[si];
+      sg.classList.remove("verify","active-verify");
+      // void offsetWidth to force reflow so animation replays
+    }
+
+    // connectors lit up to current stage
+    connectors.forEach(function(ln, i){ if (i < si) ln.classList.add("lit"); else ln.classList.remove("lit"); });
+
+    // payload label follows packet
+    if (payloadEl){ payloadEl.setAttribute("x", p.x); payloadEl.textContent = s.payload; payloadEl.setAttribute("fill", ROLE[s.role]); }
+
+    // move packet (or pulse if same stage)
+    var moved = (si !== prevStageIndex);
+    function afterMove(){
+      // trigger effects at destination
+      var sg2 = stageGroups[si];
+      if (sg2){
+        if (f.stages[si].role==="chain"){ sg2.classList.remove("send"); void sg2.getBoundingClientRect(); sg2.classList.add("send"); }
+        if (f.stages[si].role==="program"){
+          sg2.classList.remove("verify"); void sg2.getBoundingClientRect(); sg2.classList.add("verify");
+          lightNextBlock();
+        }
+        if (f.stages[si].role==="indexer"){
+          var ic = sg2.querySelector(".icon"); if (ic){ ic.classList.remove("dbpulse"); void ic.getBoundingClientRect(); ic.classList.add("dbpulse"); }
+        }
+      }
+      prevStageIndex = si;
+    }
+    if (animate && moved && packetEl){ movePacketToX(p.x, afterMove); }
+    else { if (packetEl) packetEl.setAttribute("transform","translate("+p.x+","+NODE_Y+")"); afterMove(); }
+
+    // detail
+    stepnumEl.textContent = "STEP "+String(stepIdx+1).padStart(2,"0")+" / "+String(f.steps.length).padStart(2,"0");
+    actorEl.textContent = s.actor; actorEl.style.setProperty("--cc", ROLE[s.role]);
+    detailTit.textContent = s.title;
+    summaryEl.textContent = s.summary;
+    codeSrc.textContent = s.src;
+    codeBody.innerHTML = highlight(s.code);
+
+    // dots + counter
+    if (dots.length !== f.steps.length){
+      dotsEl.innerHTML=""; dots=[];
+      f.steps.forEach(function(_, i){
+        var d=document.createElement("i"); d.setAttribute("role","button"); d.setAttribute("aria-label","Step "+(i+1));
+        d.addEventListener("click", function(){ stopPlay(); setStep(i); });
+        dotsEl.appendChild(d); dots.push(d);
+      });
+    }
+    dots.forEach(function(d,i){ d.classList.toggle("on", i===stepIdx); });
+    curEl.textContent = (stepIdx+1); totEl.textContent = f.steps.length;
+    prevBtn.disabled = (stepIdx===0 && flowId===ORDER[0]);
+    nextBtn.disabled = (stepIdx===f.steps.length-1 && flowId===ORDER[ORDER.length-1]);
+
+    scheduleProgress();
+    location.hash = flowId + (stepIdx>0 ? ("-"+(stepIdx+1)) : "");
+  }
+
+  function lightNextBlock(){
+    for (var i=0;i<chainBlocks.length;i++){
+      if (!chainBlocks[i].classList.contains("lit")){ chainBlocks[i].classList.remove("lit"); void chainBlocks[i].getBoundingClientRect(); chainBlocks[i].classList.add("lit"); return; }
+    }
+  }
+
+  // ---- progress / autoplay ----
+  function scheduleProgress(){
+    stopProgress();
+    progressEl.classList.remove("run"); progressEl.style.width = "0%";
+    void progressEl.offsetWidth;
+    if (!playing) return;
+    progressEl.classList.add("run"); progressEl.style.width = "100%";
+    playTimer = setTimeout(function(){ advance(); }, STEP_MS);
+  }
+  function stopProgress(){ if (playTimer){ clearTimeout(playTimer); playTimer = null; } progressEl.classList.remove("run"); }
+  function stopPlay(){ playing=false; updatePlayBtn(); stopProgress(); }
+  function updatePlayBtn(){ playBtn.textContent = playing ? "❚❚ Pause" : "▶ Play"; }
+  function advance(){ var f=FLOWS[flowId]; if (stepIdx < f.steps.length-1){ setStep(stepIdx+1); } else { var i=ORDER.indexOf(flowId); if (i<ORDER.length-1){ setFlow(ORDER[i+1]); } else { stopPlay(); renderStep(false); } } }
+
+  // ---- nav ----
+  function setFlow(id){
+    flowId = id; stepIdx = 0; prevStageIndex = -1;
+    Array.prototype.forEach.call(switchEl.children, function(b){ b.classList.toggle("on", b.dataset.flow===id); });
+    buildLegend(); buildStage(); renderStep(false);
+  }
+  function setStep(i){ var n=FLOWS[flowId].steps.length; stepIdx=Math.max(0,Math.min(n-1,i)); renderStep(true); }
+  function next(){ var f=FLOWS[flowId]; if(stepIdx<f.steps.length-1) setStep(stepIdx+1); else { var i=ORDER.indexOf(flowId); if(i<ORDER.length-1) setFlow(ORDER[i+1]); } }
+  function prev(){ if(stepIdx>0) setStep(stepIdx-1); else { var i=ORDER.indexOf(flowId); if(i>0){ setFlow(ORDER[i-1]); var n=FLOWS[ORDER[i-1]].steps.length; stepIdx=n-1; prevStageIndex=-1; renderStep(true); } } }
+
+  nextBtn.addEventListener("click", function(){ stopPlay(); next(); });
+  prevBtn.addEventListener("click", function(){ stopPlay(); prev(); });
+  playBtn.addEventListener("click", function(){ playing=!playing; updatePlayBtn(); if(playing) scheduleProgress(); else stopProgress(); });
+  document.addEventListener("keydown", function(e){
+    var k=e.key;
+    if(k==="ArrowRight"||k==="PageDown"){ e.preventDefault(); stopPlay(); next(); }
+    else if(k==="ArrowLeft"||k==="PageUp"){ e.preventDefault(); stopPlay(); prev(); }
+    else if(k===" "){ e.preventDefault(); playing=!playing; updatePlayBtn(); if(playing) scheduleProgress(); else stopProgress(); }
+  });
+
+  // ---- hash routing (flow ids contain hyphens → prefix match) ----
+  function applyHash(){
+    var h=(location.hash||"").replace("#","");
+    var matched=null, rest="";
+    for (var k=0;k<ORDER.length;k++){
+      var cid=ORDER[k];
+      if (h===cid){ matched=cid; rest=""; break; }
+      if (h.indexOf(cid+"-")===0){ matched=cid; rest=h.substring(cid.length+1); break; }
+    }
+    if (matched){
+      var n = rest ? parseInt(rest,10) : NaN;
+      if (flowId!==matched){ flowId=matched; stepIdx=0; prevStageIndex=-1;
+        Array.prototype.forEach.call(switchEl.children,function(b){ b.classList.toggle("on", b.dataset.flow===matched); });
+        buildLegend(); buildStage(); }
+      stepIdx = (!isNaN(n)&&n>=1) ? Math.min(n-1, FLOWS[matched].steps.length-1) : 0;
+      renderStep(false);
+    } else { setFlow(ORDER[0]); }
+  }
+  window.addEventListener("hashchange", applyHash);
+
+  // init
+  updatePlayBtn();
+  applyHash();
+})();
+</script>
+</body>
+</html>
