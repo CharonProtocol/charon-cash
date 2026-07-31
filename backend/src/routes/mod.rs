@@ -39,6 +39,8 @@ pub fn router(state: AppState) -> Router {
         // Withdraw: client proves, backend builds + signs with RELAYER_KEYPAIR.
         .route("/api/relayer", post(relayer::withdraw))
         .route("/api/relayer/transact", post(relayer::withdraw))
+        .route("/api/relayer/blockhash", get(relayer::blockhash))
+        .route("/api/relayer/alt/{address}", get(relayer::alt_account))
         .route("/api/merkle/{tree_key}", get(merkle::tree_state))
         .route("/api/merkle/{tree_key}/proof/{leaf_index}", get(merkle::proof))
         .route("/api/nullifier/{hash}", get(nullifier::status))
