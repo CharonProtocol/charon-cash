@@ -488,6 +488,50 @@ export class PrivacyCashClient {
     return this.withdrawSPL(mint, amountRaw, recipient, opts)
   }
 
+  /**
+   * Private send to a PUBLIC address (Mode A): deposit fresh from the user, then
+   * withdraw-to-recipient gaslessly via the relayer (relay=true). The user signs +
+   * pays the deposit; the relayer signs the withdraw. Recipient gets public SOL/SPL
+   * (amount − withdrawFee) at their address; the sender's deposit is unlinkable to
+   * it via ZK. (deposit can never be gasless — the signer is who puts funds in.)
+   */
+  async sendPrivateSOL(
+    amountLamports: number,
+    recipient: PublicKey | string,
+    opts?: { relay?: boolean },
+  ): Promise<WithdrawResult> {
+    await this.unlock()
+    const dep = await this.depositSOL(amountLamports)
+    await this.waitForNoteIndexed(SOL_TREE_KEY, dep.leafIndex)
+    return this.withdrawSOL(amountLamports, recipient, { relay: true, ...opts })
+  }
+
+  async sendPrivateSPL(
+    mint: PublicKey | string,
+    amountRaw: number | string,
+    recipient: PublicKey | string,
+    opts?: { relay?: boolean },
+  ): Promise<WithdrawResult> {
+    const mintStr = (mint instanceof PublicKey ? mint : new PublicKey(mint)).toBase58()
+    await this.unlock()
+    const dep = await this.depositSPL(mint, amountRaw)
+    await this.waitForNoteIndexed(mintStr, dep.leafIndex)
+    return this.withdrawSPL(mint, amountRaw, recipient, { relay: true, ...opts })
+  }
+
+  /** Poll until the indexer can serve a Merkle proof for `leafIndex` (mirror caught up). */
+  private async waitForNoteIndexed(treeKey: string, leafIndex: number, timeoutMs = 30_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      try {
+        await fetchMerkleProof(treeKey, leafIndex)
+        return
+      } catch {
+        await new Promise((r) => setTimeout(r, 1000))
+      }
+    }
+  }
+
   private async withdrawInternal(args: {
     treeKey: string
     mintAddress: string

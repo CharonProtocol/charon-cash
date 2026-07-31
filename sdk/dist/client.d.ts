@@ -77,6 +77,21 @@ export declare class PrivacyCashClient {
     transferSPL(mint: PublicKey | string, amountRaw: number | string, recipient: PublicKey | string, opts?: {
         relay?: boolean;
     }): Promise<WithdrawResult>;
+    /**
+     * Private send to a PUBLIC address (Mode A): deposit fresh from the user, then
+     * withdraw-to-recipient gaslessly via the relayer (relay=true). The user signs +
+     * pays the deposit; the relayer signs the withdraw. Recipient gets public SOL/SPL
+     * (amount − withdrawFee) at their address; the sender's deposit is unlinkable to
+     * it via ZK. (deposit can never be gasless — the signer is who puts funds in.)
+     */
+    sendPrivateSOL(amountLamports: number, recipient: PublicKey | string, opts?: {
+        relay?: boolean;
+    }): Promise<WithdrawResult>;
+    sendPrivateSPL(mint: PublicKey | string, amountRaw: number | string, recipient: PublicKey | string, opts?: {
+        relay?: boolean;
+    }): Promise<WithdrawResult>;
+    /** Poll until the indexer can serve a Merkle proof for `leafIndex` (mirror caught up). */
+    private waitForNoteIndexed;
     private withdrawInternal;
     /** Prove + POST to relayer (backend signs with RELAYER_KEYPAIR). No wallet tx. */
     private proveAndRelay;
