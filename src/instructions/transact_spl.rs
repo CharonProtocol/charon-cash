@@ -46,7 +46,7 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
     )?;
 
     let args = TransactArgs::try_from_bytes(data)?;
-    let proof = *args.proof;
+    let proof = args.proof;
     let ext_data_minified = args.ext_data_minified;
     let encrypted_output1 = args.encrypted_output1;
     let encrypted_output2 = args.encrypted_output2;
@@ -71,7 +71,11 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
         let global_data = global_config.try_borrow()?;
         let global = try_from_bytes::<GlobalConfig>(&global_data[..GlobalConfig::LEN])
             .map_err(|_| ProgramError::InvalidAccountData)?;
-        verify_pda(global_config, &[GLOBAL_CONFIG_SEED, &[global.bump]], &crate::ID)?;
+        verify_pda(
+            global_config,
+            &[GLOBAL_CONFIG_SEED, &[global.bump]],
+            &crate::ID,
+        )?;
         *global
     };
 
@@ -93,29 +97,29 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
         nullifier_bump1,
     )?;
 
-    let mint_address = *mint.address().as_array();
-    let recipient_key = *recipient_token_account.address().as_array();
-    let fee_recipient_key = *fee_recipient_ata.address().as_array();
+    let mint_address = mint.address().as_array();
+    let recipient_key = recipient_token_account.address().as_array();
+    let fee_recipient_key = fee_recipient_ata.address().as_array();
     let ext_amount = ext_data_minified.ext_amount;
     let fee = ext_data_minified.fee;
 
     let mut tree_data = tree_account.try_borrow_mut()?;
-    let tree =
+    let mut tree =
         bytemuck::try_from_bytes_mut::<MerkleTreeAccount>(&mut tree_data[..MerkleTreeAccount::LEN])
-            .map_err(|_| ProgramError::InvalidAccountData)?;
+            .map_err(|e| PrivacyCashError::InvalidMerkleTreeAccount)?;
+
+    if !ALLOW_ALL_SPL_TOKENS && !ALLOWED_TOKENS.contains(&mint_address) {
+        return Err(PrivacyCashError::InvalidMintAddress.into());
+    }
 
     verify_pda(
         tree_account,
-        &[TREE_ACCOUNT_SEED, &mint_address, &[tree.bump]],
+        &[TREE_ACCOUNT_SEED, mint_address, &[tree.bump]],
         &crate::ID,
     )?;
 
     if !MerkleTree::is_known_root(tree, proof.root) {
         return Err(PrivacyCashError::UnknownRoot.into());
-    }
-
-    if !ALLOW_ALL_SPL_TOKENS && !ALLOWED_TOKENS.contains(&mint_address) {
-        return Err(PrivacyCashError::InvalidMintAddress.into());
     }
 
     let calculated_ext_data_hash = calculate_complete_ext_data_hash(
@@ -144,7 +148,7 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
         global.fee_error_margin,
     )?;
 
-    if !verify_proof(&proof, &VERIFYING_KEY) {
+    if !verify_proof(proof, &VERIFYING_KEY) {
         return Err(PrivacyCashError::InvalidProof.into());
     }
 
@@ -204,8 +208,8 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
         .invoke_signed(&[Signer::from(&global_seeds)])?;
     }
 
-    MerkleTree::append::<Poseidon>(proof.output_commitments[0], tree)?;
-    MerkleTree::append::<Poseidon>(proof.output_commitments[1], tree)?;
+    MerkleTree::append::<Poseidon>(proof.output_commitments[0], &mut tree)?;
+    MerkleTree::append::<Poseidon>(proof.output_commitments[1], &mut tree)?;
 
     Ok(())
 }
