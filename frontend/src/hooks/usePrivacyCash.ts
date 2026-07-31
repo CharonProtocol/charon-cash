@@ -1,22 +1,21 @@
 import { useMemo } from "react"
-import { useConnection, useWallet } from "@solana/wallet-adapter-react"
+import { useWallet } from "@solana/wallet-adapter-react"
 
 import { PrivacyCashClient } from "privacy-cash-sdk"
 
 export function usePrivacyCash() {
-  const { connection } = useConnection()
   const { publicKey, signMessage, signTransaction } = useWallet()
 
   const connected = !!(publicKey && signMessage && signTransaction)
 
   const client = useMemo(() => {
     if (!connected || !publicKey || !signMessage || !signTransaction) return null
-    return new PrivacyCashClient(connection, {
+    return new PrivacyCashClient({
       publicKey,
       signMessage,
       signTransaction,
     })
-  }, [connected, publicKey, signMessage, signTransaction, connection])
+  }, [connected, publicKey, signMessage, signTransaction])
 
-  return { client, connected, publicKey, connection }
+  return { client, connected, publicKey }
 }

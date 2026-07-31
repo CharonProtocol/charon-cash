@@ -241,6 +241,23 @@ export async function fetchRelayerInfo(): Promise<RelayerInfo> {
   }
 }
 
+export interface BlockhashInfo {
+  blockhash: string
+  slot: number
+}
+
+/** Latest blockhash + slot from the backend — no client RPC needed to build a tx. */
+export async function fetchBlockhash(): Promise<BlockhashInfo> {
+  const r = await getJson("/api/relayer/blockhash")
+  return { blockhash: r.blockhash, slot: Number(r.slot) }
+}
+
+/** Raw Address Lookup Table account bytes (hex), or null if it doesn't exist. */
+export async function fetchAltAccount(address: string): Promise<string | null> {
+  const r = await getJson(`/api/relayer/alt/${encodeURIComponent(address)}`)
+  return r.exists ? (r.data_hex as string) : null
+}
+
 export async function fetchTreeState(treeKey: string): Promise<TreeState> {
   const s = await getJson(`/api/merkle/${encodeURIComponent(treeKey)}`)
   return {

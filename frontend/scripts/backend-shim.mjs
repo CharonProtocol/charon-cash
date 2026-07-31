@@ -348,6 +348,19 @@ Bun.serve({
         return json({ nullifier: hex, spent })
       }
 
+      // ---- relay endpoints the backend-only client SDK calls ----
+      if (p === "/api/relayer/blockhash" && method === "GET") {
+        const { blockhash } = await conn.getLatestBlockhash()
+        const slot = await conn.getSlot("confirmed")
+        return json({ blockhash, last_valid_block_height: 0, slot })
+      }
+      const altm = p.match(/^\/api\/relayer\/alt\/([^/]+)$/)
+      if (altm && method === "GET") {
+        const acct = await conn.getAccountInfo(new PublicKey(altm[1]))
+        if (!acct) return json({ exists: false, data_hex: "" })
+        return json({ exists: true, data_hex: Buffer.from(acct.data).toString("hex") })
+      }
+
       // ---- POST setup/config (payer = authority signs) ----
       if (method === "POST") {
         let body = {}
@@ -367,7 +380,6 @@ Bun.serve({
         if (p === "/api/relayer" || p === "/api/relayer/transact") {
           return json(await relayWithdraw(body))
         }
-
         if (p === "/api/relayer/initialize") {
           if (await conn.getAccountInfo(solTree)) return json({ signature: "-", slot: null, status: "already-initialized" })
           return json(await sendIx(buildInitializeSolIx()))

@@ -1,6 +1,5 @@
 import {
   ComputeBudgetProgram,
-  Connection,
   PublicKey,
   SystemProgram,
   TransactionInstruction,
@@ -123,7 +122,7 @@ function toU32LE(n: number): Buffer {
 }
 
 export interface BuildTxParams {
-  connection: Connection
+  blockhash: string
   programId: PublicKey
   signer: PublicKey
   isSpl: boolean
@@ -177,7 +176,7 @@ export async function buildTransactTransaction(
     data: ixData,
   })
 
-  const { blockhash } = await params.connection.getLatestBlockhash()
+  const blockhash = params.blockhash
   const limitIx = ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 })
   const priceIx = ComputeBudgetProgram.setComputeUnitPrice({
     microLamports: 5_000,
@@ -286,7 +285,7 @@ export async function buildTransactSplTransaction(
     },
 ): Promise<{ transaction: VersionedTransaction; accounts: TransactAccounts }> {
   const { ix, accounts } = buildTransactSplInstruction(params)
-  const { blockhash } = await params.connection.getLatestBlockhash()
+  const blockhash = params.blockhash
   const limitIx = ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 })
   const priceIx = ComputeBudgetProgram.setComputeUnitPrice({
     microLamports: 5_000,

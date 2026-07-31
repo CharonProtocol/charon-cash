@@ -1,8 +1,8 @@
-import { AddressLookupTableProgram, PublicKey, SystemProgram, ComputeBudgetProgram, TransactionMessage, VersionedTransaction, } from "@solana/web3.js";
+import { AddressLookupTableAccount, AddressLookupTableProgram, PublicKey, SystemProgram, ComputeBudgetProgram, TransactionMessage, VersionedTransaction, } from "@solana/web3.js";
 import { SEED } from "./constants";
 import { TOKEN_PROGRAM_ID, ATA_PROGRAM_ID, deriveSplTreeAccount, } from "./program";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { submitTransaction } from "./merkle";
+import { fetchAltAccount, fetchBlockhash, submitTransaction } from "./merkle";
 const ALT_CACHE_KEY = "privacy-cash:alt-address";
 export function envAltAddress() {
     try {
@@ -75,12 +75,16 @@ function dedupe(keys) {
     }
     return out;
 }
-export async function fetchAlt(connection, address) {
-    const res = await connection.getAddressLookupTable(address);
-    return res.value;
+/** Fetch + deserialize an on-chain ALT via the backend (no client RPC). */
+export async function fetchAlt(address) {
+    const hex = await fetchAltAccount(address.toBase58());
+    if (!hex)
+        return null;
+    const state = AddressLookupTableAccount.deserialize(Buffer.from(hex, "hex"));
+    return new AddressLookupTableAccount({ key: address, state });
 }
-async function sendIx(connection, signer, ixs) {
-    const { blockhash } = await connection.getLatestBlockhash();
+async function sendIx(signer, ixs) {
+    const { blockhash } = await fetchBlockhash();
     const msg = new TransactionMessage({
         payerKey: signer.publicKey,
         recentBlockhash: blockhash,
@@ -97,13 +101,13 @@ async function sendIx(connection, signer, ixs) {
 export async function ensureAlt(params) {
     const fromEnv = params.preferred ?? envAltAddress();
     if (fromEnv) {
-        const existing = await fetchAlt(params.connection, fromEnv);
+        const existing = await fetchAlt(fromEnv);
         if (existing)
             return existing;
     }
     const cached = cachedAltAddress(params.signer.publicKey);
     if (cached) {
-        const existing = await fetchAlt(params.connection, cached);
+        const existing = await fetchAlt(cached);
         if (existing) {
             const have = new Set(existing.state.addresses.map((a) => a.toBase58()));
             const missing = params.addresses.filter((a) => !have.has(a.toBase58()));
@@ -117,23 +121,23 @@ export async function ensureAlt(params) {
                     lookupTable: cached,
                     addresses: chunk,
                 });
-                await sendIx(params.connection, params.signer, [ix]);
+                await sendIx(params.signer, [ix]);
             }
             await sleep(600);
-            const updated = await fetchAlt(params.connection, cached);
+            const updated = await fetchAlt(cached);
             if (!updated)
                 throw new Error("ALT disappeared after extend");
             return updated;
         }
     }
     // Create a new ALT under the connected wallet.
-    const slot = await params.connection.getSlot();
+    const { slot } = await fetchBlockhash();
     const [createIx, altAddress] = AddressLookupTableProgram.createLookupTable({
         authority: params.signer.publicKey,
         payer: params.signer.publicKey,
         recentSlot: slot - 1,
     });
-    await sendIx(params.connection, params.signer, [createIx]);
+    await sendIx(params.signer, [createIx]);
     cacheAltAddress(altAddress, params.signer.publicKey);
     for (let i = 0; i < params.addresses.length; i += 20) {
         const chunk = params.addresses.slice(i, i + 20);
@@ -143,10 +147,10 @@ export async function ensureAlt(params) {
             lookupTable: altAddress,
             addresses: chunk,
         });
-        await sendIx(params.connection, params.signer, [ix]);
+        await sendIx(params.signer, [ix]);
     }
     await sleep(600);
-    const created = await fetchAlt(params.connection, altAddress);
+    const created = await fetchAlt(altAddress);
     if (!created)
         throw new Error("failed to create ALT");
     return created;
