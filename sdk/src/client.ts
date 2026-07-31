@@ -461,6 +461,33 @@ export class PrivacyCashClient {
     return getAssociatedTokenAddressSync(mint, this.feeRecipient, true)
   }
 
+  /**
+   * Private transfer: spend a private note to pay another address. Mechanically a
+   * withdraw to `recipient` — your deposit stays unlinked (proven via ZK), and the
+   * recipient receives public SOL at their address. Honors the same { relay } option
+   * as withdraw (default true = gasless relayer-signed).
+   */
+  async transferSOL(
+    amountLamports: number,
+    recipient: PublicKey | string,
+    opts?: { relay?: boolean },
+  ): Promise<WithdrawResult> {
+    return this.withdrawSOL(amountLamports, recipient, opts)
+  }
+
+  /**
+   * Private SPL transfer: spend a private SPL note to pay another address (their
+   * ATA is created idempotently). Same mechanics/privacy as transferSOL.
+   */
+  async transferSPL(
+    mint: PublicKey | string,
+    amountRaw: number | string,
+    recipient: PublicKey | string,
+    opts?: { relay?: boolean },
+  ): Promise<WithdrawResult> {
+    return this.withdrawSPL(mint, amountRaw, recipient, opts)
+  }
+
   private async withdrawInternal(args: {
     treeKey: string
     mintAddress: string
