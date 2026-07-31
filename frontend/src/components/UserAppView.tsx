@@ -5,8 +5,8 @@ import { DepositCard } from "@/components/DepositCard"
 import { WithdrawCard } from "@/components/WithdrawCard"
 import { DepositSplCard } from "@/components/DepositSplCard"
 import { WithdrawSplCard } from "@/components/WithdrawSplCard"
-import { TransferCard } from "@/components/TransferCard"
-import { TransferSplCard } from "@/components/TransferSplCard"
+import { SendCard } from "@/components/SendCard"
+import { SendSplCard } from "@/components/SendSplCard"
 import { Button } from "@/components/ui/button"
 import { useNotesSync } from "@/hooks/useNotesSync"
 
@@ -100,9 +100,9 @@ export function UserAppView({ onChanged }: UserAppViewProps) {
             <WithdrawSplCard onChanged={onChanged} />
           )
         ) : assetType === "SOL" ? (
-          <TransferCard onChanged={onChanged} />
+          <SendCard onChanged={onChanged} />
         ) : (
-          <TransferSplCard onChanged={onChanged} />
+          <SendSplCard onChanged={onChanged} />
         )}
       </div>
     </div>
