@@ -61,6 +61,22 @@ export declare class PrivacyCashClient {
     private waitForLeaves;
     private balanceForMint;
     private feeAta;
+    /**
+     * Private transfer: spend a private note to pay another address. Mechanically a
+     * withdraw to `recipient` — your deposit stays unlinked (proven via ZK), and the
+     * recipient receives public SOL at their address. Honors the same { relay } option
+     * as withdraw (default true = gasless relayer-signed).
+     */
+    transferSOL(amountLamports: number, recipient: PublicKey | string, opts?: {
+        relay?: boolean;
+    }): Promise<WithdrawResult>;
+    /**
+     * Private SPL transfer: spend a private SPL note to pay another address (their
+     * ATA is created idempotently). Same mechanics/privacy as transferSOL.
+     */
+    transferSPL(mint: PublicKey | string, amountRaw: number | string, recipient: PublicKey | string, opts?: {
+        relay?: boolean;
+    }): Promise<WithdrawResult>;
     private withdrawInternal;
     /** Prove + POST to relayer (backend signs with RELAYER_KEYPAIR). No wallet tx. */
     private proveAndRelay;
