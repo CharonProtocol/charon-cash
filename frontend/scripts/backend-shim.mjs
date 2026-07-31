@@ -51,7 +51,7 @@ async function sendIx(ix) {
   const { blockhash } = await conn.getLatestBlockhash()
   const msg = new TransactionMessage({ payerKey: payer.publicKey, recentBlockhash: blockhash, instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 }), ix] }).compileToV0Message()
   const tx = new VersionedTransaction(msg); tx.sign([payer])
-  const sig = await conn.sendRawTransaction(tx.serialize(), { skipPreflight: true, maxRetries: 5 })
+  const sig = await sendRawWithRetry(tx.serialize(), { skipPreflight: true, maxRetries: 5 })
   try { await conn.confirmTransaction(sig, "confirmed") } catch { }
   const slot = await conn.getSlot("confirmed")
   return { signature: sig, slot, status: "confirmed" }
@@ -371,7 +371,7 @@ Bun.serve({
           const hex = String(body.transaction || "").replace(/^0x/i, "")
           const bytes = Buffer.from(hex, "hex")
           const vtx = VersionedTransaction.deserialize(bytes)
-          const sig = await conn.sendRawTransaction(vtx.serialize(), { skipPreflight: true, maxRetries: 5 })
+          const sig = await sendRawWithRetry(vtx.serialize(), { skipPreflight: true, maxRetries: 5 })
           try { await conn.confirmTransaction(sig, "confirmed") } catch { }
           return json({ signature: sig, slot: null, status: "submitted" })
         }
@@ -560,7 +560,7 @@ async function sendIxMany(ixs) {
   }).compileToV0Message()
   const tx = new VersionedTransaction(msg)
   tx.sign([payer])
-  const sig = await conn.sendRawTransaction(tx.serialize(), { skipPreflight: true, maxRetries: 5 })
+  const sig = await sendRawWithRetry(tx.serialize(), { skipPreflight: true, maxRetries: 5 })
   try { await conn.confirmTransaction(sig, "confirmed") } catch { }
   const slot = await conn.getSlot("confirmed")
   return { signature: sig, slot, status: "confirmed" }
