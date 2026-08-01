@@ -47,6 +47,27 @@ const json = (v, status = 200) => new Response(JSON.stringify(v), {
 /** @type {Map<string, { ciphertext: string, updatedAt: string }>} */
 const noteBlobs = new Map()
 
+// surfpool (a mainnet-forking local validator) lazy-loads referenced accounts from
+// api.mainnet-beta.solana.com on demand; if that fetch is slow/offline it rejects the
+// tx with "Failed to fetch accounts from remote". Retry on that (and 429/timeout).
+async function sendRawWithRetry(serialized, opts, attempts = 7) {
+  let lastErr
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await conn.sendRawTransaction(serialized, opts)
+    } catch (e) {
+      lastErr = e
+      const msg = String(e?.message ?? e)
+      if (/Failed to fetch accounts from remote|mainnet-beta|429|Too Many|timeout|error sending request/i.test(msg)) {
+        await new Promise((r) => setTimeout(r, 900))
+        continue
+      }
+      throw e
+    }
+  }
+  throw lastErr
+}
+
 async function sendIx(ix) {
   const { blockhash } = await conn.getLatestBlockhash()
   const msg = new TransactionMessage({ payerKey: payer.publicKey, recentBlockhash: blockhash, instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 }), ix] }).compileToV0Message()
