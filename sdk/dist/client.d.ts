@@ -1,4 +1,4 @@
-import { Connection, PublicKey, VersionedTransaction } from "@solana/web3.js";
+import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { type Note } from "./notes";
 export interface Signer {
     publicKey: PublicKey;
@@ -24,7 +24,6 @@ export interface SyncResult {
     spent: number;
 }
 export declare class PrivacyCashClient {
-    private conn;
     private signer;
     private wasm?;
     private enc?;
@@ -32,7 +31,7 @@ export declare class PrivacyCashClient {
     private programId?;
     private info?;
     private unlocking;
-    constructor(conn: Connection, signer: Signer, programId?: PublicKey);
+    constructor(signer: Signer, programId?: PublicKey);
     get publicKey(): PublicKey;
     get feeRecipient(): PublicKey;
     init(): Promise<void>;
@@ -49,15 +48,50 @@ export declare class PrivacyCashClient {
      */
     syncNotes(treeKey: string, fromScratch?: boolean): Promise<SyncResult>;
     depositSOL(amountLamports: number): Promise<DepositResult>;
-    withdrawSOL(grossLamports: number, recipient: PublicKey | string): Promise<WithdrawResult>;
+    withdrawSOL(grossLamports: number, recipient: PublicKey | string, opts?: {
+        relay?: boolean;
+    }): Promise<WithdrawResult>;
     depositSPL(mint: PublicKey | string, amountRaw: number | string): Promise<DepositResult>;
-    withdrawSPL(mint: PublicKey | string, grossRaw: number | string, recipient: PublicKey | string): Promise<WithdrawResult>;
+    withdrawSPL(mint: PublicKey | string, grossRaw: number | string, recipient: PublicKey | string, opts?: {
+        relay?: boolean;
+    }): Promise<WithdrawResult>;
     getPrivateBalanceSOL(): bigint;
     getPrivateBalanceSPL(mint: PublicKey | string): bigint;
-    /** Poll on-chain next_index (falls back to indexer). Never throws — deposit already settled. */
+    /** Poll the indexer's next_leaf_index. Never throws — deposit already settled. */
     private waitForLeaves;
     private balanceForMint;
     private feeAta;
+    /**
+     * Private transfer: spend a private note to pay another address. Mechanically a
+     * withdraw to `recipient` — your deposit stays unlinked (proven via ZK), and the
+     * recipient receives public SOL at their address. Honors the same { relay } option
+     * as withdraw (default true = gasless relayer-signed).
+     */
+    transferSOL(amountLamports: number, recipient: PublicKey | string, opts?: {
+        relay?: boolean;
+    }): Promise<WithdrawResult>;
+    /**
+     * Private SPL transfer: spend a private SPL note to pay another address (their
+     * ATA is created idempotently). Same mechanics/privacy as transferSOL.
+     */
+    transferSPL(mint: PublicKey | string, amountRaw: number | string, recipient: PublicKey | string, opts?: {
+        relay?: boolean;
+    }): Promise<WithdrawResult>;
+    /**
+     * Private send to a PUBLIC address (Mode A): deposit fresh from the user, then
+     * withdraw-to-recipient gaslessly via the relayer (relay=true). The user signs +
+     * pays the deposit; the relayer signs the withdraw. Recipient gets public SOL/SPL
+     * (amount − withdrawFee) at their address; the sender's deposit is unlinkable to
+     * it via ZK. (deposit can never be gasless — the signer is who puts funds in.)
+     */
+    sendPrivateSOL(amountLamports: number, recipient: PublicKey | string, opts?: {
+        relay?: boolean;
+    }): Promise<WithdrawResult>;
+    sendPrivateSPL(mint: PublicKey | string, amountRaw: number | string, recipient: PublicKey | string, opts?: {
+        relay?: boolean;
+    }): Promise<WithdrawResult>;
+    /** Poll until the indexer can serve a Merkle proof for `leafIndex` (mirror caught up). */
+    private waitForNoteIndexed;
     private withdrawInternal;
     /** Prove + POST to relayer (backend signs with RELAYER_KEYPAIR). No wallet tx. */
     private proveAndRelay;

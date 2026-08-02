@@ -47,11 +47,32 @@ const json = (v, status = 200) => new Response(JSON.stringify(v), {
 /** @type {Map<string, { ciphertext: string, updatedAt: string }>} */
 const noteBlobs = new Map()
 
+// surfpool (a mainnet-forking local validator) lazy-loads referenced accounts from
+// api.mainnet-beta.solana.com on demand; if that fetch is slow/offline it rejects the
+// tx with "Failed to fetch accounts from remote". Retry on that (and 429/timeout).
+async function sendRawWithRetry(serialized, opts, attempts = 7) {
+  let lastErr
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await conn.sendRawTransaction(serialized, opts)
+    } catch (e) {
+      lastErr = e
+      const msg = String(e?.message ?? e)
+      if (/Failed to fetch accounts from remote|mainnet-beta|429|Too Many|timeout|error sending request/i.test(msg)) {
+        await new Promise((r) => setTimeout(r, 900))
+        continue
+      }
+      throw e
+    }
+  }
+  throw lastErr
+}
+
 async function sendIx(ix) {
   const { blockhash } = await conn.getLatestBlockhash()
   const msg = new TransactionMessage({ payerKey: payer.publicKey, recentBlockhash: blockhash, instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 }), ix] }).compileToV0Message()
   const tx = new VersionedTransaction(msg); tx.sign([payer])
-  const sig = await conn.sendRawTransaction(tx.serialize(), { skipPreflight: true, maxRetries: 5 })
+  const sig = await sendRawWithRetry(tx.serialize(), { skipPreflight: true, maxRetries: 5 })
   try { await conn.confirmTransaction(sig, "confirmed") } catch { }
   const slot = await conn.getSlot("confirmed")
   return { signature: sig, slot, status: "confirmed" }
@@ -348,6 +369,19 @@ Bun.serve({
         return json({ nullifier: hex, spent })
       }
 
+      // ---- relay endpoints the backend-only client SDK calls ----
+      if (p === "/api/relayer/blockhash" && method === "GET") {
+        const { blockhash } = await conn.getLatestBlockhash()
+        const slot = await conn.getSlot("confirmed")
+        return json({ blockhash, last_valid_block_height: 0, slot })
+      }
+      const altm = p.match(/^\/api\/relayer\/alt\/([^/]+)$/)
+      if (altm && method === "GET") {
+        const acct = await conn.getAccountInfo(new PublicKey(altm[1]))
+        if (!acct) return json({ exists: false, data_hex: "" })
+        return json({ exists: true, data_hex: Buffer.from(acct.data).toString("hex") })
+      }
+
       // ---- POST setup/config (payer = authority signs) ----
       if (method === "POST") {
         let body = {}
@@ -358,7 +392,7 @@ Bun.serve({
           const hex = String(body.transaction || "").replace(/^0x/i, "")
           const bytes = Buffer.from(hex, "hex")
           const vtx = VersionedTransaction.deserialize(bytes)
-          const sig = await conn.sendRawTransaction(vtx.serialize(), { skipPreflight: true, maxRetries: 5 })
+          const sig = await sendRawWithRetry(vtx.serialize(), { skipPreflight: true, maxRetries: 5 })
           try { await conn.confirmTransaction(sig, "confirmed") } catch { }
           return json({ signature: sig, slot: null, status: "submitted" })
         }
@@ -367,7 +401,6 @@ Bun.serve({
         if (p === "/api/relayer" || p === "/api/relayer/transact") {
           return json(await relayWithdraw(body))
         }
-
         if (p === "/api/relayer/initialize") {
           if (await conn.getAccountInfo(solTree)) return json({ signature: "-", slot: null, status: "already-initialized" })
           return json(await sendIx(buildInitializeSolIx()))
@@ -548,7 +581,7 @@ async function sendIxMany(ixs) {
   }).compileToV0Message()
   const tx = new VersionedTransaction(msg)
   tx.sign([payer])
-  const sig = await conn.sendRawTransaction(tx.serialize(), { skipPreflight: true, maxRetries: 5 })
+  const sig = await sendRawWithRetry(tx.serialize(), { skipPreflight: true, maxRetries: 5 })
   try { await conn.confirmTransaction(sig, "confirmed") } catch { }
   const slot = await conn.getSlot("confirmed")
   return { signature: sig, slot, status: "confirmed" }

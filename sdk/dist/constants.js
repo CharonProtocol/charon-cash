@@ -31,10 +31,6 @@ export function backendUrl() {
     const env = getEnv();
     return (env.VITE_BACKEND_URL ?? "http://localhost:8080").replace(/\/$/, "");
 }
-export function rpcUrl() {
-    const env = getEnv();
-    return env.VITE_SOLANA_RPC_URL ?? "http://localhost:8899";
-}
 export function envProgramId() {
     const env = getEnv();
     const v = env.VITE_PROGRAM_ID;

@@ -1,10 +1,12 @@
 import { useState } from "react"
-import { ArrowDownToLine, ArrowUpRight, Coins, ShieldCheck } from "lucide-react"
+import { ArrowDownToLine, ArrowUpRight, Coins, Send, ShieldCheck } from "lucide-react"
 
 import { DepositCard } from "@/components/DepositCard"
 import { WithdrawCard } from "@/components/WithdrawCard"
 import { DepositSplCard } from "@/components/DepositSplCard"
 import { WithdrawSplCard } from "@/components/WithdrawSplCard"
+import { SendCard } from "@/components/SendCard"
+import { SendSplCard } from "@/components/SendSplCard"
 import { Button } from "@/components/ui/button"
 import { useNotesSync } from "@/hooks/useNotesSync"
 
@@ -14,7 +16,7 @@ interface UserAppViewProps {
 
 export function UserAppView({ onChanged }: UserAppViewProps) {
   const [assetType, setAssetType] = useState<"SOL" | "SPL">("SOL")
-  const [activeTab, setActiveTab] = useState<"deposit" | "withdraw">("deposit")
+  const [activeTab, setActiveTab] = useState<"deposit" | "withdraw" | "transfer">("deposit")
 
   useNotesSync()
 
@@ -71,6 +73,16 @@ export function UserAppView({ onChanged }: UserAppViewProps) {
         >
           <ArrowUpRight className="size-4" /> Private Withdraw ({assetType})
         </button>
+        <button
+          onClick={() => setActiveTab("transfer")}
+          className={`flex items-center gap-2 border-b-2 px-6 py-3 text-sm font-medium transition-colors ${
+            activeTab === "transfer"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Send className="size-4" /> Private Transfer ({assetType})
+        </button>
       </div>
 
       {/* Panels */}
@@ -81,10 +93,16 @@ export function UserAppView({ onChanged }: UserAppViewProps) {
           ) : (
             <DepositSplCard onChanged={onChanged} />
           )
+        ) : activeTab === "withdraw" ? (
+          assetType === "SOL" ? (
+            <WithdrawCard onChanged={onChanged} />
+          ) : (
+            <WithdrawSplCard onChanged={onChanged} />
+          )
         ) : assetType === "SOL" ? (
-          <WithdrawCard onChanged={onChanged} />
+          <SendCard onChanged={onChanged} />
         ) : (
-          <WithdrawSplCard onChanged={onChanged} />
+          <SendSplCard onChanged={onChanged} />
         )}
       </div>
     </div>

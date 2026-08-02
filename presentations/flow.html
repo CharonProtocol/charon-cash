@@ -142,7 +142,7 @@
       <b>Privacy&nbsp;Cash</b> · action flows
     </div>
     <div class="topbar__meta">
-      <span>client-side, direct to RPC</span><span aria-hidden="true">·</span>
+      <span>client-signed, relayed by backend</span><span aria-hidden="true">·</span>
       <a href="presentation.html">system deck ↗</a>
     </div>
   </div>
@@ -211,11 +211,11 @@
       label:"Deposit SOL",
       eyebrow:"Deposit · Transact  (ext_amount > 0)",
       title:"Deposit SOL — straight to the chain",
-      lead:"Wallet signs, SDK submits direct to RPC. The pool escrows SOL and appends a commitment leaf.",
+      lead:"Wallet signs; the SDK POSTs the signed tx to the backend relayer, which broadcasts it. The pool escrows SOL and appends a commitment leaf.",
       stages:[
         {label:"pcash", sub:"note + proof", role:"sdk"},
         {label:"Wallet", sub:"sign tx", role:"wallet"},
-        {label:"RPC", sub:"broadcast", role:"chain"},
+        {label:"Relayer", sub:"broadcast", role:"indexer"},
         {label:"Program", sub:"verify · leaf", role:"program"},
         {label:"Indexer", sub:"leaf → DB", role:"indexer"}
       ],
@@ -224,7 +224,7 @@
         {stage:"pcash", role:"sdk", actor:"Client SDK", payload:"commitment", title:"Build the note & commitment", summary:"Random blinding factor; commitment = Poseidon(amount, pubkey, blinding, mint). Note encrypted locally.", src:"sdk/src/client.ts", code:"note = makeNote({ amount, mint, ... })\ncommitment = poseidon([amount, pubkey, blinding, mint])"},
         {stage:"pcash", role:"sdk", actor:"Client SDK · WASM", payload:"Groth16 proof", title:"Prove (deposit)", summary:"Build a Groth16 proof with ext_amount > 0 — the sign that marks a deposit.", src:"sdk/src/client.ts", code:"proof = await groth16.prove({\n  ext_amount: +lamports, root,\n  inputs, outputs,\n})"},
         {stage:"Wallet", role:"wallet", actor:"Wallet · Phantom", payload:"signed tx", title:"Sign the transaction", summary:"Build the Transact instruction and sign the versioned transaction.", src:"sdk/src/client.ts", code:"const tx = buildTransact(proof, extData)\nconst signed = await signer.signTransaction(tx)"},
-        {stage:"RPC", role:"chain", actor:"Solana RPC", payload:"raw tx → chain", title:"Submit direct to RPC", summary:"The SDK submits the signed transaction straight to the RPC (no relayer).", src:"sdk/src/client.ts", code:"const sig = await conn.sendRawTransaction(\n  signed.serialize(), { maxRetries: 5 }\n)"},
+        {stage:"Relayer", role:"indexer", actor:"Backend relayer", payload:"signed tx", title:"Relay via /api/relayer/submit", summary:"The SDK POSTs the signed tx to the backend; it checks the tx targets the program and broadcasts it to the chain.", src:"sdk/src/merkle.ts", code:"const sig = await submitTransaction(\n  signed.serialize()\n)// POST /api/relayer/submit"},
         {stage:"Program", role:"program", actor:"Program · Pinocchio", payload:"leaf + nullifier", title:"Verify & insert leaf", summary:"Verify the proof, append the commitment leaf (height-26 tree), init the nullifier, emit leaf-index.", src:"program", code:"verify_groth16(&proof, &pub)?;\nlet idx = tree.insert(commitment)?;\nemit!(LeafIndex { idx });"},
         {stage:"Indexer", role:"indexer", actor:"Backend indexer", payload:"leaf, nullifier → DB", title:"Index & save note", summary:"Decode the event; write leaf + nullifier to Postgres. Client saves the encrypted note locally.", src:"backend/indexer", code:"indexer.record(leaf, nullifier)\nsaveNote(wallet, note)"}
       ]
@@ -237,7 +237,7 @@
       stages:[
         {label:"pcash", sub:"note + proof", role:"sdk"},
         {label:"Wallet", sub:"sign tx", role:"wallet"},
-        {label:"RPC", sub:"broadcast", role:"chain"},
+        {label:"Relayer", sub:"broadcast", role:"indexer"},
         {label:"Program", sub:"verify · leaf", role:"program"},
         {label:"Indexer", sub:"leaf → DB", role:"indexer"}
       ],
@@ -246,7 +246,7 @@
         {stage:"pcash", role:"sdk", actor:"Client SDK", payload:"commitment", title:"Build note for this mint", summary:"Blinding factor + commitment (incl. mint); encrypt the output note locally.", src:"sdk/src/client.ts", code:"note = makeNote({ amount, mint, ... })\ncommitment = poseidon([amount, pubkey, blinding, mint])"},
         {stage:"pcash", role:"sdk", actor:"Client SDK · WASM", payload:"Groth16 proof", title:"Prove (deposit)", summary:"Groth16 proof, ext_amount > 0, scoped to the mint's tree.", src:"sdk/src/client.ts", code:"proof = await groth16.prove({\n  ext_amount: +amount, root, inputs, outputs,\n})"},
         {stage:"Wallet", role:"wallet", actor:"Wallet · Phantom", payload:"signed tx", title:"Sign TransactSpl", summary:"Ensure vault + recipient ATAs, build TransactSpl, sign the versioned tx.", src:"sdk/src/client.ts", code:"const tx = buildTransactSpl(proof, extData, mint)\nconst signed = await signer.signTransaction(tx)"},
-        {stage:"RPC", role:"chain", actor:"Solana RPC", payload:"raw tx → chain", title:"Submit direct to RPC", summary:"SDK submits the signed tx straight to the RPC (no relayer).", src:"sdk/src/client.ts", code:"sig = await conn.sendRawTransaction(signed.serialize())"},
+        {stage:"Relayer", role:"indexer", actor:"Backend relayer", payload:"signed tx", title:"Relay via /api/relayer/submit", summary:"The SDK POSTs the signed tx to the backend, which validates and broadcasts it.", src:"sdk/src/merkle.ts", code:"sig = await submitTransaction(\n  signed.serialize()\n)"},
         {stage:"Program", role:"program", actor:"Program · Pinocchio", payload:"leaf + nullifier", title:"Verify & insert leaf", summary:"Verify against the per-mint tree, insert the commitment leaf, init the nullifier.", src:"program", code:"verify_groth16(...)?;\ntree_for(mint).insert(commitment)?;"},
         {stage:"Indexer", role:"indexer", actor:"Backend indexer", payload:"leaf, nullifier → DB", title:"Index & save note", summary:"Record leaf + nullifier in Postgres; client saves the encrypted note.", src:"backend/indexer", code:"indexer.record(leaf, nullifier)\nsaveNote(wallet, note)"}
       ]
@@ -255,12 +255,12 @@
       label:"Withdraw SOL",
       eyebrow:"Withdraw · Transact  (ext_amount < 0)",
       title:"Withdraw SOL — to a fresh address",
-      lead:"Fetch a Merkle path, prove ownership without revealing the leaf, sign & submit direct. The pool pays recipient + fee.",
+      lead:"Fetch a Merkle path, prove ownership without revealing the leaf, sign & relay via backend. The pool pays recipient + fee.",
       stages:[
         {label:"pcash", sub:"proof", role:"sdk"},
         {label:"Backend", sub:"merkle path", role:"indexer"},
         {label:"Wallet", sub:"sign tx", role:"wallet"},
-        {label:"RPC", sub:"broadcast", role:"chain"},
+        {label:"Relayer", sub:"broadcast", role:"indexer"},
         {label:"Program", sub:"pay recipient", role:"program"}
       ],
       steps:[
@@ -268,7 +268,7 @@
         {stage:"Backend", role:"indexer", actor:"Backend (read-only)", payload:"merkle path + root", title:"Fetch Merkle path + root", summary:"Read-only query for the inclusion path + a known root. Backend never learns which notes are yours.", src:"frontend/src/lib/api.ts", code:"const path = await api.merkleProof(treeKey, leafIndex)\nconst root  = (await api.merkleState(treeKey)).root"},
         {stage:"pcash", role:"sdk", actor:"Client SDK · WASM", payload:"Groth16 proof", title:"Prove (withdraw)", summary:"Groth16 withdraw proof (ext_amount < 0), bound to recipient + fee — leaf stays hidden.", src:"sdk/src/client.ts", code:"proof = await groth16.prove({\n  ext_amount: -lamports,\n  recipient, fee, root, path,\n})"},
         {stage:"Wallet", role:"wallet", actor:"Wallet · Phantom", payload:"signed tx", title:"Sign the transaction", summary:"Build Transact (pool pays recipient + fee); sign the versioned tx.", src:"sdk/src/client.ts", code:"const tx = buildTransact(proof, extData)\nconst signed = await signer.signTransaction(tx)"},
-        {stage:"RPC", role:"chain", actor:"Solana RPC", payload:"raw tx → chain", title:"Submit direct to RPC", summary:"SDK submits the signed tx straight to the RPC (no relayer) and confirms.", src:"sdk/src/client.ts", code:"sig = await conn.sendRawTransaction(signed.serialize(), { maxRetries: 5 })"},
+        {stage:"Relayer", role:"indexer", actor:"Backend relayer", payload:"signed tx", title:"Relay via /api/relayer/submit", summary:"The SDK POSTs the signed tx to the backend; it validates, broadcasts, and confirms.", src:"sdk/src/merkle.ts", code:"sig = await submitTransaction(\n  signed.serialize()\n)"},
         {stage:"Program", role:"program", actor:"Program · Pinocchio", payload:"pays recipient + fee", title:"Verify, nullify, pay", summary:"Verify the proof, assert nullifier unspent, create the nullifier PDA, pay recipient + fee from the vault.", src:"program", code:"verify_groth16(...)?;\nensure_nullifier_unused(...)?;\ncreate_nullifier_pda(...)?;\nvault.pay(recipient, fee)?;"}
       ]
     },
@@ -281,7 +281,7 @@
         {label:"pcash", sub:"proof", role:"sdk"},
         {label:"Backend", sub:"merkle path", role:"indexer"},
         {label:"Wallet", sub:"sign tx", role:"wallet"},
-        {label:"RPC", sub:"broadcast", role:"chain"},
+        {label:"Relayer", sub:"broadcast", role:"indexer"},
         {label:"Program", sub:"pay SPL", role:"program"}
       ],
       steps:[
@@ -289,7 +289,7 @@
         {stage:"Backend", role:"indexer", actor:"Backend (read-only)", payload:"merkle path + root", title:"Fetch Merkle path + root", summary:"Read-only query for the inclusion path + known root for the mint's tree.", src:"frontend/src/lib/api.ts", code:"const path = await api.merkleProof(treeKey, leafIndex)"},
         {stage:"pcash", role:"sdk", actor:"Client SDK · WASM", payload:"Groth16 proof", title:"Prove (withdraw)", summary:"Groth16 withdraw proof, ext_amount < 0, bound to recipient + fee.", src:"sdk/src/client.ts", code:"proof = await groth16.prove({\n  ext_amount: -amount, recipient, fee, root, path,\n})"},
         {stage:"Wallet", role:"wallet", actor:"Wallet · Phantom", payload:"signed tx", title:"Sign TransactSpl", summary:"Prepend idempotent recipient + fee-recipient ATA creation; sign the versioned tx.", src:"sdk/src/client.ts", code:"const tx = buildTransactSpl(proof, extData, mint)\nconst signed = await signer.signTransaction(tx)"},
-        {stage:"RPC", role:"chain", actor:"Solana RPC", payload:"raw tx → chain", title:"Submit direct to RPC", summary:"SDK submits straight to the RPC (no relayer).", src:"sdk/src/client.ts", code:"sig = await conn.sendRawTransaction(signed.serialize())"},
+        {stage:"Relayer", role:"indexer", actor:"Backend relayer", payload:"signed tx", title:"Relay via /api/relayer/submit", summary:"The SDK POSTs the signed tx to the backend, which validates and broadcasts it.", src:"sdk/src/merkle.ts", code:"sig = await submitTransaction(\n  signed.serialize()\n)"},
         {stage:"Program", role:"program", actor:"Program · Pinocchio", payload:"pays SPL out", title:"Verify, nullify, pay SPL", summary:"Verify the proof, check the nullifier, create the nullifier PDA, pay SPL to recipient + fee.", src:"program", code:"verify_groth16(...)?;\nensure_ata(recipient, feeRecipient)?;\nvault.pay_spl(recipient, fee)?;"}
       ]
     },
@@ -314,7 +314,7 @@
       label:"Admin",
       eyebrow:"Operator only · /api/relayer/* operator endpoints",
       title:"Operator setup & limits",
-      lead:"Operator actions through the backend's operator endpoints — distinct from user deposit/withdraw (client-signed, direct to RPC).",
+      lead:"Operator actions through the backend's operator endpoints — distinct from user deposit/withdraw (client-signed, relayed by the same backend).",
       stages:[
         {label:"Operator", sub:"request", role:"operator"},
         {label:"Backend", sub:"build ix", role:"indexer"},
