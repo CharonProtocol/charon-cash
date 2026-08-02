@@ -153,6 +153,16 @@ export async function fetchRelayerInfo() {
         })),
     };
 }
+/** Latest blockhash + slot from the backend — no client RPC needed to build a tx. */
+export async function fetchBlockhash() {
+    const r = await getJson("/api/relayer/blockhash");
+    return { blockhash: r.blockhash, slot: Number(r.slot) };
+}
+/** Raw Address Lookup Table account bytes (hex), or null if it doesn't exist. */
+export async function fetchAltAccount(address) {
+    const r = await getJson(`/api/relayer/alt/${encodeURIComponent(address)}`);
+    return r.exists ? r.data_hex : null;
+}
 export async function fetchTreeState(treeKey) {
     const s = await getJson(`/api/merkle/${encodeURIComponent(treeKey)}`);
     return {
