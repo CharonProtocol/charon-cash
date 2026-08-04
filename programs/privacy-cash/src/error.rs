@@ -17,6 +17,7 @@ pub enum PrivacyCashError {
     InvalidTokenAccount = 12,
     InvalidTokenAccountMintAddress = 13,
     InvalidProof = 14,
+    InvalidMerkleTreeAccount = 15,
 }
 
 impl From<PrivacyCashError> for ProgramError {

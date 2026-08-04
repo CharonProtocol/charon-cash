@@ -10,8 +10,6 @@ pub use initialize::*;
 pub use initialize_tree_account_for_spl_token::*;
 pub use transact::*;
 pub use transact_spl::*;
-pub use update_deposit_limit::*;
-pub use update_deposit_limit_for_spl::*;
 pub use update_global_config::*;
 
 use pinocchio::error::ProgramError;
@@ -21,9 +19,9 @@ pub enum PrivacyCashInstructions {
     InitializeTreeAccountForSplToken = 1,
     Transact = 2,
     TransactSpl = 3,
-    UpdateGlobalConfig = 4,
-    UpdateDepositLimit = 5,
-    UpdateDepositLimitForSpl = 6,
+    UpdateDepositLimit = 4,
+    UpdateDepositLimitForSpl = 5,
+    UpdateGlobalConfig = 6,
 }
 
 impl TryFrom<&u8> for PrivacyCashInstructions {
@@ -35,9 +33,9 @@ impl TryFrom<&u8> for PrivacyCashInstructions {
             1 => Ok(PrivacyCashInstructions::InitializeTreeAccountForSplToken),
             2 => Ok(PrivacyCashInstructions::Transact),
             3 => Ok(PrivacyCashInstructions::TransactSpl),
-            4 => Ok(PrivacyCashInstructions::UpdateGlobalConfig),
-            5 => Ok(PrivacyCashInstructions::UpdateDepositLimit),
-            6 => Ok(PrivacyCashInstructions::UpdateDepositLimitForSpl),
+            4 => Ok(PrivacyCashInstructions::UpdateDepositLimit),
+            5 => Ok(PrivacyCashInstructions::UpdateDepositLimitForSpl),
+            6 => Ok(PrivacyCashInstructions::UpdateGlobalConfig),
             _ => Err(ProgramError::InvalidInstructionData),
         }
     }

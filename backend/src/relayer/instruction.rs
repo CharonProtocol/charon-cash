@@ -4,9 +4,9 @@ pub const DISC_INITIALIZE: u8 = 0;
 pub const DISC_INITIALIZE_SPL: u8 = 1;
 pub const DISC_TRANSACT: u8 = 2;
 pub const DISC_TRANSACT_SPL: u8 = 3;
-pub const DISC_UPDATE_GLOBAL_CONFIG: u8 = 4;
-pub const DISC_UPDATE_DEPOSIT_LIMIT: u8 = 5;
-pub const DISC_UPDATE_DEPOSIT_LIMIT_SPL: u8 = 6;
+pub const DISC_UPDATE_DEPOSIT_LIMIT: u8 = 4;
+pub const DISC_UPDATE_DEPOSIT_LIMIT_SPL: u8 = 5;
+pub const DISC_UPDATE_GLOBAL_CONFIG: u8 = 6;
 
 pub fn transact_data(disc: u8, t: &TransactInput, nullifier_bump0: u8, nullifier_bump1: u8) -> Vec<u8> {
     let mut data = Vec::with_capacity(1 + 480 + 16 + 8 + t.encrypted_output1.len() + t.encrypted_output2.len() + 2);
