@@ -8,7 +8,7 @@ import path from "node:path"
 import { homedir } from "node:os"
 
 import {
-  Connection, Keypair, PublicKey, SystemProgram, TransactionInstruction,
+  AddressLookupTableProgram, Connection, Keypair, PublicKey, SystemProgram, TransactionInstruction,
   TransactionMessage, VersionedTransaction, ComputeBudgetProgram,
 } from "@solana/web3.js"
 import {
@@ -26,6 +26,22 @@ const PROGRAM = new PublicKey(process.env.PROGRAM_ID ?? "5GcqZ4aZ3xF87wQF5pFmHHY
 const RPC = process.env.SOLANA_RPC_URL ?? "http://localhost:8899"
 const PORT = Number(process.env.PORT ?? 8080)
 const idJson = process.env.ID_JSON ?? path.join(homedir(), ".config/solana/id.json")
+
+// Address Lookup Table — required to compress the SPL transact's many accounts
+// into a v0 message (without it compileToV0Message overruns on SPL withdraw).
+function readDotEnv() {
+  try {
+    const out = {}
+    for (const line of readFileSync(".env", "utf8").split("\n")) {
+      const i = line.indexOf("=")
+      if (i > 0) out[line.slice(0, i).trim()] = line.slice(i + 1).trim()
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+const ALT_ADDRESS = process.env.ALT_ADDRESS ?? readDotEnv().VITE_ALT_ADDRESS ?? null
 
 const conn = new Connection(RPC, "confirmed")
 const payer = Keypair.fromSecretKey(Buffer.from(JSON.parse(readFileSync(idJson, "utf8"))))
@@ -243,6 +259,7 @@ async function proofFor(treeKey, idx) {
 
 Bun.serve({
   port: PORT,
+  idleTimeout: 120, // Merkle/ZK witness gen can exceed Bun's 10s default
   async fetch(req) {
     const url = new URL(req.url)
     const p = url.pathname
@@ -427,7 +444,7 @@ Bun.serve({
           if (body.deposit_fee_rate != null) mask |= 1
           if (body.withdrawal_fee_rate != null) mask |= 2
           if (body.fee_error_margin != null) mask |= 4
-          const data = Buffer.alloc(7); data[0] = 4; data.writeUInt16LE(body.deposit_fee_rate ?? 0, 1); data.writeUInt16LE(body.withdrawal_fee_rate ?? 0, 3); data.writeUInt16LE(body.fee_error_margin ?? 0, 5); data[6] = mask
+          const data = Buffer.alloc(7); data[0] = 6; data.writeUInt16LE(body.deposit_fee_rate ?? 0, 1); data.writeUInt16LE(body.withdrawal_fee_rate ?? 0, 3); data.writeUInt16LE(body.fee_error_margin ?? 0, 5); data[6] = mask
           return json(await sendIx(new TransactionInstruction({
             programId: PROGRAM, keys: [
               { pubkey: gC, isSigner: false, isWritable: true },
@@ -437,7 +454,7 @@ Bun.serve({
         }
         if (p === "/api/relayer/update-deposit-limit") {
           const [tA, tb] = PublicKey.findProgramAddressSync([Buffer.from("merkle_tree")], PROGRAM)
-          const data = Buffer.alloc(10); data[0] = 5; data.writeBigUInt64LE(BigInt(body.new_limit), 1); data[9] = tb
+          const data = Buffer.alloc(10); data[0] = 4; data.writeBigUInt64LE(BigInt(body.new_limit), 1); data[9] = tb
           return json(await sendIx(new TransactionInstruction({
             programId: PROGRAM, keys: [
               { pubkey: tA, isSigner: false, isWritable: true },
@@ -448,7 +465,7 @@ Bun.serve({
         if (p === "/api/relayer/update-deposit-limit-spl") {
           const mint = new PublicKey(body.mint)
           const [tA, tb] = PublicKey.findProgramAddressSync([Buffer.from("merkle_tree"), mint.toBytes()], PROGRAM)
-          const data = Buffer.alloc(10); data[0] = 6; data.writeBigUInt64LE(BigInt(body.new_limit), 1); data[9] = tb
+          const data = Buffer.alloc(10); data[0] = 5; data.writeBigUInt64LE(BigInt(body.new_limit), 1); data[9] = tb
           return json(await sendIx(new TransactionInstruction({
             programId: PROGRAM, keys: [
               { pubkey: tA, isSigner: false, isWritable: true },
@@ -460,6 +477,7 @@ Bun.serve({
 
       return json({ error: { code: "NOT_FOUND", message: `no route ${method} ${p}` } }, 404)
     } catch (e) {
+      console.error("SHIM ERROR:", e?.stack || e)
       return json({ error: { code: "INTERNAL", message: e.message } }, 500)
     }
   },
@@ -483,6 +501,30 @@ function buildInitializeSolIx() {
 
 function hexToBuf(h) {
   return Buffer.from(String(h).replace(/^0x/i, ""), "hex")
+}
+
+// SPL transact references a mint-specific splTree, so it needs a per-mint ALT to
+// compress under Solana's 1232-byte tx limit. The mint-agnostic .env ALT won't
+// match enough accounts. Build one matching buildTransactSplInstruction's accounts.
+async function ensureSplAlt(mint) {
+  const [globalCfg] = PublicKey.findProgramAddressSync([Buffer.from("global_config")], PROGRAM)
+  const [splTree] = PublicKey.findProgramAddressSync([Buffer.from("merkle_tree"), mint.toBytes()], PROGRAM)
+  const treeAta = getAssociatedTokenAddressSync(mint, globalCfg, true)
+  const feeAta = getAssociatedTokenAddressSync(mint, payer.publicKey, true)
+  const altAddrs = [
+    PROGRAM, globalCfg, splTree, treeAta, payer.publicKey, feeAta, mint, SystemProgram.programId,
+    new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+    new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"),
+    ComputeBudgetProgram.programId,
+  ]
+  const slot = await conn.getSlot("confirmed")
+  const [createIx, altAddr] = AddressLookupTableProgram.createLookupTable({ authority: payer.publicKey, payer: payer.publicKey, recentSlot: slot - 1 })
+  await sendIxMany([createIx])
+  for (let i = 0; i < altAddrs.length; i += 20) {
+    await sendIxMany([AddressLookupTableProgram.extendLookupTable({ payer: payer.publicKey, authority: payer.publicKey, lookupTable: altAddr, addresses: altAddrs.slice(i, i + 20) })])
+  }
+  await new Promise((r) => setTimeout(r, 1500))
+  return (await conn.getAddressLookupTable(altAddr)).value
 }
 
 async function relayWithdraw(body) {
@@ -542,10 +584,12 @@ async function relayWithdraw(body) {
     const feeAta = getAssociatedTokenAddressSync(mint, payer.publicKey, true)
     const signerAta = getAssociatedTokenAddressSync(mint, payer.publicKey)
 
-    ixs.push(
+    // Ensure recipient + relayer fee ATAs exist in their own tx first, so the SPL
+    // transact tx stays within @solana/web3.js v0 message-serialize limits.
+    await sendIxMany([
       createAssociatedTokenAccountIdempotentInstruction(payer.publicKey, recipientAta, owner, mint),
       createAssociatedTokenAccountIdempotentInstruction(payer.publicKey, feeAta, payer.publicKey, mint),
-    )
+    ])
 
     const { ix: splIx } = buildTransactSplInstruction({
       connection: conn,
@@ -565,6 +609,10 @@ async function relayWithdraw(body) {
       feeRecipientAta: feeAta,
     })
     ixs.push(splIx)
+    // SPL transact references a mint-specific splTree; use a per-mint ALT so the
+    // tx compresses under Solana's 1232-byte limit (the .env ALT is mint-agnostic).
+    const splAlt = await ensureSplAlt(mint)
+    return sendIxMany(ixs, splAlt)
   } else {
     throw new Error(`kind must be sol or spl, got ${kind}`)
   }
@@ -572,13 +620,24 @@ async function relayWithdraw(body) {
   return sendIxMany(ixs)
 }
 
-async function sendIxMany(ixs) {
+async function sendIxMany(ixs, altAccount = null) {
   const { blockhash } = await conn.getLatestBlockhash()
+  const alts = []
+  if (altAccount) {
+    alts.push(altAccount)
+  } else {
+    // Fall back to the .env ALT (e.g. for SOL, which is mint-agnostic).
+    const altAddr = process.env.ALT_ADDRESS ?? readDotEnv().VITE_ALT_ADDRESS ?? null
+    if (altAddr) {
+      const fetched = await conn.getAddressLookupTable(new PublicKey(altAddr))
+      if (fetched.value) alts.push(fetched.value)
+    }
+  }
   const msg = new TransactionMessage({
     payerKey: payer.publicKey,
     recentBlockhash: blockhash,
     instructions: ixs,
-  }).compileToV0Message()
+  }).compileToV0Message(alts)
   const tx = new VersionedTransaction(msg)
   tx.sign([payer])
   const sig = await sendRawWithRetry(tx.serialize(), { skipPreflight: true, maxRetries: 5 })

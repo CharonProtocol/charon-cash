@@ -42,10 +42,10 @@ impl<'a> TransactArgs<'a> {
 
         let proof = bytemuck::try_from_bytes::<Proof>(&data[..PROOF_SIZE])
             .map_err(|_| ProgramError::InvalidInstructionData)?;
+        
         let ext_data_minified = bytemuck::try_pod_read_unaligned::<ExtDataMinified>(
             &data[PROOF_SIZE..FIXED_TRANSACT_ARGS_SIZE],
-        )
-        .map_err(|_| ProgramError::InvalidInstructionData)?;
+        ).map_err(|_| ProgramError::InvalidInstructionData)?;
 
         let mut offset = FIXED_TRANSACT_ARGS_SIZE;
         let encrypted_output1 = read_length_prefixed_slice(data, &mut offset)?;

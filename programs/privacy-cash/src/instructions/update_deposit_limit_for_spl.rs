@@ -2,8 +2,7 @@ use bytemuck::{from_bytes_mut, Pod, Zeroable};
 use pinocchio::{error::ProgramError, AccountView, ProgramResult};
 
 use crate::{
-    constants::{ADMIN_PUBKEY, TREE_ACCOUNT_SEED},
-    error::PrivacyCashError,
+    constants::TREE_ACCOUNT_SEED,
     helper::{verify_authority, verify_initialized, verify_pda, verify_signer},
     state::MerkleTreeAccount,
 };
@@ -15,7 +14,10 @@ pub struct UpdateDepositLimitSplParams {
     pub tree_account_bump: u8,
 }
 
-pub fn update_deposit_limit_for_spl(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
+pub fn process_update_deposit_limit_for_spl(
+    accounts: &[AccountView],
+    data: &[u8],
+) -> ProgramResult {
     let [tree_account, mint, authority] = accounts else {
         return Err(ProgramError::NotEnoughAccountKeys);
     };
