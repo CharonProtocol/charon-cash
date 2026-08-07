@@ -40,8 +40,23 @@ export declare class PrivacyCashClient {
     isUnlocked(): boolean;
     /** Push the local note set to the backend (encrypted blob; server can't read it). */
     backupNotes(): Promise<void>;
-    /** Pull + decrypt the encrypted note blob from the backend into local storage. */
+    /** Pull + decrypt the encrypted note blob from the backend into the in-memory cache. */
     restoreNotes(): Promise<Note[]>;
+    /**
+     * Best-effort: encrypt the in-memory note set and PUT it to the backend. This
+     * is the single persistence path — call it after every note mutation. Failure
+     * is non-fatal because `syncNotes` can always rebuild notes from the indexer.
+     */
+    private persistNotes;
+    /** In-memory notes for the current session (decrypted; never persisted locally). */
+    getNotes(): Note[];
+    exportNotesString(): string;
+    /** Import notes from JSON into the in-memory cache and persist to the backend. */
+    importNotesJson(json: string, replace?: boolean): Promise<number>;
+    /** Clear all notes — wipes the in-memory cache and the encrypted backend blob. */
+    clearAllNotes(): Promise<void>;
+    /** Unlock + rescan + persist. Powers the UI "Load notes" action. */
+    refreshNotes(): Promise<SyncResult>;
     /**
      * Scan encrypted outputs from the backend, decrypt ours, upsert notes,
      * and mark spent via nullifier checks.

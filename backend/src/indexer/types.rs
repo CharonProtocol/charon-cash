@@ -9,14 +9,19 @@ pub enum TransactKind {
     Spl,
 }
 
+/// A decoded `Transact` / `TransactSpl` program event, mirrored 1:1 from the
+/// on-chain instruction payload's byte layout.
+///
+/// `root`, `public_amount`, and `ext_data_hash` are parsed to keep this struct
+/// an exact mirror of the wire format, but are not persisted or verified today.
+/// They are retained so the indexer can re-verify Groth16 proofs server-side if
+/// that capability is added later (without having to re-derive the layout).
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // parsed-but-currently-unused: root / public_amount / ext_data_hash
 pub struct DecodedTransact {
     pub kind: TransactKind,
-    #[allow(dead_code)]
     pub root: [u8; 32],
-    #[allow(dead_code)]
     pub public_amount: [u8; 32],
-    #[allow(dead_code)]
     pub ext_data_hash: [u8; 32],
     pub input_nullifiers: [[u8; 32]; 2],
     pub output_commitments: [[u8; 32]; 2],

@@ -1,17 +1,10 @@
 import { useEffect, useState } from "react"
-import { useWallet } from "@solana/wallet-adapter-react"
 import { toast } from "sonner"
 import { Check, Copy, KeyRound, RefreshCw } from "lucide-react"
 
 import { lamportsToSol, shortHash } from "@/lib/format"
-import {
-  exportNotes,
-  importNotes,
-  loadNotes,
-  clearNotes,
-  WRAPPED_SOL_MINT,
-  type Note,
-} from "privacy-cash-sdk"
+import { loadNotes, WRAPPED_SOL_MINT, type Note } from "privacy-cash-sdk"
+import { usePrivacyCash } from "@/hooks/usePrivacyCash"
 import {
   Card,
   CardContent,
@@ -50,7 +43,7 @@ function CopyBtn({ text, label }: { text: string; label?: string }) {
 }
 
 export function NotesCard({ refreshKey }: { refreshKey: number }) {
-  const { publicKey } = useWallet()
+  const { client, publicKey } = usePrivacyCash()
   const [paste, setPaste] = useState("")
   const [notes, setNotes] = useState<Note[]>([])
   const [tick, setTick] = useState(0)
@@ -63,10 +56,27 @@ export function NotesCard({ refreshKey }: { refreshKey: number }) {
     window.setTimeout(() => setSpinning(false), 450)
   }
 
+  // Load notes straight from the SDK's in-memory cache (decrypted; never on disk).
+  const load = () => setNotes(publicKey ? loadNotes(publicKey) : [])
+
   useEffect(() => {
-    if (publicKey) setNotes(loadNotes(publicKey))
-    else setNotes([])
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [publicKey, refreshKey, tick])
+
+  // Pull + decrypt the encrypted backend blob into memory (needs a signature).
+  const refresh = async () => {
+    if (!client) return
+    setSpinning(true)
+    try {
+      await client.refreshNotes()
+      reload()
+    } catch (e) {
+      toast.error(`Load failed: ${(e as Error).message}`)
+    } finally {
+      setSpinning(false)
+    }
+  }
 
   const unspent = notes.filter((n) => !n.spent)
   const spent = notes.filter((n) => n.spent)
@@ -94,20 +104,21 @@ export function NotesCard({ refreshKey }: { refreshKey: number }) {
               <KeyRound className="size-4" /> Notes &amp; balance
             </CardTitle>
             <CardDescription className="mt-1.5">
-              Encrypted secrets live in this browser (per wallet). Optional encrypted
-              backup goes to the backend as opaque ciphertext. Withdraws are
-              relayer-signed after you prove ownership here.
+              Notes are stored <strong className="font-medium text-foreground">only</strong> as an
+              encrypted blob on the backend (the server can&apos;t read them). Nothing sensitive is
+              kept in this browser — decrypted notes exist only in memory after you unlock. Click
+              load and approve the signature to fetch them.
             </CardDescription>
           </div>
           <Button
             variant="outline"
             size="sm"
-            onClick={reload}
-            disabled={spinning}
+            onClick={refresh}
+            disabled={!client || spinning}
             className="shrink-0"
           >
             <RefreshCw className={`mr-1.5 size-3.5 ${spinning ? "animate-spin" : ""}`} />
-            Refresh
+            Load notes
           </Button>
         </div>
       </CardHeader>
@@ -172,13 +183,13 @@ export function NotesCard({ refreshKey }: { refreshKey: number }) {
                 </button>
               ))}
             </div>
-            {publicKey && notes.length > 0 && (
+            {publicKey && notes.length > 0 && client && (
               <div className="flex gap-1">
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => {
-                    navigator.clipboard?.writeText(exportNotes(publicKey))
+                    navigator.clipboard?.writeText(client.exportNotesString())
                     toast.success("Notes JSON copied")
                   }}
                 >
@@ -188,11 +199,15 @@ export function NotesCard({ refreshKey }: { refreshKey: number }) {
                   variant="ghost"
                   size="sm"
                   className="text-destructive hover:text-destructive"
-                  onClick={() => {
-                    if (confirm("Delete all local notes for this wallet?")) {
-                      clearNotes(publicKey)
+                  onClick={async () => {
+                    if (!confirm("Delete all notes for this wallet (memory + encrypted backup)?"))
+                      return
+                    try {
+                      await client.clearAllNotes()
                       reload()
-                      toast.message("Local notes cleared")
+                      toast.message("Notes cleared")
+                    } catch (e) {
+                      toast.error(`Clear failed: ${(e as Error).message}`)
                     }
                   }}
                 >
@@ -206,7 +221,7 @@ export function NotesCard({ refreshKey }: { refreshKey: number }) {
             {visible.length === 0 && (
               <p className="px-2 py-6 text-center text-sm text-muted-foreground">
                 {notes.length === 0
-                  ? "No notes yet — deposit to create one."
+                  ? "No notes in memory — click “Load notes” and approve the signature to fetch your encrypted notes, or deposit to create one."
                   : `No ${filter} notes.`}
               </p>
             )}
@@ -268,11 +283,11 @@ export function NotesCard({ refreshKey }: { refreshKey: number }) {
           <Button
             variant="secondary"
             size="sm"
-            disabled={!publicKey || !paste}
-            onClick={() => {
-              if (!publicKey) return
+            disabled={!client || !paste}
+            onClick={async () => {
+              if (!client) return
               try {
-                const n = importNotes(publicKey, paste)
+                const n = await client.importNotesJson(paste)
                 setPaste("")
                 reload()
                 toast.success(`Imported ${n} notes`)

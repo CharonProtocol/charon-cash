@@ -37,6 +37,10 @@ struct Snapshot {
 
 pub struct MerkleMirror {
     db: Db,
+    /// Stored for symmetry with `Relayer` / its account helpers (which key PDAs
+    /// off the program id) but unused here: the mirror keys its trees by
+    /// `tree_key`, not by program. Kept so a future per-program mirror is a
+    /// one-line change.
     _program_id: Pubkey,
     cache: Arc<RwLock<HashMap<String, Snapshot>>>,
 }
@@ -137,7 +141,7 @@ impl MerkleMirror {
 
     pub async fn proof(&self, tree_key: &str, leaf_index: u32) -> AppResult<MerklePath> {
         self.ensure_fresh(tree_key).await?;
-        let next_index = {
+        let path_elements = {
             let cache = self.cache.read().expect("cache lock");
             let s = cache
                 .get(tree_key)
@@ -152,19 +156,11 @@ impl MerkleMirror {
                     ),
                 ));
             }
-            s.built_at_next_index
-        };
-        let path_elements = {
-            let cache = self.cache.read().expect("cache lock");
-            let s = cache
-                .get(tree_key)
-                .ok_or_else(|| AppError::internal("snapshot missing after build"))?;
             s.proofs
                 .get(&leaf_index)
                 .copied()
                 .ok_or_else(|| AppError::internal("missing cached proof"))?
         };
-        let _ = next_index;
         let mut path_indices = [0u8; MERKLE_TREE_HEIGHT];
         for i in 0..MERKLE_TREE_HEIGHT {
             path_indices[i] = ((leaf_index >> i) & 1) as u8;

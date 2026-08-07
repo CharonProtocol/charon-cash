@@ -88,6 +88,30 @@ const bal = client.getPrivateBalanceSOL()    // bigint, lamports
 const usdcBal = client.getPrivateBalanceSPL(usdcMint)
 ```
 
+## Note storage & recovery
+
+Notes (the off-chain material needed to spend a shielded UTXO, including each
+note's `blinding` secret) are **never persisted to the browser**. They live in
+two places only:
+
+- **In memory** — decrypted notes are held in a page-session cache while the
+  wallet is unlocked, and wiped on reload.
+- **On the backend, encrypted** — after every change the SDK encrypts the whole
+  note set with the wallet-signature-derived AES-256-GCM key and `PUT`s an
+  opaque blob to the backend (`encrypted_notes` table). The server stores only
+  ciphertext and has **no key**.
+
+On `unlock()` the SDK seeds the in-memory cache from that blob (`restoreNotes`)
+and from a scan of the indexer's encrypted outputs (`syncNotes`). Use
+`refreshNotes()` to re-pull + rescan, and `getNotes()` to read the decrypted
+set. Import/clear go through `importNotesJson` / `clearAllNotes`, which also
+persist to the backend.
+
+**Recovery:** if the backend blob is ever lost, `syncNotes` rebuilds the note
+set by decrypting the indexer's on-chain encrypted outputs — so a wallet can
+always recover its funds by re-scanning. No plaintext note material is ever
+written to `localStorage`.
+
 ## `relay` modes
 
 Every withdraw/transfer/send takes an optional `{ relay?: boolean }` (default **`true`**).
@@ -114,8 +138,12 @@ Use `relay: true` for smooth gasless UX (the common case). Use `relay: false` wh
 | `transferSOL(lamports, recipient, opts?)` / `transferSPL(...)` | alias: spend a note to someone else's address |
 | `sendPrivateSOL(lamports, recipient, opts?)` / `sendPrivateSPL(...)` | deposit + gasless withdraw-to-recipient |
 | `syncNotes(treeKey, fromScratch?)` | scan + decrypt your notes from the backend |
+| `refreshNotes()` | unlock + re-scan + persist the in-memory note set |
 | `getPrivateBalanceSOL()` / `getPrivateBalanceSPL(mint)` | private balance (bigint, lamports/raw) |
-| `backupNotes()` / `restoreNotes()` | encrypted note blob backup/restore via the backend |
+| `getNotes()` | decrypted notes held in memory for this session |
+| `exportNotesString()` / `importNotesJson(json, replace?)` | export / import notes (and persist to backend) |
+| `clearAllNotes()` | wipe notes — in-memory cache + encrypted backend blob |
+| `backupNotes()` / `restoreNotes()` | push / pull the encrypted note blob (the authoritative store) |
 
 Module-level: `setBackendUrl(url)`, `getBackendUrl()`, `setCircuitBuffers(wasm, zkey)`.
 

@@ -44,7 +44,7 @@ graph TD
 
 ## System Flow
 
-1. **Scan and Sync**: The client SDK pages through encrypted output leaves via the Backend's read-only API (`/api/utxos/range`). It decrypts these locally using the user's spending key to identify owned notes without revealing ownership to the backend.
+1. **Scan and Sync**: The client SDK pages through encrypted output leaves via the Backend's read-only API (`/api/utxos/range`). It decrypts these locally using the user's spending key to identify owned notes without revealing ownership to the backend. Decrypted notes live only in page memory for the unlocked session (never written to the browser); the sole durable copy is an AES-256-GCM ciphertext blob the SDK pushes to the backend (`encrypted_notes` table), keyed by wallet and unreadable by the server. If that blob is ever lost, this scan rebuilds the note set, so no funds are locked out.
 2. **Local Proof Generation**: The client SDK constructs a Groth16 zero-knowledge proof locally on the user's machine. To withdraw, the SDK fetches the current Merkle path for the owned note from the Backend API.
 3. **Relayed Submission**: The client SDK formats a `Transact` or `TransactSpl` instruction and requests a signature from the user's wallet. It then POSTs the signed transaction to the Backend's `POST /api/relayer/submit` endpoint. The Backend verifies the transaction targets the privacy-cash program (`assert_targets_program`) and broadcasts it to the Solana RPC. The Backend never holds a user signing key and cannot alter the signed payload, so the frontend requires no public RPC endpoint.
 4. **Program Verification**: The Solana program verifies the proof and processes the transaction, appending new commitment leaves and initializing nullifier PDAs.

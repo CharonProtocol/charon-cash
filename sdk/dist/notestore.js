@@ -11,7 +11,7 @@ export async function decryptNotesBlob(enc, hex) {
     const parsed = JSON.parse(plain);
     return Array.isArray(parsed) ? parsed : [];
 }
-/** Read local notes, encrypt, and PUT the blob to the backend (upsert). */
+/** Read the in-memory note set, encrypt, and PUT the blob to the backend (upsert). */
 export async function pushEncryptedNotes(wallet, enc) {
     const ciphertext = await encryptNotesBlob(enc, loadNotes(wallet));
     const res = await fetch(`${backendUrl()}/api/notes`, {
@@ -23,8 +23,8 @@ export async function pushEncryptedNotes(wallet, enc) {
         throw new Error(`notes backup failed: HTTP ${res.status}`);
 }
 /**
- * GET the encrypted blob, decrypt it, and upsert into local storage.
- * Returns the merged local note set. Missing backup (404 or empty) → [].
+ * GET the encrypted blob, decrypt it, and upsert into the in-memory cache.
+ * Returns the merged in-memory note set. Missing backup (404 or empty) → [].
  */
 export async function pullEncryptedNotes(wallet, enc) {
     const res = await fetch(`${backendUrl()}/api/notes/${wallet.toBase58()}`);

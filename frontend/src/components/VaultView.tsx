@@ -24,10 +24,11 @@ export function VaultView({ refreshKey }: { refreshKey: number }) {
             <Lock className="size-6 text-primary" /> Private commitment vault
           </h2>
           <p className="max-w-xl text-sm text-muted-foreground">
-            Your spending secrets and blinding factors stay in this browser, keyed by
-            wallet. You can export / import JSON and optionally sync an{" "}
-            <em>encrypted</em> blob to the backend. Deposits need a wallet signature;
-            withdrawals only need unlock + proof — the <strong className="font-medium text-foreground">relayer signs</strong> the on-chain withdraw.
+            Your spending secrets are stored <strong className="font-medium text-foreground">only</strong> as an
+            encrypted blob on the backend — the server can&apos;t read it, and nothing sensitive
+            is kept in this browser. Decrypted notes exist solely in memory after you unlock. You
+            can export / import JSON; deposits need a wallet signature, withdrawals only need
+            unlock + proof — the <strong className="font-medium text-foreground">relayer signs</strong> the on-chain withdraw.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={refresh} className="shrink-0">
