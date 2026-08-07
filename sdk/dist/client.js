@@ -5,7 +5,7 @@ import BN from "bn.js";
 import { envProgramId, FIELD_SIZE, MERKLE_TREE_DEPTH, SIGN_MESSAGE, SOL_TREE_KEY, WRAPPED_SOL_MINT, } from "./constants";
 import { EncryptionService, Keypair, Utxo, getExtDataHash, getMintAddressField, } from "./crypto";
 import { bytesToHex, fetchMerkleProof, fetchRelayerInfo, fetchBlockhash, fetchTreeState, fetchUtxoRange, fieldToHex32, isNullifierSpent, submitTransaction, relayWithdraw, waitForLeafIndex, } from "./merkle";
-import { getSyncOffset, markNoteSpent, newNoteId, saveNote, setSyncOffset, unspentNotes, upsertNote, markNoteSpentByIndex, } from "./notes";
+import { clearNotes, exportNotes, getSyncOffset, importNotes, loadNotes, markNoteSpent, newNoteId, purgeLegacyStorage, readLegacyNotes, saveNote, setSyncOffset, unspentNotes, upsertNote, markNoteSpentByIndex, } from "./notes";
 import { pushEncryptedNotes, pullEncryptedNotes } from "./notestore";
 import { parseProofToBytesArray, parseToBytesArray, prove } from "./prover";
 import { buildTransactSplTransaction, buildTransactTransaction, } from "./program";
@@ -54,13 +54,23 @@ export class PrivacyCashClient {
                 enc.deriveFromSignature(sig);
                 this.enc = enc;
                 this.utxoKeypair = new Keypair(enc.utxoPrivateKey, this.wasm);
-                // Recover notes from indexer (localStorage may be empty on a new device).
+                // One-time migration: move any legacy plaintext notes out of localStorage
+                // into the encrypted backend store, then purge them from disk so no
+                // spending secret lingers locally. No-op outside the browser.
+                for (const n of readLegacyNotes(this.publicKey))
+                    upsertNote(this.publicKey, n);
+                purgeLegacyStorage(this.publicKey);
+                // Recover notes from the indexer scan (decrypted straight into memory).
                 await this.syncNotes(SOL_TREE_KEY).catch(() => {
                     /* unlock still succeeds if indexer is briefly down */
                 });
                 // Hydrate from the encrypted note blob in the backend (new device / cleared browser).
                 await pullEncryptedNotes(this.publicKey, this.enc).catch(() => {
                     /* restore is best-effort */
+                });
+                // Persist the unified in-memory note set to the encrypted backend blob.
+                await this.persistNotes().catch(() => {
+                    /* best-effort: indexer scan can still recover notes later */
                 });
             })();
         }
@@ -74,10 +84,51 @@ export class PrivacyCashClient {
         await this.unlock();
         await pushEncryptedNotes(this.publicKey, this.enc);
     }
-    /** Pull + decrypt the encrypted note blob from the backend into local storage. */
+    /** Pull + decrypt the encrypted note blob from the backend into the in-memory cache. */
     async restoreNotes() {
         await this.unlock();
         return pullEncryptedNotes(this.publicKey, this.enc);
+    }
+    /**
+     * Best-effort: encrypt the in-memory note set and PUT it to the backend. This
+     * is the single persistence path — call it after every note mutation. Failure
+     * is non-fatal because `syncNotes` can always rebuild notes from the indexer.
+     */
+    async persistNotes() {
+        if (!this.enc)
+            return;
+        await pushEncryptedNotes(this.publicKey, this.enc);
+    }
+    /** In-memory notes for the current session (decrypted; never persisted locally). */
+    getNotes() {
+        return loadNotes(this.publicKey);
+    }
+    exportNotesString() {
+        return exportNotes(this.publicKey);
+    }
+    /** Import notes from JSON into the in-memory cache and persist to the backend. */
+    async importNotesJson(json, replace = false) {
+        await this.unlock();
+        const n = importNotes(this.publicKey, json, replace);
+        await this.persistNotes().catch(() => { });
+        return n;
+    }
+    /** Clear all notes — wipes the in-memory cache and the encrypted backend blob. */
+    async clearAllNotes() {
+        await this.unlock();
+        clearNotes(this.publicKey);
+        await this.persistNotes().catch(() => { });
+    }
+    /** Unlock + rescan + persist. Powers the UI "Load notes" action. */
+    async refreshNotes() {
+        await this.unlock();
+        const r = await this.syncNotes(SOL_TREE_KEY).catch(() => ({
+            scanned: 0,
+            added: 0,
+            spent: 0,
+        }));
+        await this.persistNotes().catch(() => { });
+        return r;
     }
     /**
      * Scan encrypted outputs from the backend, decrypt ours, upsert notes,
@@ -193,6 +244,7 @@ export class PrivacyCashClient {
             createdAt: Date.now(),
             depositTx: signature,
         });
+        await this.persistNotes().catch(() => { });
         await this.waitForLeaves(treeKey, nextLeafIndex + 1);
         return { signature, amountLamports, leafIndex: nextLeafIndex, nullifiers };
     }
@@ -274,6 +326,7 @@ export class PrivacyCashClient {
             createdAt: Date.now(),
             depositTx: signature,
         });
+        await this.persistNotes().catch(() => { });
         await this.waitForLeaves(treeKey, nextLeafIndex + 1);
         return {
             signature,
@@ -532,6 +585,7 @@ export class PrivacyCashClient {
                 depositTx: signature,
             });
         }
+        await this.persistNotes().catch(() => { });
         return {
             signature,
             recipientLamports: recipientGets.toNumber(),

@@ -1,4 +1,4 @@
-import { SOL_TREE_KEY } from "./constants"
+import { SOL_TREE_KEY, backendUrl } from "./constants"
 
 export interface RelayerInfo {
   programId: string
@@ -49,16 +49,17 @@ export interface UtxoCheckResult {
   slot?: number
 }
 
-// Backend URL is configurable; defaults to the Vite env var the frontend sets.
-let BACKEND_URL: string = (
-  ((import.meta as any).env?.VITE_BACKEND_URL as string | undefined) ?? ""
-).replace(/\/$/, "")
+// Backend URL override set by the host app via setBackendUrl(). When empty,
+// getBackendUrl() falls back to the zero-config default in constants.backendUrl()
+// (VITE_BACKEND_URL, or http://localhost:8080 if that is unset), so the SDK runs
+// with no environment configuration at all.
+let BACKEND_URL = ""
 
 export function setBackendUrl(url: string): void {
   BACKEND_URL = url.replace(/\/$/, "")
 }
 export function getBackendUrl(): string {
-  return BACKEND_URL
+  return BACKEND_URL || backendUrl()
 }
 
 function u8ToHex(bytes: Uint8Array): string {
@@ -72,12 +73,7 @@ function u8ToHex(bytes: Uint8Array): string {
 export async function submitTransaction(
   serializedTx: Uint8Array,
 ): Promise<string> {
-  if (!BACKEND_URL) {
-    throw new Error(
-      "backend URL not set — call setBackendUrl() or set VITE_BACKEND_URL",
-    )
-  }
-  const res = await fetch(BACKEND_URL + "/api/relayer/submit", {
+  const res = await fetch(getBackendUrl() + "/api/relayer/submit", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ transaction: u8ToHex(serializedTx) }),
@@ -131,11 +127,6 @@ export async function relayWithdraw(req: {
   /** SPL: wallet that owns the recipient ATA. */
   recipientOwner?: string
 }): Promise<string> {
-  if (!BACKEND_URL) {
-    throw new Error(
-      "backend URL not set — call setBackendUrl() or set VITE_BACKEND_URL",
-    )
-  }
   const body = {
     kind: req.kind,
     proof_a: bytesToHex(req.proofA),
@@ -154,7 +145,7 @@ export async function relayWithdraw(req: {
     mint: req.mint,
     recipient_owner: req.recipientOwner,
   }
-  const res = await fetch(BACKEND_URL + "/api/relayer", {
+  const res = await fetch(getBackendUrl() + "/api/relayer", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -205,12 +196,7 @@ export function fieldToHex32(dec: string): string {
 }
 
 async function getJson(path: string): Promise<any> {
-  if (!BACKEND_URL) {
-    throw new Error(
-      "backend URL not set — call setBackendUrl() or set VITE_BACKEND_URL",
-    )
-  }
-  const res = await fetch(BACKEND_URL + path)
+  const res = await fetch(getBackendUrl() + path)
   const text = await res.text()
   let data: unknown = null
   if (text) {

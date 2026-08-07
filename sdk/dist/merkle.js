@@ -1,11 +1,14 @@
-import { SOL_TREE_KEY } from "./constants";
-// Backend URL is configurable; defaults to the Vite env var the frontend sets.
-let BACKEND_URL = (import.meta.env?.VITE_BACKEND_URL ?? "").replace(/\/$/, "");
+import { SOL_TREE_KEY, backendUrl } from "./constants";
+// Backend URL override set by the host app via setBackendUrl(). When empty,
+// getBackendUrl() falls back to the zero-config default in constants.backendUrl()
+// (VITE_BACKEND_URL, or http://localhost:8080 if that is unset), so the SDK runs
+// with no environment configuration at all.
+let BACKEND_URL = "";
 export function setBackendUrl(url) {
     BACKEND_URL = url.replace(/\/$/, "");
 }
 export function getBackendUrl() {
-    return BACKEND_URL;
+    return BACKEND_URL || backendUrl();
 }
 function u8ToHex(bytes) {
     let out = "";
@@ -15,10 +18,7 @@ function u8ToHex(bytes) {
     return out;
 }
 export async function submitTransaction(serializedTx) {
-    if (!BACKEND_URL) {
-        throw new Error("backend URL not set — call setBackendUrl() or set VITE_BACKEND_URL");
-    }
-    const res = await fetch(BACKEND_URL + "/api/relayer/submit", {
+    const res = await fetch(getBackendUrl() + "/api/relayer/submit", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ transaction: u8ToHex(serializedTx) }),
@@ -51,9 +51,6 @@ export async function submitTransaction(serializedTx) {
 }
 /** Relayer-signed withdraw: POST proof fields; backend builds + signs + submits. */
 export async function relayWithdraw(req) {
-    if (!BACKEND_URL) {
-        throw new Error("backend URL not set — call setBackendUrl() or set VITE_BACKEND_URL");
-    }
     const body = {
         kind: req.kind,
         proof_a: bytesToHex(req.proofA),
@@ -72,7 +69,7 @@ export async function relayWithdraw(req) {
         mint: req.mint,
         recipient_owner: req.recipientOwner,
     };
-    const res = await fetch(BACKEND_URL + "/api/relayer", {
+    const res = await fetch(getBackendUrl() + "/api/relayer", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
@@ -120,10 +117,7 @@ export function fieldToHex32(dec) {
     return hex.padStart(64, "0");
 }
 async function getJson(path) {
-    if (!BACKEND_URL) {
-        throw new Error("backend URL not set — call setBackendUrl() or set VITE_BACKEND_URL");
-    }
-    const res = await fetch(BACKEND_URL + path);
+    const res = await fetch(getBackendUrl() + path);
     const text = await res.text();
     let data = null;
     if (text) {

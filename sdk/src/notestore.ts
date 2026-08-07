@@ -1,12 +1,18 @@
 /**
- * Encrypted note blob sync with the backend.
+ * Encrypted note blob sync with the backend — the authoritative note store.
  *
- * The note set (which includes each note's blinding factor — the spending
- * secret) is encrypted client-side with the wallet-signature-derived AES-GCM
- * key (see `EncryptionService`). Only the resulting ciphertext is sent to the
- * backend, which stores it as an opaque blob keyed by wallet pubkey. The server
- * can never read the notes. This gives fetchable/backup-able notes across
- * devices without weakening the privacy model.
+ * Notes (including each note's blinding factor — the spending secret) are NEVER
+ * persisted to the browser. The wallet-signature-derived AES-GCM key (see
+ * `EncryptionService`) encrypts the in-memory note set into an opaque blob that
+ * is PUT to the backend (`encrypted_notes` table) and GET back on unlock. The
+ * server stores only ciphertext and holds no key.
+ *
+ * Flow: the client keeps decrypted notes in an in-memory cache for the session
+ * (`notes.ts`). On `unlock()` it seeds that cache by GET-ing + decrypting the
+ * blob (`pullEncryptedNotes`) and by scanning the indexer (`syncNotes`); after
+ * every mutation it PUTs a fresh ciphertext (`pushEncryptedNotes`). Reload wipes
+ * the cache; the blob survives. Even without the blob, `syncNotes` rebuilds the
+ * notes from the indexer's encrypted outputs, so funds are never locked out.
  */
 import type { PublicKey } from "@solana/web3.js"
 
@@ -33,7 +39,7 @@ export async function decryptNotesBlob(
   return Array.isArray(parsed) ? (parsed as Note[]) : []
 }
 
-/** Read local notes, encrypt, and PUT the blob to the backend (upsert). */
+/** Read the in-memory note set, encrypt, and PUT the blob to the backend (upsert). */
 export async function pushEncryptedNotes(
   wallet: PublicKey,
   enc: EncryptionService,
@@ -48,8 +54,8 @@ export async function pushEncryptedNotes(
 }
 
 /**
- * GET the encrypted blob, decrypt it, and upsert into local storage.
- * Returns the merged local note set. Missing backup (404 or empty) → [].
+ * GET the encrypted blob, decrypt it, and upsert into the in-memory cache.
+ * Returns the merged in-memory note set. Missing backup (404 or empty) → [].
  */
 export async function pullEncryptedNotes(
   wallet: PublicKey,

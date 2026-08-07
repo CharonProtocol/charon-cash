@@ -1,3 +1,18 @@
+/**
+ * In-memory note cache for the current page session.
+ *
+ * Spending secrets (each note's `blinding`) are NEVER persisted to the browser.
+ * Decrypted notes live only in this in-memory map while the wallet is unlocked,
+ * and are wiped on reload. The authoritative, durable copy is the AES-GCM
+ * encrypted blob stored on the backend (`encrypted_notes` table) — the server
+ * holds no key. On unlock the client seeds this cache from that blob
+ * (`pullEncryptedNotes`) and from the indexer scan (`syncNotes`); every
+ * mutation is followed by an encrypted push back to the backend.
+ *
+ * Recovery safety net: even if the backend blob is lost, `syncNotes` rebuilds
+ * the note set by decrypting the indexer's encrypted outputs, so funds are
+ * never locked out as long as the wallet can re-sign.
+ */
 import { PublicKey } from "@solana/web3.js"
 
 import { WRAPPED_SOL_MINT } from "./constants"
@@ -14,25 +29,29 @@ export interface Note {
   spendTx?: string
 }
 
-function key(wallet: PublicKey): string {
-  return `privacy-cash:notes:${wallet.toBase58()}`
+/** Page-wide note cache, keyed by wallet base58. Wiped on reload by design. */
+const NOTES = new Map<string, Note[]>()
+
+/** Per-session indexer scan cursor, keyed by `${wallet}:${treeKey}`. */
+const OFFSETS = new Map<string, number>()
+
+const NOTES_LEGACY_PREFIX = "privacy-cash:notes:"
+const OFFSET_LEGACY_PREFIX = "privacy-cash:sync-offset:"
+
+function wk(wallet: PublicKey): string {
+  return wallet.toBase58()
 }
 
-function syncOffsetKey(wallet: PublicKey, treeKey: string): string {
-  return `privacy-cash:sync-offset:${wallet.toBase58()}:${treeKey}`
+function ok(wallet: PublicKey, treeKey: string): string {
+  return `${wallet.toBase58()}:${treeKey}`
 }
 
 export function loadNotes(wallet: PublicKey): Note[] {
-  try {
-    const raw = localStorage.getItem(key(wallet))
-    return raw ? (JSON.parse(raw) as Note[]) : []
-  } catch {
-    return []
-  }
+  return NOTES.get(wk(wallet)) ?? []
 }
 
 function persist(wallet: PublicKey, notes: Note[]): void {
-  localStorage.setItem(key(wallet), JSON.stringify(notes))
+  NOTES.set(wk(wallet), notes)
 }
 
 export function saveNote(wallet: PublicKey, note: Note): void {
@@ -113,12 +132,11 @@ export function importNotes(
 }
 
 export function clearNotes(wallet: PublicKey): void {
-  localStorage.removeItem(key(wallet))
+  NOTES.delete(wk(wallet))
 }
 
 export function getSyncOffset(wallet: PublicKey, treeKey: string): number {
-  const v = localStorage.getItem(syncOffsetKey(wallet, treeKey))
-  return v ? Number(v) || 0 : 0
+  return OFFSETS.get(ok(wallet, treeKey)) ?? 0
 }
 
 export function setSyncOffset(
@@ -126,11 +144,53 @@ export function setSyncOffset(
   treeKey: string,
   offset: number,
 ): void {
-  localStorage.setItem(syncOffsetKey(wallet, treeKey), String(offset))
+  OFFSETS.set(ok(wallet, treeKey), offset)
 }
 
 export function resetSyncOffset(wallet: PublicKey, treeKey: string): void {
-  localStorage.removeItem(syncOffsetKey(wallet, treeKey))
+  OFFSETS.delete(ok(wallet, treeKey))
+}
+
+/**
+ * Read any pre-migration plaintext notes left in localStorage by older builds.
+ * Returns [] outside the browser or if none exist. Used once on unlock to
+ * migrate them into the encrypted backend blob, after which the legacy key is
+ * purged by `purgeLegacyStorage`.
+ */
+export function readLegacyNotes(wallet: PublicKey): Note[] {
+  if (typeof localStorage === "undefined") return []
+  try {
+    const raw = localStorage.getItem(NOTES_LEGACY_PREFIX + wk(wallet))
+    const parsed = raw ? (JSON.parse(raw) as Note[]) : []
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Remove every legacy localStorage key for this wallet (plaintext notes + sync
+ * offsets). Idempotent; safe to call on every unlock. Ensures no spending
+ * secret lingers on disk after the migration to encrypted-DB-only storage.
+ */
+export function purgeLegacyStorage(wallet: PublicKey): void {
+  if (typeof localStorage === "undefined") return
+  const w = wk(wallet)
+  try {
+    localStorage.removeItem(NOTES_LEGACY_PREFIX + w)
+    const notesPrefix = NOTES_LEGACY_PREFIX + w
+    const offsetPrefix = OFFSET_LEGACY_PREFIX + w + ":"
+    const toRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && (k === notesPrefix || k.startsWith(offsetPrefix))) {
+        toRemove.push(k)
+      }
+    }
+    for (const k of toRemove) localStorage.removeItem(k)
+  } catch {
+    /* localStorage may be unavailable (private mode); nothing to purge */
+  }
 }
 
 export function newNoteId(): string {
