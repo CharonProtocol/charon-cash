@@ -44,6 +44,11 @@ pub struct WithdrawRequest {
     /// SPL only: wallet that owns `recipient` ATA (for idempotent ATA create).
     #[serde(default)]
     pub recipient_owner: Option<String>,
+    /// SPL only: client-built Address Lookup Table address. The relayer compiles a
+    /// Versioned v0 message reusing it, so the (otherwise >1232-byte) SPL withdraw
+    /// compresses under the transaction-size limit. SOL withdrawals ignore this.
+    #[serde(default)]
+    pub alt_address: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -65,6 +70,8 @@ pub struct TransactInput {
     pub mint: Option<Pubkey>,
     /// SPL: owner of the recipient ATA (optional; used to create ATA if missing).
     pub recipient_owner: Option<Pubkey>,
+    /// SPL: client ALT address to compile a Versioned v0 message against.
+    pub alt_address: Option<Pubkey>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -205,6 +212,10 @@ impl WithdrawRequest {
             mint,
             recipient_owner: match self.recipient_owner.as_deref() {
                 Some(s) => Some(parse_pubkey(s, "recipient_owner")?),
+                None => None,
+            },
+            alt_address: match self.alt_address.as_deref() {
+                Some(s) => Some(parse_pubkey(s, "alt_address")?),
                 None => None,
             },
         })

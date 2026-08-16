@@ -22,7 +22,7 @@ pub fn token_program_id() -> Pubkey {
 }
 
 pub fn associated_token_program_id() -> Pubkey {
-    Pubkey::from_str("ATokenGPvbdVyxrTBbPXh5vrfqDpjLCzPRKkJEpXGBbN").expect("valid ata program")
+    Pubkey::from_str("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL").expect("valid ata program")
 }
 
 pub fn tree_account_sol(program_id: &Pubkey) -> (Pubkey, u8) {

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 [dependencies]
 # Runtime + HTTP
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
 axum = "0.8"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 futures = "0.3"

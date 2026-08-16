@@ -88,17 +88,43 @@ impl MerkleMirror {
 
         let mut next_index: u32 = 0;
         let mut root_index: u8 = 0;
-        let mut proofs: HashMap<u32, [[u8; 32]; MERKLE_TREE_HEIGHT]> = HashMap::new();
-
-        for leaf in leaves {
-            let proof = append(
+        for leaf in &leaves {
+            append(
                 &mut subtrees,
                 &mut next_index,
                 &mut root_index,
                 &mut root_history,
-                leaf,
+                *leaf,
             );
-            proofs.insert(next_index - 1, proof);
+        }
+
+        let mut layers: Vec<Vec<[u8; 32]>> = Vec::with_capacity(MERKLE_TREE_HEIGHT + 1);
+        layers.push(leaves.clone());
+        for i in 0..MERKLE_TREE_HEIGHT {
+            let prev = &layers[i];
+            let mut next: Vec<[u8; 32]> = Vec::with_capacity((prev.len() + 1) / 2);
+            let mut j = 0;
+            while j < prev.len() {
+                let left = prev[j];
+                let right = if j + 1 < prev.len() {
+                    prev[j + 1]
+                } else {
+                    zero_bytes[i]
+                };
+                next.push(Poseidon::hashv(&[&left, &right]).expect("poseidon hash"));
+                j += 2;
+            }
+            layers.push(next);
+        }
+
+        let mut proofs: HashMap<u32, [[u8; 32]; MERKLE_TREE_HEIGHT]> = HashMap::new();
+        for idx in 0..leaves.len() as u32 {
+            let mut path = [[0u8; 32]; MERKLE_TREE_HEIGHT];
+            for i in 0..MERKLE_TREE_HEIGHT {
+                let sibling = ((idx >> i) ^ 1) as usize;
+                path[i] = layers[i].get(sibling).copied().unwrap_or(zero_bytes[i]);
+            }
+            proofs.insert(idx, path);
         }
 
         let snap = Snapshot {

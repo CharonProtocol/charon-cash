@@ -11,10 +11,17 @@ use solana_sdk::signer::keypair::Keypair;
 use solana_sdk::transaction::Transaction;
 use solana_rpc_client::api::config::RpcSendTransactionConfig;
 use solana_sdk::transaction::VersionedTransaction;
+use solana_sdk::message::v0;
+use solana_sdk::message::{AddressLookupTableAccount, VersionedMessage};
 use solana_address_lookup_table_interface::state::AddressLookupTable;
 
 use crate::config::Config;
 use crate::db::Db;
+use crate::indexer::decode::decode_transact_ix;
+use crate::indexer::types::{
+    DecodedTransact, IndexedNullifier, IndexedTransact, IndexedUtxo, SOL_TREE_KEY,
+    TransactKind as IdxKind,
+};
 use crate::relayer::accounts as acc;
 use crate::relayer::accounts::create_ata_idempotent_ix;
 use crate::relayer::dto::{
@@ -43,6 +50,7 @@ pub struct Relayer {
     mirror: MerkleMirror,
     in_flight: Mutex<HashSet<[u8; 32]>>,
     fee_cache: Mutex<Option<(u16, u16)>>,
+    index_lock: tokio::sync::Mutex<()>,
 }
 
 impl Relayer {
@@ -57,6 +65,7 @@ impl Relayer {
             mirror,
             in_flight: Mutex::new(HashSet::new()),
             fee_cache: Mutex::new(None),
+            index_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -300,7 +309,29 @@ impl Relayer {
             ixs.extend(self.spl_withdraw_setup_ixs(&t)?);
         }
         ixs.push(ix);
-        let result = self.submit(ixs).await;
+        let result = match (t.kind, t.alt_address) {
+            (TransactKind::Spl, Some(alt)) => self.submit_v0(ixs, alt).await,
+            _ => self.submit(ixs).await,
+        };
+
+        if let Ok(resp) = &result {
+            let decoded = DecodedTransact {
+                kind: match t.kind {
+                    TransactKind::Sol => IdxKind::Sol,
+                    TransactKind::Spl => IdxKind::Spl,
+                },
+                root: t.root,
+                public_amount: t.public_amount,
+                ext_data_hash: t.ext_data_hash,
+                input_nullifiers: t.input_nullifiers,
+                output_commitments: t.output_commitments,
+                ext_amount: t.ext_amount,
+                fee: t.fee,
+                encrypted_output1: t.encrypted_output1.clone(),
+                encrypted_output2: t.encrypted_output2.clone(),
+            };
+            let _ = self.self_index(&resp.signature, decoded, tree_key.clone()).await;
+        }
 
         if result.is_err() {
             let mut set = self.in_flight.lock().unwrap();
@@ -439,10 +470,30 @@ impl Relayer {
             .await
             .map_err(|e| AppError::upstream(format!("get_latest_blockhash: {e}")))?;
 
+        let compute_budget_id =
+            Pubkey::from_str("ComputeBudget111111111111111111111111111111").unwrap();
+        let mut limit_data = vec![2u8];
+        limit_data.extend_from_slice(&1_000_000u32.to_le_bytes());
+        let mut price_data = vec![3u8];
+        price_data.extend_from_slice(&5_000u64.to_le_bytes());
+        let mut all = vec![
+            Instruction {
+                program_id: compute_budget_id,
+                data: limit_data,
+                accounts: vec![],
+            },
+            Instruction {
+                program_id: compute_budget_id,
+                data: price_data,
+                accounts: vec![],
+            },
+        ];
+        all.extend(ixs);
+
         let tx = {
             let signer_keys: Vec<&dyn Signer> = vec![self.signer.as_ref() as &dyn Signer];
             Transaction::new_signed_with_payer(
-                &ixs,
+                &all,
                 Some(&self.signer.pubkey()),
                 &signer_keys,
                 blockhash,
@@ -466,6 +517,98 @@ impl Relayer {
         let sig = self
             .rpc
             .send_transaction(&tx)
+            .await
+            .map_err(|e| AppError::upstream(format!("send_transaction: {e}")))?;
+
+        let status = match tokio::time::timeout(
+            Duration::from_secs(45),
+            self.rpc.confirm_transaction(&sig),
+        )
+        .await
+        {
+            Ok(Ok(true)) => "confirmed",
+            _ => "submitted",
+        };
+
+        Ok(RelayResponse {
+            signature: sig.to_string(),
+            slot: None,
+            status: status.to_string(),
+        })
+    }
+
+    /// Gasless relayer-signed submit using a Versioned v0 message that reuses the
+    /// client's Address Lookup Table. SPL withdrawals carry too many accounts for a
+    /// legacy 1232-byte transaction, so the relayer compiles a v0 message against
+    /// the ALT the client built (ensureAlt) and signs it with the relayer keypair.
+    /// Mirrors submit(); SOL stays on the legacy path.
+    async fn submit_v0(
+        &self,
+        ixs: Vec<Instruction>,
+        alt_address: Pubkey,
+    ) -> AppResult<RelayResponse> {
+        let blockhash = self
+            .rpc
+            .get_latest_blockhash()
+            .await
+            .map_err(|e| AppError::upstream(format!("get_latest_blockhash: {e}")))?;
+
+        let compute_budget_id =
+            Pubkey::from_str("ComputeBudget111111111111111111111111111111").unwrap();
+        let mut limit_data = vec![2u8];
+        limit_data.extend_from_slice(&1_000_000u32.to_le_bytes());
+        let mut price_data = vec![3u8];
+        price_data.extend_from_slice(&5_000u64.to_le_bytes());
+        let mut all = vec![
+            Instruction {
+                program_id: compute_budget_id,
+                data: limit_data,
+                accounts: vec![],
+            },
+            Instruction {
+                program_id: compute_budget_id,
+                data: price_data,
+                accounts: vec![],
+            },
+        ];
+        all.extend(ixs);
+
+        let account = self
+            .rpc
+            .get_account(&alt_address)
+            .await
+            .map_err(|e| AppError::upstream(format!("read ALT {alt_address}: {e}")))?;
+        let table = AddressLookupTable::deserialize(&account.data)
+            .map_err(|e| AppError::bad_request("INVALID_ALT", format!("alt deserialize: {e}")))?;
+        let lookup = AddressLookupTableAccount {
+            key: alt_address,
+            addresses: table.addresses.to_vec(),
+        };
+        let message = v0::Message::try_compile(&self.signer.pubkey(), &all, &[lookup], blockhash)
+            .map_err(|e| AppError::bad_request("ALT_COMPILE", format!("v0 compile: {e}")))?;
+        let vtx = VersionedTransaction::try_new(
+            VersionedMessage::V0(message),
+            &[self.signer.as_ref() as &dyn Signer],
+        )
+        .map_err(|e| AppError::bad_request("SIGN_FAILED", format!("v0 sign: {e}")))?;
+
+        let sim = self
+            .rpc
+            .simulate_transaction(&vtx)
+            .await
+            .map_err(|e| AppError::upstream(format!("simulate: {e}")))?;
+        let sim = sim.value;
+        if let Some(err) = sim.err {
+            let logs = sim.logs.unwrap_or_default().join(" | ");
+            return Err(AppError::bad_request(
+                "SIMULATION_FAILED",
+                format!("{err:?} | {logs}"),
+            ));
+        }
+
+        let sig = self
+            .rpc
+            .send_transaction(&vtx)
             .await
             .map_err(|e| AppError::upstream(format!("send_transaction: {e}")))?;
 
@@ -514,6 +657,19 @@ impl Relayer {
             _ => "submitted",
         };
 
+        if let Ok(Some((data, accounts))) = self.first_program_ix(&vtx).await {
+            if let Ok(decoded) = decode_transact_ix(&data) {
+                let tk = match decoded.kind {
+                    IdxKind::Sol => SOL_TREE_KEY.to_string(),
+                    IdxKind::Spl => accounts
+                        .get(7)
+                        .map(|p| p.to_string())
+                        .unwrap_or_else(|| "unknown_mint".to_string()),
+                };
+                let _ = self.self_index(&sig.to_string(), decoded, tk).await;
+            }
+        }
+
         Ok(RelayResponse {
             signature: sig.to_string(),
             slot: None,
@@ -522,6 +678,23 @@ impl Relayer {
     }
 
     async fn assert_targets_program(&self, vtx: &VersionedTransaction) -> AppResult<()> {
+        let keys = self.resolved_keys(vtx).await?;
+        let alt_program = solana_address_lookup_table_interface::program::ID;
+        let targets_program = vtx.message.instructions().iter().any(|ci| {
+            keys.get(ci.program_id_index as usize)
+                .map(|k| *k == self.program_id || *k == alt_program)
+                .unwrap_or(false)
+        });
+        if !targets_program {
+            return Err(AppError::bad_request(
+                "PROGRAM_NOT_ALLOWED",
+                "transaction must contain an instruction for the privacy-cash program",
+            ));
+        }
+        Ok(())
+    }
+
+    async fn resolved_keys(&self, vtx: &VersionedTransaction) -> AppResult<Vec<Pubkey>> {
         let message = &vtx.message;
         let mut keys: Vec<Pubkey> = message
             .static_account_keys()
@@ -550,17 +723,81 @@ impl Relayer {
                 }
             }
         }
-        let alt_program = solana_address_lookup_table_interface::program::ID;
-        let targets_program = message.instructions().iter().any(|ci| {
-            keys.get(ci.program_id_index as usize)
-                .map(|k| *k == self.program_id || *k == alt_program)
+        Ok(keys)
+    }
+
+    async fn first_program_ix(
+        &self,
+        vtx: &VersionedTransaction,
+    ) -> AppResult<Option<(Vec<u8>, Vec<Pubkey>)>> {
+        let keys = self.resolved_keys(vtx).await?;
+        for ci in vtx.message.instructions() {
+            if keys
+                .get(ci.program_id_index as usize)
+                .map(|k| *k == self.program_id)
                 .unwrap_or(false)
-        });
-        if !targets_program {
-            return Err(AppError::bad_request(
-                "PROGRAM_NOT_ALLOWED",
-                "transaction must contain an instruction for the privacy-cash program",
-            ));
+            {
+                let accounts = ci
+                    .accounts
+                    .iter()
+                    .filter_map(|i| keys.get(*i as usize).copied())
+                    .collect();
+                return Ok(Some((ci.data.clone(), accounts)));
+            }
+        }
+        Ok(None)
+    }
+
+    async fn self_index(
+        &self,
+        signature: &str,
+        decoded: DecodedTransact,
+        tree_key: String,
+    ) -> AppResult<()> {
+        let slot = self.rpc.get_slot().await.unwrap_or(0);
+        let _guard = self.index_lock.lock().await;
+        if self.db.has_tx(signature).await? {
+            return Ok(());
+        }
+        let start_index = self.db.next_index(&tree_key).await?;
+        let mut utxos = Vec::with_capacity(2);
+        for (i, (commitment, encrypted)) in decoded
+            .output_commitments
+            .iter()
+            .zip([&decoded.encrypted_output1, &decoded.encrypted_output2])
+            .enumerate()
+        {
+            utxos.push(IndexedUtxo {
+                tree_key: tree_key.clone(),
+                leaf_index: start_index + i as u32,
+                commitment: *commitment,
+                encrypted_output: encrypted.clone(),
+                signature: signature.to_string(),
+                slot,
+                ext_amount: decoded.ext_amount,
+                fee: decoded.fee,
+            });
+        }
+        let nullifiers = decoded
+            .input_nullifiers
+            .iter()
+            .map(|n| IndexedNullifier {
+                tree_key: tree_key.clone(),
+                nullifier: *n,
+                signature: signature.to_string(),
+                slot,
+            })
+            .collect();
+        let indexed = IndexedTransact {
+            signature: signature.to_string(),
+            slot,
+            tree_key: tree_key.clone(),
+            decoded,
+            utxos,
+            nullifiers,
+        };
+        if let Err(e) = self.db.insert_transact(&indexed).await {
+            tracing::warn!(signature, error = %e, "self-index insert failed");
         }
         Ok(())
     }
