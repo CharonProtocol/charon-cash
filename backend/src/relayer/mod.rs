@@ -330,7 +330,9 @@ impl Relayer {
                 encrypted_output1: t.encrypted_output1.clone(),
                 encrypted_output2: t.encrypted_output2.clone(),
             };
-            let _ = self.self_index(&resp.signature, decoded, tree_key.clone()).await;
+            if let Err(e) = self.self_index(&resp.signature, decoded, tree_key.clone()).await {
+                tracing::warn!(signature = %resp.signature, error = %e.message, "self-index skipped");
+            }
         }
 
         if result.is_err() {
@@ -666,7 +668,9 @@ impl Relayer {
                         .map(|p| p.to_string())
                         .unwrap_or_else(|| "unknown_mint".to_string()),
                 };
-                let _ = self.self_index(&sig.to_string(), decoded, tk).await;
+                if let Err(e) = self.self_index(&sig.to_string(), decoded, tk).await {
+                    tracing::warn!(signature = %sig, error = %e.message, "self-index skipped");
+                }
             }
         }
 
