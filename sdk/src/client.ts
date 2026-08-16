@@ -48,6 +48,7 @@ import {
   markNoteSpent,
   newNoteId,
   purgeLegacyStorage,
+  removeStaleNote,
   readLegacyNotes,
   saveNote,
   setSyncOffset,
@@ -222,7 +223,7 @@ export class PrivacyCashClient {
   /** Unlock + rescan + persist. Powers the UI "Load notes" action. */
   async refreshNotes(): Promise<SyncResult> {
     await this.unlock()
-    const r = await this.syncNotes(SOL_TREE_KEY).catch(() => ({
+    const r = await this.syncNotes(SOL_TREE_KEY, true).catch(() => ({
       scanned: 0,
       added: 0,
       spent: 0,
@@ -272,6 +273,13 @@ export class PrivacyCashClient {
 
         const before = unspentNotes(wallet).some(
           (n) => n.mintAddress === utxo.mintAddress && n.index === utxo.index,
+        )
+        removeStaleNote(
+          wallet,
+          utxo.mintAddress,
+          utxo.amount.toString(),
+          utxo.blinding.toString(),
+          utxo.index,
         )
         upsertNote(wallet, {
           id: newNoteId(),
@@ -369,7 +377,7 @@ export class PrivacyCashClient {
     opts?: { relay?: boolean },
   ): Promise<WithdrawResult> {
     await this.unlock()
-    await this.syncNotes(SOL_TREE_KEY).catch(() => { })
+    await this.syncNotes(SOL_TREE_KEY, true).catch(() => { })
     return this.withdrawInternal({
       treeKey: SOL_TREE_KEY,
       mintAddress: WRAPPED_SOL_MINT,
@@ -477,7 +485,7 @@ export class PrivacyCashClient {
     await this.unlock()
     const mintPk = toPubkey(mint)
     const mintStr = mintPk.toBase58()
-    await this.syncNotes(mintStr).catch(() => { })
+    await this.syncNotes(mintStr, true).catch(() => { })
     return this.withdrawInternal({
       treeKey: mintStr,
       mintAddress: mintStr,
@@ -729,14 +737,27 @@ export class PrivacyCashClient {
       let relayRecipient = args.recipient.toBase58()
       let recipientOwner: string | undefined
       let mintStr: string | undefined
+      let altAddress: string | undefined
       if (args.isSpl && args.mint) {
         const recipientAta = getAssociatedTokenAddressSync(args.mint, args.recipient)
         hashRecipient = recipientAta
         relayRecipient = recipientAta.toBase58()
         recipientOwner = args.recipient.toBase58()
         mintStr = args.mint.toBase58()
+        // The relayer builds a v0 message reusing this ALT so the (otherwise
+        // >1232-byte) SPL withdraw compresses under the transaction-size limit.
+        const alt = await ensureAlt({
+          signer: this.signer as AltSigner,
+          preferred: envAltAddress(),
+          addresses: splAltAddresses({
+            programId: this.programId!,
+            feeRecipient: this.feeRecipient,
+            mint: args.mint,
+          }),
+        })
+        altAddress = alt.key.toBase58()
       }
-      const r = await this.proveAndRelay({ ...commonProof, hashRecipient, relayRecipient, recipientOwner, mint: mintStr })
+      const r = await this.proveAndRelay({ ...commonProof, hashRecipient, relayRecipient, recipientOwner, mint: mintStr, altAddress })
       signature = r.signature
       nullifiers = r.nullifiers
     } else {
@@ -814,6 +835,7 @@ export class PrivacyCashClient {
     relayRecipient: string
     recipientOwner?: string
     mint?: string
+    altAddress?: string
   }): Promise<{ signature: string; nullifiers: string[] }> {
     const inputNullifiers = await Promise.all(
       args.inputs.map((x) => x.getNullifier()),
@@ -876,6 +898,7 @@ export class PrivacyCashClient {
       recipient: args.relayRecipient,
       mint: args.mint,
       recipientOwner: args.recipientOwner,
+      altAddress: args.altAddress,
     })
 
     return { signature, nullifiers: nullifierHexes }

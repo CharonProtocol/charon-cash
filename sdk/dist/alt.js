@@ -123,11 +123,7 @@ export async function ensureAlt(params) {
                 });
                 await sendIx(params.signer, [ix]);
             }
-            await sleep(600);
-            const updated = await fetchAlt(cached);
-            if (!updated)
-                throw new Error("ALT disappeared after extend");
-            return updated;
+            return waitForAltAddresses(cached, params.addresses);
         }
     }
     // Create a new ALT under the connected wallet.
@@ -138,6 +134,13 @@ export async function ensureAlt(params) {
         recentSlot: slot - 1,
     });
     await sendIx(params.signer, [createIx]);
+    // sendIx() returns once the relayer has SUBMITTED the tx (status "submitted"),
+    // not confirmed. Extending immediately races the create and fails with
+    // "Lookup table owner should be the Address Lookup Table program", so wait for
+    // the create to actually land on-chain before extending. Same reason we wait
+    // after extend: the deposit tx resolves addresses from the ALT, so it must
+    // hold all of them before we hand it back.
+    await waitForAlt(altAddress);
     cacheAltAddress(altAddress, params.signer.publicKey);
     for (let i = 0; i < params.addresses.length; i += 20) {
         const chunk = params.addresses.slice(i, i + 20);
@@ -149,11 +152,37 @@ export async function ensureAlt(params) {
         });
         await sendIx(params.signer, [ix]);
     }
-    await sleep(600);
-    const created = await fetchAlt(altAddress);
-    if (!created)
-        throw new Error("failed to create ALT");
-    return created;
+    return waitForAltAddresses(altAddress, params.addresses);
+}
+/** Poll the on-chain ALT until it exists (the create has landed). */
+async function waitForAlt(address, timeoutMs = 20_000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        const alt = await fetchAlt(address);
+        if (alt)
+            return alt;
+        await sleep(500);
+    }
+    throw new Error(`ALT ${address.toBase58()} not found on-chain (timeout)`);
+}
+/**
+ * Poll the on-chain ALT until it contains every wanted address (the extends have
+ * landed). Guards both the create-then-extend and the cached-extend paths
+ * against the submit-not-confirm race.
+ */
+async function waitForAltAddresses(address, wanted, timeoutMs = 20_000) {
+    const want = new Set(wanted.map((a) => a.toBase58()));
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        const alt = await fetchAlt(address);
+        if (alt) {
+            const have = new Set(alt.state.addresses.map((a) => a.toBase58()));
+            if ([...want].every((w) => have.has(w)))
+                return alt;
+        }
+        await sleep(500);
+    }
+    throw new Error(`ALT ${address.toBase58()} did not contain all addresses after extend (timeout)`);
 }
 function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));

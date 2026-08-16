@@ -67,6 +67,8 @@ export declare function relayWithdraw(req: {
     mint?: string;
     /** SPL: wallet that owns the recipient ATA. */
     recipientOwner?: string;
+    /** SPL: client-built ALT address so the relayer can compress the v0 withdraw tx. */
+    altAddress?: string;
 }): Promise<string>;
 export declare function bytesToHex(bytes: ArrayLike<number>): string;
 /** Poseidon / Fr decimal string → 32-byte big-endian hex (no 0x). */

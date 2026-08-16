@@ -68,6 +68,7 @@ export async function relayWithdraw(req) {
         recipient: req.recipient,
         mint: req.mint,
         recipient_owner: req.recipientOwner,
+        alt_address: req.altAddress,
     };
     const res = await fetch(getBackendUrl() + "/api/relayer", {
         method: "POST",

@@ -133,6 +133,38 @@ export function importNotes(
 
 export function clearNotes(wallet: PublicKey): void {
   NOTES.delete(wk(wallet))
+  const prefix = `${wk(wallet)}:`
+  for (const k of [...OFFSETS.keys()]) {
+    if (k.startsWith(prefix)) OFFSETS.delete(k)
+  }
+}
+
+/**
+ * Drop any unspent note that duplicates (mint, amount, blinding) at a DIFFERENT
+ * index. A note's commitment is Poseidon(amount, pubkey, blinding, mint), so a
+ * given UTXO lives at exactly one leaf index; any other index for the same
+ * (amount, blinding, mint) is a stale label left by a relayer-mirror rebuild.
+ * Called from syncNotes before upserting the authoritative copy.
+ */
+export function removeStaleNote(
+  wallet: PublicKey,
+  mintAddress: string,
+  amount: string,
+  blinding: string,
+  keepIndex: number,
+): void {
+  const notes = loadNotes(wallet)
+  const filtered = notes.filter(
+    (n) =>
+      !(
+        !n.spent &&
+        n.mintAddress === mintAddress &&
+        n.amount === amount &&
+        n.blinding === blinding &&
+        n.index !== keepIndex
+      ),
+  )
+  if (filtered.length !== notes.length) persist(wallet, filtered)
 }
 
 export function getSyncOffset(wallet: PublicKey, treeKey: string): number {

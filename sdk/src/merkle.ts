@@ -126,6 +126,8 @@ export async function relayWithdraw(req: {
   mint?: string
   /** SPL: wallet that owns the recipient ATA. */
   recipientOwner?: string
+  /** SPL: client-built ALT address so the relayer can compress the v0 withdraw tx. */
+  altAddress?: string
 }): Promise<string> {
   const body = {
     kind: req.kind,
@@ -144,6 +146,7 @@ export async function relayWithdraw(req: {
     recipient: req.recipient,
     mint: req.mint,
     recipient_owner: req.recipientOwner,
+    alt_address: req.altAddress,
   }
   const res = await fetch(getBackendUrl() + "/api/relayer", {
     method: "POST",

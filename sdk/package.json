@@ -1,6 +1,6 @@
 {
   "name": "privacy-cash-sdk",
-  "version": "0.1.1",
+  "version": "0.1.7",
   "description": "Browser-native client SDK for the Privacy Cash Solana protocol (deposit/withdraw SOL & SPL tokens, ZK proofs, commitment notes).",
   "type": "module",
   "main": "./dist/index.js",

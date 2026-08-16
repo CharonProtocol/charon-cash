@@ -5,7 +5,7 @@ import BN from "bn.js";
 import { envProgramId, FIELD_SIZE, MERKLE_TREE_DEPTH, SIGN_MESSAGE, SOL_TREE_KEY, WRAPPED_SOL_MINT, } from "./constants";
 import { EncryptionService, Keypair, Utxo, getExtDataHash, getMintAddressField, } from "./crypto";
 import { bytesToHex, fetchMerkleProof, fetchRelayerInfo, fetchBlockhash, fetchTreeState, fetchUtxoRange, fieldToHex32, isNullifierSpent, submitTransaction, relayWithdraw, waitForLeafIndex, } from "./merkle";
-import { clearNotes, exportNotes, getSyncOffset, importNotes, loadNotes, markNoteSpent, newNoteId, purgeLegacyStorage, readLegacyNotes, saveNote, setSyncOffset, unspentNotes, upsertNote, markNoteSpentByIndex, } from "./notes";
+import { clearNotes, exportNotes, getSyncOffset, importNotes, loadNotes, markNoteSpent, newNoteId, purgeLegacyStorage, removeStaleNote, readLegacyNotes, saveNote, setSyncOffset, unspentNotes, upsertNote, markNoteSpentByIndex, } from "./notes";
 import { pushEncryptedNotes, pullEncryptedNotes } from "./notestore";
 import { parseProofToBytesArray, parseToBytesArray, prove } from "./prover";
 import { buildTransactSplTransaction, buildTransactTransaction, } from "./program";
@@ -122,7 +122,7 @@ export class PrivacyCashClient {
     /** Unlock + rescan + persist. Powers the UI "Load notes" action. */
     async refreshNotes() {
         await this.unlock();
-        const r = await this.syncNotes(SOL_TREE_KEY).catch(() => ({
+        const r = await this.syncNotes(SOL_TREE_KEY, true).catch(() => ({
             scanned: 0,
             added: 0,
             spent: 0,
@@ -167,6 +167,7 @@ export class PrivacyCashClient {
                     continue;
                 }
                 const before = unspentNotes(wallet).some((n) => n.mintAddress === utxo.mintAddress && n.index === utxo.index);
+                removeStaleNote(wallet, utxo.mintAddress, utxo.amount.toString(), utxo.blinding.toString(), utxo.index);
                 upsertNote(wallet, {
                     id: newNoteId(),
                     amount: utxo.amount.toString(),
@@ -250,7 +251,7 @@ export class PrivacyCashClient {
     }
     async withdrawSOL(grossLamports, recipient, opts) {
         await this.unlock();
-        await this.syncNotes(SOL_TREE_KEY).catch(() => { });
+        await this.syncNotes(SOL_TREE_KEY, true).catch(() => { });
         return this.withdrawInternal({
             treeKey: SOL_TREE_KEY,
             mintAddress: WRAPPED_SOL_MINT,
@@ -339,7 +340,7 @@ export class PrivacyCashClient {
         await this.unlock();
         const mintPk = toPubkey(mint);
         const mintStr = mintPk.toBase58();
-        await this.syncNotes(mintStr).catch(() => { });
+        await this.syncNotes(mintStr, true).catch(() => { });
         return this.withdrawInternal({
             treeKey: mintStr,
             mintAddress: mintStr,
@@ -536,14 +537,27 @@ export class PrivacyCashClient {
             let relayRecipient = args.recipient.toBase58();
             let recipientOwner;
             let mintStr;
+            let altAddress;
             if (args.isSpl && args.mint) {
                 const recipientAta = getAssociatedTokenAddressSync(args.mint, args.recipient);
                 hashRecipient = recipientAta;
                 relayRecipient = recipientAta.toBase58();
                 recipientOwner = args.recipient.toBase58();
                 mintStr = args.mint.toBase58();
+                // The relayer builds a v0 message reusing this ALT so the (otherwise
+                // >1232-byte) SPL withdraw compresses under the transaction-size limit.
+                const alt = await ensureAlt({
+                    signer: this.signer,
+                    preferred: envAltAddress(),
+                    addresses: splAltAddresses({
+                        programId: this.programId,
+                        feeRecipient: this.feeRecipient,
+                        mint: args.mint,
+                    }),
+                });
+                altAddress = alt.key.toBase58();
             }
-            const r = await this.proveAndRelay({ ...commonProof, hashRecipient, relayRecipient, recipientOwner, mint: mintStr });
+            const r = await this.proveAndRelay({ ...commonProof, hashRecipient, relayRecipient, recipientOwner, mint: mintStr, altAddress });
             signature = r.signature;
             nullifiers = r.nullifiers;
         }
@@ -648,6 +662,7 @@ export class PrivacyCashClient {
             recipient: args.relayRecipient,
             mint: args.mint,
             recipientOwner: args.recipientOwner,
+            altAddress: args.altAddress,
         });
         return { signature, nullifiers: nullifierHexes };
     }

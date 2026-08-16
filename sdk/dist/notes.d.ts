@@ -36,6 +36,14 @@ export declare function totalBalance(wallet: PublicKey, mintAddress?: string): b
 export declare function exportNotes(wallet: PublicKey): string;
 export declare function importNotes(wallet: PublicKey, json: string, replace?: boolean): number;
 export declare function clearNotes(wallet: PublicKey): void;
+/**
+ * Drop any unspent note that duplicates (mint, amount, blinding) at a DIFFERENT
+ * index. A note's commitment is Poseidon(amount, pubkey, blinding, mint), so a
+ * given UTXO lives at exactly one leaf index; any other index for the same
+ * (amount, blinding, mint) is a stale label left by a relayer-mirror rebuild.
+ * Called from syncNotes before upserting the authoritative copy.
+ */
+export declare function removeStaleNote(wallet: PublicKey, mintAddress: string, amount: string, blinding: string, keepIndex: number): void;
 export declare function getSyncOffset(wallet: PublicKey, treeKey: string): number;
 export declare function setSyncOffset(wallet: PublicKey, treeKey: string, offset: number): void;
 export declare function resetSyncOffset(wallet: PublicKey, treeKey: string): void;
