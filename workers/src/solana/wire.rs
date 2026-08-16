@@ -104,7 +104,18 @@ fn compile(payer: &Pubkey, ixs: &[Instruction], table: Option<&[Pubkey]>) -> Com
         }
     }
 
-    let static_keys: Vec<Pubkey> = slots.iter().filter(|s| !s.dynamic).map(|s| s.key).collect();
+    // Solana's message header marks readonly-ness BY POSITION (last
+    // num_readonly_unsigned keys are readonly), so static keys must be
+    // stable-partitioned into the four header classes — not left in
+    // first-seen order.
+    let static_keys: Vec<Pubkey> = slots
+        .iter()
+        .filter(|s| !s.dynamic && s.signer && s.writable)
+        .chain(slots.iter().filter(|s| !s.dynamic && s.signer && !s.writable))
+        .chain(slots.iter().filter(|s| !s.dynamic && !s.signer && s.writable))
+        .chain(slots.iter().filter(|s| !s.dynamic && !s.signer && !s.writable))
+        .map(|s| s.key)
+        .collect();
     let dyn_writable: Vec<Pubkey> = slots.iter().filter(|s| s.dynamic && s.writable).map(|s| s.key).collect();
     let dyn_readonly: Vec<Pubkey> = slots.iter().filter(|s| s.dynamic && !s.writable).map(|s| s.key).collect();
 
@@ -146,7 +157,7 @@ fn compile(payer: &Pubkey, ixs: &[Instruction], table: Option<&[Pubkey]>) -> Com
 fn serialize_instructions(c: &Compiled, ixs: &[Instruction], out: &mut Vec<u8>) {
     write_compact_u16(out, ixs.len() as u16);
     for (i, ix) in ixs.iter().enumerate() {
-        out.extend_from_slice(&c.program_indexes[i].to_le_bytes());
+        out.push(c.program_indexes[i] as u8);
         write_compact_u16(out, ix.accounts.len() as u16);
         for idx in &c.account_indexes[i] {
             out.push(*idx as u8);
@@ -223,11 +234,11 @@ pub fn build_v0_tx(
     message.extend_from_slice(alt_key.as_ref());
     write_compact_u16(&mut message, writable_indexes.len() as u16);
     for idx in &writable_indexes {
-        message.extend_from_slice(&idx.to_le_bytes());
+        message.push(*idx as u8);
     }
     write_compact_u16(&mut message, readonly_indexes.len() as u16);
     for idx in &readonly_indexes {
-        message.extend_from_slice(&idx.to_le_bytes());
+        message.push(*idx as u8);
     }
 
     let sig = kp.sign(&message);
@@ -257,6 +268,8 @@ pub struct ParsedTx {
     pub signatures: Vec<Vec<u8>>,
     /// 0 = legacy, 1+ = versioned (message uses the v0 layout).
     pub versioned: bool,
+    /// [num_required_signatures, num_readonly_signed, num_readonly_unsigned]
+    pub header: [u8; 3],
     pub static_keys: Vec<Pubkey>,
     pub instructions: Vec<ParsedIx>,
     pub lookups: Vec<ParsedLookup>,
@@ -279,9 +292,10 @@ pub fn parse_tx(bytes: &[u8]) -> Result<ParsedTx, String> {
         off += 1;
     }
     // header (3 bytes): num_required_signatures, num_readonly_signed, num_readonly_unsigned
-    if bytes.get(off..off + 3).is_none() {
-        return Err("tx too short: header".into());
-    }
+    let header: [u8; 3] = bytes
+        .get(off..off + 3)
+        .and_then(|h| h.try_into().ok())
+        .ok_or("tx too short: header")?;
     off += 3;
 
     let key_count = read_compact_u16(bytes, &mut off).ok_or("tx too short: key count")? as usize;
@@ -301,9 +315,8 @@ pub fn parse_tx(bytes: &[u8]) -> Result<ParsedTx, String> {
     let ix_count = read_compact_u16(bytes, &mut off).ok_or("tx too short: ix count")? as usize;
     let mut instructions = Vec::with_capacity(ix_count);
     for _ in 0..ix_count {
-        let p = bytes.get(off..off + 2).ok_or("tx too short: ix program index")?;
-        let program_id_index = u16::from_le_bytes(p.try_into().unwrap());
-        off += 2;
+        let program_id_index = *bytes.get(off).ok_or("tx too short: ix program index")? as u16;
+        off += 1;
         let acct_count = read_compact_u16(bytes, &mut off).ok_or("tx too short: ix accounts")? as usize;
         let accounts = bytes
             .get(off..off + acct_count)
@@ -323,23 +336,23 @@ pub fn parse_tx(bytes: &[u8]) -> Result<ParsedTx, String> {
             let k = bytes.get(off..off + 32).ok_or("tx too short: lookup key")?;
             let account_key = Pubkey(k.try_into().unwrap());
             off += 32;
-            let mut read_u16s = |off: &mut usize| -> Result<Vec<u16>, String> {
+            let mut read_u8s = |off: &mut usize| -> Result<Vec<u16>, String> {
                 let n = read_compact_u16(bytes, off).ok_or("tx too short: lookup idx count")? as usize;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
-                    let b = bytes.get(*off..*off + 2).ok_or("tx too short: lookup idx")?;
-                    v.push(u16::from_le_bytes(b.try_into().unwrap()));
-                    *off += 2;
+                    let b = *bytes.get(*off).ok_or("tx too short: lookup idx")?;
+                    v.push(b as u16);
+                    *off += 1;
                 }
                 Ok(v)
             };
-            let writable_indexes = read_u16s(&mut off)?;
-            let readonly_indexes = read_u16s(&mut off)?;
+            let writable_indexes = read_u8s(&mut off)?;
+            let readonly_indexes = read_u8s(&mut off)?;
             lookups.push(ParsedLookup { account_key, writable_indexes, readonly_indexes });
         }
     }
 
-    Ok(ParsedTx { signatures, versioned, static_keys, instructions, lookups })
+    Ok(ParsedTx { signatures, versioned, header, static_keys, instructions, lookups })
 }
 
 /// Resolve the full account-key list: static keys, then all lookup-table
