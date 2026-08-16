@@ -40,3 +40,6 @@ runbooks
 
 txtx.yml
 docs/
+
+# local CLI tool state (not project work)
+.commandcode/

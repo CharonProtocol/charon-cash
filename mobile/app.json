@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Privacy Cash",
+    "slug": "privacy-cash-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "privacycash",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B0E13"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "dev.privacycash.mobile"
+    },
+    "android": {
+      "package": "dev.privacycash.mobile",
+      "icon": "./assets/icon.png",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0A0D12"
+      },
+      "edgeToEdgeEnabled": false
+    },
+    "plugins": [],
+    "jsEngine": "hermes"
+  }
+}
