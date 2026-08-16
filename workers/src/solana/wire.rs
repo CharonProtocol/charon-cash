@@ -87,12 +87,18 @@ struct Compiled {
 fn compile(payer: &Pubkey, ixs: &[Instruction], table: Option<&[Pubkey]>) -> Compiled {
     let mut slots: Vec<Slot> = vec![Slot { key: *payer, signer: true, writable: true, dynamic: false }];
 
+    // Signers and invoked program ids must stay in static keys: the runtime
+    // resolves programs before loading lookup tables (and a signature can't
+    // come from a table).
+    let invoked: Vec<Pubkey> = ixs.iter().map(|ix| ix.program_id).collect();
     let mut ensure = |slots: &mut Vec<Slot>, key: Pubkey, signer: bool, writable: bool| {
         if let Some(slot) = slots.iter_mut().find(|s| s.key == key) {
             slot.signer = slot.signer || signer;
             slot.writable = slot.writable || writable;
         } else {
-            let dynamic = table.map(|t| t.iter().any(|k| *k == key)).unwrap_or(false);
+            let dynamic = !signer
+                && !invoked.contains(&key)
+                && table.map(|t| t.iter().any(|k| *k == key)).unwrap_or(false);
             slots.push(Slot { key, signer, writable, dynamic });
         }
     };
@@ -101,6 +107,13 @@ fn compile(payer: &Pubkey, ixs: &[Instruction], table: Option<&[Pubkey]>) -> Com
         ensure(&mut slots, ix.program_id, false, false);
         for meta in &ix.accounts {
             ensure(&mut slots, meta.pubkey, meta.is_signer, meta.is_writable);
+        }
+    }
+    // A key first seen as an account meta may have been marked dynamic before
+    // a later ix invoked it as its program.
+    for slot in &mut slots {
+        if invoked.contains(&slot.key) || slot.signer {
+            slot.dynamic = false;
         }
     }
 
