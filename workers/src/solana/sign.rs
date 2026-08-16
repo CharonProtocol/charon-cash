@@ -1,0 +1,55 @@
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
+
+pub struct Keypair {
+    signing: SigningKey,
+    public: [u8; 32],
+}
+
+impl Keypair {
+    /// Build from a 32-byte seed (solana keypair files store seed||public, the
+    /// first 32 bytes are the seed).
+    pub fn from_seed(seed: [u8; 32]) -> Self {
+        let signing = SigningKey::from_bytes(&seed);
+        let public = signing.verifying_key().to_bytes();
+        Keypair { signing, public }
+    }
+
+    pub fn pubkey_bytes(&self) -> [u8; 32] {
+        self.public
+    }
+
+    pub fn sign(&self, message: &[u8]) -> [u8; 64] {
+        let sig: Signature = self.signing.sign(message);
+        sig.to_bytes()
+    }
+}
+
+pub fn verifying_key_from_seed(seed: &[u8; 32]) -> VerifyingKey {
+    SigningKey::from_bytes(seed).verifying_key()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rfc8032_vector_1() {
+        // RFC 8032 test vector 1 (empty message) — proves the ed25519 signer
+        // wiring is byte-exact.
+        let seed: [u8; 32] = [
+            0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec,
+            0x2c, 0xc4, 0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03,
+            0x1c, 0xae, 0x7f, 0x60,
+        ];
+        let kp = Keypair::from_seed(seed);
+        let sig = kp.sign(b"");
+        let expected: [u8; 64] = [
+            0xe5, 0x56, 0x43, 0x00, 0xc3, 0x60, 0xac, 0x72, 0x90, 0x86, 0xe2, 0xcc, 0x80, 0x6e,
+            0x82, 0x8a, 0x84, 0x87, 0x7f, 0x1e, 0xb8, 0xe5, 0xd9, 0x74, 0xd8, 0x73, 0xe0, 0x65,
+            0x22, 0x49, 0x01, 0x55, 0x5f, 0xb8, 0x82, 0x15, 0x90, 0xa3, 0x3b, 0xac, 0xc6, 0x1e,
+            0x39, 0x70, 0x1c, 0xf9, 0xb4, 0x6b, 0xd2, 0x5b, 0xf5, 0xf0, 0x59, 0x5b, 0xbe, 0x24,
+            0x65, 0x51, 0x41, 0x43, 0x8e, 0x7a, 0x10, 0x0b,
+        ];
+        assert_eq!(sig, expected);
+    }
+}

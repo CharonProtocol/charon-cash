@@ -1,0 +1,25 @@
+name = "privacy-cash-relayer"
+main = "build/worker/shim.mjs"
+compatibility_date = "2026-08-16"
+
+[build]
+command = "worker-build --release"
+
+[vars]
+PROGRAM_ID = "9PpZ9iUSCk6fuv4MvFEkN64hd7kkh28GxGLgSUDRZA9V"
+RELAYER_FEE_RATE_BPS = "25"
+RELAYER_SKIP_PREFLIGHT = "false"
+# Comma-separated list of supported SPL mints (fee ATAs are derived from the
+# relayer fee recipient + mint).
+SUPPORTED_MINTS = "HLb8KZXK6sQvPvFqcoGSyVsYB5mGfBGJa2gT9B6G1BkC"
+
+# Secrets (set via `wrangler secret put`, never committed):
+#   RELAYER_KEYPAIR_JSON  - JSON byte array of the relayer seed (solana keypair file contents)
+#   SOLANA_RPC_URL        - JSON-RPC endpoint (devnet: https://api.devnet.solana.com)
+#   ADMIN_PASSWORD        - operator password guarding the mutating admin routes
+
+[[d1_databases]]
+binding = "DB"
+database_name = "privacy-cash"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
