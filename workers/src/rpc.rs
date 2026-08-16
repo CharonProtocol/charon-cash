@@ -76,9 +76,11 @@ impl Rpc {
         init.with_body(Some(body_js));
         let req = Request::new_with_init(&self.url, &init).map_err(|e| e.to_string())?;
         let mut resp = Fetch::Request(req).send().await.map_err(|e| format!("{method}: {e}"))?;
+        let status = resp.status_code();
         let text = resp.text().await.map_err(|e| format!("{method}: {e}"))?;
-        let value: Value =
-            serde_json::from_str(&text).map_err(|e| format!("{method}: bad json: {e}"))?;
+        let value: Value = serde_json::from_str(&text).map_err(|e| {
+            format!("{method}: status {status}, bad json: {e}, body: {}", &text.chars().take(160).collect::<String>())
+        })?;
         if let Some(err) = value.get("error") {
             return Err(format!("{method}: {err}"));
         }
