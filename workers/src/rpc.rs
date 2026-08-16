@@ -60,6 +60,19 @@ pub struct TxJson {
     pub meta: Option<TxJsonMeta>,
 }
 
+/// Strip credential-bearing fragments from upstream error text before it can
+/// surface in client responses or logs — the RPC URL embeds the provider api
+/// key, and providers sometimes echo request URLs in errors.
+fn scrub(mut s: String) -> String {
+    for needle in ["api-key=", "apikey=", "api_key=", "token="] {
+        if let Some(i) = s.find(needle) {
+            s.truncate(i + needle.len());
+            s.push_str("[redacted]");
+        }
+    }
+    s
+}
+
 impl Rpc {
     async fn call(&self, method: &str, params: Value) -> Result<Value, String> {
         let body = json!({ "jsonrpc": "2.0", "id": 1, "method": method, "params": params });
@@ -74,15 +87,23 @@ impl Rpc {
             .map_err(|e| e.to_string())?;
         init.with_headers(headers);
         init.with_body(Some(body_js));
-        let req = Request::new_with_init(&self.url, &init).map_err(|e| e.to_string())?;
-        let mut resp = Fetch::Request(req).send().await.map_err(|e| format!("{method}: {e}"))?;
+        let req = Request::new_with_init(&self.url, &init).map_err(|e| scrub(format!("{method}: {e}")))?;
+        let mut resp = Fetch::Request(req)
+            .send()
+            .await
+            .map_err(|e| scrub(format!("{method}: {e}")))?;
         let status = resp.status_code();
-        let text = resp.text().await.map_err(|e| format!("{method}: {e}"))?;
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| scrub(format!("{method}: {e}")))?;
         let value: Value = serde_json::from_str(&text).map_err(|e| {
-            format!("{method}: status {status}, bad json: {e}, body: {}", &text.chars().take(160).collect::<String>())
+            let detail = format!("{e}, body: {}", &text.chars().take(160).collect::<String>());
+            worker::console_warn!("{method}: status {status}, {detail}");
+            format!("{method}: status {status}, bad json")
         })?;
         if let Some(err) = value.get("error") {
-            return Err(format!("{method}: {err}"));
+            return Err(scrub(format!("{method}: {err}")));
         }
         value
             .get("result")
