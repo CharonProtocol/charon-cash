@@ -1,5 +1,12 @@
 import { useState } from "react"
-import { ArrowDownToLine, ArrowUpRight, Coins, Send, ShieldCheck } from "lucide-react"
+import {
+  ArrowDownToLine,
+  ArrowUpRight,
+  Coins,
+  Gift,
+  Send,
+  ShieldCheck,
+} from "lucide-react"
 
 import { DepositCard } from "@/components/DepositCard"
 import { WithdrawCard } from "@/components/WithdrawCard"
@@ -7,6 +14,7 @@ import { DepositSplCard } from "@/components/DepositSplCard"
 import { WithdrawSplCard } from "@/components/WithdrawSplCard"
 import { SendCard } from "@/components/SendCard"
 import { SendSplCard } from "@/components/SendSplCard"
+import { GiftNoteCard } from "@/components/GiftNoteCard"
 import { Button } from "@/components/ui/button"
 import { useNotesSync } from "@/hooks/useNotesSync"
 
@@ -16,7 +24,9 @@ interface UserAppViewProps {
 
 export function UserAppView({ onChanged }: UserAppViewProps) {
   const [assetType, setAssetType] = useState<"SOL" | "SPL">("SOL")
-  const [activeTab, setActiveTab] = useState<"deposit" | "withdraw" | "transfer">("deposit")
+  const [activeTab, setActiveTab] = useState<
+    "deposit" | "withdraw" | "transfer" | "gift"
+  >("deposit")
 
   useNotesSync()
 
@@ -83,6 +93,16 @@ export function UserAppView({ onChanged }: UserAppViewProps) {
         >
           <Send className="size-4" /> Private Transfer ({assetType})
         </button>
+        <button
+          onClick={() => setActiveTab("gift")}
+          className={`flex items-center gap-2 border-b-2 px-6 py-3 text-sm font-medium transition-colors ${
+            activeTab === "gift"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Gift className="size-4" /> Send Note
+        </button>
       </div>
 
       {/* Panels */}
@@ -99,6 +119,8 @@ export function UserAppView({ onChanged }: UserAppViewProps) {
           ) : (
             <WithdrawSplCard onChanged={onChanged} />
           )
+        ) : activeTab === "gift" ? (
+          <GiftNoteCard onChanged={onChanged} />
         ) : assetType === "SOL" ? (
           <SendCard onChanged={onChanged} />
         ) : (
