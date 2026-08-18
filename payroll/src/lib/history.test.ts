@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest"
 import {
   clearAll,
   failedEntriesOf as failedEntries,
+  getRun,
   listRuns,
   runToCsv,
   saveRun,
@@ -34,6 +35,7 @@ describe("history", () => {
     saveRun(receipt("a", { createdAt: 1 }))
     saveRun(receipt("b", { createdAt: 2 }))
     expect(listRuns().map((r) => r.id)).toEqual(["b", "a"])
+    expect(getRun("a")!.funding!.depositedRaw).toBe(3n)
   })
 
   it("trims to 50 runs", () => {

@@ -4,8 +4,18 @@ const KEY = "payroll:history:v1"
 const MAX_RUNS = 50
 
 function revive(r: unknown): RunReceipt {
-  const x = r as RunReceipt & { totalPlanned?: string | bigint }
-  return { ...x, totalPlanned: BigInt(x.totalPlanned as string | bigint) }
+  const x = r as RunReceipt & {
+    totalPlanned?: string | bigint
+    funding?: { depositedRaw: string | bigint } | null
+  }
+  return {
+    ...x,
+    totalPlanned: BigInt(x.totalPlanned as string | bigint),
+    funding: x.funding ? {
+      ...x.funding,
+      depositedRaw: BigInt(x.funding.depositedRaw as string | bigint)
+    } : null
+  }
 }
 
 function prepare(r: RunReceipt): unknown {
