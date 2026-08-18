@@ -43,4 +43,9 @@ export default defineConfig({
   },
   build: { commonjsOptions: { transformMixedEsModules: true } },
   server: { host: "0.0.0.0", port: 5174, fs: { allow: [".."] } },
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["./src/test/setup.ts"],
+  },
 })
