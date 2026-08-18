@@ -1,5 +1,5 @@
 import { failedEntriesOf, getRun, listRuns, saveRun, clearAll } from "./store"
-import type { PayrollEntry, RunReceipt } from "./types"
+import type { RunReceipt } from "./types"
 
 export { failedEntriesOf, getRun, listRuns, saveRun, clearAll }
 
