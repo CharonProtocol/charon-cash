@@ -98,7 +98,9 @@ export function PlanReviewCard({
           <Play className="size-4" /> Review &amp; run
         </CardTitle>
         <CardDescription>
-          Vault funds are spent first. {shortfall > 0n ? "You will sign " : "No deposit needed — vault covers this run."}
+          Vault funds are spent first. {shortfall > 0n
+            ? `You will sign one deposit of ${rawToHuman(shortfall, SOL_DECIMALS)} SOL.`
+            : "No deposit needed — vault covers this run."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -122,7 +124,7 @@ export function PlanReviewCard({
             <div className="space-y-2">
               <Label htmlFor="mint">Mint</Label>
               <div className="flex gap-2">
-                <Input id="mint" value={mint} onChange={(e) => setMint(e.target.value)} placeholder="Mint pubkey" />
+                <Input id="mint" value={mint} onChange={(e) => { setMint(e.target.value); setDecimals(null); setMintError(null) }} placeholder="Mint pubkey" />
                 <Button variant="outline" onClick={resolveMint} disabled={!mint}>Load</Button>
               </div>
               {decimals !== null && <p className="text-xs text-muted-foreground">decimals: {decimals}</p>}

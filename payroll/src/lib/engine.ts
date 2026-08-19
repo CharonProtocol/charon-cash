@@ -137,6 +137,7 @@ export class PayrollEngine {
               ? await this.deps.client.withdrawSOL(amount, row.address, { relay: true })
               : await this.deps.client.withdrawSPL(req.asset.mint, amount, row.address, { relay: true })
           row.txSignature = res.signature
+          row.error = undefined
           row.status = "relayed"
           this.emit("paying", funding?.txSignature)
           row.status = (await this.deps.confirmSignature(res.signature)) ? "confirmed" : "confirming"

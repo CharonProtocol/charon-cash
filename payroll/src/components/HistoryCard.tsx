@@ -46,7 +46,7 @@ export function HistoryCard({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
                     {e.txSignature ? (
                       <a
                         className="font-mono underline"
-                        href={`https://explorer.solana.com/tx/${e.txSignature}?cluster=devnet`}
+                        href={`https://explorer.solana.com/tx/${encodeURIComponent(e.txSignature)}?cluster=devnet`}
                         target="_blank"
                         rel="noreferrer"
                       >

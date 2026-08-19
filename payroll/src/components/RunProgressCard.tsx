@@ -47,7 +47,7 @@ function Row({ status, address, memo, sig, error }: {
         {sig && (
           <a
             className="inline-flex items-center gap-1 font-mono text-xs underline"
-            href={`https://explorer.solana.com/tx/${sig}?cluster=devnet`}
+            href={`https://explorer.solana.com/tx/${encodeURIComponent(sig)}?cluster=devnet`}
             target="_blank"
             rel="noreferrer"
           >

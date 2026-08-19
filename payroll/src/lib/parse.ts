@@ -27,7 +27,12 @@ function normalizeAmount(v: unknown, row: number, errors: string[]): string | nu
     errors.push(`row ${row}: amount must be greater than zero (got ${n})`)
     return null
   }
-  return String(v)
+  const s = typeof v === "string" ? v.trim() : String(v)
+  if (!/^\d+(\.\d+)?$/.test(s)) {
+    errors.push(`row ${row}: amount "${String(v)}" is not a plain decimal number (scientific notation is not supported)`)
+    return null
+  }
+  return s
 }
 
 /** RFC-lite CSV line split: honors double-quoted fields containing commas. */
@@ -54,6 +59,7 @@ function splitCsvLine(line: string): string[] {
 function finalize(entries: PayrollEntry[], errors: string[]): ParseResult {
   if (entries.length > MAX_ENTRIES)
     errors.push(`file has ${entries.length} entries; maximum is ${MAX_ENTRIES} per run`)
+  if (!entries.length) errors.push("file has no payable rows")
   const seen = new Map<string, number>()
   entries.forEach((e, i) => {
     const prior = seen.get(e.address)

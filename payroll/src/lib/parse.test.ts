@@ -36,7 +36,13 @@ describe("parsePayrollFile (JSON)", () => {
         { address: ADDR, amount: "abc" },
       ]),
     )
-    expect(!r.ok && r.errors).toHaveLength(3)
+    expect(!r.ok && r.errors).toHaveLength(4)
+  })
+
+  it("rejects exponent-form amounts with a row error", () => {
+    const r = parsePayrollFile('{"payments":[{"address":"' + ADDR + '","amount":"1e-7"}]}')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.errors[0]).toContain("row 1")
   })
 
   it("rejects duplicate addresses citing both rows", () => {
@@ -80,6 +86,12 @@ describe("parsePayrollFile (CSV)", () => {
 
   it("requires the exact header", () => {
     expect(!parsePayrollFile("addr,amount\n" + ADDR + ",1").ok)
+  })
+
+  it("rejects a header-only CSV", () => {
+    const r = parsePayrollFile("address,amount,memo")
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.errors.join(" ")).toContain("no payable rows")
   })
 })
 

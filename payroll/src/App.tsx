@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react"
 import { useWallet } from "@solana/wallet-adapter-react"
 import { toast } from "sonner"
+import { totalBalance } from "privacy-cash-sdk"
 
 import { HistoryCard } from "@/components/HistoryCard"
 import { PlanReviewCard } from "@/components/PlanReviewCard"
@@ -34,12 +35,17 @@ export default function App() {
       const engine = createEngine(client)
       engineRef.current = engine
       try {
+        let vaultRaw = vaultSolRaw ?? 0n
+        if (asset.kind === "spl") {
+          await client.syncNotes(asset.mint)
+          vaultRaw = totalBalance(client.publicKey, asset.mint)
+        }
         const r = await engine.run(
-          { fileHash, asset, entries, bps, vaultRaw: vaultSolRaw ?? 0n },
+          { fileHash, asset, entries, bps, vaultRaw },
           setSnapshot,
         )
-        setReceipt(r)
         await refreshVault()
+        setReceipt(r)
         if (r.summary.failed > 0) toast.warning(`${r.summary.failed} payout(s) failed — resume available`)
         else toast.success("Payroll run complete")
       } catch (e) {

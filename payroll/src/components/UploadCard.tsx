@@ -56,6 +56,7 @@ export function UploadCard({ onParsed }: { onParsed: (p: ParsedFile | null) => v
             if (!f) return
             const bytes = new Uint8Array(await f.arrayBuffer())
             await ingest(new TextDecoder().decode(bytes), bytes)
+            e.target.value = ""
           }}
         />
         <div className="flex gap-2">
