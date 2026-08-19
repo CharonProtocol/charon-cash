@@ -12,14 +12,16 @@ CREATE TABLE IF NOT EXISTS users {
 }
 
 -- This table will be filled by indexer.
-CREATE TABLE IF NOT EXISTS commitment {
-    leaf_index  INTEGER PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS commitments {
+    leaf_index  SERIAL INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     commitment  BYTEA NOT NULL UNIQUE
 }
 
 
 -- This table will be filled by indexer.
+-- id is added for tracking notes on client side
 CREATE TABLE IF NOT EXISTS notes {
+    id SERIAL INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     ephemeral_pubkey BYTEA NOT NULL,
     ciphertext       BYTEA NOT NULL,
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
