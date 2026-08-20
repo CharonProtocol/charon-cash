@@ -17,7 +17,7 @@ Argues from payroll/DESIGN-V2.md (the binding spec). Seven tasks, executed seque
 - `encryptUtxoTo(recipientXPub: Uint8Array, utxo: Utxo): Promise<Buffer>` — v3 format (DESIGN-V2 #5)
 - `publishRecipientKeys(signer: Signer): Promise<void>` / `fetchRecipientKeys(wallet: PublicKey|string): Promise<{ notePubkey: string; encPubkey: string } | null>` (sdk recipients)
 - `transferNoteSOL(recipient, netLamports, opts?): Promise<WithdrawResult & { leafIndex: number; commitment: string }>` and SPL twin
-- HTTP: `PUT /api/recipients` body `{wallet, note_pubkey, enc_pubkey}`; `GET /api/recipients/:wallet` → row or 404
+- HTTP: `PUT /api/recipients` body `{wallet, note_pubkey, enc_pubkey, signature}` where `signature` = base64 ed25519 over `"privacy-cash-recipients-v1\n<wallet>\n<note_pubkey>\n<enc_pubkey>"` signed by the wallet key; `GET /api/recipients/:wallet` → row or 404
 - Program id stays `9PpZ9iUSCk6fuv4MvFEkN64hd7kkh28GxGLgSUDRZA9V` (surfpool forks devnet; upgrade in place)
 
 ## Task V2-1: Program accepts ext 0 transfers

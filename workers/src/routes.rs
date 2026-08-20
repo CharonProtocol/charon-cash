@@ -50,6 +50,30 @@ fn parse_leaf_index(raw: Option<String>) -> AppResult<u32> {
         .map_err(|e| AppError::bad_request("INVALID_LEAF_INDEX", format!("leaf_index: {e}")))
 }
 
+const BN254_MODULUS_DEC: &str = "21888242871839275222246405745257275088548364400416034343698204186575808495617";
+const RECIPIENT_PUT_PREFIX: &str = "privacy-cash-recipients-v1";
+
+pub fn recipient_put_message(wallet: &str, note_pubkey: &str, enc_pubkey: &str) -> String {
+    format!("{RECIPIENT_PUT_PREFIX}\n{wallet}\n{note_pubkey}\n{enc_pubkey}")
+}
+
+fn valid_note_pubkey(s: &str) -> bool {
+    if s.is_empty() || s.len() > BN254_MODULUS_DEC.len() {
+        return false;
+    }
+    if !s.bytes().all(|b| b.is_ascii_digit()) {
+        return false;
+    }
+    if s.starts_with('0') {
+        return false;
+    }
+    s.len() < BN254_MODULUS_DEC.len() || s.as_bytes() < BN254_MODULUS_DEC.as_bytes()
+}
+
+fn valid_enc_pubkey(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 /// Constant-time byte equality (within a single length class).
 fn ct_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
@@ -182,6 +206,7 @@ async fn utxo_check(
 }
 
 pub fn router(state: Arc<AppState>) -> Router<'static, Arc<AppState>> {
+    use ed25519_dalek::Verifier;
     Router::with_data(state)
         .get_async("/health", |_req, _ctx| Box::pin(async move {
             ok_json(&json!({ "status": "ok" }))
@@ -388,6 +413,7 @@ pub fn router(state: Arc<AppState>) -> Router<'static, Arc<AppState>> {
                 wallet: String,
                 note_pubkey: String,
                 enc_pubkey: String,
+                signature: String,
             }
             let state = state_of(&ctx);
             let body: PutRecipientsRequest = match req.json().await {
@@ -395,7 +421,8 @@ pub fn router(state: Arc<AppState>) -> Router<'static, Arc<AppState>> {
                 Err(e) => return err_json(AppError::bad_request("INVALID_JSON", format!("{e}"))),
             };
             let wallet = body.wallet.trim().to_string();
-            if crate::solana::pubkey::Pubkey::parse(&wallet).is_none() {
+            let wallet_pk = crate::solana::pubkey::Pubkey::parse(&wallet);
+            if wallet_pk.is_none() {
                 return err_json(AppError::bad_request(
                     "INVALID_WALLET",
                     "wallet must be a 32-byte base58 pubkey",
@@ -403,10 +430,48 @@ pub fn router(state: Arc<AppState>) -> Router<'static, Arc<AppState>> {
             }
             let note_pubkey = body.note_pubkey.trim().to_string();
             let enc_pubkey = body.enc_pubkey.trim().to_string();
-            if note_pubkey.is_empty() || enc_pubkey.is_empty() {
+            if !valid_note_pubkey(&note_pubkey) {
                 return err_json(AppError::bad_request(
-                    "MISSING_KEYS",
-                    "note_pubkey and enc_pubkey are required",
+                    "INVALID_NOTE_PUBKEY",
+                    "note_pubkey must be a canonical decimal field element below the bn254 modulus",
+                ));
+            }
+            if !valid_enc_pubkey(&enc_pubkey) {
+                return err_json(AppError::bad_request(
+                    "INVALID_ENC_PUBKEY",
+                    "enc_pubkey must be 64 hex chars (32 bytes)",
+                ));
+            }
+            let sig_bytes = match base64::Engine::decode(&base64::engine::general_purpose::STANDARD, body.signature.trim()) {
+                Ok(b) => b,
+                Err(_) => {
+                    return err_json(AppError::bad_request(
+                        "INVALID_SIGNATURE",
+                        "signature must be base64 (64 bytes)",
+                    ))
+                }
+            };
+            if sig_bytes.len() != 64 {
+                return err_json(AppError::bad_request(
+                    "INVALID_SIGNATURE",
+                    "signature must be 64 bytes",
+                ));
+            }
+            let sig = ed25519_dalek::Signature::from_bytes(&sig_bytes.try_into().unwrap());
+            let verifying = match ed25519_dalek::VerifyingKey::from_bytes(&wallet_pk.unwrap().to_bytes()) {
+                Ok(v) => v,
+                Err(_) => {
+                    return err_json(AppError::bad_request(
+                        "INVALID_WALLET",
+                        "wallet must be a 32-byte ed25519 verifying key",
+                    ))
+                }
+            };
+            let message = recipient_put_message(&wallet, &note_pubkey, &enc_pubkey);
+            if verifying.verify(message.as_bytes(), &sig).is_err() {
+                return err_json(AppError::bad_request(
+                    "BAD_SIGNATURE",
+                    "signature does not verify for this wallet and key set",
                 ));
             }
             match state.store.put_recipient_keys(&wallet, &note_pubkey, &enc_pubkey).await {
@@ -501,4 +566,55 @@ pub fn router(state: Arc<AppState>) -> Router<'static, Arc<AppState>> {
         .options_async("/*catch_all", |_req, _ctx| Box::pin(async move {
             Ok(cors(ResponseBuilder::new().empty()))
         }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::solana::sign::Keypair;
+    use ed25519_dalek::Verifier;
+
+    #[test]
+    fn note_pubkey_validation_accepts_canonical_field_elements() {
+        assert!(valid_note_pubkey("1"));
+        assert!(valid_note_pubkey(
+            "21888242871839275222246405745257275088548364400416034343698204186575808495616"
+        ));
+        assert!(!valid_note_pubkey(
+            "21888242871839275222246405745257275088548364400416034343698204186575808495617"
+        ));
+        assert!(!valid_note_pubkey(
+            "21888242871839275222246405745257275088548364400416034343698204186575808495618"
+        ));
+        assert!(!valid_note_pubkey("0"));
+        assert!(!valid_note_pubkey("01"));
+        assert!(!valid_note_pubkey(""));
+        assert!(!valid_note_pubkey("12a"));
+        assert!(!valid_note_pubkey("-5"));
+    }
+
+    #[test]
+    fn enc_pubkey_validation_requires_32_hex_bytes() {
+        assert!(valid_enc_pubkey(&"ab".repeat(32)));
+        assert!(valid_enc_pubkey(&"AB".repeat(32)));
+        assert!(!valid_enc_pubkey(&"ab".repeat(31)));
+        assert!(!valid_enc_pubkey(&"ab".repeat(33)));
+        assert!(!valid_enc_pubkey(&"zz".repeat(32)));
+    }
+
+    #[test]
+    fn recipient_put_message_round_trips_ed25519() {
+        let kp = Keypair::from_seed([7u8; 32]);
+        let wallet = crate::solana::pubkey::Pubkey::new(kp.pubkey_bytes()).to_string();
+        let note = "123456789012345678901234567890";
+        let enc = "ab".repeat(32);
+        let msg = recipient_put_message(&wallet, note, &enc);
+        let sig = kp.sign(msg.as_bytes());
+        let verifying = ed25519_dalek::VerifyingKey::from_bytes(&kp.pubkey_bytes()).unwrap();
+        let sig = ed25519_dalek::Signature::from_bytes(&sig);
+        assert!(verifying.verify(msg.as_bytes(), &sig).is_ok());
+
+        let tampered = recipient_put_message(&wallet, "999", &enc);
+        assert!(verifying.verify(tampered.as_bytes(), &sig).is_err());
+    }
 }

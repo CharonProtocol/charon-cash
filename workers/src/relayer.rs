@@ -254,6 +254,19 @@ fn spl_withdraw_setup_ixs(state: &AppState, t: &TransactInput) -> AppResult<Vec<
     ])
 }
 
+fn spl_transfer_fee_ata_ixs(state: &AppState, t: &TransactInput) -> AppResult<Vec<Instruction>> {
+    let mint = t
+        .mint
+        .ok_or_else(|| AppError::bad_request("MISSING_MINT", "spl requires mint"))?;
+    let fee_ata = acc::associated_token_address(&state.fee_recipient, &mint);
+    Ok(vec![create_ata_idempotent_ix(
+        &state.signer_pubkey(),
+        &fee_ata,
+        &state.fee_recipient,
+        &mint,
+    )])
+}
+
 pub async fn relay_withdraw(state: &AppState, req: WithdrawRequest) -> AppResult<RelayResponse> {
     let t = req.into_input()?;
     validate::assert_is_withdraw_or_transfer(&t, state.min_transfer_fee)?;
@@ -316,8 +329,12 @@ pub async fn relay_withdraw(state: &AppState, req: WithdrawRequest) -> AppResult
 
     let ix = build_transact_ix(state, &t)?;
     let mut ixs = Vec::new();
-    if t.kind == TransactKind::Spl && t.ext_amount < 0 {
-        ixs.extend(spl_withdraw_setup_ixs(state, &t)?);
+    if t.kind == TransactKind::Spl {
+        if t.ext_amount < 0 {
+            ixs.extend(spl_withdraw_setup_ixs(state, &t)?);
+        } else {
+            ixs.extend(spl_transfer_fee_ata_ixs(state, &t)?);
+        }
     }
     ixs.push(ix);
     let result = match (t.kind, t.alt_address) {
