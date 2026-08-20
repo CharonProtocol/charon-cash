@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import { getMint } from "@solana/spl-token"
 import { useConnection } from "@solana/wallet-adapter-react"
@@ -11,12 +11,18 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { rawToHuman } from "@/lib/format"
+import { rawToHuman, shortHash } from "@/lib/format"
 import { validateDecimals } from "@/lib/parse"
-import { fetchTreeState, splTreeKey } from "privacy-cash-sdk"
-import type { Asset, ParsedFile } from "@/lib/types"
+import { fetchRecipientKeys, fetchTreeState, splTreeKey } from "privacy-cash-sdk"
+import type { Asset, ParsedFile, RunMode } from "@/lib/types"
 
 const SOL_DECIMALS = 9
+
+interface RecipientCheck {
+  total: number
+  registered: number
+  unregistered: string[]
+}
 
 export function PlanReviewCard({
   parsed,
@@ -28,7 +34,7 @@ export function PlanReviewCard({
   parsed: ParsedFile | null
   bps: number | null
   vaultSolRaw: bigint | null
-  onRun: (asset: Asset) => void
+  onRun: (asset: Asset, mode: RunMode) => void
   disabled: boolean
 }) {
   const { connection } = useConnection()
@@ -36,6 +42,16 @@ export function PlanReviewCard({
   const [mint, setMint] = useState("")
   const [decimals, setDecimals] = useState<number | null>(null)
   const [mintError, setMintError] = useState<string | null>(null)
+  const [mode, setMode] = useState<RunMode>("public")
+  const [recipientCheck, setRecipientCheck] = useState<RecipientCheck | null>(null)
+  const [checking, setChecking] = useState(false)
+  const [checkError, setCheckError] = useState<string | null>(null)
+
+  // A new file means the previous recipient check no longer applies.
+  useEffect(() => {
+    setRecipientCheck(null)
+    setCheckError(null)
+  }, [parsed?.fileHash])
 
   const asset: Asset | null = useMemo(() => {
     if (kind === "sol") return { kind: "sol" }
@@ -88,8 +104,34 @@ export function PlanReviewCard({
       ? totals.totalNet + totals.totalFees - vaultBig
       : 0n
 
+  const checkRecipients = async () => {
+    if (!parsed) return
+    setChecking(true)
+    setCheckError(null)
+    try {
+      const unregistered: string[] = []
+      for (const e of parsed.entries) {
+        const keys = await fetchRecipientKeys(e.address).catch(() => null)
+        if (!keys) unregistered.push(e.address)
+      }
+      setRecipientCheck({
+        total: parsed.entries.length,
+        registered: parsed.entries.length - unregistered.length,
+        unregistered,
+      })
+    } catch (e) {
+      setCheckError((e as Error).message)
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const shieldedReady =
+    mode === "public" ||
+    (recipientCheck !== null && recipientCheck.unregistered.length === 0)
+
   const canRun =
-    !!parsed && bps !== null && !!asset && !mintError && decimalErrors.length === 0 && !disabled
+    !!parsed && bps !== null && !!asset && !mintError && decimalErrors.length === 0 && !disabled && shieldedReady
 
   return (
     <Card>
@@ -117,9 +159,62 @@ export function PlanReviewCard({
                   {k === "sol" ? "SOL" : "SPL token"}
                 </button>
               ))}
-              <Badge variant="secondary" className="ml-auto self-center">Shielded — v2</Badge>
             </div>
           </div>
+          <div className="space-y-2">
+            <Label>Payout mode</Label>
+            <div className="flex gap-1 rounded-lg border p-0.5">
+              {(["public", "shielded"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setMode(m)}
+                  className={`rounded-md px-3 py-1 text-xs font-medium ${mode === m ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+                >
+                  {m === "public" ? "Public" : "Private notes"}
+                </button>
+              ))}
+              {mode === "shielded" && (
+                <Badge variant="secondary" className="ml-auto self-center">v2</Badge>
+              )}
+            </div>
+          </div>
+          {mode === "shielded" && (
+            <div className="space-y-2 sm:col-span-2">
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={checkRecipients} disabled={!parsed || checking}>
+                  {checking ? "Checking..." : "Check recipients"}
+                </Button>
+                {recipientCheck && (
+                  <span className="text-xs text-muted-foreground">
+                    {recipientCheck.registered}/{recipientCheck.total} registered
+                  </span>
+                )}
+              </div>
+              {checkError && <p className="text-xs text-destructive">{checkError}</p>}
+              {recipientCheck && recipientCheck.unregistered.length > 0 && (
+                <div className="rounded-lg border p-2">
+                  <p className="text-xs font-medium text-destructive">
+                    These employees have not enabled private receiving:
+                  </p>
+                  <ul className="mt-1 space-y-0.5">
+                    {recipientCheck.unregistered.map((a) => (
+                      <li key={a} className="font-mono text-xs text-muted-foreground">
+                        {shortHash(a, 8, 6)}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Run stays disabled until every row is registered.
+                  </p>
+                </div>
+              )}
+              {recipientCheck && recipientCheck.unregistered.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Every employee can receive private notes.
+                </p>
+              )}
+            </div>
+          )}
           {kind === "spl" && (
             <div className="space-y-2">
               <Label htmlFor="mint">Mint</Label>
@@ -176,7 +271,10 @@ export function PlanReviewCard({
             if (kind === "spl" && mint && decimals !== null) {
               toast.info("First SPL run may ask for one extra one-time signature (lookup table setup).")
             }
-            onRun(asset)
+            if (mode === "shielded") {
+              toast.info("Private mode: each employee receives a note only they can spend.")
+            }
+            onRun(asset, mode)
           }}
         >
           Run payroll

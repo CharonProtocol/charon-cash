@@ -21,12 +21,13 @@ function displayStatus(s: string): EntryStatus {
   return s === "sent" ? "confirmed" : (s as EntryStatus)
 }
 
-function Row({ status, address, memo, sig, error }: {
+function Row({ status, address, memo, sig, error, noteLeafIndex }: {
   status: EntryStatus
   address: string
   memo?: string
   sig?: string
   error?: string
+  noteLeafIndex?: number
 }) {
   return (
     <tr className="border-t">
@@ -44,6 +45,9 @@ function Row({ status, address, memo, sig, error }: {
         </Badge>
       </td>
       <td className="px-3 py-1.5 text-right">
+        {noteLeafIndex !== undefined && (
+          <span className="mr-2 font-mono text-xs text-muted-foreground">note @ leaf {noteLeafIndex}</span>
+        )}
         {sig && (
           <a
             className="inline-flex items-center gap-1 font-mono text-xs underline"
@@ -100,6 +104,7 @@ export function RunProgressCard({
                 memo={r.memo}
                 sig={r.txSignature}
                 error={r.error}
+                noteLeafIndex={r.noteLeafIndex}
               />
             ))}
           </tbody>

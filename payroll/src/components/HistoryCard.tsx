@@ -34,7 +34,8 @@ export function HistoryCard({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
                 {new Date(r.createdAt).toLocaleString()} · file {shortHash(r.fileHash, 6, 4)}
               </span>
               <span>
-                {r.asset.kind === "sol" ? "SOL" : "SPL"} · {r.summary.sent}/{r.summary.total} sent
+                {r.asset.kind === "sol" ? "SOL" : "SPL"}
+                {r.mode === "shielded" && " · private"} · {r.summary.sent}/{r.summary.total} sent
                 {r.summary.failed > 0 && ` · ${r.summary.failed} failed`}
               </span>
             </button>
@@ -43,18 +44,23 @@ export function HistoryCard({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
                 {r.entries.map((e) => (
                   <div key={e.address} className="flex items-center justify-between gap-2 text-xs">
                     <span className="font-mono">{shortHash(e.address, 6, 4)} · {e.amountHuman}</span>
-                    {e.txSignature ? (
-                      <a
-                        className="font-mono underline"
-                        href={`https://explorer.solana.com/tx/${encodeURIComponent(e.txSignature)}?cluster=devnet`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {shortHash(e.txSignature, 6, 4)}
-                      </a>
-                    ) : (
-                      <span className="text-destructive">{e.error ?? e.status}</span>
-                    )}
+                    <span className="inline-flex items-center gap-2">
+                      {e.noteLeafIndex !== undefined && (
+                        <span className="font-mono text-muted-foreground">note @ leaf {e.noteLeafIndex}</span>
+                      )}
+                      {e.txSignature ? (
+                        <a
+                          className="font-mono underline"
+                          href={`https://explorer.solana.com/tx/${encodeURIComponent(e.txSignature)}?cluster=devnet`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {shortHash(e.txSignature, 6, 4)}
+                        </a>
+                      ) : (
+                        <span className="text-destructive">{e.error ?? e.status}</span>
+                      )}
+                    </span>
                   </div>
                 ))}
                 <div className="flex gap-2 pt-1">

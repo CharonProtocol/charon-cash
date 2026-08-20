@@ -4,7 +4,7 @@ import { fetchTreeState, solTreeKey, splTreeKey } from "privacy-cash-sdk"
 import { config } from "./config"
 import { planRun } from "./fees"
 import { saveRun } from "./store"
-import type { Asset, EntryStatus, PayrollEntry, RunReceipt } from "./types"
+import type { Asset, EntryStatus, PayrollEntry, RunMode, RunReceipt } from "./types"
 
 export interface RowState {
   address: string
@@ -14,6 +14,8 @@ export interface RowState {
   txSignature?: string
   error?: string
   attempts: number
+  noteLeafIndex?: number
+  noteCommitment?: string
 }
 
 export interface RunSnapshot {
@@ -28,6 +30,8 @@ export interface RunRequest {
   entries: PayrollEntry[]
   bps: number
   vaultRaw: bigint
+  /** Defaults to "public" when omitted. */
+  mode?: RunMode
 }
 
 export interface EngineClient {
@@ -47,6 +51,17 @@ export interface EngineClient {
     recipient: string,
     opts?: { relay?: boolean },
   ): Promise<{ signature: string }>
+  transferNoteSOL(
+    recipient: string,
+    netLamports: number,
+    opts?: { relay?: boolean },
+  ): Promise<{ signature: string; leafIndex: number; commitment: string }>
+  transferNoteSPL(
+    mint: string,
+    recipient: string,
+    netRaw: number,
+    opts?: { relay?: boolean },
+  ): Promise<{ signature: string; leafIndex: number; commitment: string }>
 }
 
 export interface EngineDeps {
@@ -132,15 +147,31 @@ export class PayrollEngine {
         row.status = "proving"
         this.emit("paying", funding?.txSignature)
         try {
-          const res =
-            req.asset.kind === "sol"
-              ? await this.deps.client.withdrawSOL(amount, row.address, { relay: true })
-              : await this.deps.client.withdrawSPL(req.asset.mint, amount, row.address, { relay: true })
-          row.txSignature = res.signature
+          let sig: string
+          if (req.mode === "shielded") {
+            // Exact net in the note; the SDK takes its fee from the sender's
+            // remaining notes, so no gross solve is needed here.
+            const net = Number(plan.rows[i].net)
+            const res =
+              req.asset.kind === "sol"
+                ? await this.deps.client.transferNoteSOL(row.address, net, { relay: true })
+                : await this.deps.client.transferNoteSPL(req.asset.mint, row.address, net, { relay: true })
+            sig = res.signature
+            row.txSignature = res.signature
+            row.noteLeafIndex = res.leafIndex
+            row.noteCommitment = res.commitment
+          } else {
+            const res =
+              req.asset.kind === "sol"
+                ? await this.deps.client.withdrawSOL(amount, row.address, { relay: true })
+                : await this.deps.client.withdrawSPL(req.asset.mint, amount, row.address, { relay: true })
+            sig = res.signature
+            row.txSignature = res.signature
+          }
           row.error = undefined
           row.status = "relayed"
           this.emit("paying", funding?.txSignature)
-          row.status = (await this.deps.confirmSignature(res.signature)) ? "confirmed" : "confirming"
+          row.status = (await this.deps.confirmSignature(sig)) ? "confirmed" : "confirming"
           this.emit("paying", funding?.txSignature)
           break
         } catch (e) {
@@ -170,13 +201,15 @@ export class PayrollEngine {
       txSignature: r.txSignature,
       error: r.error,
       attempts: r.attempts,
+      noteLeafIndex: r.noteLeafIndex,
+      noteCommitment: r.noteCommitment,
     }))
     const receipt: RunReceipt = {
       id: this.deps.newId(),
       createdAt: this.deps.now(),
       fileHash: req.fileHash,
       asset: req.asset,
-      mode: "public",
+      mode: req.mode ?? "public",
       totalPlanned,
       entries,
       funding,

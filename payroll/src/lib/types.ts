@@ -22,6 +22,8 @@ export type EntryStatus =
   | "confirming"
   | "failed"
 
+export type RunMode = "public" | "shielded"
+
 export interface ReceiptEntry {
   address: string
   amountHuman: string
@@ -30,6 +32,10 @@ export interface ReceiptEntry {
   txSignature?: string
   error?: string
   attempts: number
+  /** Shielded mode only: tree leaf of the recipient's note. */
+  noteLeafIndex?: number
+  /** Shielded mode only: commitment of the recipient's note (hex). */
+  noteCommitment?: string
 }
 
 export interface RunReceipt {
@@ -37,7 +43,7 @@ export interface RunReceipt {
   createdAt: number
   fileHash: string
   asset: Asset
-  mode: "public"
+  mode: RunMode
   totalPlanned: bigint
   entries: ReceiptEntry[]
   funding?: { depositedRaw: bigint; txSignature: string } | null

@@ -13,7 +13,7 @@ import { useConnectWallet } from "@/components/WalletProvider"
 import { usePayrollClient } from "@/hooks/usePayrollClient"
 import { createEngine, type RunSnapshot } from "@/lib/engine"
 import { failedEntriesOf, storageOk } from "@/lib/store"
-import type { Asset, ParsedFile, RunReceipt } from "@/lib/types"
+import type { Asset, ParsedFile, RunMode, RunReceipt } from "@/lib/types"
 
 export default function App() {
   const { open: openModal } = useConnectWallet()
@@ -28,7 +28,12 @@ export default function App() {
   const engineRef = useRef<{ cancel: () => void } | null>(null)
 
   const startRun = useCallback(
-    async (asset: Asset, entries = parsed?.entries, fileHash = parsed?.fileHash) => {
+    async (
+      asset: Asset,
+      entries = parsed?.entries,
+      fileHash = parsed?.fileHash,
+      mode: RunMode = "public",
+    ) => {
       if (!client || !entries || !fileHash || bps === null) return
       setReceipt(null)
       setSnapshot({ phase: "funding", rows: entries.map((e) => ({ ...e, status: "queued" as const, attempts: 0 })) })
@@ -41,7 +46,7 @@ export default function App() {
           vaultRaw = totalBalance(client.publicKey, asset.mint)
         }
         const r = await engine.run(
-          { fileHash, asset, entries, bps, vaultRaw },
+          { fileHash, asset, entries, bps, vaultRaw, mode },
           setSnapshot,
         )
         await refreshVault()
@@ -61,7 +66,7 @@ export default function App() {
       const entries = failedEntriesOf(r)
       if (!entries.length) return
       setParsed({ entries, fileHash: r.fileHash })
-      startRun(r.asset, entries, r.fileHash)
+      startRun(r.asset, entries, r.fileHash, r.mode)
     },
     [startRun],
   )
@@ -92,7 +97,7 @@ export default function App() {
             bps={bps}
             vaultSolRaw={vaultSolRaw}
             disabled={!ready}
-            onRun={(asset) => startRun(asset)}
+            onRun={(asset, mode) => startRun(asset, undefined, undefined, mode)}
           />
           <RunProgressCard
             snapshot={snapshot}

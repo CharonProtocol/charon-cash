@@ -26,7 +26,12 @@ type Ctl = {
 }
 
 function mockClient(ctl: Ctl) {
-  const calls = { deposits: [] as number[], withdraws: [] as Array<[number, string]>, refreshes: 0 }
+  const calls = {
+    deposits: [] as number[],
+    withdraws: [] as Array<[number, string]>,
+    transfers: [] as Array<[number, string]>,
+    refreshes: 0,
+  }
   const client: EngineClient = {
     init: async () => {},
     unlock: async () => {},
@@ -55,6 +60,27 @@ function mockClient(ctl: Ctl) {
     withdrawSPL: async (_m: string, raw: number, recipient: string) => {
       calls.withdraws.push([raw, recipient])
       return { signature: `SIG-${recipient[0]}`, recipientLamports: raw, feeLamports: 0, changeLamports: "0" }
+    },
+    transferNoteSOL: async (recipient: string, netLamports: number) => {
+      const left = ctl.fails.get(recipient) ?? 0
+      if (left > 0) {
+        ctl.fails.set(recipient, left - 1)
+        throw new Error("relayer 503")
+      }
+      calls.transfers.push([netLamports, recipient])
+      return {
+        signature: `NOTE-${recipient[0]}`,
+        leafIndex: 50 + calls.transfers.length,
+        commitment: `0xcommit${calls.transfers.length}`,
+      }
+    },
+    transferNoteSPL: async (_m: string, recipient: string, netRaw: number) => {
+      calls.transfers.push([netRaw, recipient])
+      return {
+        signature: `NOTE-${recipient[0]}`,
+        leafIndex: 60 + calls.transfers.length,
+        commitment: `0xcommitspl${calls.transfers.length}`,
+      }
     },
   }
   return { client, calls }
@@ -145,5 +171,48 @@ describe("PayrollEngine", () => {
     expect(statuses[statuses.length - 1]).toBe("failed")
     expect(receipt.entries.find((e) => e.error === "cancelled")?.status).toBe("failed")
     expect(calls.withdraws.length).toBeLessThan(3)
+  })
+
+  it("shielded mode pays exact NET via transferNoteSOL and never withdraws", async () => {
+    const { client, calls } = mockClient({ fails: new Map() })
+    const engine = new PayrollEngine(deps(client))
+    const receipt = await engine.run(req({ vaultRaw: 10n ** 18n, mode: "shielded" }))
+    expect(calls.withdraws).toHaveLength(0)
+    expect(calls.transfers).toHaveLength(3)
+    // 1, 2, 3 SOL at 9 decimals: net is the exact file amount, not gross
+    expect(calls.transfers.map((t) => t[0])).toEqual([1_000_000_000, 2_000_000_000, 3_000_000_000])
+    expect(calls.transfers.map((t) => t[1])).toEqual(E.map((e) => e.address))
+    expect(receipt.mode).toBe("shielded")
+    expect(receipt.summary).toEqual({ sent: 3, failed: 0, total: 3 })
+    expect(receipt.entries.every((e) => e.noteLeafIndex !== undefined)).toBe(true)
+    expect(receipt.entries.every((e) => typeof e.noteCommitment === "string")).toBe(true)
+    expect(receipt.entries.map((e) => e.noteLeafIndex)).toEqual([51, 52, 53])
+  })
+
+  it("shielded SPL pays NET via transferNoteSPL with the mint", async () => {
+    const { client, calls } = mockClient({ fails: new Map() })
+    const engine = new PayrollEngine(deps(client))
+    const receipt = await engine.run(
+      req({
+        vaultRaw: 10n ** 18n,
+        mode: "shielded",
+        asset: { kind: "spl", mint: "Mint111111111111111111111111111111111111111", decimals: 6 },
+      }),
+    )
+    expect(calls.withdraws).toHaveLength(0)
+    expect(calls.transfers).toHaveLength(3)
+    // 6 decimals: 1, 2, 3 tokens -> 1e6, 2e6, 3e6 raw
+    expect(calls.transfers.map((t) => t[0])).toEqual([1_000_000, 2_000_000, 3_000_000])
+    expect(receipt.mode).toBe("shielded")
+    expect(receipt.entries.every((e) => e.noteLeafIndex !== undefined)).toBe(true)
+  })
+
+  it("shielded mode retries a failing note transfer like public mode", async () => {
+    const { client, calls } = mockClient({ fails: new Map([["B".repeat(32), 2]]) })
+    const engine = new PayrollEngine(deps(client))
+    const receipt = await engine.run(req({ vaultRaw: 10n ** 18n, mode: "shielded" }))
+    expect(receipt.entries[1].status).toBe("sent")
+    expect(receipt.entries[1].attempts).toBe(3)
+    expect(calls.transfers).toHaveLength(3)
   })
 })
