@@ -49,6 +49,13 @@ pub struct NoteRow {
 }
 
 #[derive(Deserialize)]
+pub struct RecipientKeyRow {
+    pub note_pubkey: String,
+    pub enc_pubkey: String,
+    pub updated_at: i64,
+}
+
+#[derive(Deserialize)]
 pub struct UtxoCheckRow {
     pub tree_key: String,
     pub leaf_index: i64,
@@ -296,6 +303,35 @@ impl Store {
         .run()
         .await
         .map_err(|e| format!("put_notes: {e}"))?;
+        Ok(())
+    }
+
+    pub async fn get_recipient_keys(&self, wallet: &str) -> Result<Option<(String, String, i64)>, String> {
+        let row: Option<RecipientKeyRow> = self
+            .bound(
+                "SELECT note_pubkey, enc_pubkey, updated_at FROM recipient_keys WHERE wallet_pubkey = ?1",
+                vec![s(wallet)],
+            )?
+            .first(None)
+            .await
+            .map_err(|e| format!("get_recipient_keys: {e}"))?;
+        Ok(row.map(|r| (r.note_pubkey, r.enc_pubkey, r.updated_at)))
+    }
+
+    pub async fn put_recipient_keys(
+        &self,
+        wallet: &str,
+        note_pubkey: &str,
+        enc_pubkey: &str,
+    ) -> Result<(), String> {
+        self.bound(
+            "INSERT OR REPLACE INTO recipient_keys (wallet_pubkey, note_pubkey, enc_pubkey, updated_at) \
+             VALUES (?1, ?2, ?3, CAST(strftime('%s', 'now') AS INTEGER))",
+            vec![s(wallet), s(note_pubkey), s(enc_pubkey)],
+        )?
+        .run()
+        .await
+        .map_err(|e| format!("put_recipient_keys: {e}"))?;
         Ok(())
     }
 

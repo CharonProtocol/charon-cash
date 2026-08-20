@@ -13,6 +13,7 @@ pub struct AppState {
     pub keypair: Keypair,
     pub fee_recipient: Pubkey,
     pub fee_rate_bps: u16,
+    pub min_transfer_fee: u64,
     pub skip_preflight: bool,
     pub supported_mints: Vec<Pubkey>,
     pub admin_password: Option<String>,
@@ -61,6 +62,10 @@ impl AppState {
             .and_then(|s| s.trim().parse::<u16>().ok())
             .unwrap_or(25);
 
+        let min_transfer_fee = env_str(env, "RELAYER_MIN_TRANSFER_FEE_LAMPORTS")
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .unwrap_or(10_000);
+
         let skip_preflight = env_str(env, "RELAYER_SKIP_PREFLIGHT")
             .map(|s| s.trim().eq_ignore_ascii_case("true"))
             .unwrap_or(false);
@@ -88,6 +93,7 @@ impl AppState {
             keypair,
             fee_recipient,
             fee_rate_bps,
+            min_transfer_fee,
             skip_preflight,
             supported_mints,
             admin_password,

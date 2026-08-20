@@ -5,12 +5,21 @@ use light_hasher::{Hasher, Sha256};
 use crate::dto::TransactInput;
 use crate::error::{AppError, AppResult};
 
-pub fn assert_is_withdraw(t: &TransactInput) -> AppResult<()> {
-    if t.ext_amount >= 0 {
+pub fn assert_is_withdraw_or_transfer(t: &TransactInput, min_transfer_fee: u64) -> AppResult<()> {
+    if t.ext_amount > 0 {
         return Err(AppError::bad_request(
             "DEPOSIT_UNSUPPORTED",
-            "relayer only handles withdrawals (ext_amount must be negative). \
+            "relayer only handles withdrawals and ext=0 transfers (ext_amount must be <= 0). \
              deposits require the depositor's own signature and cannot be relayed.",
+        ));
+    }
+    if t.ext_amount == 0 && t.fee < min_transfer_fee {
+        return Err(AppError::bad_request(
+            "FEE_TOO_LOW",
+            format!(
+                "fee {} is below the relay transfer floor {min_transfer_fee}",
+                t.fee
+            ),
         ));
     }
     Ok(())
@@ -57,7 +66,7 @@ pub fn public_amount_ok(t: &TransactInput) -> AppResult<()> {
     } else {
         Fr::from((-(t.ext_amount)) as u64)
     };
-    if t.ext_amount >= 0 && ext_amount_fr <= fee_fr {
+    if t.ext_amount > 0 && ext_amount_fr <= fee_fr {
         return Err(AppError::bad_request("INVALID_PUBLIC_AMOUNT", "ext_amount <= fee for deposit"));
     }
     let result = if t.ext_amount >= 0 {

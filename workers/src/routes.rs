@@ -382,6 +382,54 @@ pub fn router(state: Arc<AppState>) -> Router<'static, Arc<AppState>> {
                 Err(e) => err_json(AppError::internal(e)),
             }
         }))
+        .put_async("/api/recipients", |mut req, ctx| Box::pin(async move {
+            #[derive(Deserialize)]
+            struct PutRecipientsRequest {
+                wallet: String,
+                note_pubkey: String,
+                enc_pubkey: String,
+            }
+            let state = state_of(&ctx);
+            let body: PutRecipientsRequest = match req.json().await {
+                Ok(b) => b,
+                Err(e) => return err_json(AppError::bad_request("INVALID_JSON", format!("{e}"))),
+            };
+            let wallet = body.wallet.trim().to_string();
+            if crate::solana::pubkey::Pubkey::parse(&wallet).is_none() {
+                return err_json(AppError::bad_request(
+                    "INVALID_WALLET",
+                    "wallet must be a 32-byte base58 pubkey",
+                ));
+            }
+            let note_pubkey = body.note_pubkey.trim().to_string();
+            let enc_pubkey = body.enc_pubkey.trim().to_string();
+            if note_pubkey.is_empty() || enc_pubkey.is_empty() {
+                return err_json(AppError::bad_request(
+                    "MISSING_KEYS",
+                    "note_pubkey and enc_pubkey are required",
+                ));
+            }
+            match state.store.put_recipient_keys(&wallet, &note_pubkey, &enc_pubkey).await {
+                Ok(()) => no_content(),
+                Err(e) => err_json(AppError::internal(e)),
+            }
+        }))
+        .get_async("/api/recipients/:wallet", |_req, ctx| Box::pin(async move {
+            let state = state_of(&ctx);
+            let wallet = ctx.param("wallet").cloned().unwrap_or_default();
+            match state.store.get_recipient_keys(&wallet).await {
+                Ok(Some((note_pubkey, enc_pubkey, updated_at))) => ok_json(&json!({
+                    "wallet": wallet,
+                    "note_pubkey": note_pubkey,
+                    "enc_pubkey": enc_pubkey,
+                    "updated_at": updated_at,
+                })),
+                Ok(None) => {
+                    err_json(AppError::not_found("NOT_FOUND", "no recipient keys for this wallet"))
+                }
+                Err(e) => err_json(AppError::internal(e)),
+            }
+        }))
         .post_async("/api/relayer/initialize", |req, ctx| Box::pin(async move {
             let state = state_of(&ctx);
             if let Err(e) = require_admin(&req, &state) {

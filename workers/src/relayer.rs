@@ -256,7 +256,13 @@ fn spl_withdraw_setup_ixs(state: &AppState, t: &TransactInput) -> AppResult<Vec<
 
 pub async fn relay_withdraw(state: &AppState, req: WithdrawRequest) -> AppResult<RelayResponse> {
     let t = req.into_input()?;
-    validate::assert_is_withdraw(&t)?;
+    validate::assert_is_withdraw_or_transfer(&t, state.min_transfer_fee)?;
+    if t.ext_amount == 0 && t.recipient != state.fee_recipient {
+        return Err(AppError::bad_request(
+            "RECIPIENT_NOT_FEE_RECIPIENT",
+            "ext=0 transfers must set recipient to the relayer fee recipient",
+        ));
+    }
 
     let tree_key = tree_key_for(t.kind, t.mint.as_ref());
 
@@ -310,7 +316,7 @@ pub async fn relay_withdraw(state: &AppState, req: WithdrawRequest) -> AppResult
 
     let ix = build_transact_ix(state, &t)?;
     let mut ixs = Vec::new();
-    if t.kind == TransactKind::Spl {
+    if t.kind == TransactKind::Spl && t.ext_amount < 0 {
         ixs.extend(spl_withdraw_setup_ixs(state, &t)?);
     }
     ixs.push(ix);
