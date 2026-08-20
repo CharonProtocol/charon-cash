@@ -66,6 +66,23 @@ export declare class PrivacyCashClient {
     withdrawSOL(grossLamports: number, recipient: PublicKey | string, opts?: {
         relay?: boolean;
     }): Promise<WithdrawResult>;
+    /**
+     * Shielded transfer: pay `netLamports` as a note only the recipient can spend.
+     * ext=0 (no public SOL moves); the relayer fee comes out of the sender's notes.
+     */
+    transferNoteSOL(recipient: PublicKey | string, netLamports: number, opts?: {
+        relay?: boolean;
+    }): Promise<WithdrawResult & {
+        leafIndex: number;
+        commitment: string;
+    }>;
+    /** SPL twin of transferNoteSOL on a registered mint's tree. */
+    transferNoteSPL(mint: PublicKey | string, recipient: PublicKey | string, netRaw: number, opts?: {
+        relay?: boolean;
+    }): Promise<WithdrawResult & {
+        leafIndex: number;
+        commitment: string;
+    }>;
     depositSPL(mint: PublicKey | string, amountRaw: number | string): Promise<DepositResult>;
     withdrawSPL(mint: PublicKey | string, grossRaw: number | string, recipient: PublicKey | string, opts?: {
         relay?: boolean;
@@ -108,6 +125,14 @@ export declare class PrivacyCashClient {
     /** Poll until the indexer can serve a Merkle proof for `leafIndex` (mirror caught up). */
     private waitForNoteIndexed;
     private withdrawInternal;
+    /**
+     * Shared shielded-transfer flow (ext=0): output 0 is a note encrypted to the
+     * recipient's registered x25519 key and committed to their note pubkey;
+     * output 1 is our change note, encrypted to ourselves as usual. The relay
+     * request's recipient field is the fee recipient wallet by convention (the
+     * backend enforces the equality; nothing is actually paid to it at ext=0).
+     */
+    private transferNoteInternal;
     /** Prove + POST to relayer (backend signs with RELAYER_KEYPAIR). No wallet tx. */
     private proveAndRelay;
     private proveAndSend;
