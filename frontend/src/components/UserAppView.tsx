@@ -15,6 +15,7 @@ import { WithdrawSplCard } from "@/components/WithdrawSplCard"
 import { SendCard } from "@/components/SendCard"
 import { SendSplCard } from "@/components/SendSplCard"
 import { GiftNoteCard } from "@/components/GiftNoteCard"
+import { ReceiveCard } from "@/components/ReceiveCard"
 import { Button } from "@/components/ui/button"
 import { useNotesSync } from "@/hooks/useNotesSync"
 
@@ -127,6 +128,9 @@ export function UserAppView({ onChanged }: UserAppViewProps) {
           <SendSplCard onChanged={onChanged} />
         )}
       </div>
+
+      {/* One-time enrollment for receiving private notes (payroll v2). */}
+      <ReceiveCard />
     </div>
   )
 }
