@@ -12,6 +12,8 @@ export const WRAPPED_SOL_MINT = "11111111111111111111111111111112"
 
 export const SIGN_MESSAGE = "Privacy Money account sign in"
 
+export const RECEIVE_SIGN_MESSAGE = "Privacy Money receive key v2"
+
 export const DISC_TRANSACT = 2
 export const DISC_TRANSACT_SPL = 3
 

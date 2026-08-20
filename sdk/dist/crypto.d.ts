@@ -25,14 +25,20 @@ export declare function getMintAddressField(mint: PublicKey | string): string;
 export declare class Utxo {
     amount: BN;
     blinding: BN;
-    keypair: Keypair;
+    /** Owner pubkey hashed into the commitment. Always set. */
+    pubkey: BN;
+    /** Owner secret keypair; null on a pubkey-only output owned by someone else. */
+    keypair: Keypair | null;
     index: number;
     mintAddress: string;
     private wasm;
     constructor(opts: {
         wasm: LightWasm;
         amount?: BN | number | string;
-        keypair: Keypair;
+        /** Spending keypair; omit when building an output committed to a foreign pubkey. */
+        keypair?: Keypair;
+        /** Commitment pubkey for a keypair-less output (recipient's note pubkey). */
+        pubkey?: BN | number | string;
         blinding?: BN | number | string;
         index?: number;
         mintAddress?: string;
@@ -59,18 +65,46 @@ export declare function getExtDataHash(ext: {
     mintAddress: PublicKey | string;
 }): Uint8Array;
 /**
+ * x25519 receive keypair for v3 recipient-encrypted notes, derived from the
+ * wallet signature of RECEIVE_SIGN_MESSAGE. The scalar is sha256(sig); noble's
+ * x25519 clamps it into the valid scalar range on every use (RFC 7748), so the
+ * raw sha256 output is kept as the secret. Pure: same signature, same keys.
+ */
+export declare function deriveReceiveKeys(sig: Uint8Array): {
+    x25519Secret: Uint8Array;
+    x25519Public: Uint8Array;
+};
+/**
+ * Encrypt a UTXO note to a recipient's x25519 public key (v3 format):
+ *   [v3 prefix 8][ephemeral x25519 pub 32][iv 12][tag 16][ciphertext]
+ * AES-256-GCM key = HKDF-SHA256 over the x25519 shared secret, over the exact
+ * "amount|blinding|index|mintAddress" plaintext encryptUtxo builds. Anyone can
+ * encrypt; only the holder of the recipient receive secret can open it.
+ */
+export declare function encryptUtxoTo(recipientXPub: Uint8Array, utxo: Utxo): Promise<Buffer>;
+/**
  * Browser-native EncryptionService (Web Crypto AES-256-GCM).
- * Mirrors privacy-cash-sdk's V2 format:
- *   [version(8)] [iv(12)] [authTag(16)] [ciphertext]
- * UTXO private key is derived deterministically from a wallet signature, so the
- * same wallet always recovers the same note set.
+ * v2 (own notes): [version(8)][iv(12)][authTag(16)][ciphertext], AES key =
+ * keccak256(signature of SIGN_MESSAGE). UTXO private key is derived
+ * deterministically from the same signature, so the same wallet always
+ * recovers the same note set.
+ * v3 (received notes): x25519 recipient encryption; the receive secret comes
+ * from a SECOND wallet signature (RECEIVE_SIGN_MESSAGE) via deriveReceiveKeys.
  */
 export declare class EncryptionService {
     private encKeyV2;
     private utxoPrivKeyV2;
     private cryptoKey;
-    /** Derive keys from an ed25519 signature of the constant SIGN_MESSAGE. */
-    deriveFromSignature(signature: Uint8Array): void;
+    private receiveSecretV3;
+    private receivePublicV3;
+    /**
+     * Derive keys from an ed25519 signature of the constant SIGN_MESSAGE, plus
+     * optionally the second signature of RECEIVE_SIGN_MESSAGE that enables v3
+     * note decryption (encryptUtxoTo payloads). Re-derivation resets both.
+     */
+    deriveFromSignature(signature: Uint8Array, receiveSignature?: Uint8Array): void;
+    /** x25519 public key others encrypt v3 notes to (null until receive keys are derived). */
+    getReceivePublicKey(): Uint8Array | null;
     get utxoPrivateKey(): string;
     private key;
     encrypt(data: Uint8Array | string): Promise<Buffer>;
@@ -78,6 +112,8 @@ export declare class EncryptionService {
     /** Encrypt a UTXO as "amount|blinding|index|mintAddress" (pipe-delimited). */
     encryptUtxo(utxo: Utxo): Promise<Buffer>;
     decryptUtxo(encrypted: Uint8Array, wasm: LightWasm): Promise<Utxo>;
+    /** Open a v3 recipient-encrypted note with our x25519 receive secret. */
+    private decryptV3;
 }
 export declare function randomBytes(n: number): Uint8Array;
 export { SIGN_MESSAGE };

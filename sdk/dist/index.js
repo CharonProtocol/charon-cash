@@ -1,5 +1,5 @@
 export { PrivacyCashClient } from "./client";
-export { EncryptionService, Keypair, Utxo, getExtDataHash, getMintAddressField, } from "./crypto";
+export { EncryptionService, Keypair, Utxo, deriveReceiveKeys, encryptUtxoTo, getExtDataHash, getMintAddressField, } from "./crypto";
 export { prove, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers, } from "./prover";
 export { buildTransactTransaction, buildTransactIxData, buildTransactSplTransaction, buildTransactSplInstruction, deriveAccounts, deriveSplTreeAccount, } from "./program";
 export { ensureAlt, fetchAlt, splAltAddresses, envAltAddress, cachedAltAddress, cacheAltAddress, } from "./alt";
@@ -8,4 +8,4 @@ export { fetchRelayerInfo, fetchBlockhash, fetchAltAccount, fetchTreeState, fetc
 export { loadNotes, unspentNotes, saveNote, upsertNote, markNoteSpent, totalBalance, exportNotes, importNotes, clearNotes, newNoteId, getSyncOffset, setSyncOffset, resetSyncOffset, } from "./notes";
 export { encryptNotesBlob, decryptNotesBlob, pushEncryptedNotes, pullEncryptedNotes, } from "./notestore";
 export { setOperatorPassword, getOperatorPassword, verifyOperator, operatorInitialize, operatorInitializeSpl, operatorUpdateConfig, operatorUpdateDepositLimit, operatorUpdateDepositLimitSpl, OperatorError, } from "./admin";
-export { FIELD_SIZE, MERKLE_TREE_DEPTH, SIGN_MESSAGE, SOL_TREE_KEY, WRAPPED_SOL_MINT, } from "./constants";
+export { FIELD_SIZE, MERKLE_TREE_DEPTH, RECEIVE_SIGN_MESSAGE, SIGN_MESSAGE, SOL_TREE_KEY, WRAPPED_SOL_MINT, } from "./constants";

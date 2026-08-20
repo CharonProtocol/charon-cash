@@ -1,6 +1,6 @@
 export { PrivacyCashClient } from "./client";
 export type { Signer, DepositResult, WithdrawResult, SyncResult, } from "./client";
-export { EncryptionService, Keypair, Utxo, getExtDataHash, getMintAddressField, } from "./crypto";
+export { EncryptionService, Keypair, Utxo, deriveReceiveKeys, encryptUtxoTo, getExtDataHash, getMintAddressField, } from "./crypto";
 export { prove, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers, } from "./prover";
 export { buildTransactTransaction, buildTransactIxData, buildTransactSplTransaction, buildTransactSplInstruction, deriveAccounts, deriveSplTreeAccount, } from "./program";
 export type { ProofBytes, TransactAccounts } from "./program";
@@ -13,5 +13,5 @@ export { loadNotes, unspentNotes, saveNote, upsertNote, markNoteSpent, totalBala
 export type { Note } from "./notes";
 export { encryptNotesBlob, decryptNotesBlob, pushEncryptedNotes, pullEncryptedNotes, } from "./notestore";
 export { setOperatorPassword, getOperatorPassword, verifyOperator, operatorInitialize, operatorInitializeSpl, operatorUpdateConfig, operatorUpdateDepositLimit, operatorUpdateDepositLimitSpl, OperatorError, type OperatorResponse, } from "./admin";
-export { FIELD_SIZE, MERKLE_TREE_DEPTH, SIGN_MESSAGE, SOL_TREE_KEY, WRAPPED_SOL_MINT, } from "./constants";
+export { FIELD_SIZE, MERKLE_TREE_DEPTH, RECEIVE_SIGN_MESSAGE, SIGN_MESSAGE, SOL_TREE_KEY, WRAPPED_SOL_MINT, } from "./constants";
 //# sourceMappingURL=index.d.ts.map

@@ -1,3 +1,6 @@
+import { x25519 } from "@noble/curves/ed25519";
+import { hkdf } from "@noble/hashes/hkdf";
+import { sha256 as sha256n } from "@noble/hashes/sha2";
 import { PublicKey } from "@solana/web3.js";
 import BN from "bn.js";
 import { keccak256, sha256 } from "ethers";
@@ -41,27 +44,39 @@ export function getMintAddressField(mint) {
 export class Utxo {
     amount;
     blinding;
+    /** Owner pubkey hashed into the commitment. Always set. */
+    pubkey;
+    /** Owner secret keypair; null on a pubkey-only output owned by someone else. */
     keypair;
     index;
     mintAddress;
     wasm;
     constructor(opts) {
+        if (!opts.keypair && opts.pubkey === undefined) {
+            throw new Error("Utxo requires a keypair or a pubkey");
+        }
         this.wasm = opts.wasm;
         this.amount = new BN((opts.amount ?? 0).toString());
         this.blinding = new BN((opts.blinding ?? randomInt(1_000_000_000)).toString());
-        this.keypair = opts.keypair;
+        this.keypair = opts.keypair ?? null;
+        this.pubkey = opts.keypair
+            ? opts.keypair.pubkey
+            : new BN(opts.pubkey.toString());
         this.index = opts.index ?? 0;
         this.mintAddress = opts.mintAddress ?? WRAPPED_SOL_MINT;
     }
     getCommitment() {
         return this.wasm.poseidonHashString([
             this.amount.toString(),
-            this.keypair.pubkey.toString(),
+            this.pubkey.toString(),
             this.blinding.toString(),
             getMintAddressField(this.mintAddress),
         ]);
     }
     async getNullifier() {
+        if (!this.keypair) {
+            throw new Error("Utxo has no keypair (pubkey-only output); it cannot sign or compute a nullifier");
+        }
         const commitment = this.getCommitment();
         const sig = this.keypair.sign(commitment, new BN(this.index).toString());
         return this.wasm.poseidonHashString([
@@ -114,65 +129,145 @@ function toPubkeyBytes(v) {
 const ENCRYPTION_VERSION_V2 = Buffer.from([
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
 ]);
+/** v3 recipient-encrypted notes: ASCII "PCSv3" zero-padded to 8 bytes. */
+const ENCRYPTION_VERSION_V3 = Buffer.from("PCSv3\0\0\0", "ascii");
+/** HKDF salt binding v3 note keys to this protocol version. */
+const NOTE_KDF_SALT = Buffer.from("privacy-cash-note-v2", "utf8");
+const V3_EPH_OFF = 8;
+const V3_IV_OFF = 40;
+const V3_TAG_OFF = 52;
+const V3_CT_OFF = 68;
+/** "amount|blinding|index|mintAddress" note plaintext shared by the v2 and v3 formats. */
+function utxoPlaintext(utxo) {
+    return `${utxo.amount.toString()}|${utxo.blinding.toString()}|${utxo.index}|${utxo.mintAddress}`;
+}
+function hasPrefix(data, prefix) {
+    if (data.length < prefix.length)
+        return false;
+    for (let i = 0; i < prefix.length; i++) {
+        if (data[i] !== prefix[i])
+            return false;
+    }
+    return true;
+}
+async function importAesKey(raw) {
+    return crypto.subtle.importKey("raw", bs(raw), { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+/** AES-256-GCM seal; returns the 12-byte iv, 16-byte tag and ciphertext apart. */
+async function aesGcmSeal(key, plaintext) {
+    const iv = randomBytes(12);
+    const enc = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: bs(iv) }, key, bs(plaintext)));
+    return {
+        iv,
+        ciphertext: enc.slice(0, enc.length - 16),
+        tag: enc.slice(enc.length - 16),
+    };
+}
+/** AES-256-GCM open over split ct||tag; rejects (throws) on any key/tag mismatch. */
+async function aesGcmOpen(key, iv, tag, ciphertext) {
+    const joined = new Uint8Array(ciphertext.length + 16);
+    joined.set(ciphertext, 0);
+    joined.set(tag, ciphertext.length);
+    return new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: bs(iv) }, key, bs(joined)));
+}
+/**
+ * x25519 receive keypair for v3 recipient-encrypted notes, derived from the
+ * wallet signature of RECEIVE_SIGN_MESSAGE. The scalar is sha256(sig); noble's
+ * x25519 clamps it into the valid scalar range on every use (RFC 7748), so the
+ * raw sha256 output is kept as the secret. Pure: same signature, same keys.
+ */
+export function deriveReceiveKeys(sig) {
+    const x25519Secret = sha256n(sig);
+    return { x25519Secret, x25519Public: x25519.getPublicKey(x25519Secret) };
+}
+/** HKDF-SHA256(x25519 shared secret, salt, info = ephemeral pub) -> AES-256 key. */
+function deriveNoteKey(shared, ephemeralPub) {
+    return hkdf(sha256n, shared, NOTE_KDF_SALT, ephemeralPub, 32);
+}
+/**
+ * Encrypt a UTXO note to a recipient's x25519 public key (v3 format):
+ *   [v3 prefix 8][ephemeral x25519 pub 32][iv 12][tag 16][ciphertext]
+ * AES-256-GCM key = HKDF-SHA256 over the x25519 shared secret, over the exact
+ * "amount|blinding|index|mintAddress" plaintext encryptUtxo builds. Anyone can
+ * encrypt; only the holder of the recipient receive secret can open it.
+ */
+export async function encryptUtxoTo(recipientXPub, utxo) {
+    const ephSecret = x25519.utils.randomSecretKey();
+    const ephPub = x25519.getPublicKey(ephSecret);
+    const shared = x25519.getSharedSecret(ephSecret, recipientXPub);
+    const key = await importAesKey(deriveNoteKey(shared, ephPub));
+    const { iv, tag, ciphertext } = await aesGcmSeal(key, Buffer.from(utxoPlaintext(utxo)));
+    return Buffer.concat([ENCRYPTION_VERSION_V3, ephPub, iv, tag, ciphertext]);
+}
 /**
  * Browser-native EncryptionService (Web Crypto AES-256-GCM).
- * Mirrors privacy-cash-sdk's V2 format:
- *   [version(8)] [iv(12)] [authTag(16)] [ciphertext]
- * UTXO private key is derived deterministically from a wallet signature, so the
- * same wallet always recovers the same note set.
+ * v2 (own notes): [version(8)][iv(12)][authTag(16)][ciphertext], AES key =
+ * keccak256(signature of SIGN_MESSAGE). UTXO private key is derived
+ * deterministically from the same signature, so the same wallet always
+ * recovers the same note set.
+ * v3 (received notes): x25519 recipient encryption; the receive secret comes
+ * from a SECOND wallet signature (RECEIVE_SIGN_MESSAGE) via deriveReceiveKeys.
  */
 export class EncryptionService {
     encKeyV2 = null;
     utxoPrivKeyV2 = null;
     cryptoKey = null;
-    /** Derive keys from an ed25519 signature of the constant SIGN_MESSAGE. */
-    deriveFromSignature(signature) {
+    receiveSecretV3 = null;
+    receivePublicV3 = null;
+    /**
+     * Derive keys from an ed25519 signature of the constant SIGN_MESSAGE, plus
+     * optionally the second signature of RECEIVE_SIGN_MESSAGE that enables v3
+     * note decryption (encryptUtxoTo payloads). Re-derivation resets both.
+     */
+    deriveFromSignature(signature, receiveSignature) {
         this.encKeyV2 = Buffer.from(keccak256(signature).slice(2), "hex");
         this.utxoPrivKeyV2 =
             "0x" + keccak256(this.encKeyV2).slice(2);
         this.cryptoKey = null;
+        const receive = receiveSignature
+            ? deriveReceiveKeys(receiveSignature)
+            : null;
+        this.receiveSecretV3 = receive ? receive.x25519Secret : null;
+        this.receivePublicV3 = receive ? receive.x25519Public : null;
+    }
+    /** x25519 public key others encrypt v3 notes to (null until receive keys are derived). */
+    getReceivePublicKey() {
+        return this.receivePublicV3;
     }
     get utxoPrivateKey() {
         if (!this.utxoPrivKeyV2) {
-            throw new Error("EncryptionService not initialised — sign first");
+            throw new Error("EncryptionService not initialised - sign first");
         }
         return this.utxoPrivKeyV2;
     }
     async key() {
         if (!this.encKeyV2) {
-            throw new Error("EncryptionService not initialised — sign first");
+            throw new Error("EncryptionService not initialised - sign first");
         }
         if (!this.cryptoKey) {
-            this.cryptoKey = await crypto.subtle.importKey("raw", bs(this.encKeyV2), { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+            this.cryptoKey = await importAesKey(this.encKeyV2);
         }
         return this.cryptoKey;
     }
     async encrypt(data) {
         const key = await this.key();
         const buf = typeof data === "string" ? Buffer.from(data) : Buffer.from(data);
-        const iv = randomBytes(12);
-        const enc = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: bs(iv) }, key, bs(buf)));
-        const ciphertext = enc.slice(0, enc.length - 16);
-        const tag = enc.slice(enc.length - 16);
+        const { iv, tag, ciphertext } = await aesGcmSeal(key, buf);
         return Buffer.concat([ENCRYPTION_VERSION_V2, iv, tag, ciphertext]);
     }
     async decrypt(encrypted) {
         const key = await this.key();
-        const iv = encrypted.slice(8, 20);
-        const tag = encrypted.slice(20, 36);
-        const ciphertext = encrypted.slice(36);
-        const joined = new Uint8Array(ciphertext.length + 16);
-        joined.set(ciphertext, 0);
-        joined.set(tag, ciphertext.length);
-        const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: bs(iv) }, key, bs(joined));
+        const plain = await aesGcmOpen(key, encrypted.slice(8, 20), encrypted.slice(20, 36), encrypted.slice(36));
         return Buffer.from(plain);
     }
     /** Encrypt a UTXO as "amount|blinding|index|mintAddress" (pipe-delimited). */
     async encryptUtxo(utxo) {
-        return this.encrypt(`${utxo.amount.toString()}|${utxo.blinding.toString()}|${utxo.index}|${utxo.mintAddress}`);
+        return this.encrypt(utxoPlaintext(utxo));
     }
     async decryptUtxo(encrypted, wasm) {
-        const plain = (await this.decrypt(encrypted)).toString();
+        const plain = (hasPrefix(encrypted, ENCRYPTION_VERSION_V3)
+            ? await this.decryptV3(encrypted)
+            : await this.decrypt(encrypted)).toString();
         const [amount, blinding, index, mintAddress] = plain.split("|");
         return new Utxo({
             wasm,
@@ -182,6 +277,20 @@ export class EncryptionService {
             index: Number(index),
             mintAddress,
         });
+    }
+    /** Open a v3 recipient-encrypted note with our x25519 receive secret. */
+    async decryptV3(encrypted) {
+        if (!this.receiveSecretV3) {
+            throw new Error("EncryptionService receive keys not derived - sign RECEIVE_SIGN_MESSAGE");
+        }
+        if (encrypted.length < V3_CT_OFF) {
+            throw new Error("truncated v3 encrypted note");
+        }
+        const ephPub = encrypted.slice(V3_EPH_OFF, V3_IV_OFF);
+        const shared = x25519.getSharedSecret(this.receiveSecretV3, ephPub);
+        const key = await importAesKey(deriveNoteKey(shared, ephPub));
+        const plain = await aesGcmOpen(key, encrypted.slice(V3_IV_OFF, V3_TAG_OFF), encrypted.slice(V3_TAG_OFF, V3_CT_OFF), encrypted.slice(V3_CT_OFF));
+        return Buffer.from(plain);
     }
 }
 export function randomBytes(n) {

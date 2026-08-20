@@ -5,6 +5,7 @@ export declare const MERKLE_TREE_DEPTH = 26;
 export declare const SOL_MINT: PublicKey;
 export declare const WRAPPED_SOL_MINT = "11111111111111111111111111111112";
 export declare const SIGN_MESSAGE = "Privacy Money account sign in";
+export declare const RECEIVE_SIGN_MESSAGE = "Privacy Money receive key v2";
 export declare const DISC_TRANSACT = 2;
 export declare const DISC_TRANSACT_SPL = 3;
 export declare const SEED: {

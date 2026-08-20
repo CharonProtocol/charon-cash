@@ -9,6 +9,8 @@ export {
   EncryptionService,
   Keypair,
   Utxo,
+  deriveReceiveKeys,
+  encryptUtxoTo,
   getExtDataHash,
   getMintAddressField,
 } from "./crypto"
@@ -102,6 +104,7 @@ export {
 export {
   FIELD_SIZE,
   MERKLE_TREE_DEPTH,
+  RECEIVE_SIGN_MESSAGE,
   SIGN_MESSAGE,
   SOL_TREE_KEY,
   WRAPPED_SOL_MINT,

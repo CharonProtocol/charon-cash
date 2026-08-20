@@ -2,7 +2,7 @@ import { WasmFactory } from "@lightprotocol/hasher.rs";
 import { createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync, } from "@solana/spl-token";
 import { PublicKey, } from "@solana/web3.js";
 import BN from "bn.js";
-import { envProgramId, FIELD_SIZE, MERKLE_TREE_DEPTH, SIGN_MESSAGE, SOL_TREE_KEY, WRAPPED_SOL_MINT, } from "./constants";
+import { envProgramId, FIELD_SIZE, MERKLE_TREE_DEPTH, RECEIVE_SIGN_MESSAGE, SIGN_MESSAGE, SOL_TREE_KEY, WRAPPED_SOL_MINT, } from "./constants";
 import { EncryptionService, Keypair, Utxo, getExtDataHash, getMintAddressField, } from "./crypto";
 import { bytesToHex, fetchMerkleProof, fetchRelayerInfo, fetchBlockhash, fetchTreeState, fetchUtxoRange, fieldToHex32, isNullifierSpent, submitTransaction, relayWithdraw, waitForLeafIndex, } from "./merkle";
 import { clearNotes, exportNotes, getSyncOffset, importNotes, loadNotes, markNoteSpent, newNoteId, purgeLegacyStorage, removeStaleNote, readLegacyNotes, saveNote, setSyncOffset, unspentNotes, upsertNote, markNoteSpentByIndex, } from "./notes";
@@ -50,8 +50,9 @@ export class PrivacyCashClient {
         if (!this.unlocking) {
             this.unlocking = (async () => {
                 const sig = await this.signer.signMessage(new TextEncoder().encode(SIGN_MESSAGE));
+                const receiveSig = await this.signer.signMessage(new TextEncoder().encode(RECEIVE_SIGN_MESSAGE));
                 const enc = new EncryptionService();
-                enc.deriveFromSignature(sig);
+                enc.deriveFromSignature(sig, receiveSig);
                 this.enc = enc;
                 this.utxoKeypair = new Keypair(enc.utxoPrivateKey, this.wasm);
                 // One-time migration: move any legacy plaintext notes out of localStorage
@@ -638,7 +639,7 @@ export class PrivacyCashClient {
             inPathElements: args.inputPathElements,
             outAmount: args.outputs.map((x) => x.amount.toString(10)),
             outBlinding: args.outputs.map((x) => x.blinding.toString(10)),
-            outPubkey: args.outputs.map((x) => x.keypair.pubkey),
+            outPubkey: args.outputs.map((x) => x.pubkey),
             mintAddress: getMintAddressField(args.mintAddress),
         };
         const { proof, publicSignals } = await prove(circuitInput);
@@ -700,7 +701,7 @@ export class PrivacyCashClient {
             inPathElements: args.inputPathElements,
             outAmount: args.outputs.map((x) => x.amount.toString(10)),
             outBlinding: args.outputs.map((x) => x.blinding.toString(10)),
-            outPubkey: args.outputs.map((x) => x.keypair.pubkey),
+            outPubkey: args.outputs.map((x) => x.pubkey),
             mintAddress: getMintAddressField(args.mintAddress),
         };
         const { proof, publicSignals } = await prove(circuitInput);
