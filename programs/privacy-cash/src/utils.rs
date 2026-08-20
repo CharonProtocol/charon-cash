@@ -186,7 +186,7 @@ pub fn check_public_amount(ext_amount: i64, fee: u64, public_amount_bytes: [u8; 
         Fr::from(abs_ext_amount as u64)
     };
 
-    if ext_amount >= 0 && ext_amount_fr <= fee_fr {
+    if ext_amount > 0 && ext_amount_fr <= fee_fr {
         return false;
     }
 
@@ -289,5 +289,45 @@ mod tests {
         // pairing check must still reject it.
         let proof = Proof::zeroed();
         assert!(!verify_proof(&proof, &VERIFYING_KEY));
+    }
+}
+
+#[cfg(test)]
+mod transfer_tests {
+    use super::*;
+
+    fn fr_to_be_bytes(f: Fr) -> [u8; 32] {
+        let mut bytes = Vec::new();
+        f.serialize_uncompressed(&mut bytes).unwrap();
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&bytes);
+        arr.reverse();
+        arr
+    }
+
+    #[test]
+    fn transfer_ext_zero_with_fee_is_accepted() {
+        let fee: u64 = 7;
+        let public_amount = fr_to_be_bytes(-Fr::from(fee));
+        assert!(check_public_amount(0, fee, public_amount));
+    }
+
+    #[test]
+    fn transfer_ext_zero_fee_zero_is_accepted() {
+        assert!(check_public_amount(0, 0, [0u8; 32]));
+    }
+
+    #[test]
+    fn deposit_not_exceeding_fee_is_still_rejected() {
+        assert!(!check_public_amount(5, 5, [0u8; 32]));
+        assert!(!check_public_amount(5, 6, fr_to_be_bytes(Fr::from(5u64) - Fr::from(6u64))));
+    }
+
+    #[test]
+    fn withdraw_with_matching_public_amount_is_accepted() {
+        let ext_amount: i64 = -5;
+        let fee: u64 = 1;
+        let public_amount = fr_to_be_bytes(-(Fr::from(5u64) + Fr::from(fee)));
+        assert!(check_public_amount(ext_amount, fee, public_amount));
     }
 }
