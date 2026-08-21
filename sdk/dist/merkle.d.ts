@@ -3,6 +3,8 @@ export interface RelayerInfo {
     feeRecipient: string;
     withdrawalFeeRateBps: number;
     feeErrorMarginBps: number;
+    /** Floor on the relayer fee for ext=0 SOL transfers (lamports); absent on older backends. */
+    minTransferFee?: number;
     supportedMints: {
         mint: string;
         feeAta: string;

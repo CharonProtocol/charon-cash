@@ -656,7 +656,10 @@ export class PrivacyCashClient {
         const feeBps = this.info.withdrawalFeeRateBps;
         const wasm = this.wasm;
         const utxoKeypair = this.utxoKeypair;
-        const fee = new BN(Math.ceil((args.netLamports * feeBps) / 10000));
+        // ext=0 SOL relays must clear the relayer's fee floor; SPL fees are token
+        // raw units, so the lamports floor never applies to them.
+        const feeFloor = args.isSpl ? 0 : (this.info.minTransferFee ?? 0);
+        const fee = new BN(Math.max(Math.ceil((args.netLamports * feeBps) / 10000), feeFloor));
         const gross = new BN(args.netLamports).add(fee);
         const sorted = unspentNotes(this.publicKey)
             .filter((n) => n.mintAddress === args.mintAddress)

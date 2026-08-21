@@ -142,6 +142,7 @@ export async function fetchRelayerInfo() {
         feeRecipient: r.fee_recipient,
         withdrawalFeeRateBps: r.withdrawal_fee_rate_bps,
         feeErrorMarginBps: r.fee_error_margin_bps,
+        minTransferFee: r.min_transfer_fee ?? 0,
         supportedMints: (r.supported_mints ?? []).map((m) => ({
             mint: m.mint,
             feeAta: m.fee_ata,

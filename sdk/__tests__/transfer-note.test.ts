@@ -122,6 +122,7 @@ function installFetch(): void {
         fee_recipient: FEE_RECIPIENT.toBase58(),
         withdrawal_fee_rate_bps: FEE_BPS,
         fee_error_margin_bps: 0,
+        min_transfer_fee: 10_000,
         supported_mints: [{ mint: MINT.toBase58(), fee_ata: PublicKey.unique().toBase58() }],
       })
     }
@@ -370,6 +371,50 @@ describe("shielded transfers (transferNoteSOL/SPL)", () => {
     expect(unspent[0].mintAddress).toBe(WRAPPED_SOL_MINT)
   }, 180_000)
 
+  it("floors a small transferNoteSOL fee at the relayer minimum", async () => {
+    const sender = fakeSigner("sender-floor")
+    const recipient = fakeSigner("recipient-floor")
+    const wasm = MIRROR_WASM!
+    const client = new PrivacyCashClient(sender)
+    await client.unlock()
+    clearNotes(sender.publicKey)
+
+    const { utxoKeypair } = await deriveSenderKeys(sender, wasm)
+    const note = new Utxo({
+      wasm,
+      amount: "10000000",
+      blinding: "31337",
+      keypair: utxoKeypair,
+      index: 0,
+      mintAddress: WRAPPED_SOL_MINT,
+    })
+    seedTree(SOL_TREE_KEY, [note.getCommitment()])
+    saveNote(sender.publicKey, {
+      id: newNoteId(),
+      amount: "10000000",
+      blinding: "31337",
+      index: 0,
+      mintAddress: WRAPPED_SOL_MINT,
+      spent: false,
+      createdAt: 1,
+    })
+
+    await publishRecipientKeys(recipient)
+    const relayCountBefore = relayBodies.length
+    const net = 1_000_000
+    const result = await client.transferNoteSOL(recipient.publicKey, net)
+
+    // bps fee would be 2_500 -- the relayer floor (10_000) must win, or this
+    // transfer is structurally unrelayable (FEE_TOO_LOW after the full proof)
+    expect(result.feeLamports).toBe(10_000)
+    expect(result.recipientLamports).toBe(net)
+    const body = relayBodies[relayBodies.length - 1]
+    expect(body.fee).toBe(10_000)
+    // change = 10_000_000 - 1_000_000 - 10_000
+    const unspent = loadNotes(sender.publicKey).filter((n) => !n.spent)
+    expect(unspent.map((n) => n.amount)).toEqual(["8990000"])
+  }, 180_000)
+
   it("transferNoteSPL mirrors SOL on the mint's tree with spl relay fields", async () => {
     const sender = fakeSigner("sender-spl")
     const recipient = fakeSigner("recipient-spl")
@@ -444,5 +489,50 @@ describe("shielded transfers (transferNoteSOL/SPL)", () => {
     expect(unspent.map((n) => n.index)).toEqual([2])
     expect(unspent[0].amount).toBe("1997500000")
     expect(unspent[0].mintAddress).toBe(MINT.toBase58())
+  }, 180_000)
+
+  it("never applies the lamports fee floor to transferNoteSPL (token raw units)", async () => {
+    const mint = PublicKey.unique()
+    const sender = fakeSigner("sender-spl-floor")
+    const recipient = fakeSigner("recipient-spl-floor")
+    const wasm = MIRROR_WASM!
+    const client = new PrivacyCashClient(sender)
+    await client.unlock()
+    clearNotes(sender.publicKey)
+
+    const { utxoKeypair } = await deriveSenderKeys(sender, wasm)
+    const note = new Utxo({
+      wasm,
+      amount: "2000000",
+      blinding: "999",
+      keypair: utxoKeypair,
+      index: 0,
+      mintAddress: mint.toBase58(),
+    })
+    seedTree(mint.toBase58(), [note.getCommitment()])
+    saveNote(sender.publicKey, {
+      id: newNoteId(),
+      amount: "2000000",
+      blinding: "999",
+      index: 0,
+      mintAddress: mint.toBase58(),
+      spent: false,
+      createdAt: 1,
+    })
+
+    await publishRecipientKeys(recipient)
+    const relayCountBefore = relayBodies.length
+    const net = 1_000_000
+    const result = await client.transferNoteSPL(mint, recipient.publicKey, net)
+
+    // bps fee = ceil(1e6 * 25 / 10000) = 2_500 token raw units; the 10_000
+    // lamports floor is a SOL-denominated minimum and must not be compared
+    // against token units (a low-decimal mint would block all small transfers)
+    expect(result.feeLamports).toBe(2_500)
+    const body = relayBodies[relayBodies.length - 1]
+    expect(body.fee).toBe(2_500)
+    // change = 2_000_000 - 1_000_000 - 2_500
+    const unspent = loadNotes(sender.publicKey).filter((n) => !n.spent)
+    expect(unspent.map((n) => n.amount)).toEqual(["997500"])
   }, 180_000)
 })

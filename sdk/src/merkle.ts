@@ -5,6 +5,8 @@ export interface RelayerInfo {
   feeRecipient: string
   withdrawalFeeRateBps: number
   feeErrorMarginBps: number
+  /** Floor on the relayer fee for ext=0 SOL transfers (lamports); absent on older backends. */
+  minTransferFee?: number
   supportedMints: { mint: string; feeAta: string }[]
 }
 
@@ -223,6 +225,7 @@ export async function fetchRelayerInfo(): Promise<RelayerInfo> {
     feeRecipient: r.fee_recipient,
     withdrawalFeeRateBps: r.withdrawal_fee_rate_bps,
     feeErrorMarginBps: r.fee_error_margin_bps,
+    minTransferFee: r.min_transfer_fee ?? 0,
     supportedMints: (r.supported_mints ?? []).map((m: any) => ({
       mint: m.mint,
       feeAta: m.fee_ata,
