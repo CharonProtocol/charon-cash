@@ -124,13 +124,28 @@ export class PrivacyCashClient {
     /** Unlock + rescan + persist. Powers the UI "Load notes" action. */
     async refreshNotes() {
         await this.unlock();
-        const r = await this.syncNotes(SOL_TREE_KEY, true).catch(() => ({
-            scanned: 0,
-            added: 0,
-            spent: 0,
-        }));
+        // Scan the SOL tree plus every supported mint's tree: a recipient of a
+        // shielded SPL transfer has no local hint about the mint, so discovery
+        // must sweep all trees the relayer knows about.
+        const trees = [
+            SOL_TREE_KEY,
+            ...(this.info?.supportedMints ?? []).map((m) => m.mint),
+        ];
+        let scanned = 0;
+        let added = 0;
+        let spent = 0;
+        for (const treeKey of trees) {
+            const r = await this.syncNotes(treeKey, true).catch(() => ({
+                scanned: 0,
+                added: 0,
+                spent: 0,
+            }));
+            scanned += r.scanned;
+            added += r.added;
+            spent += r.spent;
+        }
         await this.persistNotes().catch(() => { });
-        return r;
+        return { scanned, added, spent };
     }
     /**
      * Scan encrypted outputs from the backend, decrypt ours, upsert notes,
