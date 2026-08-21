@@ -428,6 +428,7 @@ pub fn info(state: &AppState) -> RelayerInfo {
         fee_rate_bps: state.fee_rate_bps,
         withdrawal_fee_rate_bps,
         fee_error_margin_bps,
+        min_transfer_fee: state.min_transfer_fee,
         supported_mints,
     }
 }

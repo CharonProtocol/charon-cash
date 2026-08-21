@@ -123,6 +123,7 @@ pub struct RelayerInfo {
     pub fee_rate_bps: u16,
     pub withdrawal_fee_rate_bps: u16,
     pub fee_error_margin_bps: u16,
+    pub min_transfer_fee: u64,
     pub supported_mints: Vec<MintFeeInfo>,
 }
 

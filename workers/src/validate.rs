@@ -2,7 +2,7 @@ use ark_bn254::Fr;
 use ark_ff::PrimeField;
 use light_hasher::{Hasher, Sha256};
 
-use crate::dto::TransactInput;
+use crate::dto::{TransactInput, TransactKind};
 use crate::error::{AppError, AppResult};
 
 pub fn assert_is_withdraw_or_transfer(t: &TransactInput, min_transfer_fee: u64) -> AppResult<()> {
@@ -13,7 +13,7 @@ pub fn assert_is_withdraw_or_transfer(t: &TransactInput, min_transfer_fee: u64) 
              deposits require the depositor's own signature and cannot be relayed.",
         ));
     }
-    if t.ext_amount == 0 && t.fee < min_transfer_fee {
+    if t.kind == TransactKind::Sol && t.ext_amount == 0 && t.fee < min_transfer_fee {
         return Err(AppError::bad_request(
             "FEE_TOO_LOW",
             format!(
