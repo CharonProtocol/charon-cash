@@ -1,6 +1,7 @@
 mod admin;
 mod config;
 mod db;
+mod error;
 mod indexer;
 mod merkle;
 mod routes;
@@ -44,6 +45,7 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState {
         db,
+        merkle_manager: merkle_manager.clone(),
         config: config.clone(),
     };
 

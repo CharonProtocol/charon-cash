@@ -82,6 +82,15 @@ impl Db {
         Ok(ret)
     }
 
+    pub async fn has_wallet_pubkey(&self, wallet_pubkey: &str) -> Result<bool> {
+        let query = sqlx::query("SELECT * FROM users WHERE wallet_pubkey = $1")
+            .bind(wallet_pubkey)
+            .fetch_one(&self.pool)
+            .await?;
+
+        Ok(query.is_empty())
+    }
+
     pub async fn next_index(&self, tree_key: &str) -> Result<u32> {
         let row: Option<(i64,)> =
             sqlx::query_as("SELECT next_index FROM trees WHERE tree_key = $1")
