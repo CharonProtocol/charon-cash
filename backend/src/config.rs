@@ -1,4 +1,3 @@
-
 use anyhow::{Context, Result};
 use solana_sdk::pubkey::Pubkey;
 use std::str::FromStr;
@@ -11,11 +10,6 @@ pub struct Config {
     pub yellowstone_grpc_url: String,
     pub yellowstone_x_token: Option<String>,
     pub indexer_reconnect_secs: u64,
-    pub solana_rpc_url: String,
-    pub relayer_keypair_path: String,
-    pub relayer_fee_recipient: Pubkey,
-    pub relayer_fee_rate_bps: u16,
-    pub relayer_skip_preflight: bool,
     pub supported_mints: Vec<Pubkey>,
     /// Operator password for the admin/operator endpoints (`ADMIN_PASSWORD` env).
     /// When `None`, operator routes fail closed (403/401).
@@ -45,31 +39,11 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(3),
-            solana_rpc_url: std::env::var("SOLANA_RPC_URL")
-                .context("SOLANA_RPC_URL is required (e.g. https://api.mainnet-beta.solana.com)")?,
-            relayer_keypair_path: std::env::var("RELAYER_KEYPAIR")
-                .context("RELAYER_KEYPAIR is required (path to solana keypair json)")?,
-            relayer_fee_recipient: Pubkey::from_str(
-                &std::env::var("RELAYER_FEE_RECIPIENT").unwrap_or_else(|_| {
-                    "11111111111111111111111111111111".to_string()
-                }),
-            )
-            .context("invalid RELAYER_FEE_RECIPIENT pubkey")?,
-            relayer_fee_rate_bps: std::env::var("RELAYER_FEE_RATE_BPS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(25),
-            relayer_skip_preflight: std::env::var("RELAYER_SKIP_PREFLIGHT")
-                .ok()
-                .map(|v| {
-                    matches!(
-                        v.trim().to_ascii_lowercase().as_str(),
-                        "1" | "true" | "yes" | "on"
-                    )
-                })
-                .unwrap_or(false),
+
             supported_mints: parse_supported_mints(),
-            admin_password: std::env::var("ADMIN_PASSWORD").ok().filter(|s| !s.is_empty()),
+            admin_password: std::env::var("ADMIN_PASSWORD")
+                .ok()
+                .filter(|s| !s.is_empty()),
         })
     }
 

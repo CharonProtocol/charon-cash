@@ -1,6 +1,9 @@
 // 1-byte disc | proof | ExtDataMinified | enc1 | enc2 | bump0 | bump1
 
+use sqlx::Decode;
 use thiserror::Error;
+
+use crate::indexer::EncryptedNote;
 
 use super::types::{DecodedTransact, TransactKind};
 
@@ -25,6 +28,8 @@ pub enum DecodeError {
     TrailingBytes,
     #[error("missing nullifier bumps")]
     MissingNullifierBumps,
+    #[error("encrypted output is invalid")]
+    InvalidOutput,
 }
 
 /// Decode a Pinocchio `Transact` / `TransactSpl` instruction payload.
@@ -77,8 +82,23 @@ fn parse_transact_body(kind: TransactKind, data: &[u8]) -> Result<DecodedTransac
     );
     offset += 8;
 
-    let encrypted_output1 = read_length_prefixed(data, &mut offset)?.to_vec();
-    let encrypted_output2 = read_length_prefixed(data, &mut offset)?.to_vec();
+    let encrypted_output1 = read_length_prefixed(data, &mut offset)?;
+    let ephemeral_pubkey1 = read_ephemeral_key_from_output(encrypted_output1)?.to_vec();
+    let ciphertext1 = encrypted_output1[32..].to_vec();
+
+    let encrypted_note1 = EncryptedNote {
+        ephemeral_pubkey: ephemeral_pubkey1,
+        ciphertext: ciphertext1,
+    };
+
+    let encrypted_output2 = read_length_prefixed(data, &mut offset)?;
+    let ephemeral_pubkey2 = read_ephemeral_key_from_output(encrypted_output2)?.to_vec();
+    let ciphertext2 = encrypted_output2[32..].to_vec();
+
+    let encrypted_note2 = EncryptedNote {
+        ephemeral_pubkey: ephemeral_pubkey2,
+        ciphertext: ciphertext2,
+    };
 
     // Pinocchio requires exactly two nullifier bumps at the end.
     if data.len() < offset + 2 {
@@ -94,15 +114,9 @@ fn parse_transact_body(kind: TransactKind, data: &[u8]) -> Result<DecodedTransac
 
     Ok(DecodedTransact {
         kind,
-        root,
-        public_amount,
-        ext_data_hash,
-        input_nullifiers: [nullifier0, nullifier1],
         output_commitments: [commitment0, commitment1],
-        ext_amount,
-        fee,
-        encrypted_output1,
-        encrypted_output2,
+        encrypted_note1,
+        encrypted_note2,
     })
 }
 
@@ -124,4 +138,10 @@ fn read_length_prefixed<'a>(data: &'a [u8], offset: &mut usize) -> Result<&'a [u
     let len = u32::from_le_bytes(len_bytes.try_into().unwrap()) as usize;
     *offset += 4;
     read_bytes(data, offset, len).map_err(|_| DecodeError::InvalidLengthPrefix)
+}
+
+fn read_ephemeral_key_from_output<'a>(data: &'a [u8]) -> Result<&'a [u8], DecodeError> {
+    let ephemeral_key_len = 32;
+    let mut offset: usize = 0;
+    read_bytes(data, &mut offset, ephemeral_key_len).map_err(|_| DecodeError::InvalidOutput)
 }

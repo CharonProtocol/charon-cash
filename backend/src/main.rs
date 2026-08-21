@@ -3,7 +3,6 @@ mod config;
 mod db;
 mod indexer;
 mod merkle;
-mod relayer;
 mod routes;
 mod state;
 
@@ -13,10 +12,7 @@ use std::sync::Arc;
 use config::Config;
 use db::Db;
 use indexer::spawn_indexer;
-use relayer::merkle::MerkleMirror;
-use relayer::Relayer;
 use routes::router;
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signer::keypair::Keypair;
 use state::AppState;
 use tokio::sync::RwLock;
@@ -40,7 +36,11 @@ async fn main() -> anyhow::Result<()> {
 
     let merkle_manager = Arc::new(RwLock::new(MerkleManager::new().await?));
 
-    tokio::spawn(spawn_indexer(config.clone(), db.clone()));
+    tokio::spawn(spawn_indexer(
+        config.clone(),
+        db.clone(),
+        merkle_manager.clone(),
+    ));
 
     let state = AppState {
         db,

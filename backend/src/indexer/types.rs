@@ -1,5 +1,7 @@
 //! Shared indexer data types.
 
+use solana_sdk::pubkey::Pubkey;
+
 /// Tree key for native SOL (matches privacy-cash-sdk convention).
 pub const SOL_TREE_KEY: &str = "sol";
 
@@ -20,43 +22,31 @@ pub enum TransactKind {
 #[allow(dead_code)] // parsed-but-currently-unused: root / public_amount / ext_data_hash
 pub struct DecodedTransact {
     pub kind: TransactKind,
-    pub root: [u8; 32],
-    pub public_amount: [u8; 32],
-    pub ext_data_hash: [u8; 32],
-    pub input_nullifiers: [[u8; 32]; 2],
     pub output_commitments: [[u8; 32]; 2],
-    pub ext_amount: i64,
-    pub fee: u64,
-    pub encrypted_output1: Vec<u8>,
-    pub encrypted_output2: Vec<u8>,
+    pub encrypted_note1: EncryptedNote,
+    pub encrypted_note2: EncryptedNote,
 }
 
+/// This is added as per the new note sharing architecture
+///     ephemeral_pubkey : note's randomly generated pubkey used for encryption and decryption
+///     cipher_text : nonce + authTag  + encrypted_note
+/// ```no_run
+/// encrypted_output = ephemeral_pubkey (32 bytes)
+/// + nonce (12 bytes, for AES-GCM)
+/// + authTag (16 bytes)
+/// + ciphertext (variable length)
+/// ```
 #[derive(Debug, Clone)]
-pub struct IndexedUtxo {
-    pub tree_key: String,
-    pub leaf_index: u32,
-    pub commitment: [u8; 32],
-    pub encrypted_output: Vec<u8>,
-    pub signature: String,
-    pub slot: u64,
-    pub ext_amount: i64,
-    pub fee: u64,
-}
-
-#[derive(Debug, Clone)]
-pub struct IndexedNullifier {
-    pub tree_key: String,
-    pub nullifier: [u8; 32],
-    pub signature: String,
-    pub slot: u64,
+pub struct EncryptedNote {
+    pub ephemeral_pubkey: Vec<u8>,
+    pub ciphertext: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
 pub struct IndexedTransact {
+    pub curr_index: u32,
     pub signature: String,
     pub slot: u64,
     pub tree_key: String,
     pub decoded: DecodedTransact,
-    pub utxos: Vec<IndexedUtxo>,
-    pub nullifiers: Vec<IndexedNullifier>,
 }

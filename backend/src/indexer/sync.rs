@@ -3,10 +3,12 @@
 //! Replaces RPC `getSignaturesForAddress` polling with a live Geyser subscription
 //! filtered to our Pinocchio program id.
 
-use std::collections::HashMap;
-
 use anyhow::{Context, Result};
 use futures::{SinkExt, StreamExt};
+use rs_merkle_tree::{to_node, Node};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 use yellowstone_grpc_client::{ClientTlsConfig, GeyserGrpcClient, ReconnectConfig};
 use yellowstone_grpc_proto::geyser::{
@@ -17,22 +19,28 @@ use yellowstone_grpc_proto::solana::storage::confirmed_block::Message;
 
 use crate::config::Config;
 use crate::db::Db;
+use crate::merkle::MerkleManager;
 
 use super::decode::decode_transact_ix;
-use super::types::{IndexedNullifier, IndexedTransact, IndexedUtxo, TransactKind, SOL_TREE_KEY};
+use super::types::{IndexedTransact, TransactKind, SOL_TREE_KEY};
 
 pub struct Indexer {
     config: Config,
     db: Db,
+    merkle_manager: Arc<RwLock<MerkleManager>>,
 }
 
 impl Indexer {
-    pub fn new(config: Config, db: Db) -> Self {
-        Self { config, db }
+    pub fn new(config: Config, db: Db, merkle_manager: Arc<RwLock<MerkleManager>>) -> Self {
+        Self {
+            config,
+            db,
+            merkle_manager,
+        }
     }
 
     /// Connect to Yellowstone and index forever (reconnect on stream errors).
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(&self) -> Result<()> {
         info!(
             program_id = %self.config.program_id,
             grpc = %self.config.yellowstone_grpc_url,
@@ -52,15 +60,20 @@ impl Indexer {
             GeyserGrpcClient::build_from_shared(self.config.yellowstone_grpc_url.clone())
                 .context("invalid YELLOWSTONE_GRPC_URL")?;
 
-        if let Some(token) = &self.config.yellowstone_x_token {
+        if let Some(ref token) = self.config.yellowstone_x_token {
             builder = builder
                 .x_token(Some(token.clone()))
                 .context("invalid YELLOWSTONE_X_TOKEN")?;
         }
 
+        // Only apply TLS if the endpoint is actually https — local surfpool is plaintext.
+        if self.config.yellowstone_grpc_url.starts_with("https://") {
+            builder = builder
+                .tls_config(ClientTlsConfig::new().with_native_roots())
+                .context("tls config")?;
+        }
+
         let mut client = builder
-            .tls_config(ClientTlsConfig::new().with_native_roots())
-            .context("tls config")?
             .set_reconnect_config(ReconnectConfig::default())
             .connect()
             .await
@@ -82,7 +95,7 @@ impl Indexer {
         subscribe_tx
             .send(SubscribeRequest {
                 transactions: HashMap::from([("privacy_cash".to_string(), filter)]),
-                commitment: Some(CommitmentLevel::Confirmed as i32),
+                commitment: Some(CommitmentLevel::Finalized as i32),
                 ..Default::default()
             })
             .await
@@ -131,12 +144,20 @@ impl Indexer {
         }
 
         match self.build_indexed(slot, &signature, tx_info).await? {
-            Some(indexed) => {
-                self.db.insert_transact(&indexed).await?;
+            Some(mut indexed) => {
+                self.db.fill_commitment_and_insert_note(&indexed).await?;
+                let mut lock = self.merkle_manager.write().await;
+                let token_merkle_tree = lock.get_or_create_pool(&indexed.tree_key);
+                let output_commitment1 = std::mem::take(&mut indexed.decoded.output_commitments[0]);
+                let node1 = Node::from(output_commitment1);
+                let output_commitment2 = std::mem::take(&mut indexed.decoded.output_commitments[1]);
+                let node2 = Node::from(output_commitment2);
+
+                token_merkle_tree.add_leaves(&[node1, node2])?;
+
                 info!(
                     signature = %signature,
                     tree = %indexed.tree_key,
-                    leaves = indexed.utxos.len(),
                     "indexed transact"
                 );
             }
@@ -208,43 +229,13 @@ impl Indexer {
         };
 
         let start_index = self.db.next_index(&tree_key).await?;
-        let mut utxos = Vec::with_capacity(2);
-        for (i, (commitment, encrypted)) in decoded
-            .output_commitments
-            .iter()
-            .zip([&decoded.encrypted_output1, &decoded.encrypted_output2])
-            .enumerate()
-        {
-            utxos.push(IndexedUtxo {
-                tree_key: tree_key.clone(),
-                leaf_index: start_index + i as u32,
-                commitment: *commitment,
-                encrypted_output: encrypted.clone(),
-                signature: signature.to_string(),
-                slot,
-                ext_amount: decoded.ext_amount,
-                fee: decoded.fee,
-            });
-        }
-
-        let nullifiers = decoded
-            .input_nullifiers
-            .iter()
-            .map(|n| IndexedNullifier {
-                tree_key: tree_key.clone(),
-                nullifier: *n,
-                signature: signature.to_string(),
-                slot,
-            })
-            .collect();
 
         Ok(Some(IndexedTransact {
+            curr_index: start_index,
             signature: signature.to_string(),
             slot,
             tree_key,
             decoded,
-            utxos,
-            nullifiers,
         }))
     }
 }
@@ -271,8 +262,8 @@ fn extract_program_instruction(
 }
 
 /// Background task entrypoint from `main`.
-pub async fn spawn_indexer(config: Config, db: Db) {
-    let indexer = Indexer::new(config, db);
+pub async fn spawn_indexer(config: Config, db: Db, merkle_manager: Arc<RwLock<MerkleManager>>) {
+    let indexer = Indexer::new(config, db, merkle_manager);
     if let Err(err) = indexer.run().await {
         warn!(error = %err, "indexer exited");
     }
