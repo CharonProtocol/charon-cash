@@ -8,5 +8,4 @@ use crate::relayer::Relayer;
 pub struct AppState {
     pub db: Db,
     pub config: Config,
-    pub relayer: Arc<Relayer>,
 }

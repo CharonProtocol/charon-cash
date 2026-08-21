@@ -1,4 +1,4 @@
-# SilentPa App — Design Doc
+# SilentPay App — Design Doc
 
 - **_New Design_**
 
