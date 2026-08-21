@@ -35,7 +35,11 @@ export function usePayrollClient() {
         const info = await fetchRelayerInfo()
         if (cancelled) return
         setBps(info.withdrawalFeeRateBps)
-        setMinTransferFee(info.minTransferFee ?? 0)
+        // min_transfer_fee is network data heading into BigInt() sinks:
+        // coerce garbage to 0 (older backends lack the field; the planner
+        // then degrades to bps-only fees) and clamp negatives off.
+        const floor = Math.floor(Number(info.minTransferFee))
+        setMinTransferFee(Number.isFinite(floor) && floor > 0 ? floor : 0)
         await c.unlock() // wallet signature popup: derives the note keypair
         await c.refreshNotes()
         if (cancelled) return
