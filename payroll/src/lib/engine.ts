@@ -32,6 +32,8 @@ export interface RunRequest {
   vaultRaw: bigint
   /** Defaults to "public" when omitted. */
   mode?: RunMode
+  /** Relayer minimum ext=0 SOL fee (lamports); sizes shielded SOL funding. */
+  minTransferFee?: number
 }
 
 export interface EngineClient {
@@ -88,7 +90,11 @@ export class PayrollEngine {
   async run(req: RunRequest, onUpdate?: (s: RunSnapshot) => void): Promise<RunReceipt> {
     this.cancelled = false
     const decimals = req.asset.kind === "sol" ? 9 : req.asset.decimals
-    const plan = planRun(req.entries, decimals, req.bps, req.vaultRaw)
+    const plan = planRun(req.entries, decimals, req.bps, req.vaultRaw, {
+      mode: req.mode,
+      // the floor is SOL-denominated; token raw units never pay it
+      minTransferFee: req.asset.kind === "sol" ? req.minTransferFee : 0,
+    })
     const rows: RowState[] = req.entries.map((e) => ({
       address: e.address,
       amountHuman: e.amountHuman,

@@ -50,4 +50,29 @@ describe("planRun", () => {
     const p = planRun(entries, 9, 100, 10n ** 18n)
     expect(p.shortfall).toBe(0n)
   })
+
+  it("shielded rows spend net + floored fee from vault notes", () => {
+    // 0.0005 SOL = 500_000 raw; bps fee 5_000 floored to the 10_000 minimum
+    const small = [{ address: "D".repeat(32), amountHuman: "0.0005" }]
+    const p = planRun(small, 9, 100, 0n, { mode: "shielded", minTransferFee: 10_000 })
+    expect(p.rows[0].net).toBe(500_000n)
+    expect(p.rows[0].fee).toBe(10_000n)
+    expect(p.rows[0].gross).toBe(510_000n)
+    expect(p.margin).toBe(10_000n)
+    expect(p.shortfall).toBe(520_000n)
+  })
+
+  it("shielded fees stay bps-exact above the floor", () => {
+    const p = planRun(entries, 9, 100, 0n, { mode: "shielded", minTransferFee: 10_000 })
+    // 1.5 SOL -> feeFor(net) = 15_000_000, well above the floor: no gross solve
+    expect(p.rows[0].fee).toBe(15_000_000n)
+    expect(p.rows[0].gross).toBe(1_515_000_000n)
+    expect(p.margin).toBe(15_000_000n)
+  })
+
+  it("public planning is unchanged when a floor is supplied", () => {
+    const a = planRun(entries, 9, 100, 1_000_000_000n)
+    const b = planRun(entries, 9, 100, 1_000_000_000n, { mode: "public", minTransferFee: 10_000 })
+    expect(b).toEqual(a)
+  })
 })

@@ -219,4 +219,21 @@ describe("PayrollEngine", () => {
     expect(receipt.entries[1].attempts).toBe(3)
     expect(calls.transfers).toHaveLength(3)
   })
+
+  it("shielded funding sizes the deposit with the fee floor", async () => {
+    const { client, calls } = mockClient({ fails: new Map() })
+    const engine = new PayrollEngine(deps(client))
+    // 0.0005 SOL net: bps fee 5_000 floored to 10_000; vault empty so the
+    // deposit = net + fee + margin = 500_000 + 10_000 + 10_000 (without the
+    // floor the engine would under-deposit by 10_000 and the row would fail)
+    await engine.run(
+      req({
+        entries: [{ address: "D".repeat(32), amountHuman: "0.0005" }],
+        vaultRaw: 0n,
+        mode: "shielded",
+        minTransferFee: 10_000,
+      }),
+    )
+    expect(calls.deposits).toEqual([520_000])
+  })
 })

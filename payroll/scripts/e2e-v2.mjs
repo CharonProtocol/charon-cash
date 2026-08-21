@@ -8,7 +8,7 @@
 //        ESM dist; plain node cannot)
 // Env: BACKEND_URL (default http://127.0.0.1:8787)
 //      RPC_URL     (default http://127.0.0.1:8899)
-//      PROGRAM_ID  (default local-only deploy 21iBDT426WmQ3fUHvTWQ6aVPwPnaYik39av2BbQHHVYr)
+//      PROGRAM_ID  (default local-only deploy 3sGfrTUaetMjFEe1Qhwab8x1PFCpkDZ3tkmFwqkVwcWP)
 //      ADMIN_PASSWORD (default local-e2e; used only for the one-time tree initialize)
 //      FUNDER_KEYPAIR (default ~/.config/solana/id.json; funds the throwaway wallets
 //                      when the validator has no airdrop)
@@ -39,7 +39,7 @@ import {
 
 const BACKEND_URL = (process.env.BACKEND_URL ?? "http://127.0.0.1:8787").replace(/\/$/, "")
 const RPC_URL = process.env.RPC_URL ?? "http://127.0.0.1:8899"
-const PROGRAM_ID = process.env.PROGRAM_ID ?? "21iBDT426WmQ3fUHvTWQ6aVPwPnaYik39av2BbQHHVYr"
+const PROGRAM_ID = process.env.PROGRAM_ID ?? "3sGfrTUaetMjFEe1Qhwab8x1PFCpkDZ3tkmFwqkVwcWP"
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? "local-e2e"
 
 // Amounts (lamports): deposit 1 SOL, transfer a 0.5 SOL note, withdraw 0.495 SOL

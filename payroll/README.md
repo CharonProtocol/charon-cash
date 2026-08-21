@@ -127,7 +127,7 @@ below instead of silently skipping.
 
 Env knobs: `BACKEND_URL` (default `http://127.0.0.1:8787`), `RPC_URL`
 (default `http://127.0.0.1:8899`), `PROGRAM_ID` (default: the current local
-deploy `21iBDT426WmQ3fUHvTWQ6aVPwPnaYik39av2BbQHHVYr` — regenerate whenever
+deploy `3sGfrTUaetMjFEe1Qhwab8x1PFCpkDZ3tkmFwqkVwcWP` — regenerate whenever
 the simnet is rebuilt), `ADMIN_PASSWORD` (default `local-e2e`).
 
 ### v2 SPL end-to-end

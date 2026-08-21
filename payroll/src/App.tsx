@@ -46,7 +46,7 @@ export default function App() {
           vaultRaw = totalBalance(client.publicKey, asset.mint)
         }
         const r = await engine.run(
-          { fileHash, asset, entries, bps, vaultRaw, mode },
+          { fileHash, asset, entries, bps, vaultRaw, mode, minTransferFee },
           setSnapshot,
         )
         await refreshVault()
@@ -58,7 +58,7 @@ export default function App() {
         setSnapshot(null)
       }
     },
-    [client, parsed, bps, vaultSolRaw, refreshVault],
+    [client, parsed, bps, minTransferFee, vaultSolRaw, refreshVault],
   )
 
   const resumeFailed = useCallback(
