@@ -43,10 +43,22 @@ async fn sync_locked(state: &AppState) -> Result<SyncReport, String> {
     let mut all: Vec<SigInfo> = Vec::new();
     let mut before: Option<String> = None;
     loop {
-        let page = state
+        let fetched = state
             .rpc
             .get_signatures_for_address(&state.program_id, before.as_deref(), until.as_deref())
-            .await?;
+            .await;
+        let page = match fetched {
+            Ok(page) => page,
+            Err(e) if until.is_some() => {
+                until = None;
+                state
+                    .rpc
+                    .get_signatures_for_address(&state.program_id, before.as_deref(), None)
+                    .await
+                    .map_err(|_| e)?
+            }
+            Err(e) => return Err(e),
+        };
         let n = page.len();
         let oldest = page.last().map(|s| s.signature.clone());
         all.extend(page);
