@@ -62,6 +62,73 @@ company vault.
    run. The first SPL run may ask for one extra one-time signature to set up
    the payout address lookup table.
 
+## v2: private payouts (shielded notes)
+
+v2 adds a second payout mode: instead of unwrapping to a public transfer, the
+run pays each employee with a **shielded note** only they can spend (the
+program's ext=0 transfer — no public SOL moves at all).
+
+- **Recipient enrollment (one time):** each employee enables "Private
+  receiving" in the main web app (`frontend`). This signs three short messages
+  to publish their note + encryption keys to the backend registry. The payroll
+  app's review card has a "Check recipients" button that lists any employees
+  not yet enrolled and blocks the run until everyone is.
+- **Payout mode:** the review card has a Public / Private notes toggle. In
+  private mode every row is paid `transferNoteSOL`/`transferNoteSPL` — the
+  employee's exact net lands as a note on their wallet, the relayer fee comes
+  out of the vault's notes (no public-side amounts, addresses, or links).
+- **Receiving:** employees see the notes in their normal vault balance (the
+  frontend "Load notes" action) and can spend or withdraw them like any other
+  note. Withdrawing converts to a public transfer and pays the standard relayer
+  fee.
+- **Receipts** record the note's leaf index and commitment beside the
+  transaction signature, so a payroll auditor can point at the exact leaf.
+
+## v2 local end-to-end (simnet)
+
+`scripts/e2e-v2.mjs` runs the whole v2 flow against a local validator and a
+local Workers dev server: recipient enrollment, deposit, shielded transfer,
+recipient discovery + decrypt, and a gasless withdraw to a fresh address with
+an exact-balance assertion.
+
+```bash
+# 1. Validator: surfpool on :8899, then deploy the program locally.
+#    (The committed declare_id is the devnet program; a local deploy needs a
+#    temporary patch of programs/privacy-cash/src/lib.rs to the new address,
+#    cargo +stable build-sbf, solana program deploy --program-id <new keypair>,
+#    then revert the patch — never commit it.)
+surfpool start &                                   # http://127.0.0.1:8899
+solana-keygen new --no-bip39-passphrase -o /tmp/payroll-v2-program.json
+# patch declare_id -> <pubkey of that keypair>, build, deploy, revert:
+cargo +stable build-sbf --manifest-path programs/privacy-cash/Cargo.toml
+cp target/sbpf-solana-solana/release/privacy_cash.so target/deploy/privacy_cash.so
+solana program deploy target/deploy/privacy_cash.so \
+  --program-id /tmp/payroll-v2-program.json --keypair ~/.config/solana/id.json \
+  --url http://127.0.0.1:8899
+
+# 2. Workers: .dev.vars (gitignored) with
+#    RELAYER_KEYPAIR_JSON=<contents of a funded keypair json>
+#    SOLANA_RPC_URL=http://127.0.0.1:8899
+#    ADMIN_PASSWORD=local-e2e
+cd workers
+npx wrangler d1 migrations apply privacy-cash --local
+npx wrangler dev --var PROGRAM_ID:<deployed address> --port 8787
+
+# 3. Run it (bun: node cannot resolve the SDK's bundler-style dist).
+cd ../payroll
+bun scripts/e2e-v2.mjs
+```
+
+The script self-funds throwaway wallets via airdrop (falling back to
+`FUNDER_KEYPAIR`, default `~/.config/solana/id.json`), tolerates an
+already-initialized tree, and exits non-zero if any step fails. The SPL variant
+is skipped with a note unless a supported mint has an initialized tree locally.
+
+Env knobs: `BACKEND_URL` (default `http://127.0.0.1:8787`), `RPC_URL`
+(default `http://127.0.0.1:8899`), `PROGRAM_ID` (default: the current local
+deploy `21iBDT426WmQ3fUHvTWQ6aVPwPnaYik39av2BbQHHVYr` — regenerate whenever
+the simnet is rebuilt), `ADMIN_PASSWORD` (default `local-e2e`).
+
 ## Ops notes
 
 - SPL payouts require the mint's merkle tree to be initialized. The operator
