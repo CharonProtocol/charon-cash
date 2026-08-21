@@ -13,6 +13,7 @@ export function usePayrollClient() {
   const [error, setError] = useState<string | null>(null)
   const [vaultSolRaw, setVaultSolRaw] = useState<bigint | null>(null)
   const [bps, setBps] = useState<number | null>(null)
+  const [minTransferFee, setMinTransferFee] = useState(0)
   const clientRef = useRef<PrivacyCashClient | null>(null)
   const [client, setClient] = useState<PrivacyCashClient | null>(null)
 
@@ -34,6 +35,7 @@ export function usePayrollClient() {
         const info = await fetchRelayerInfo()
         if (cancelled) return
         setBps(info.withdrawalFeeRateBps)
+        setMinTransferFee(info.minTransferFee ?? 0)
         await c.unlock() // wallet signature popup: derives the note keypair
         await c.refreshNotes()
         if (cancelled) return
@@ -56,5 +58,5 @@ export function usePayrollClient() {
     setVaultSolRaw(totalBalance(c.publicKey, WRAPPED_SOL_MINT))
   }, [])
 
-  return { client, ready: connected && !!client && !busy, busy, error, vaultSolRaw, bps, connect, refreshVault }
+  return { client, ready: connected && !!client && !busy, busy, error, vaultSolRaw, bps, minTransferFee, connect, refreshVault }
 }

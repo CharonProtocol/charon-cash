@@ -18,7 +18,7 @@ import type { Asset, ParsedFile, RunMode, RunReceipt } from "@/lib/types"
 export default function App() {
   const { open: openModal } = useConnectWallet()
   const { publicKey } = useWallet()
-  const { client, ready, busy, error, vaultSolRaw, bps, refreshVault } = usePayrollClient()
+  const { client, ready, busy, error, vaultSolRaw, bps, minTransferFee, refreshVault } = usePayrollClient()
   const [storageWarn] = useState(() => !storageOk())
 
   const [parsed, setParsed] = useState<ParsedFile | null>(null)
@@ -95,6 +95,7 @@ export default function App() {
           <PlanReviewCard
             parsed={parsed}
             bps={bps}
+            minTransferFee={minTransferFee}
             vaultSolRaw={vaultSolRaw}
             disabled={!ready}
             onRun={(asset, mode) => startRun(asset, undefined, undefined, mode)}

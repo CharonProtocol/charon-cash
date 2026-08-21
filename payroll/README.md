@@ -135,7 +135,10 @@ the simnet is rebuilt), `ADMIN_PASSWORD` (default `local-e2e`).
   does this once from the main frontend's admin card (`initialize SPL tree`)
   — not from this app.
 - The relayer takes `withdrawal_fee_rate_bps` per payout (shown in the review
-  card); the vault must cover total + fees + a small margin.
+  card); the vault must cover total + fees + a small margin. Private (shielded)
+  SOL payouts each pay at least the relayer's minimum transfer fee
+  (`RELAYER_MIN_TRANSFER_FEE_LAMPORTS`, default 10_000 lamports per row) — the
+  review card's private-mode fee estimate includes it.
 - Receipts (with JSON/CSV export) live in this browser's localStorage only;
   on-chain signatures are the source of truth.
 - Never `git push` this branch.

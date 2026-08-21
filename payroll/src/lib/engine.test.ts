@@ -30,6 +30,7 @@ function mockClient(ctl: Ctl) {
     deposits: [] as number[],
     withdraws: [] as Array<[number, string]>,
     transfers: [] as Array<[number, string]>,
+    splMints: [] as string[],
     refreshes: 0,
   }
   const client: EngineClient = {
@@ -74,7 +75,8 @@ function mockClient(ctl: Ctl) {
         commitment: `0xcommit${calls.transfers.length}`,
       }
     },
-    transferNoteSPL: async (_m: string, recipient: string, netRaw: number) => {
+    transferNoteSPL: async (m: string, recipient: string, netRaw: number) => {
+      calls.splMints.push(m)
       calls.transfers.push([netRaw, recipient])
       return {
         signature: `NOTE-${recipient[0]}`,
@@ -203,6 +205,8 @@ describe("PayrollEngine", () => {
     expect(calls.transfers).toHaveLength(3)
     // 6 decimals: 1, 2, 3 tokens -> 1e6, 2e6, 3e6 raw
     expect(calls.transfers.map((t) => t[0])).toEqual([1_000_000, 2_000_000, 3_000_000])
+    // every row must be paid on the run's mint, not a stale/default one
+    expect(calls.splMints).toEqual(Array(3).fill("Mint111111111111111111111111111111111111111"))
     expect(receipt.mode).toBe("shielded")
     expect(receipt.entries.every((e) => e.noteLeafIndex !== undefined)).toBe(true)
   })

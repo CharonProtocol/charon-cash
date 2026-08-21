@@ -27,12 +27,14 @@ interface RecipientCheck {
 export function PlanReviewCard({
   parsed,
   bps,
+  minTransferFee,
   vaultSolRaw,
   onRun,
   disabled,
 }: {
   parsed: ParsedFile | null
   bps: number | null
+  minTransferFee: number
   vaultSolRaw: bigint | null
   onRun: (asset: Asset, mode: RunMode) => void
   disabled: boolean
@@ -94,9 +96,20 @@ export function PlanReviewCard({
       ),
     }))
     const totalNet = nets.reduce((s, n) => s + n.net, 0n)
-    const totalFees = (totalNet * BigInt(bps) + 9_999n) / 10_000n
+    // Private SOL mode pays one fee per row out of vault notes, and each row's
+    // fee is floored at the relayer minimum — mirror that per-row math here so
+    // the estimate matches what the engine will actually spend.
+    const floor = kind === "sol" ? BigInt(minTransferFee) : 0n
+    const totalFees =
+      mode === "shielded"
+        ? nets.reduce((s, n) => {
+          let f = (n.net * BigInt(bps) + 9_999n) / 10_000n
+          if (f < floor) f = floor
+          return s + f
+        }, 0n)
+        : (totalNet * BigInt(bps) + 9_999n) / 10_000n
     return { totalNet, totalFees }
-  }, [parsed, activeDecimals, bps])
+  }, [parsed, activeDecimals, bps, kind, mode, minTransferFee])
 
   const vaultBig = vaultSolRaw ?? 0n
   const shortfall =
@@ -111,7 +124,10 @@ export function PlanReviewCard({
     try {
       const unregistered: string[] = []
       for (const e of parsed.entries) {
-        const keys = await fetchRecipientKeys(e.address).catch(() => null)
+        // fetchRecipientKeys returns null only for a confirmed 404 (not
+        // enrolled); any other failure (backend down, 5xx) must throw so the
+        // treasurer sees "could not verify" instead of a false "not enrolled"
+        const keys = await fetchRecipientKeys(e.address)
         if (!keys) unregistered.push(e.address)
       }
       setRecipientCheck({
@@ -120,7 +136,8 @@ export function PlanReviewCard({
         unregistered,
       })
     } catch (e) {
-      setCheckError((e as Error).message)
+      setRecipientCheck(null)
+      setCheckError(`could not verify recipients: ${(e as Error).message}`)
     } finally {
       setChecking(false)
     }
