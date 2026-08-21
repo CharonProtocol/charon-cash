@@ -229,7 +229,7 @@ async function main() {
     const st = await getJson(`${BACKEND_URL}/api/merkle/${m.mint}`).catch(() => null)
     if (st?.ok) {
       splChecked = true
-      console.log(`  [SKIP] SPL e2e not implemented for local mint ${m.mint} -- SOL path above covers the shared ext=0 machinery`)
+      console.log(`  [NOTE] supported mint with an initialized tree found (${m.mint}); run scripts/e2e-spl-v2.mjs for the SPL-specific path (fee-ATA pre-instruction, v0+ALT relay)`)
       break
     }
   }

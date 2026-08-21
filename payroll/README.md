@@ -121,13 +121,35 @@ bun scripts/e2e-v2.mjs
 
 The script self-funds throwaway wallets via airdrop (falling back to
 `FUNDER_KEYPAIR`, default `~/.config/solana/id.json`), tolerates an
-already-initialized tree, and exits non-zero if any step fails. The SPL variant
-is skipped with a note unless a supported mint has an initialized tree locally.
+already-initialized tree, and exits non-zero if any step fails. When a
+supported mint with an initialized tree is present it points at the SPL twin
+below instead of silently skipping.
 
 Env knobs: `BACKEND_URL` (default `http://127.0.0.1:8787`), `RPC_URL`
 (default `http://127.0.0.1:8899`), `PROGRAM_ID` (default: the current local
 deploy `21iBDT426WmQ3fUHvTWQ6aVPwPnaYik39av2BbQHHVYr` — regenerate whenever
 the simnet is rebuilt), `ADMIN_PASSWORD` (default `local-e2e`).
+
+### v2 SPL end-to-end
+
+`scripts/e2e-spl-v2.mjs` runs the SPL twin of the flow above: deposit, ext=0
+shielded transfer, recipient discovery, and an exact check that the token fee
+landed in the relayer's fee ATA. Its net is deliberately below the SOL fee
+floor (1 token at 6 decimals, fee 2_500 raw) to pin that the floor never
+applies to token raw units.
+
+On top of the SOL runbook: create a local mint and a treasurer ATA holding its
+tokens (any throwaway script with `@solana/spl-token`: `createMint`,
+`getOrCreateAssociatedTokenAccount`, `mintTo`), pass the mint to the worker,
+initialize its tree, and run:
+
+```bash
+npx wrangler dev --var PROGRAM_ID:<addr> --var SUPPORTED_MINTS:<mint> --port 8787
+curl -X POST http://127.0.0.1:8787/api/relayer/initialize-spl \
+  -H "content-type: application/json" -H "x-admin-password: local-e2e" \
+  -d '{"mint":"<mint>"}'
+MINT=<mint> TREASURER_KEYPAIR=<path-to-funded-keypair> bun scripts/e2e-spl-v2.mjs
+```
 
 ## Ops notes
 
