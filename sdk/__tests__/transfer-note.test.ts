@@ -279,9 +279,12 @@ describe("shielded transfers (transferNoteSOL/SPL)", () => {
     const sender = fakeSigner("sender-unregistered")
     const client = new PrivacyCashClient(sender)
     await client.unlock()
+    const ghost = PublicKey.unique()
     await expect(
-      client.transferNoteSOL(PublicKey.unique(), 1_000_000),
-    ).rejects.toThrow(/has not enabled private receiving/)
+      client.transferNoteSOL(ghost, 1_000_000),
+    ).rejects.toThrow(
+      `recipient ${ghost.toBase58()} has not enabled private receiving`,
+    )
   })
 
   it("transferNoteSOL relays ext=0 with a v3-encrypted recipient note", async () => {
@@ -339,12 +342,26 @@ describe("shielded transfers (transferNoteSOL/SPL)", () => {
     expect(body.output_commitments[0]).toHaveLength(66)
 
     // the recipient decrypts output 0 with their own receive key
-    const rEnc = await deriveSenderKeys(recipient, wasm).then((r) => r.enc)
+    const rKeys = await deriveSenderKeys(recipient, wasm)
+    const rEnc = rKeys.enc
     const ct1 = Buffer.from(body.encrypted_output1.slice(2), "hex")
     const got = await rEnc.decryptUtxo(ct1, wasm)
     expect(got.amount.toString()).toBe(String(net))
     expect(got.index).toBe(1)
     expect(got.mintAddress).toBe(WRAPPED_SOL_MINT)
+
+    // spendability: rebuilding the utxo from the decrypted fields under the
+    // recipient's spending key must reproduce the relayed commitment, proving
+    // the on-chain commitment is bound to the recipient's note pubkey
+    const spendable = new Utxo({
+      wasm,
+      amount: got.amount.toString(),
+      blinding: got.blinding.toString(),
+      keypair: rKeys.utxoKeypair,
+      index: got.index,
+      mintAddress: got.mintAddress,
+    })
+    expect("0x" + fieldToHex32(spendable.getCommitment())).toBe(body.output_commitments[0])
 
     // sender-side note bookkeeping: input spent, change saved at leaf 2
     const unspent = loadNotes(sender.publicKey).filter((n) => !n.spent)
@@ -405,11 +422,23 @@ describe("shielded transfers (transferNoteSOL/SPL)", () => {
     expect(body.encrypted_output1.startsWith("0x" + V3_PREFIX_HEX)).toBe(true)
     expect(body.output_commitments[0]).toBe("0x" + result.commitment)
 
-    const rEnc = await deriveSenderKeys(recipient, wasm).then((r) => r.enc)
+    const rKeys = await deriveSenderKeys(recipient, wasm)
+    const rEnc = rKeys.enc
     const ct1 = Buffer.from(body.encrypted_output1.slice(2), "hex")
     const got = await rEnc.decryptUtxo(ct1, wasm)
     expect(got.amount.toString()).toBe(String(net))
     expect(got.mintAddress).toBe(MINT.toBase58())
+
+    // spendability: commitment bound to the recipient's note pubkey (SOL twin above)
+    const spendable = new Utxo({
+      wasm,
+      amount: got.amount.toString(),
+      blinding: got.blinding.toString(),
+      keypair: rKeys.utxoKeypair,
+      index: got.index,
+      mintAddress: got.mintAddress,
+    })
+    expect("0x" + fieldToHex32(spendable.getCommitment())).toBe(body.output_commitments[0])
 
     const unspent = loadNotes(sender.publicKey).filter((n) => !n.spent)
     expect(unspent.map((n) => n.index)).toEqual([2])

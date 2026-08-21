@@ -82,7 +82,14 @@ export async function fetchRecipientKeys(
   if (res.status === 404) return null
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(`recipient lookup HTTP ${res.status}: ${text.slice(0, 120)}`)
+    let data: unknown = text
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = text
+    }
+    const err = (data as { error?: { message?: string } } | null)?.error
+    throw new Error(err?.message ?? `HTTP ${res.status}`)
   }
   const row = (await res.json()) as {
     note_pubkey: string

@@ -62,7 +62,15 @@ export async function fetchRecipientKeys(wallet) {
         return null;
     if (!res.ok) {
         const text = await res.text();
-        throw new Error(`recipient lookup HTTP ${res.status}: ${text.slice(0, 120)}`);
+        let data = text;
+        try {
+            data = JSON.parse(text);
+        }
+        catch {
+            data = text;
+        }
+        const err = data?.error;
+        throw new Error(err?.message ?? `HTTP ${res.status}`);
     }
     const row = (await res.json());
     const keys = { notePubkey: row.note_pubkey, encPubkey: row.enc_pubkey };
