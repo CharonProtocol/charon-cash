@@ -29,6 +29,8 @@ pub struct TreeState {
 
 #[derive(Clone, Serialize)]
 pub struct MerklePath {
+    pub root: String,
+    pub next_leaf_index: u32,
     pub path_elements: [[u8; 32]; MERKLE_TREE_HEIGHT],
     pub path_indices: [u8; MERKLE_TREE_HEIGHT],
 }
@@ -205,7 +207,13 @@ pub async fn proof(store: &Store, tree_key: &str, leaf_index: u32) -> AppResult<
     for i in 0..MERKLE_TREE_HEIGHT {
         indices[i] = ((leaf_index >> i) & 1) as u8;
     }
-    Ok(MerklePath { path_elements: path, path_indices: indices })
+    let current_root = data.root_history[data.root_index];
+    Ok(MerklePath {
+        root: hex::encode_upper(current_root),
+        next_leaf_index: data.next_index,
+        path_elements: path,
+        path_indices: indices,
+    })
 }
 
 pub async fn is_known_root(store: &Store, tree_key: &str, root: [u8; 32]) -> AppResult<bool> {
