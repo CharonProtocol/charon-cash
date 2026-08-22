@@ -100,9 +100,32 @@ async fn sync_locked(state: &AppState) -> Result<SyncReport, String> {
         return Ok(SyncReport { new_txs: 0, walked: all.len() });
     }
 
+    // Process oldest → newest so leaf indexes follow on-chain order. The
+    // signature feed only guarantees slot granularity, so transactions that
+    // land in the same slot are re-ordered by their position in that block:
+    // the program assigns leaf indexes in execution order.
+    let mut pending: Vec<SigInfo> = all[..pending_end].to_vec();
+    pending.reverse();
+    pending.sort_by_key(|s| s.slot);
+    let mut i = 0;
+    while i < pending.len() {
+        let mut j = i + 1;
+        while j < pending.len() && pending[j].slot == pending[i].slot {
+            j += 1;
+        }
+        if j - i > 1 {
+            let slot = pending[i].slot;
+            if let Ok(order) = state.rpc.get_block_signatures(slot).await {
+                pending[i..j].sort_by_key(|s| {
+                    order.iter().position(|x| *x == s.signature).unwrap_or(usize::MAX)
+                });
+            }
+        }
+        i = j;
+    }
+
     let mut new_txs = 0usize;
-    // Process oldest → newest so leaf indexes follow on-chain order.
-    for sig in all[..pending_end].iter().rev() {
+    for sig in &pending {
         if state.store.has_tx(&sig.signature).await? {
             continue;
         }

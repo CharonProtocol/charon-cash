@@ -13,7 +13,7 @@ pub struct Rpc {
     pub url: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct SigInfo {
     pub signature: String,
     pub slot: u64,
@@ -166,6 +166,25 @@ impl Rpc {
             .call("getSignaturesForAddress", json!([program.to_string(), config]))
             .await?;
         serde_json::from_value(result).map_err(|e| format!("getSignaturesForAddress: {e}"))
+    }
+
+    pub async fn get_block_signatures(&self, slot: u64) -> Result<Vec<String>, String> {
+        let result = self
+            .call(
+                "getBlock",
+                json!([
+                    slot,
+                    {
+                        "encoding": "json",
+                        "transactionDetails": "signatures",
+                        "commitment": "confirmed",
+                        "maxSupportedTransactionVersion": 0
+                    }
+                ]),
+            )
+            .await?;
+        let sigs = result.get("signatures").cloned().unwrap_or_default();
+        serde_json::from_value(sigs).map_err(|e| format!("getBlock: {e}"))
     }
 
     pub async fn get_transaction(&self, signature: &str) -> Result<Option<TxJson>, String> {
