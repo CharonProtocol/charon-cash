@@ -1,5 +1,5 @@
 export { PrivacyCashClient } from "./client";
-export type { Signer, DepositResult, WithdrawResult, SyncResult, } from "./client";
+export type { Signer, DepositResult, WithdrawResult, SyncResult, PendingTransfer, OnSubmitted, } from "./client";
 export { EncryptionService, Keypair, Utxo, deriveReceiveKeys, encryptUtxoTo, getExtDataHash, getMintAddressField, } from "./crypto";
 export { prove, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers, } from "./prover";
 export { buildTransactTransaction, buildTransactIxData, buildTransactSplTransaction, buildTransactSplInstruction, deriveAccounts, deriveSplTreeAccount, } from "./program";

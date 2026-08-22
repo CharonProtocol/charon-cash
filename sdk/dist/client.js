@@ -135,7 +135,7 @@ export class PrivacyCashClient {
         let added = 0;
         let spent = 0;
         for (const treeKey of trees) {
-            const r = await this.syncNotes(treeKey, true).catch(() => ({
+            const r = await this.syncNotes(treeKey).catch(() => ({
                 scanned: 0,
                 added: 0,
                 spent: 0,
@@ -198,7 +198,10 @@ export class PrivacyCashClient {
                 if (!before)
                     added++;
             }
-            setSyncOffset(wallet, treeKey, page.end);
+            // Resume from the tree tip, not the requested page end: when the tree is
+            // shorter than one page, page.end overshoots the tip and the next
+            // incremental scan would start above where new leaves land.
+            setSyncOffset(wallet, treeKey, page.hasMore ? page.end : page.nextIndex);
             if (!page.hasMore)
                 break;
             start = page.end;
@@ -330,7 +333,7 @@ export class PrivacyCashClient {
      */
     async transferNoteSOL(recipient, netLamports, opts) {
         await this.unlock();
-        await this.syncNotes(SOL_TREE_KEY, true).catch(() => { });
+        await this.syncNotes(SOL_TREE_KEY).catch(() => { });
         return this.transferNoteInternal({
             treeKey: SOL_TREE_KEY,
             mintAddress: WRAPPED_SOL_MINT,
@@ -338,13 +341,15 @@ export class PrivacyCashClient {
             netLamports,
             isSpl: false,
             relay: opts?.relay,
+            onSubmitted: opts?.onSubmitted,
+            inputNote: opts?.inputNote,
         });
     }
     /** SPL twin of transferNoteSOL on a registered mint's tree. */
     async transferNoteSPL(mint, recipient, netRaw, opts) {
         await this.unlock();
         const mintPk = toPubkey(mint);
-        await this.syncNotes(mintPk.toBase58(), true).catch(() => { });
+        await this.syncNotes(mintPk.toBase58()).catch(() => { });
         return this.transferNoteInternal({
             treeKey: mintPk.toBase58(),
             mintAddress: mintPk.toBase58(),
@@ -353,6 +358,8 @@ export class PrivacyCashClient {
             isSpl: true,
             mint: mintPk,
             relay: opts?.relay,
+            onSubmitted: opts?.onSubmitted,
+            inputNote: opts?.inputNote,
         });
     }
     async depositSPL(mint, amountRaw) {
@@ -759,18 +766,35 @@ export class PrivacyCashClient {
             .sort((a, b) => Number(b.amount) - Number(a.amount));
         if (sorted.length === 0)
             throw new Error("no spendable notes");
-        let inputNotes = sorted.filter((n) => BigInt(n.amount) >= BigInt(gross.toString()));
-        if (inputNotes.length === 0) {
-            const a = sorted[0];
-            const need = gross.sub(new BN(a.amount));
-            const b = sorted.slice(1).find((n) => new BN(n.amount).gte(need));
-            if (!b) {
-                throw new Error(`insufficient private balance: have ${a.amount}, need ${gross.toString()}`);
+        // Pinning: callers running parallel pay chains on one wallet pass the
+        // exact note to spend. The entry syncNotes rebuilds the shared note set
+        // from the indexer, so without a pin every concurrent caller converges on
+        // the same largest note and they collide at the relayer.
+        let inputNotes;
+        if (args.inputNote) {
+            const pinned = sorted.find((n) => n.blinding === args.inputNote.blinding);
+            if (!pinned) {
+                throw new Error("pinned note not found in spendable set");
             }
-            inputNotes = [a, b];
+            if (BigInt(pinned.amount) < BigInt(gross.toString())) {
+                throw new Error(`pinned note holds ${pinned.amount}, need ${gross.toString()}`);
+            }
+            inputNotes = [pinned];
         }
         else {
-            inputNotes = [inputNotes[0]];
+            inputNotes = sorted.filter((n) => BigInt(n.amount) >= BigInt(gross.toString()));
+            if (inputNotes.length === 0) {
+                const a = sorted[0];
+                const need = gross.sub(new BN(a.amount));
+                const b = sorted.slice(1).find((n) => new BN(n.amount).gte(need));
+                if (!b) {
+                    throw new Error(`insufficient private balance: have ${a.amount}, need ${gross.toString()}`);
+                }
+                inputNotes = [a, b];
+            }
+            else {
+                inputNotes = [inputNotes[0]];
+            }
         }
         const realInputs = inputNotes.map((n) => new Utxo({
             wasm,
@@ -843,6 +867,14 @@ export class PrivacyCashClient {
         ];
         const enc1 = await encryptUtxoTo(Buffer.from(keys.encPubkey, "hex"), outputs[0]);
         const enc2 = await this.enc.encryptUtxo(outputs[1]);
+        if (args.onSubmitted) {
+            const pendingNullifiers = await Promise.all(inputs.filter((u) => u.amount.gt(new BN(0))).map((x) => x.getNullifier()));
+            await args.onSubmitted({
+                nullifiers: pendingNullifiers,
+                changeBlinding: change.gt(new BN(0)) ? outputs[1].blinding.toString() : undefined,
+                changeAmount: change.gt(new BN(0)) ? outputs[1].amount.toString() : undefined,
+            });
+        }
         const relay = args.relay !== false;
         let feeRecipientForHash = this.feeRecipient;
         if (args.isSpl && args.mint)

@@ -34,6 +34,19 @@ export interface SyncResult {
     added: number;
     spent: number;
 }
+/**
+ * Fires right before a transfer is submitted to the network: the nullifiers
+ * being spent and the identity of the fresh change note. A submit can outlive
+ * its caller — the request dies at the transport layer while the transaction
+ * lands — so callers that need to survive a misreported failure (parallel
+ * payroll chains) journal this and later recover the change note by blinding.
+ */
+export interface PendingTransfer {
+    nullifiers: string[];
+    changeBlinding?: string;
+    changeAmount?: string;
+}
+export type OnSubmitted = (pending: PendingTransfer) => void | Promise<void>;
 export declare class PrivacyCashClient {
     private signer;
     private wasm?;
@@ -92,6 +105,10 @@ export declare class PrivacyCashClient {
      */
     transferNoteSOL(recipient: PublicKey | string, netLamports: number, opts?: {
         relay?: boolean;
+        onSubmitted?: OnSubmitted;
+        inputNote?: {
+            blinding: string;
+        };
     }): Promise<WithdrawResult & {
         leafIndex: number;
         commitment: string;
@@ -99,6 +116,10 @@ export declare class PrivacyCashClient {
     /** SPL twin of transferNoteSOL on a registered mint's tree. */
     transferNoteSPL(mint: PublicKey | string, recipient: PublicKey | string, netRaw: number, opts?: {
         relay?: boolean;
+        onSubmitted?: OnSubmitted;
+        inputNote?: {
+            blinding: string;
+        };
     }): Promise<WithdrawResult & {
         leafIndex: number;
         commitment: string;

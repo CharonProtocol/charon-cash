@@ -91,6 +91,7 @@ const relayBodies: Array<Record<string, any>> = []
 const putBodies: Array<Record<string, any>> = []
 const treeKeysSeen = new Set<string>()
 let sigCounter = 0
+let failNextRelay = false
 
 function seedTree(treeKey: string, leaves: string[]): void {
   trees.set(treeKey, {
@@ -201,6 +202,10 @@ function installFetch(): void {
       return json({ ok: true })
     }
     if (method === "POST" && url.pathname === "/api/relayer") {
+      if (failNextRelay) {
+        failNextRelay = false
+        return json({ error: { message: "send_transaction: simulated transport death" } }, 500)
+      }
       relayBodies.push(body)
       const sig = `SIG${++sigCounter}`
       for (const entry of trees.values()) {
@@ -438,6 +443,106 @@ describe("shielded transfers (transferNoteSOL/SPL)", () => {
     // change = 10_000_000 - 1_000_000 - 10_000
     const unspent = loadNotes(sender.publicKey).filter((n) => !n.spent)
     expect(unspent.map((n) => n.amount)).toEqual(["8990000"])
+  }, 180_000)
+
+  it("onSubmitted journals the pending change before the relay POST, even when the POST dies", async () => {
+    const sender = fakeSigner("sender-journal")
+    const recipient = fakeSigner("recipient-journal")
+    const wasm = MIRROR_WASM!
+    const client = new PrivacyCashClient(sender)
+    await client.unlock()
+    clearNotes(sender.publicKey)
+
+    const { utxoKeypair } = await deriveSenderKeys(sender, wasm)
+    const note = new Utxo({
+      wasm,
+      amount: "5000000",
+      blinding: "808",
+      keypair: utxoKeypair,
+      index: 0,
+      mintAddress: WRAPPED_SOL_MINT,
+    })
+    seedTree(SOL_TREE_KEY, [note.getCommitment()])
+    saveNote(sender.publicKey, {
+      id: newNoteId(),
+      amount: "5000000",
+      blinding: "808",
+      index: 0,
+      mintAddress: WRAPPED_SOL_MINT,
+      spent: false,
+      createdAt: 1,
+    })
+    await publishRecipientKeys(recipient)
+
+    // first attempt: the relay dies at the transport layer AFTER submission was
+    // handed over -- the caller must still hold the pending change identity
+    const relayCountBefore = relayBodies.length
+    let journal: { nullifiers: string[]; changeBlinding?: string; changeAmount?: string } | null = null
+    failNextRelay = true
+    await expect(
+      client.transferNoteSOL(recipient.publicKey, 1_000_000, {
+        onSubmitted: (p) => { journal = p },
+      }),
+    ).rejects.toThrow("simulated transport death")
+    expect(journal).not.toBeNull()
+    expect(journal!.changeAmount).toBe("3990000")
+    expect(journal!.nullifiers).toHaveLength(1)
+    expect(BigInt(journal!.nullifiers[0])).toBeGreaterThan(0n)
+    // the failed POST never reached the mock relay
+    expect(relayBodies.length).toBe(relayCountBefore)
+
+    // second attempt succeeds, pinned to the same input note: every transfer
+    // mints a fresh change blinding, so only the amount must repeat -- the
+    // journal's blinding identifies the FIRST transfer's change for recovery
+    const result = await client.transferNoteSOL(recipient.publicKey, 1_000_000, {
+      inputNote: { blinding: "808" },
+    })
+    expect(result.changeNote?.amount).toBe(journal!.changeAmount)
+    expect(result.changeNote?.blinding).not.toBe(journal!.changeBlinding)
+  }, 180_000)
+
+  it("inputNote pinning spends the pinned note even when a larger note exists", async () => {
+    const sender = fakeSigner("sender-pin")
+    const recipient = fakeSigner("recipient-pin")
+    const wasm = MIRROR_WASM!
+    const client = new PrivacyCashClient(sender)
+    await client.unlock()
+    clearNotes(sender.publicKey)
+
+    const { utxoKeypair } = await deriveSenderKeys(sender, wasm)
+    const big = new Utxo({
+      wasm, amount: "5000000", blinding: "808", keypair: utxoKeypair,
+      index: 0, mintAddress: WRAPPED_SOL_MINT,
+    })
+    const small = new Utxo({
+      wasm, amount: "2000000", blinding: "909", keypair: utxoKeypair,
+      index: 1, mintAddress: WRAPPED_SOL_MINT,
+    })
+    seedTree(SOL_TREE_KEY, [big.getCommitment(), small.getCommitment()])
+    for (const n of [
+      { amount: "5000000", blinding: "808", index: 0 },
+      { amount: "2000000", blinding: "909", index: 1 },
+    ]) {
+      saveNote(sender.publicKey, {
+        id: newNoteId(), amount: n.amount, blinding: n.blinding, index: n.index,
+        mintAddress: WRAPPED_SOL_MINT, spent: false, createdAt: 1,
+      })
+    }
+    await publishRecipientKeys(recipient)
+
+    // pin the SMALL note: only its change math (2_000_000 - 1_010_000) can
+    // produce 990_000 -- largest-note selection would spend 5_000_000 instead
+    const result = await client.transferNoteSOL(recipient.publicKey, 1_000_000, {
+      inputNote: { blinding: "909" },
+    })
+    expect(result.changeNote?.amount).toBe("990000")
+
+    // an unknown pin must fail loudly, never fall back to another note
+    await expect(
+      client.transferNoteSOL(recipient.publicKey, 1_000_000, {
+        inputNote: { blinding: "777777" },
+      }),
+    ).rejects.toThrow("pinned note not found in spendable set")
   }, 180_000)
 
   it("transferNoteSPL mirrors SOL on the mint's tree with spl relay fields", async () => {

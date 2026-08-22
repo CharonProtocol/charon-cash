@@ -4,6 +4,8 @@ export type {
   DepositResult,
   WithdrawResult,
   SyncResult,
+  PendingTransfer,
+  OnSubmitted,
 } from "./client"
 export {
   EncryptionService,
