@@ -279,7 +279,7 @@ pub async fn relay_withdraw(state: &AppState, req: WithdrawRequest) -> AppResult
 
     let tree_key = tree_key_for(t.kind, t.mint.as_ref());
 
-    if let Err(e) = sync::sync_tree(state).await {
+    if let Err(e) = sync::sync_tree_forced(state).await {
         worker::console_warn!("pre-withdraw sync skipped: {e}");
     }
 
@@ -343,7 +343,7 @@ pub async fn relay_withdraw(state: &AppState, req: WithdrawRequest) -> AppResult
     };
 
     if result.is_ok() {
-        if let Err(e) = sync::sync_tree(state).await {
+        if let Err(e) = sync::sync_tree_forced(state).await {
             worker::console_warn!("post-withdraw sync skipped: {e}");
         }
     } else {
@@ -372,7 +372,7 @@ pub async fn broadcast(state: &AppState, req: SubmitRequest) -> AppResult<RelayR
         .map_err(|e| AppError::upstream(format!("send_transaction: {e}")))?;
     let status = wait_confirmed(state, &sig).await;
 
-    if let Err(e) = sync::sync_tree(state).await {
+    if let Err(e) = sync::sync_tree_forced(state).await {
         worker::console_warn!("post-broadcast sync skipped: {e}");
     }
 

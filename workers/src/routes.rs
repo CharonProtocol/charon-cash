@@ -234,7 +234,7 @@ pub fn router(state: Arc<AppState>) -> Router<'static, Arc<AppState>> {
             if let Err(e) = require_admin(&req, &state) {
                 return err_json(e);
             }
-            match sync::sync_tree(&state).await {
+            match sync::sync_tree_forced(&state).await {
                 Ok(report) => ok_json(&json!({
                     "processed": report.new_txs,
                     "walked": report.walked,

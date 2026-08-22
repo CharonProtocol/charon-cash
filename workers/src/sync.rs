@@ -1,11 +1,20 @@
 //! Lazy on-demand indexer (replaces the Yellowstone gRPC stream).
 //!
 //! `sync_tree()` is called at the top of tree-state / proof / nullifier /
-//! utxo reads and after every confirmed submit. It walks
-//! `getSignaturesForAddress(program, { until: cursor })` newest→oldest,
-//! processes txs oldest→newest (matching on-chain leaf order), and advances
-//! the cursor. Duplicate work is impossible: `indexed_txs` dedups signatures
-//! and leaf assignment is serialized by the `sync_lock` CAS row.
+//! utxo reads and is throttled: a walk that started less than
+//! `SYNC_MIN_INTERVAL_MS` ago satisfies the read without another RPC sweep.
+//! The relayer calls `sync_tree_forced()` (pre-submit and after every
+//! confirmed send) so freshly landed txs are always indexed before the
+//! client's next read.
+//!
+//! The walk is incremental: signatures are fetched newest→oldest until the
+//! cursor signature appears (or the page runs out), only the signatures
+//! newer than the cursor are processed (oldest→newest, matching on-chain
+//! leaf order), and the cursor is written once at the end. Duplicate work is
+//! impossible: `indexed_txs` dedups signatures and leaf assignment is
+//! serialized by the `sync_lock` CAS row.
+
+use std::sync::atomic::Ordering;
 
 use crate::decode::decode_transact_ix;
 use crate::merkle::{self};
@@ -25,7 +34,18 @@ pub fn now_ms() -> i64 {
     js_sys::Date::now() as i64
 }
 
+const SYNC_MIN_INTERVAL_MS: i64 = 2_000;
+
 pub async fn sync_tree(state: &AppState) -> Result<SyncReport, String> {
+    let now = now_ms();
+    if now - state.last_sync_ms.load(Ordering::Relaxed) < SYNC_MIN_INTERVAL_MS {
+        return Ok(SyncReport { new_txs: 0, walked: 0 });
+    }
+    sync_tree_forced(state).await
+}
+
+pub async fn sync_tree_forced(state: &AppState) -> Result<SyncReport, String> {
+    state.last_sync_ms.store(now_ms(), Ordering::Relaxed);
     let token = format!("sync-{}", now_ms());
     if !state.store.try_acquire_lock(&token, now_ms()).await? {
         return Ok(SyncReport { new_txs: 0, walked: 0 });
@@ -37,9 +57,9 @@ pub async fn sync_tree(state: &AppState) -> Result<SyncReport, String> {
 
 async fn sync_locked(state: &AppState) -> Result<SyncReport, String> {
     let (cursor, _) = state.store.get_cursor().await?;
-    let mut until: Option<String> = cursor;
+    let mut until: Option<String> = cursor.clone();
 
-    // Collect all signatures newer than the cursor (newest first, paged via `before`).
+    // Collect signatures newer than the cursor (newest first, paged via `before`).
     let mut all: Vec<SigInfo> = Vec::new();
     let mut before: Option<String> = None;
     loop {
@@ -61,18 +81,29 @@ async fn sync_locked(state: &AppState) -> Result<SyncReport, String> {
         };
         let n = page.len();
         let oldest = page.last().map(|s| s.signature.clone());
+        let hit_cursor = cursor
+            .as_ref()
+            .map(|c| page.iter().any(|s| &s.signature == c))
+            .unwrap_or(false);
         all.extend(page);
-        if n < 1000 || all.len() >= 40_000 {
+        if n < 1000 || all.len() >= 40_000 || hit_cursor {
             break;
         }
         before = oldest;
     }
 
+    let pending_end = cursor
+        .as_ref()
+        .and_then(|c| all.iter().position(|s| &s.signature == c))
+        .unwrap_or(all.len());
+    if pending_end == 0 {
+        return Ok(SyncReport { new_txs: 0, walked: all.len() });
+    }
+
     let mut new_txs = 0usize;
     // Process oldest → newest so leaf indexes follow on-chain order.
-    for sig in all.iter().rev() {
+    for sig in all[..pending_end].iter().rev() {
         if state.store.has_tx(&sig.signature).await? {
-            state.store.set_cursor(&sig.signature, sig.slot).await?;
             continue;
         }
         let tx = match state.rpc.get_transaction(&sig.signature).await {
@@ -92,7 +123,10 @@ async fn sync_locked(state: &AppState) -> Result<SyncReport, String> {
                 }
             }
         }
-        state.store.set_cursor(&sig.signature, sig.slot).await?;
+    }
+
+    if let Some(newest) = all.first() {
+        state.store.set_cursor(&newest.signature, newest.slot).await?;
     }
 
     Ok(SyncReport { new_txs, walked: all.len() })

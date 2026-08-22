@@ -7,7 +7,7 @@
 //! wasm32-unknown-unknown); all state lives in D1; indexing is lazy
 //! (`sync::sync_tree`) instead of an always-on Yellowstone stream.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use worker::*;
 
@@ -27,10 +27,12 @@ mod sync;
 mod types;
 mod validate;
 
+static STATE: OnceLock<std::result::Result<Arc<state::AppState>, String>> = OnceLock::new();
+
 #[event(fetch)]
 async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
-    let state = match state::AppState::from_env(&env) {
-        Ok(s) => Arc::new(s),
+    let state = match STATE.get_or_init(|| state::AppState::from_env(&env).map(Arc::new)) {
+        Ok(s) => Arc::clone(s),
         Err(e) => {
             console_error!("env init failed: {e}");
             return Ok(error::AppError::internal(format!("worker env: {e}")).to_response());

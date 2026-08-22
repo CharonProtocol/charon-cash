@@ -1,5 +1,7 @@
 //! Worker state assembled once per isolate from Env bindings.
 
+use std::sync::atomic::AtomicI64;
+
 use crate::rpc::Rpc;
 use crate::solana::pubkey::Pubkey;
 use crate::solana::sign::Keypair;
@@ -17,6 +19,7 @@ pub struct AppState {
     pub skip_preflight: bool,
     pub supported_mints: Vec<Pubkey>,
     pub admin_password: Option<String>,
+    pub last_sync_ms: AtomicI64,
 }
 
 fn env_str(env: &Env, name: &str) -> Option<String> {
@@ -97,6 +100,7 @@ impl AppState {
             skip_preflight,
             supported_mints,
             admin_password,
+            last_sync_ms: AtomicI64::new(0),
         })
     }
 
