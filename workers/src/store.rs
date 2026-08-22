@@ -232,6 +232,23 @@ impl Store {
         Ok(row.is_some())
     }
 
+    /// The transaction that spent a nullifier, so conflict errors can point the
+    /// client at the landing it may have misread as a failure.
+    pub async fn nullifier_spent_by(
+        &self,
+        nullifier_hex: &str,
+    ) -> Result<Option<String>, String> {
+        let row: Option<SigRow> = self
+            .bound(
+                "SELECT signature FROM nullifiers WHERE nullifier_hex = ?1",
+                vec![s(nullifier_hex)],
+            )?
+            .first(None)
+            .await
+            .map_err(|e| format!("nullifier_spent_by: {e}"))?;
+        Ok(row.map(|r| r.signature))
+    }
+
     pub async fn utxos_range(
         &self,
         tree_key: &str,

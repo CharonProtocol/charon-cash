@@ -2,7 +2,7 @@
 //! broadcast, and operator instructions — byte-for-byte parity with the VM
 //! backend, minus the always-on indexer (replaced by lazy `sync_tree`).
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 use crate::accounts as acc;
@@ -24,9 +24,34 @@ use crate::state::AppState;
 use crate::sync;
 use crate::validate;
 
-fn in_flight() -> &'static Mutex<HashSet<[u8; 32]>> {
-    static S: OnceLock<Mutex<HashSet<[u8; 32]>>> = OnceLock::new();
-    S.get_or_init(|| Mutex::new(HashSet::new()))
+/// Nullifiers reserved by a submit in progress, with the reservation time. A
+/// cancelled request (client disconnect) never runs its release path, so stale
+/// entries are evicted on access instead of blocking the note forever.
+const IN_FLIGHT_TTL_MS: i64 = 60_000;
+
+fn in_flight() -> &'static Mutex<HashMap<[u8; 32], i64>> {
+    static S: OnceLock<Mutex<HashMap<[u8; 32], i64>>> = OnceLock::new();
+    S.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn in_flight_insert(set: &mut HashMap<[u8; 32], i64>, keys: &[[u8; 32]]) {
+    let now = crate::sync::now_ms();
+    set.retain(|_, t| now - *t < IN_FLIGHT_TTL_MS);
+    for k in keys {
+        set.insert(*k, now);
+    }
+}
+
+fn in_flight_held(set: &mut HashMap<[u8; 32], i64>, keys: &[[u8; 32]]) -> bool {
+    let now = crate::sync::now_ms();
+    set.retain(|_, t| now - *t < IN_FLIGHT_TTL_MS);
+    keys.iter().any(|k| set.contains_key(k))
+}
+
+fn in_flight_remove(set: &mut HashMap<[u8; 32], i64>, keys: &[[u8; 32]]) {
+    for k in keys {
+        set.remove(k);
+    }
 }
 
 fn fee_cache() -> &'static Mutex<Option<(u16, u16)>> {
@@ -46,9 +71,9 @@ fn compute_budget_ixs() -> Vec<Instruction> {
     ]
 }
 
-/// 45s confirmation window: poll every 3s; anything longer is "submitted".
+/// 15s confirmation window: poll every 3s; anything longer is "submitted".
 async fn wait_confirmed(state: &AppState, sig: &str) -> String {
-    for _ in 0..15 {
+    for _ in 0..5 {
         sleep_ms(3000).await;
         if let Ok(Some((status, _))) = state.rpc.get_signature_status(sig).await {
             if status == "confirmed" || status == "finalized" {
@@ -283,12 +308,20 @@ pub async fn relay_withdraw(state: &AppState, req: WithdrawRequest) -> AppResult
         worker::console_warn!("pre-withdraw sync skipped: {e}");
     }
 
-    if state.store.is_nullifier_spent(&hex::encode(t.input_nullifiers[0])).await.unwrap_or(false)
-        || state.store.is_nullifier_spent(&hex::encode(t.input_nullifiers[1])).await.unwrap_or(false)
-    {
+    let spent_sig = match (
+        state.store.nullifier_spent_by(&hex::encode(t.input_nullifiers[0])).await,
+        state.store.nullifier_spent_by(&hex::encode(t.input_nullifiers[1])).await,
+    ) {
+        (Ok(Some(sig)), _) | (_, Ok(Some(sig))) => Some(sig),
+        (Err(_), Err(_)) | (Ok(None), Err(_)) | (Err(_), Ok(None)) => None,
+        (Ok(None), Ok(None)) => None,
+    };
+    if let Some(sig) = spent_sig {
         return Err(AppError::conflict(
             "NULLIFIER_SPENT",
-            "one of the input nullifiers has already been spent",
+            format!(
+                "one of the input nullifiers has already been spent (by tx {sig})"
+            ),
         ));
     }
 
@@ -317,14 +350,13 @@ pub async fn relay_withdraw(state: &AppState, req: WithdrawRequest) -> AppResult
     let n1 = t.input_nullifiers[1];
     {
         let mut set = in_flight().lock().unwrap();
-        if set.contains(&n0) || set.contains(&n1) {
+        if in_flight_held(&mut set, &[n0, n1]) {
             return Err(AppError::conflict(
                 "NULLIFIER_IN_FLIGHT",
                 "a withdrawal for one of these nullifiers is already being processed",
             ));
         }
-        set.insert(n0);
-        set.insert(n1);
+        in_flight_insert(&mut set, &[n0, n1]);
     }
 
     let ix = build_transact_ix(state, &t)?;
@@ -348,8 +380,7 @@ pub async fn relay_withdraw(state: &AppState, req: WithdrawRequest) -> AppResult
         }
     } else {
         let mut set = in_flight().lock().unwrap();
-        set.remove(&n0);
-        set.remove(&n1);
+        in_flight_remove(&mut set, &[n0, n1]);
     }
     result
 }
