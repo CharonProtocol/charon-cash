@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shielded Payroll Architecture</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:opsz,wght@12..16,500;12..16,600;12..16,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --bg: #0C0E12;
+    --surface: #151820;
+    --raised: #1A1E28;
+    --line: #272C38;
+    --text: #E8EAF0;
+    --muted: #9AA2B1;
+    --accent: #8B85F0;
+    --accent-ink: #0C0E12;
+    --accent-dim: rgba(139, 133, 240, 0.14);
+    --good: #5ED4A8;
+    --warn: #E4B054;
+    --bad: #E8685A;
+    --display: "Familjen Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+    --body: "IBM Plex Sans", "Helvetica Neue", "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #F5F5F8;
+      --surface: #FFFFFF;
+      --raised: #FFFFFF;
+      --line: #E1E2E9;
+      --text: #191B24;
+      --muted: #5C6372;
+      --accent: #6760D8;
+      --accent-ink: #FFFFFF;
+      --accent-dim: rgba(103, 96, 216, 0.10);
+      --good: #1F9D69;
+      --warn: #9A6318;
+      --bad: #C0483B;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #F5F5F8;
+    --surface: #FFFFFF;
+    --raised: #FFFFFF;
+    --line: #E1E2E9;
+    --text: #191B24;
+    --muted: #5C6372;
+    --accent: #6760D8;
+    --accent-ink: #FFFFFF;
+    --accent-dim: rgba(103, 96, 216, 0.10);
+    --good: #1F9D69;
+    --warn: #9A6318;
+    --bad: #C0483B;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 0 24px 96px; }
+
+  header.masthead { padding: 72px 0 40px; border-bottom: 1px solid var(--line); }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 18px;
+  }
+  h1 {
+    font-family: var(--display);
+    font-size: clamp(34px, 5.4vw, 52px);
+    line-height: 1.06;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    margin: 0 0 20px;
+  }
+  .standfirst {
+    font-size: 18.5px;
+    line-height: 1.6;
+    color: var(--muted);
+    max-width: 52ch;
+    margin: 0;
+  }
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 28px;
+    margin-top: 28px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  .meta-row b { color: var(--text); font-weight: 600; }
+
+  section { padding: 56px 0 8px; }
+  h2 {
+    font-family: var(--display);
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0 0 6px;
+    text-wrap: balance;
+  }
+  .section-lede { color: var(--muted); max-width: 62ch; margin: 0 0 28px; font-size: 15.5px; }
+
+  /* ---- paper sheets hold the diagrams: fixed light palette in both themes ---- */
+  .sheet {
+    background: #FAF9F5;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 18px 16px 12px;
+    margin: 0 0 14px;
+    overflow-x: auto;
+  }
+  .sheet svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+  .sheet figcaption {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: #5F5B50;
+    letter-spacing: 0.04em;
+    margin: 12px 6px 4px;
+  }
+  .node { fill: #FFFFFF; stroke: #C9C5BA; stroke-width: 1.5; }
+  .node-ink { fill: #23252E; stroke: #23252E; }
+  .node-accent { fill: #6760D8; stroke: #6760D8; }
+  .node-ghost { fill: #F1EFE8; stroke: #C9C5BA; stroke-dasharray: 4 4; }
+  .t-title { font: 600 14px "IBM Plex Sans", "Segoe UI", sans-serif; fill: #23252E; text-anchor: middle; }
+  .t-sub   { font: 500 10.5px "IBM Plex Mono", Menlo, monospace; fill: #5F5B50; text-anchor: middle; letter-spacing: 0.02em; }
+  .t-col   { font: 600 11px "IBM Plex Mono", Menlo, monospace; fill: #5F5B50; text-anchor: middle; letter-spacing: 0.14em; }
+  .t-badge { font: 600 10.5px "IBM Plex Mono", Menlo, monospace; fill: #FFFFFF; text-anchor: middle; }
+  .t-elbl  { font: 500 10.5px "IBM Plex Mono", Menlo, monospace; fill: #5F5B50; text-anchor: middle; }
+  .t-white { font: 600 12px "IBM Plex Mono", Menlo, monospace; fill: #FFFFFF; text-anchor: middle; letter-spacing: 0.14em; }
+  .edge-ink { fill: none; stroke: #23252E; stroke-width: 1.6; }
+  .edge-acc { fill: none; stroke: #6760D8; stroke-width: 1.8; }
+  .edge-red { fill: none; stroke: #C0483B; stroke-width: 1.6; stroke-dasharray: 5 5; }
+  .badge-c { fill: #6760D8; }
+  .badge-r { fill: #C0483B; }
+  .comet { fill: none; stroke-linecap: round; stroke-width: 3; stroke: #6760D8; stroke-dasharray: 12 78; }
+  .comet-red { fill: none; stroke-linecap: round; stroke-width: 3; stroke: #C0483B; stroke-dasharray: 8 92; }
+  .pulse { fill: #6760D8; }
+  .pulse-soft { fill: #A5A0E8; }
+
+  /* ---- sequence diagram (fig 2) ---- */
+  .seq-heads {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #23252E;
+    padding-bottom: 10px;
+  }
+  .seq-body { position: relative; padding: 6px 0 4px; }
+  .life {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-left: 2px dashed #C9C5BA;
+  }
+  .msg { position: relative; height: 46px; }
+  .msg.selfrow { height: 48px; }
+  .arr { position: absolute; top: 50%; height: 2px; background: #23252E; }
+  .arr.acc { background: #6760D8; }
+  .s12 { left: 16.66%; right: 50%; }
+  .s23 { left: 50%; right: 16.67%; }
+  .arr::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+  }
+  .fwd::after { right: -1px; border-left: 8px solid #23252E; }
+  .bck::after { left: -1px; border-right: 8px solid #23252E; }
+  .fwd.acc::after { border-left: 8px solid #6760D8; }
+  .bck.acc::after { border-right: 8px solid #6760D8; }
+  .lbl {
+    position: absolute;
+    bottom: calc(50% + 5px);
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font: 500 11px "IBM Plex Mono", Menlo, monospace;
+    color: #3E3B33;
+    background: #FAF9F5;
+    padding: 0 6px;
+  }
+  .chip {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    white-space: nowrap;
+    font: 500 11px "IBM Plex Mono", Menlo, monospace;
+    color: #23252E;
+    background: #FFFFFF;
+    border: 1.5px solid #6760D8;
+    border-radius: 8px;
+    padding: 6px 12px;
+  }
+  .chip b { color: #6760D8; font-weight: 600; margin-right: 6px; }
+  .at1 { left: 16.66%; }
+  .at2 { left: 50%; }
+  .at3 { left: 83.33%; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    @keyframes comet { from { stroke-dashoffset: 90; } to { stroke-dashoffset: 0; } }
+    @keyframes marchred { from { stroke-dashoffset: 50; } to { stroke-dashoffset: 0; } }
+    @keyframes travel {
+      0% { transform: translate(0, 0); opacity: 0; }
+      12% { opacity: 1; }
+      88% { opacity: 1; }
+      100% { transform: translate(var(--dx, 100px), var(--dy, 0px)); opacity: 0; }
+    }
+    @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes drawx { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+    @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+    .comet { animation: comet 2.2s linear infinite; }
+    .comet.c2 { animation-delay: .7s; }
+    .comet.c3 { animation-delay: 1.4s; }
+    .comet-red { animation: comet 3.2s linear infinite; }
+    .edge-red { animation: marchred 2.6s linear infinite; }
+    .pulse { animation: travel var(--t, 2.4s) linear infinite; animation-delay: var(--d, 0s); }
+    .seq .msg, .seq .arr, .seq .lbl, .seq .chip { opacity: 1; }
+    .seq.play .msg { animation: rise .5s cubic-bezier(.2,.7,.3,1) both; animation-delay: calc(var(--i) * .42s); }
+    .seq.play .arr.fwd { transform-origin: left center; animation: drawx .5s ease both; animation-delay: calc(var(--i) * .42s); }
+    .seq.play .arr.bck { transform-origin: right center; animation: drawx .5s ease both; animation-delay: calc(var(--i) * .42s); }
+    .seq.play .lbl { animation: fadein .4s ease both; animation-delay: calc(var(--i) * .42s + .22s); }
+    .seq.play .chip { animation: fadein .4s ease both; animation-delay: calc(var(--i) * .42s + .15s); }
+    .sheet { animation: rise .6s cubic-bezier(.2,.7,.3,1) both; }
+  }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .card h3 {
+    font-family: var(--display);
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0 0 8px;
+  }
+  .card p { margin: 0; font-size: 14.5px; color: var(--muted); }
+  .card .tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 10px;
+  }
+
+  .race {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--bad);
+    border-radius: 10px;
+    padding: 22px 24px;
+    margin: 0 0 16px;
+  }
+  .race.fixed { border-left-color: var(--good); }
+  .race-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .race-head h3 { font-family: var(--display); font-size: 18.5px; font-weight: 600; margin: 0; }
+  .pill {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 99px;
+    white-space: nowrap;
+  }
+  .pill.fixed { background: rgba(94, 212, 168, 0.14); color: var(--good); }
+  .race dl { margin: 0; display: grid; grid-template-columns: 92px 1fr; gap: 8px 16px; }
+  .race dt {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding-top: 3px;
+  }
+  .race dd { margin: 0; font-size: 14.5px; }
+  .race dd code, p code, td code, li code {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    background: var(--accent-dim);
+    color: var(--text);
+    padding: 1px 6px;
+    border-radius: 5px;
+    word-break: break-word;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  .table-wrap table { margin: 0; }
+  .table-wrap th:first-child, .table-wrap td:first-child { padding-left: 18px; }
+  .table-wrap th:last-child, .table-wrap td:last-child { padding-right: 18px; }
+  tr:last-child td { border-bottom: none; }
+
+  .status-good { color: var(--good); font-weight: 600; }
+  .status-warn { color: var(--warn); font-weight: 600; }
+
+  ul.flow-steps { list-style: none; padding: 0; margin: 0 0 10px; }
+  ul.flow-steps li {
+    position: relative;
+    padding: 0 0 18px 34px;
+    font-size: 15px;
+    color: var(--muted);
+  }
+  ul.flow-steps li b { color: var(--text); font-weight: 600; }
+  ul.flow-steps li::before {
+    content: "";
+    position: absolute;
+    left: 8px;
+    top: 7px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  ul.flow-steps li::after {
+    content: "";
+    position: absolute;
+    left: 11px;
+    top: 18px;
+    bottom: 2px;
+    width: 1px;
+    background: var(--line);
+  }
+  ul.flow-steps li:last-child::after { display: none; }
+  ul.flow-steps li .mono-note { font-family: var(--mono); font-size: 12.5px; color: var(--accent); }
+
+  footer { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+  footer .commits { display: grid; gap: 6px; margin-top: 12px; }
+  footer .commits span { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">privacy-cash &middot; payroll branch</p>
+  <h1>Shielded Payroll Architecture</h1>
+  <p class="standfirst">How one treasurer pays 210 people privately on Solana through a single visible deposit &mdash; and the seven races we had to kill to make the fan-out survive contact with concurrency.</p>
+  <div class="meta-row">
+    <div>program <b>DnegiqiQ&hellip;p1vw</b></div>
+    <div>relayer <b>Cloudflare Workers + D1</b></div>
+    <div>prover <b>snarkjs / Groth16</b></div>
+    <div>tree <b>Poseidon, height 26</b></div>
+  </div>
+</header>
+
+<section id="system">
+  <h2>The three planes</h2>
+  <p class="section-lede">Everything private lives client-side. The relayer never sees secrets &mdash; it mirrors the chain so clients can build proofs, and broadcasts signed transactions. The program holds only commitments, nullifiers, and a root history. Follow the numbered loop.</p>
+  <figure class="sheet">
+    <svg viewBox="0 0 960 500" role="img" aria-label="Client proves, relayer mirrors and broadcasts, program verifies">
+      <defs>
+        <marker id="arrI" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#23252E"/>
+        </marker>
+        <marker id="arrA" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#6760D8"/>
+        </marker>
+        <marker id="arrR" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#C0483B"/>
+        </marker>
+      </defs>
+
+      <text class="t-col" x="150" y="40">WALLET SDK &middot; CLIENT</text>
+      <text class="t-col" x="490" y="40">RELAYER &middot; WORKERS + D1</text>
+      <text class="t-col" x="810" y="40">SOLANA PROGRAM</text>
+
+      <rect class="node" x="50"  y="64" width="200" height="62" rx="8"/>
+      <text class="t-title" x="150" y="90">note store</text>
+      <text class="t-sub" x="150" y="108">amount &middot; pubkey &middot; blinding</text>
+
+      <rect class="node" x="50"  y="330" width="200" height="62" rx="8"/>
+      <text class="t-title" x="150" y="356">prover</text>
+      <text class="t-sub" x="150" y="374">snarkjs &middot; Groth16 &middot; ~4 s</text>
+
+      <rect class="node" x="380" y="64" width="200" height="62" rx="8"/>
+      <text class="t-title" x="480" y="90">D1 mirror</text>
+      <text class="t-sub" x="480" y="108">leaves &middot; levels &middot; roots</text>
+
+      <rect class="node" x="380" y="197" width="200" height="62" rx="8"/>
+      <text class="t-title" x="480" y="223">lazy indexer</text>
+      <text class="t-sub" x="480" y="241">sig walk &middot; block order</text>
+
+      <rect class="node" x="380" y="330" width="200" height="62" rx="8"/>
+      <text class="t-title" x="480" y="356">submit + broadcast</text>
+      <text class="t-sub" x="480" y="374">gasless-style send</text>
+
+      <rect class="node" x="710" y="64" width="200" height="62" rx="8"/>
+      <text class="t-title" x="810" y="90">merkle tree</text>
+      <text class="t-sub" x="810" y="108">poseidon &middot; 26 levels</text>
+
+      <rect class="node" x="710" y="197" width="200" height="62" rx="8"/>
+      <text class="t-title" x="810" y="223">nullifier set</text>
+      <text class="t-sub" x="810" y="241">spent-note ledger</text>
+
+      <rect class="node" x="710" y="330" width="200" height="62" rx="8"/>
+      <text class="t-title" x="810" y="356">SOL vault</text>
+      <text class="t-sub" x="810" y="374">PDA holds pool funds</text>
+
+      <path class="edge-ink" d="M 250 86 H 374" marker-end="url(#arrI)"/>
+      <text class="t-elbl" x="313" y="74">GET /proof/:leaf</text>
+      <circle class="badge-c" cx="290" cy="86" r="9"/><text class="t-badge" x="290" y="90">1</text>
+      <path class="comet" d="M 250 86 H 374"/>
+
+      <path class="edge-acc" d="M 380 108 H 256" marker-end="url(#arrA)"/>
+      <text class="t-elbl" x="313" y="142">root &middot; path &middot; leaf index</text>
+      <circle class="badge-c" cx="340" cy="108" r="9"/><text class="t-badge" x="340" y="112">2</text>
+      <path class="comet c2" d="M 380 108 H 256"/>
+
+      <path class="edge-ink" d="M 150 126 V 326" marker-end="url(#arrI)"/>
+      <text class="t-elbl" x="196" y="228" style="text-anchor:start">note + served root</text>
+      <circle class="badge-c" cx="150" cy="200" r="9"/><text class="t-badge" x="150" y="204">3</text>
+      <path class="comet c3" d="M 150 126 V 326"/>
+
+      <path class="edge-ink" d="M 250 352 H 374" marker-end="url(#arrI)"/>
+      <text class="t-elbl" x="313" y="340">signed tx &middot; relay</text>
+      <circle class="badge-c" cx="290" cy="352" r="9"/><text class="t-badge" x="290" y="356">4</text>
+
+      <path class="edge-ink" d="M 580 361 H 632 V 96 H 704" marker-end="url(#arrI)"/>
+      <text class="t-elbl" x="658" y="58">send + confirm &middot; 209k CU</text>
+      <circle class="badge-c" cx="632" cy="290" r="9"/><text class="t-badge" x="632" y="294">5</text>
+      <path class="comet" d="M 580 361 H 632 V 96 H 704"/>
+
+      <path class="edge-ink" d="M 710 112 H 668 V 228 H 586" marker-end="url(#arrI)"/>
+      <text class="t-elbl" transform="rotate(-90 691 185)" x="691" y="185">logs &middot; sigs</text>
+      <circle class="badge-c" cx="668" cy="200" r="9"/><text class="t-badge" x="668" y="204">6</text>
+
+      <path class="edge-ink" d="M 470 197 V 132" marker-end="url(#arrI)"/>
+      <text class="t-elbl" x="460" y="170" style="text-anchor:end">append leaves</text>
+      <circle class="badge-c" cx="470" cy="150" r="9"/><text class="t-badge" x="470" y="154">7</text>
+
+      <path class="edge-red" d="M 150 392 V 470 H 940 V 96 H 916" marker-end="url(#arrR)"/>
+      <text class="t-elbl" x="545" y="461">the proof root must be one of the last 100 roots on-chain &mdash; proofs age out after 100 newer txs</text>
+      <circle class="badge-r" cx="400" cy="470" r="9"/><text class="t-badge" x="400" y="474">8</text>
+      <path class="comet-red" d="M 150 392 V 470 H 940 V 96 H 916"/>
+    </svg>
+    <figcaption>fig 1 &mdash; client proves, relayer mirrors and broadcasts, program verifies. The moving dashes trace the loop&rsquo;s direction.</figcaption>
+  </figure>
+  <div class="grid-2">
+    <div class="card">
+      <p class="tag">client</p>
+      <h3>Wallet SDK</h3>
+      <p>Owns the spending key. Notes are <code>poseidon(amount, pubkey, blinding)</code> leaves; proofs take ~4&nbsp;s of CPU each. The wallet signs; nothing secret ever leaves this plane.</p>
+    </div>
+    <div class="card">
+      <p class="tag">backend</p>
+      <h3>Relayer on Workers</h3>
+      <p>D1 mirrors every leaf and tree level so clients get Merkle paths without scanning the chain. A lazy indexer walks program signatures on demand, in block order, and the relayer broadcasts pre-signed transactions gasless-style.</p>
+    </div>
+    <div class="card">
+      <p class="tag">on-chain</p>
+      <h3>Privacy-cash program</h3>
+      <p>Verifies the Groth16 proof, checks the public root against a 100-entry history, inserts two output commitments, writes nullifiers, and moves SOL through a PDA vault. A transact costs ~209k CU.</p>
+    </div>
+    <div class="card">
+      <p class="tag">invariant</p>
+      <h3>One mirror, one chain</h3>
+      <p>Every fix below exists to keep one statement true: <em>the root a client proves against is a root the program still remembers.</em> When they drift, every transaction dies with <code>UnknownRoot (0x5)</code>.</p>
+    </div>
+  </div>
+</section>
+
+<section id="lifecycle">
+  <h2>Anatomy of one private payment</h2>
+  <p class="section-lede">A transfer spends one note and mints two: the recipient&rsquo;s output and the treasurer&rsquo;s change. The change funds the next payment &mdash; that chain is what payroll runs down. The sequence plays when it scrolls into view.</p>
+  <figure class="sheet">
+    <div class="seq" id="seqloop">
+      <div class="seq-heads"><span>client sdk</span><span>relayer &middot; d1</span><span>program</span></div>
+      <div class="seq-body">
+        <i class="life" style="left:16.66%"></i>
+        <i class="life" style="left:50%"></i>
+        <i class="life" style="left:83.33%"></i>
+
+        <div class="msg" style="--i:0">
+          <span class="lbl">GET /api/merkle/sol/proof/:leaf</span>
+          <i class="arr fwd s12"></i>
+        </div>
+        <div class="msg" style="--i:1">
+          <span class="lbl">path + ROOT + next_leaf_index &mdash; one snapshot</span>
+          <i class="arr bck acc s12"></i>
+        </div>
+        <div class="msg selfrow" style="--i:2">
+          <span class="chip at1"><b>&#8635;</b>witness: path hashes to ROOT</span>
+        </div>
+        <div class="msg selfrow" style="--i:3">
+          <span class="chip at1"><b>&#8635;</b>prove &middot; snarkjs &asymp; 4 s</span>
+        </div>
+        <div class="msg selfrow" style="--i:4">
+          <span class="chip at1"><b>&#8635;</b>pin input note &middot; journal pending change</span>
+        </div>
+        <div class="msg" style="--i:5">
+          <span class="lbl">POST /api/relayer &mdash; signed tx</span>
+          <i class="arr fwd s12"></i>
+        </div>
+        <div class="msg" style="--i:6">
+          <span class="lbl">send + confirm &middot; ~209k CU</span>
+          <i class="arr fwd s23"></i>
+        </div>
+        <div class="msg selfrow" style="--i:7">
+          <span class="chip at3"><b>&#8635;</b>is_known_root? 2 leaves &middot; nullifiers &middot; SOL</span>
+        </div>
+        <div class="msg selfrow" style="--i:8">
+          <span class="chip at2"><b>&#8635;</b>index in block order &middot; mirror advances</span>
+        </div>
+        <div class="msg" style="--i:9">
+          <span class="lbl">refresh notes &middot; decrypt &middot; match blinding</span>
+          <i class="arr fwd s12"></i>
+        </div>
+      </div>
+    </div>
+    <figcaption>fig 2 &mdash; the loop every one of the 210 payments runs</figcaption>
+  </figure>
+  <ul class="flow-steps">
+    <li><b>Prove.</b> The witness asserts the input path hashes to the public root &mdash; <span class="mono-note">inCheckRoot &lt;== inTree.root</span> &mdash; so a stale path or root fails client-side before any SOL moves.</li>
+    <li><b>Send.</b> The wallet signs; the relayer broadcasts. Fee floors at 10,000 lamports when basis points would compute lower.</li>
+    <li><b>Land.</b> The program accepts the root only from its last 100 roots &mdash; proofs age out after 100 newer transactions anywhere in the pool.</li>
+    <li><b>Re-index.</b> The indexer appends the tx&rsquo;s two commitments to the mirror. Same-slot transactions are ordered by their position in the block, because that is the order the program assigned leaves in.</li>
+    <li><b>Recover the change.</b> The client decrypts a window of fresh leaves and matches on blinding factor to find its own change note &mdash; never on amount, which is not unique across parallel workers.</li>
+  </ul>
+</section>
+
+<section id="races">
+  <h2>The race log</h2>
+  <p class="section-lede">Seven ways the system silently broke under concurrency. Each entry: the exact symptom we saw, the cause, and the fix that shipped.</p>
+
+  <div class="race fixed">
+    <div class="race-head"><h3>Root and path fetched in two calls</h3><span class="pill fixed">fixed &middot; 43ab0b8 + bc87ef0</span></div>
+    <dl>
+      <dt>symptom</dt><dd>Witness calculator throws <code>ForceEqualIfEnabled_288</code> / <code>Transaction_291</code> &mdash; the path does not hash to the claimed root.</dd>
+      <dt>cause</dt><dd>Root came from <code>/api/merkle/sol</code>, paths from <code>/proof/:leaf</code>. Between the two calls another worker&rsquo;s tx landed and the tree advanced &mdash; proof built against a root that no longer matched its own paths.</dd>
+      <dt>fix</dt><dd>The proof endpoint now returns <code>root</code> and <code>next_leaf_index</code> inside the same response; the SDK re-fetches all input proofs until every one agrees on a single root before proving.</dd>
+    </dl>
+  </div>
+
+  <div class="race fixed">
+    <div class="race-head"><h3>Deposit notes stored at a guessed leaf</h3><span class="pill fixed">fixed &middot; bc87ef0</span></div>
+    <dl>
+      <dt>symptom</dt><dd>Transfers spending a just-deposited note fail witness checks &mdash; the note sits at the wrong leaf index.</dd>
+      <dt>cause</dt><dd>The SDK stored the deposit note at the pre-send <code>nextLeafIndex</code> guess. With transactions landing in parallel, the true position shifted by the time the deposit confirmed.</dd>
+      <dt>fix</dt><dd>After landing, decrypt a window of leaves around the guess and match on the note&rsquo;s blinding factor; the store is corrected to the true index before the note is ever spent.</dd>
+    </dl>
+  </div>
+
+  <div class="race fixed">
+    <div class="race-head"><h3>Same-slot transactions indexed out of order</h3><span class="pill fixed">fixed &middot; 67a54c5</span></div>
+    <dl>
+      <dt>symptom</dt><dd>Every transaction starts failing on-chain with <code>custom program error: 0x5</code> (<code>UnknownRoot</code>) after a parallel fan-out &mdash; including fresh deposits on an idle tree.</dd>
+      <dt>cause</dt><dd><code>getSignaturesForAddress</code> orders same-slot transactions by feed position, not execution order. Two txs landing in one slot were indexed with their leaf pairs swapped: right commitments, wrong indexes. The mirror&rsquo;s root diverged from the program&rsquo;s root &mdash; 90 of 100 history roots matched, then nothing did.</dd>
+      <dt>fix</dt><dd>The indexer sorts pending signatures by slot and, within a slot, by position in that block (<code>getBlock</code>) &mdash; exactly the order the program assigned leaf indexes in. Mirror wiped and rebuilt from genesis: 794 txs, 100/100 roots matching.</dd>
+    </dl>
+  </div>
+
+  <div class="race fixed">
+    <div class="race-head"><h3>Change notes recovered by leaf-index guess</h3><span class="pill fixed">fixed &middot; e5d67f0</span></div>
+    <dl>
+      <dt>symptom</dt><dd>A worker adopts the wrong change note mid-chain &mdash; <code>change amount 12120000 != expected 11110000</code> &mdash; then every later payment in that chain fails.</dd>
+      <dt>cause</dt><dd>The chain anchored the next note at <code>leafIndex + 1</code> from its own receipt. With 16 workers landing simultaneously, other pools&rsquo; outputs interleave and the anchor points at someone else&rsquo;s note. Amounts can&rsquo;t disambiguate: parallel pools hold identical values.</dd>
+      <dt>fix</dt><dd><code>WithdrawResult</code> now returns the fresh change note&rsquo;s blinding factor. After <code>refreshNotes</code>, the worker finds its change by blinding match &mdash; the one value unique to this tx &mdash; and the chain continues from the true note.</dd>
+    </dl>
+  </div>
+
+  <div class="race fixed">
+    <div class="race-head"><h3>Fees below the relayer floor</h3><span class="pill fixed">fixed &middot; 39713ab &middot; bcd6393 &middot; fd21dd4</span></div>
+    <dl>
+      <dt>symptom</dt><dd>Small transfers die in BigInt sinks or get rejected: the contract&rsquo;s minimum fee (10,000 lamports) beats the basis-points computation on 1M-lamport sends.</dd>
+      <dt>cause</dt><dd>25 bps of a small transfer is far below the on-chain minimum; the client and relayer disagreed on which number wins.</dd>
+      <dt>fix</dt><dd>The floor wins everywhere, by construction: SDK floors its estimate, the payroll engine validates before constructing amounts, and the relayer rejects anything under the minimum before it reaches the chain.</dd>
+    </dl>
+  </div>
+
+  <div class="race fixed">
+    <div class="race-head"><h3>Sixteen workers converge on one note</h3><span class="pill fixed">fixed &middot; payroll branch</span></div>
+    <dl>
+      <dt>symptom</dt><dd>Under 16-way contention almost every first attempt fails with <code>a withdrawal &hellip; is already being processed</code>, the retry wave dies with <code>already been spent</code>, and a 32-pay reproduction nets <b>5/32 paid</b> even though transactions keep landing on-chain.</dd>
+      <dt>cause</dt><dd>All 16 pay chains spend notes owned by the same treasurer key. The entry <code>syncNotes</code> rebuilds each worker&rsquo;s note set from the indexer &mdash; so every worker ends up holding all 16 pool notes &mdash; and selection spends the largest note. Sixteen workers converge on the same input; the first one through the relayer&rsquo;s in-flight guard wins, the other fifteen fail, and their retries converge on the next shared note.</dd>
+      <dt>fix</dt><dd><code>transferNoteSOL/SPL</code> accept <code>inputNote { blinding }</code>: selection is filtered to the named note, with a loud error if it is missing or too small. Each pay chain pins its own active change note, so concurrent chains can never converge.</dd>
+    </dl>
+  </div>
+
+  <div class="race fixed">
+    <div class="race-head"><h3>A landed tx misread as failed</h3><span class="pill fixed">fixed &middot; payroll branch</span></div>
+    <dl>
+      <dt>symptom</dt><dd>A pay tx lands on-chain but its caller only sees an error; the retry rebuilds a spend of the same nullifiers and dies with <code>already been spent</code>.</dd>
+      <dt>cause</dt><dd>The relayer holds each relay request through a confirmation window while concurrent traffic queues behind its guard. When the response dies at the transport layer the caller holds no receipt &mdash; and no identity for the change note it just minted. The relayer&rsquo;s in-flight set also leaked: entries were only removed on submit errors, never on success, so a lost request could block its own retry forever.</dd>
+      <dt>fix</dt><dd>Three layers. The SDK&rsquo;s <code>onSubmitted</code> journals <code>{ nullifiers, changeBlinding, changeAmount }</code> right before the relay POST, so the pending change identity survives the transport. The relayer bounds its in-flight guard with a 60s TTL, shortens the confirm window to 15s, and names the landing tx in spent-nullifier errors. The payroll worker recovers by probing for the journaled blinding and continues the chain from the true change note.</dd>
+    </dl>
+  </div>
+
+  <div class="race fixed">
+    <div class="race-head"><h3>Verdict: the reproduction is clean</h3><span class="pill fixed">verified &middot; local surfpool</span></div>
+    <dl>
+      <dt>evidence</dt><dd>The 32-pay reproduction &mdash; one deposit, sixteen pool notes, sixteen parallel two-pay chains, the exact shape that netted <b>5/32</b> before &mdash; now lands <b>32/32 with zero retries and zero recovery walks</b> under full 16-way contention. Harness verdict: <code>paid 32/32 &middot; recovered 0 &middot; failed attempts: 0 &middot; REPRO CLEAN (no collision)</code>. On-chain: exactly 32 pay transactions in the tree, two per chain, no collision signatures.</dd>
+    </dl>
+  </div>
+</section>
+
+<section id="fanout">
+  <h2>The payroll fan-out</h2>
+  <p class="section-lede">Paying 210 people as 210 independent deposits is both slow and loud &mdash; 420 transactions and a public deposit per paycheck. The split-tree does it with <b>one</b> visible deposit and 227 transactions: deposit once, split into 16 pool notes, then run 16 pay chains in parallel.</p>
+  <figure class="sheet">
+    <svg viewBox="0 0 960 440" role="img" aria-label="One deposit fans out into sixteen pools and parallel pay chains reaching 210 recipients">
+      <defs>
+        <marker id="arrF" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#6760D8"/>
+        </marker>
+        <marker id="arrG" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#23252E"/>
+        </marker>
+      </defs>
+
+      <text class="t-sub" x="940" y="40" style="text-anchor:end">= 210 &times; 1,010,000 + 16 &times; 10,000</text>
+
+      <rect class="node-ink" x="330" y="24" width="300" height="52" rx="10"/>
+      <text class="t-white" x="480" y="46">PUBLIC DEPOSIT</text>
+      <text class="t-sub" x="480" y="63" style="fill:#D9D6CE">212,260,000 lamports &middot; the only visible tx</text>
+
+      <path class="edge-acc" d="M 480 76 L 116 146" marker-end="url(#arrF)"/>
+      <path class="edge-acc" d="M 480 76 L 316 146" marker-end="url(#arrF)"/>
+      <path class="edge-acc" d="M 480 76 L 516 146" marker-end="url(#arrF)"/>
+      <path class="edge-acc" d="M 480 76 L 664 146" marker-end="url(#arrF)"/>
+      <path class="edge-acc" d="M 480 76 L 844 146" marker-end="url(#arrF)"/>
+
+      <g transform="translate(480,76)"><circle class="pulse" r="4" style="--dx:-360px;--dy:70px;--t:1.9s;--d:0s"/></g>
+      <g transform="translate(480,76)"><circle class="pulse" r="4" style="--dx:-160px;--dy:70px;--t:1.9s;--d:.35s"/></g>
+      <g transform="translate(480,76)"><circle class="pulse" r="4" style="--dx:40px;--dy:70px;--t:1.9s;--d:.7s"/></g>
+      <g transform="translate(480,76)"><circle class="pulse pulse-soft" r="4" style="--dx:190px;--dy:70px;--t:1.9s;--d:1.05s"/></g>
+      <g transform="translate(480,76)"><circle class="pulse" r="4" style="--dx:370px;--dy:70px;--t:1.9s;--d:1.4s"/></g>
+
+      <rect class="node" x="35" y="150" width="150" height="46" rx="8"/>
+      <text class="t-title" x="110" y="170" style="font-size:12.5px">pool 1 &middot; 14 pays</text>
+      <text class="t-sub" x="110" y="186">note 14,140,000</text>
+
+      <rect class="node" x="235" y="150" width="150" height="46" rx="8"/>
+      <text class="t-title" x="310" y="170" style="font-size:12.5px">pool 2 &middot; 14 pays</text>
+      <text class="t-sub" x="310" y="186">note 14,140,000</text>
+
+      <rect class="node" x="435" y="150" width="150" height="46" rx="8"/>
+      <text class="t-title" x="510" y="170" style="font-size:12.5px">pool 3 &middot; 13 pays</text>
+      <text class="t-sub" x="510" y="186">note 13,130,000</text>
+
+      <rect class="node-ghost" x="585" y="150" width="150" height="46" rx="8"/>
+      <text class="t-title" x="660" y="170" style="font-size:12.5px;fill:#8B867A">pools 4&ndash;15</text>
+      <text class="t-sub" x="660" y="186" style="fill:#8B867A">12 &times; 13 pays</text>
+
+      <rect class="node" x="775" y="150" width="150" height="46" rx="8"/>
+      <text class="t-title" x="850" y="170" style="font-size:12.5px">pool 16 &middot; 13 pays</text>
+      <text class="t-sub" x="850" y="186">note 13,130,000</text>
+
+      <path class="edge-ink" d="M 110 196 V 258" marker-end="url(#arrG)" style="stroke-width:1.4"/>
+      <path class="edge-ink" d="M 310 196 V 258" marker-end="url(#arrG)" style="stroke-width:1.4"/>
+      <path class="edge-ink" d="M 510 196 V 258" marker-end="url(#arrG)" style="stroke-width:1.4"/>
+      <path class="edge-ink" d="M 660 196 V 258" marker-end="url(#arrG)" style="stroke-width:1.4;stroke-dasharray:4 4"/>
+      <path class="edge-ink" d="M 850 196 V 258" marker-end="url(#arrG)" style="stroke-width:1.4"/>
+
+      <g id="chain1"></g>
+      <g id="chain2"></g>
+      <g id="chain3"></g>
+      <g id="chaing"></g>
+      <g id="chain16"></g>
+
+      <path class="edge-ink" d="M 110 280 L 280 326" marker-end="url(#arrG)" style="stroke-width:1.4"/>
+      <path class="edge-ink" d="M 310 280 L 400 326" marker-end="url(#arrG)" style="stroke-width:1.4"/>
+      <path class="edge-ink" d="M 510 280 L 484 326" marker-end="url(#arrG)" style="stroke-width:1.4"/>
+      <path class="edge-ink" d="M 660 280 L 560 326" marker-end="url(#arrG)" style="stroke-width:1.4;stroke-dasharray:4 4"/>
+      <path class="edge-ink" d="M 850 280 L 680 326" marker-end="url(#arrG)" style="stroke-width:1.4"/>
+
+      <rect class="node-accent" x="200" y="330" width="560" height="52" rx="10"/>
+      <text class="t-white" x="480" y="352">210 RECIPIENTS</text>
+      <text class="t-sub" x="480" y="369" style="fill:#E4E1FA">1,000,000 lamports net each &middot; paid shielded</text>
+
+      <text class="t-sub" x="480" y="412">227 transactions total &mdash; 1 deposit &middot; 16 splits &middot; 210 pays</text>
+    </svg>
+    <figcaption>fig 3 &mdash; one deposit, sixteen pools, sixteen parallel pay chains. One cell = one private payment; each cell&rsquo;s change note funds the next.</figcaption>
+  </figure>
+  <p style="font-size:15px;color:var(--muted);max-width:66ch;margin:14px 0 26px">Each chain is a worker process holding exactly one active note: pay the recipient, find the change note by decrypting fresh leaves and matching blinding, pay again. Workers share the treasurer key, so note ownership is decided by blinding match &mdash; amounts are identical across pools and would be ambiguous.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>constraint</th><th>value</th><th>consequence</th></tr></thead>
+      <tbody>
+        <tr><td>ZK proof CPU</td><td class="num">~4 s &times; 210 &divide; 8 cores</td><td>~105 s of pure proving is the floor on any machine &mdash; parallelism is mandatory, not an optimization</td></tr>
+        <tr><td>Root validity window</td><td class="num">100 newer roots</td><td>at most ~100 transactions can be in flight &mdash; &ldquo;prove all 210, then blast&rdquo; is impossible; the pipeline must be bounded</td></tr>
+        <tr><td>Local relayer door</td><td class="num">~1.4 s / tx</td><td>16 concurrent chains stay inside the window comfortably</td></tr>
+        <tr><td>Transactions per payroll</td><td class="num">1 + 16 + 210 = 227</td><td>vs 420 for flat deposits &mdash; and a single visible deposit instead of 210</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 style="margin-top:44px">Where it stands</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>mode</th><th>result</th><th>state</th></tr></thead>
+      <tbody>
+        <tr><td>Serial engine</td><td>210 pays verified end-to-end</td><td class="status-good">shipped &mdash; 43 tests green</td></tr>
+        <tr><td>Flat fan-out</td><td>68/68 clean first-attempt rows</td><td class="status-good">architecture verified</td></tr>
+        <tr><td>Split-tree</td><td>all 210 pays landed: <b>paid 210/210 &middot; recovered 0 &middot; failed 0</b>, one public deposit, 227 txs, 15.0 min wall vs 67 min at the serial engine&rsquo;s 19 s/row &mdash; 4.5&times; faster</td><td class="status-good">verified &mdash; payroll branch</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  privacy-cash &middot; payroll branch (local) &mdash; local surfpool + wrangler dev unless noted. No program upgrade required; every fix is client- or relayer-side.
+  <div class="commits">
+    <div><span>67a54c5</span> fix(workers): index same-slot txs in block order</div>
+    <div><span>e5d67f0</span> fix(sdk): recover change notes by blinding factor</div>
+    <div><span>bc87ef0</span> fix(sdk): prove against the served root and recover the true deposit leaf</div>
+    <div><span>43ab0b8</span> fix(workers): serve the tree root with each merkle proof</div>
+    <div><span>bcd6393</span> fix(payroll): validate relayer fee floor before it reaches BigInt sinks</div>
+    <div><span>39713ab</span> fix(sdk): floor shielded SOL transfer fee at the relayer minimum</div>
+  </div>
+</footer>
+
+</div>
+<script>
+(function () {
+  function cells(gid, x0, count, ghost) {
+    var g = document.getElementById(gid);
+    if (!g) return;
+    var ns = "http://www.w3.org/2000/svg";
+    for (var i = 0; i < count; i++) {
+      var r = document.createElementNS(ns, "rect");
+      r.setAttribute("x", x0 + i * 11);
+      r.setAttribute("y", 262);
+      r.setAttribute("width", 8);
+      r.setAttribute("height", 14);
+      r.setAttribute("rx", 2);
+      r.setAttribute("fill", ghost ? "#E4E1D8" : "#6760D8");
+      if (ghost) r.setAttribute("opacity", "0.55");
+      g.appendChild(r);
+    }
+    var wrap = document.createElementNS(ns, "g");
+    wrap.setAttribute("transform", "translate(" + (x0 - 4) + ",269)");
+    var dot = document.createElementNS(ns, "circle");
+    dot.setAttribute("r", ghost ? 3 : 4);
+    dot.setAttribute("fill", ghost ? "#A5A0E8" : "#23252E");
+    dot.setAttribute("class", "pulse");
+    dot.setAttribute("style", "--dx:" + (count * 11 + 8) + "px;--dy:0px;--t:" + (1.4 + count * 0.12) + "s;--d:" + (ghost ? 1.2 : Math.random() * 0.9).toFixed(2) + "s");
+    wrap.appendChild(dot);
+    g.appendChild(wrap);
+  }
+  cells("chain1", 33, 14, false);
+  cells("chain2", 233, 14, false);
+  cells("chain3", 441, 13, false);
+  cells("chaing", 592, 13, true);
+  cells("chain16", 783, 13, false);
+
+  if ("IntersectionObserver" in window) {
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) {
+        if (e.isIntersecting) { e.target.classList.add("play"); io.unobserve(e.target); }
+      });
+    }, { threshold: 0.25 });
+    document.querySelectorAll(".seq").forEach(function (el) { io.observe(el); });
+  } else {
+    document.querySelectorAll(".seq").forEach(function (el) { el.classList.add("play"); });
+  }
+})();
+</script>
+</body>
+</html>
