@@ -94,6 +94,17 @@ export interface WithdrawResult {
   feeLamports: number
   changeLamports: string
   nullifiers?: string[]
+  /**
+   * The change note minted by this transfer, identified by the blinding factor
+   * generated for it. Concurrent senders shift leaf positions between proof
+   * time and landing, so callers that spend the change under concurrency must
+   * match on the blinding, never on a predicted leaf index.
+   */
+  changeNote?: {
+    amount: string
+    blinding: string
+    index: number
+  }
 }
 
 export interface SyncResult {
@@ -325,13 +336,14 @@ export class PrivacyCashClient {
   }
 
   /**
-   * Recover the true leaf index of a just-landed deposit note. The pre-send
-   * `nextLeafIndex` is only a guess: concurrent transactions can append ahead
-   * of ours before it confirms. Decrypt the window around the guess and match
-   * the note's blinding factor; fall back to the guess if the indexer never
-   * serves the note (syncNotes corrects the index on the next scan anyway).
+   * Recover the true leaf index of a just-landed output note (a deposit, or
+   * the change of a transfer). The pre-send `nextLeafIndex` is only a guess:
+   * concurrent transactions can append ahead of ours before it confirms.
+   * Decrypt the window around the guess and match the note's blinding factor;
+   * fall back to the guess if the indexer never serves the note (syncNotes
+   * corrects the index on the next scan anyway).
    */
-  private async locateDepositLeaf(
+  private async locateNoteLeaf(
     treeKey: string,
     guessIndex: number,
     note: Utxo,
@@ -426,7 +438,7 @@ export class PrivacyCashClient {
 
     await this.waitForLeaves(treeKey, nextLeafIndex + 1)
 
-    const leafIndex = await this.locateDepositLeaf(treeKey, nextLeafIndex, outputs[0])
+    const leafIndex = await this.locateNoteLeaf(treeKey, nextLeafIndex, outputs[0])
     if (leafIndex !== nextLeafIndex) {
       removeStaleNote(
         this.publicKey,
@@ -590,7 +602,7 @@ export class PrivacyCashClient {
 
     await this.waitForLeaves(treeKey, nextLeafIndex + 1)
 
-    const leafIndex = await this.locateDepositLeaf(treeKey, nextLeafIndex, outputs[0])
+    const leafIndex = await this.locateNoteLeaf(treeKey, nextLeafIndex, outputs[0])
     if (leafIndex !== nextLeafIndex) {
       removeStaleNote(
         this.publicKey,
@@ -1206,13 +1218,15 @@ export class PrivacyCashClient {
     }
 
     for (const n of inputNotes) markNoteSpent(this.publicKey, n.id, signature)
+    let changeIndex = nextLeafIndex + 1
     if (change.gt(new BN(0))) {
       await waitForLeafIndex(args.treeKey, nextLeafIndex + 1).catch(() => { })
+      changeIndex = await this.locateNoteLeaf(args.treeKey, changeIndex, outputs[1])
       saveNote(this.publicKey, {
         id: newNoteId(),
         amount: outputs[1].amount.toString(),
         blinding: outputs[1].blinding.toString(),
-        index: nextLeafIndex + 1,
+        index: changeIndex,
         mintAddress: args.mintAddress,
         spent: false,
         createdAt: Date.now(),
@@ -1227,8 +1241,16 @@ export class PrivacyCashClient {
       feeLamports: fee.toNumber(),
       changeLamports: change.toString(),
       nullifiers,
-      leafIndex: nextLeafIndex,
+      leafIndex: change.gt(new BN(0)) ? changeIndex - 1 : nextLeafIndex,
       commitment: fieldToHex32(outputs[0].getCommitment()),
+      changeNote:
+        change.gt(new BN(0))
+          ? {
+            amount: outputs[1].amount.toString(),
+            blinding: outputs[1].blinding.toString(),
+            index: changeIndex,
+          }
+          : undefined,
     }
   }
 

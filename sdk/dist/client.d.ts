@@ -17,6 +17,17 @@ export interface WithdrawResult {
     feeLamports: number;
     changeLamports: string;
     nullifiers?: string[];
+    /**
+     * The change note minted by this transfer, identified by the blinding factor
+     * generated for it. Concurrent senders shift leaf positions between proof
+     * time and landing, so callers that spend the change under concurrency must
+     * match on the blinding, never on a predicted leaf index.
+     */
+    changeNote?: {
+        amount: string;
+        blinding: string;
+        index: number;
+    };
 }
 export interface SyncResult {
     scanned: number;
@@ -63,13 +74,14 @@ export declare class PrivacyCashClient {
      */
     syncNotes(treeKey: string, fromScratch?: boolean): Promise<SyncResult>;
     /**
-     * Recover the true leaf index of a just-landed deposit note. The pre-send
-     * `nextLeafIndex` is only a guess: concurrent transactions can append ahead
-     * of ours before it confirms. Decrypt the window around the guess and match
-     * the note's blinding factor; fall back to the guess if the indexer never
-     * serves the note (syncNotes corrects the index on the next scan anyway).
+     * Recover the true leaf index of a just-landed output note (a deposit, or
+     * the change of a transfer). The pre-send `nextLeafIndex` is only a guess:
+     * concurrent transactions can append ahead of ours before it confirms.
+     * Decrypt the window around the guess and match the note's blinding factor;
+     * fall back to the guess if the indexer never serves the note (syncNotes
+     * corrects the index on the next scan anyway).
      */
-    private locateDepositLeaf;
+    private locateNoteLeaf;
     depositSOL(amountLamports: number): Promise<DepositResult>;
     withdrawSOL(grossLamports: number, recipient: PublicKey | string, opts?: {
         relay?: boolean;

@@ -206,13 +206,14 @@ export class PrivacyCashClient {
         return { scanned, added, spent };
     }
     /**
-     * Recover the true leaf index of a just-landed deposit note. The pre-send
-     * `nextLeafIndex` is only a guess: concurrent transactions can append ahead
-     * of ours before it confirms. Decrypt the window around the guess and match
-     * the note's blinding factor; fall back to the guess if the indexer never
-     * serves the note (syncNotes corrects the index on the next scan anyway).
+     * Recover the true leaf index of a just-landed output note (a deposit, or
+     * the change of a transfer). The pre-send `nextLeafIndex` is only a guess:
+     * concurrent transactions can append ahead of ours before it confirms.
+     * Decrypt the window around the guess and match the note's blinding factor;
+     * fall back to the guess if the indexer never serves the note (syncNotes
+     * corrects the index on the next scan anyway).
      */
-    async locateDepositLeaf(treeKey, guessIndex, note) {
+    async locateNoteLeaf(treeKey, guessIndex, note) {
         const deadline = Date.now() + 10_000;
         const start = Math.max(0, guessIndex - 2);
         let end = start + 16;
@@ -294,7 +295,7 @@ export class PrivacyCashClient {
         });
         await this.persistNotes().catch(() => { });
         await this.waitForLeaves(treeKey, nextLeafIndex + 1);
-        const leafIndex = await this.locateDepositLeaf(treeKey, nextLeafIndex, outputs[0]);
+        const leafIndex = await this.locateNoteLeaf(treeKey, nextLeafIndex, outputs[0]);
         if (leafIndex !== nextLeafIndex) {
             removeStaleNote(this.publicKey, WRAPPED_SOL_MINT, outputs[0].amount.toString(), outputs[0].blinding.toString(), nextLeafIndex);
             upsertNote(this.publicKey, {
@@ -422,7 +423,7 @@ export class PrivacyCashClient {
         });
         await this.persistNotes().catch(() => { });
         await this.waitForLeaves(treeKey, nextLeafIndex + 1);
-        const leafIndex = await this.locateDepositLeaf(treeKey, nextLeafIndex, outputs[0]);
+        const leafIndex = await this.locateNoteLeaf(treeKey, nextLeafIndex, outputs[0]);
         if (leafIndex !== nextLeafIndex) {
             removeStaleNote(this.publicKey, mintStr, outputs[0].amount.toString(), outputs[0].blinding.toString(), nextLeafIndex);
             upsertNote(this.publicKey, {
@@ -920,13 +921,15 @@ export class PrivacyCashClient {
         }
         for (const n of inputNotes)
             markNoteSpent(this.publicKey, n.id, signature);
+        let changeIndex = nextLeafIndex + 1;
         if (change.gt(new BN(0))) {
             await waitForLeafIndex(args.treeKey, nextLeafIndex + 1).catch(() => { });
+            changeIndex = await this.locateNoteLeaf(args.treeKey, changeIndex, outputs[1]);
             saveNote(this.publicKey, {
                 id: newNoteId(),
                 amount: outputs[1].amount.toString(),
                 blinding: outputs[1].blinding.toString(),
-                index: nextLeafIndex + 1,
+                index: changeIndex,
                 mintAddress: args.mintAddress,
                 spent: false,
                 createdAt: Date.now(),
@@ -940,8 +943,15 @@ export class PrivacyCashClient {
             feeLamports: fee.toNumber(),
             changeLamports: change.toString(),
             nullifiers,
-            leafIndex: nextLeafIndex,
+            leafIndex: change.gt(new BN(0)) ? changeIndex - 1 : nextLeafIndex,
             commitment: fieldToHex32(outputs[0].getCommitment()),
+            changeNote: change.gt(new BN(0))
+                ? {
+                    amount: outputs[1].amount.toString(),
+                    blinding: outputs[1].blinding.toString(),
+                    index: changeIndex,
+                }
+                : undefined,
         };
     }
     /** Prove + POST to relayer (backend signs with RELAYER_KEYPAIR). No wallet tx. */
