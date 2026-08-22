@@ -81,6 +81,7 @@ const ALT_HEX = fakeAltHex(
 interface TreeEntry {
   mirror: LocalMirror
   next: number
+  utxos: Array<{ leaf_index: number; encrypted_output_hex: string; signature: string }>
 }
 
 const realFetch = globalThis.fetch
@@ -95,6 +96,7 @@ function seedTree(treeKey: string, leaves: string[]): void {
   trees.set(treeKey, {
     mirror: LocalMirror.fromLeaves(MIRROR_WASM!, leaves),
     next: leaves.length,
+    utxos: [],
   })
 }
 
@@ -151,6 +153,8 @@ function installFetch(): void {
           pathIndices[i] = (idx >> i) & 1
         }
         return json({
+          root: fieldToHex32(entry.mirror.root()),
+          next_leaf_index: entry.next,
           path_elements: entry.mirror.path(idx).map((d) => "0x" + fieldToHex32(d)),
           path_indices: pathIndices,
         })
@@ -160,15 +164,21 @@ function installFetch(): void {
       return json({ spent: false })
     }
     if (method === "GET" && url.pathname === "/api/utxos/range") {
+      const treeKey = url.searchParams.get("tree_key") ?? ""
       const start = Number(url.searchParams.get("start"))
+      const end = Number(url.searchParams.get("end"))
+      const entry = trees.get(treeKey)
+      const rows = (entry?.utxos ?? []).filter(
+        (r) => r.leaf_index >= start && r.leaf_index < end,
+      )
       return json({
-        tree_key: url.searchParams.get("tree_key"),
+        tree_key: treeKey,
         start,
-        end: Number(url.searchParams.get("end")),
-        total: 0,
-        nextIndex: start,
-        hasMore: false,
-        utxos: [],
+        end,
+        total: entry?.utxos.length ?? 0,
+        next_index: entry?.next ?? start,
+        has_more: false,
+        utxos: rows,
       })
     }
     if (method === "GET" && parts[0] === "api" && parts[1] === "notes") {
@@ -192,8 +202,23 @@ function installFetch(): void {
     }
     if (method === "POST" && url.pathname === "/api/relayer") {
       relayBodies.push(body)
-      for (const entry of trees.values()) entry.next += 2
-      return json({ signature: `SIG${++sigCounter}`, status: "confirmed" })
+      const sig = `SIG${++sigCounter}`
+      for (const entry of trees.values()) {
+        entry.utxos.push(
+          {
+            leaf_index: entry.next,
+            encrypted_output_hex: String(body.encrypted_output1).replace(/^0x/, ""),
+            signature: sig,
+          },
+          {
+            leaf_index: entry.next + 1,
+            encrypted_output_hex: String(body.encrypted_output2).replace(/^0x/, ""),
+            signature: sig,
+          },
+        )
+        entry.next += 2
+      }
+      return json({ signature: sig, status: "confirmed" })
     }
     if (method === "POST" && url.pathname === "/api/relayer/submit") {
       return json({ signature: `SIG${++sigCounter}`, status: "confirmed" })

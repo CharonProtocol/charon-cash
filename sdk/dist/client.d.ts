@@ -62,6 +62,14 @@ export declare class PrivacyCashClient {
      * and mark spent via nullifier checks.
      */
     syncNotes(treeKey: string, fromScratch?: boolean): Promise<SyncResult>;
+    /**
+     * Recover the true leaf index of a just-landed deposit note. The pre-send
+     * `nextLeafIndex` is only a guess: concurrent transactions can append ahead
+     * of ours before it confirms. Decrypt the window around the guess and match
+     * the note's blinding factor; fall back to the guess if the indexer never
+     * serves the note (syncNotes corrects the index on the next scan anyway).
+     */
+    private locateDepositLeaf;
     depositSOL(amountLamports: number): Promise<DepositResult>;
     withdrawSOL(grossLamports: number, recipient: PublicKey | string, opts?: {
         relay?: boolean;

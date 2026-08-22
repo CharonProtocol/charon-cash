@@ -175,6 +175,8 @@ export async function fetchMerkleProof(treeKey, leafIndex) {
         ? raw.map((b) => bytesToHex(b))
         : raw;
     return {
+        root: hexToDecimal("0x" + p.root),
+        nextLeafIndex: Number(p.next_leaf_index),
         pathElements: asHex.map(hexToDecimal),
         pathIndices: p.path_indices,
     };

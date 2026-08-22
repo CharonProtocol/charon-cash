@@ -18,6 +18,10 @@ export interface TreeState {
 }
 
 export interface MerkleProof {
+  /** Root the siblings hash up to, as a decimal field-element string (circuit-ready). */
+  root: string
+  /** Tree size in the same snapshot as `root`. */
+  nextLeafIndex: number
   /** 26 sibling hashes as decimal field-element strings (circuit-ready). */
   pathElements: string[]
   /** 26 direction bits (0 = left, 1 = right). */
@@ -274,6 +278,8 @@ export async function fetchMerkleProof(
     ? (raw as ArrayLike<number>[]).map((b) => bytesToHex(b))
     : (raw as string[])
   return {
+    root: hexToDecimal("0x" + p.root),
+    nextLeafIndex: Number(p.next_leaf_index),
     pathElements: asHex.map(hexToDecimal),
     pathIndices: p.path_indices,
   }

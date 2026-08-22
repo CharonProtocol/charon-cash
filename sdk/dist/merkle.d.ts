@@ -17,6 +17,10 @@ export interface TreeState {
     knownRoots: string[];
 }
 export interface MerkleProof {
+    /** Root the siblings hash up to, as a decimal field-element string (circuit-ready). */
+    root: string;
+    /** Tree size in the same snapshot as `root`. */
+    nextLeafIndex: number;
     /** 26 sibling hashes as decimal field-element strings (circuit-ready). */
     pathElements: string[];
     /** 26 direction bits (0 = left, 1 = right). */

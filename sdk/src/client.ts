@@ -40,6 +40,7 @@ import {
   submitTransaction,
   relayWithdraw,
   waitForLeafIndex,
+  type MerkleProof,
   type RelayerInfo,
 } from "./merkle"
 import {
@@ -323,6 +324,42 @@ export class PrivacyCashClient {
     return { scanned, added, spent }
   }
 
+  /**
+   * Recover the true leaf index of a just-landed deposit note. The pre-send
+   * `nextLeafIndex` is only a guess: concurrent transactions can append ahead
+   * of ours before it confirms. Decrypt the window around the guess and match
+   * the note's blinding factor; fall back to the guess if the indexer never
+   * serves the note (syncNotes corrects the index on the next scan anyway).
+   */
+  private async locateDepositLeaf(
+    treeKey: string,
+    guessIndex: number,
+    note: Utxo,
+  ): Promise<number> {
+    const deadline = Date.now() + 10_000
+    const start = Math.max(0, guessIndex - 2)
+    let end = start + 16
+    while (Date.now() < deadline) {
+      const page = await fetchUtxoRange(treeKey, start, end).catch(() => null)
+      if (page) {
+        for (const row of page.utxos) {
+          try {
+            const utxo = await this.enc!.decryptUtxo(
+              Buffer.from(row.encryptedOutputHex, "hex"),
+              this.wasm!,
+            )
+            if (utxo.blinding.eq(note.blinding)) return row.leafIndex
+          } catch {
+            // not our note
+          }
+        }
+      }
+      end += 16
+      await new Promise((r) => setTimeout(r, 400))
+    }
+    return guessIndex
+  }
+
   async depositSOL(amountLamports: number): Promise<DepositResult> {
     await this.unlock()
     const treeKey = SOL_TREE_KEY
@@ -389,7 +426,29 @@ export class PrivacyCashClient {
 
     await this.waitForLeaves(treeKey, nextLeafIndex + 1)
 
-    return { signature, amountLamports, leafIndex: nextLeafIndex, nullifiers }
+    const leafIndex = await this.locateDepositLeaf(treeKey, nextLeafIndex, outputs[0])
+    if (leafIndex !== nextLeafIndex) {
+      removeStaleNote(
+        this.publicKey,
+        WRAPPED_SOL_MINT,
+        outputs[0].amount.toString(),
+        outputs[0].blinding.toString(),
+        nextLeafIndex,
+      )
+      upsertNote(this.publicKey, {
+        id: newNoteId(),
+        amount: outputs[0].amount.toString(),
+        blinding: outputs[0].blinding.toString(),
+        index: leafIndex,
+        mintAddress: WRAPPED_SOL_MINT,
+        spent: false,
+        createdAt: Date.now(),
+        depositTx: signature,
+      })
+      await this.persistNotes().catch(() => {})
+    }
+
+    return { signature, amountLamports, leafIndex, nullifiers }
   }
 
   async withdrawSOL(
@@ -531,10 +590,32 @@ export class PrivacyCashClient {
 
     await this.waitForLeaves(treeKey, nextLeafIndex + 1)
 
+    const leafIndex = await this.locateDepositLeaf(treeKey, nextLeafIndex, outputs[0])
+    if (leafIndex !== nextLeafIndex) {
+      removeStaleNote(
+        this.publicKey,
+        mintStr,
+        outputs[0].amount.toString(),
+        outputs[0].blinding.toString(),
+        nextLeafIndex,
+      )
+      upsertNote(this.publicKey, {
+        id: newNoteId(),
+        amount: outputs[0].amount.toString(),
+        blinding: outputs[0].blinding.toString(),
+        index: leafIndex,
+        mintAddress: mintStr,
+        spent: false,
+        createdAt: Date.now(),
+        depositTx: signature,
+      })
+      await this.persistNotes().catch(() => {})
+    }
+
     return {
       signature,
       amountLamports: Number(amountRaw),
-      leafIndex: nextLeafIndex,
+      leafIndex,
       nullifiers,
     }
   }
@@ -738,17 +819,34 @@ export class PrivacyCashClient {
     const extAmount = recipientGets.neg()
     const change = totalInput.sub(gross)
 
-    const { root, nextLeafIndex } = await fetchTreeState(args.treeKey)
-
-    const inputPathElements: string[][] = []
-    for (const u of inputs) {
-      if (u.amount.gt(new BN(0))) {
-        inputPathElements.push(
-          (await fetchMerkleProof(args.treeKey, u.index)).pathElements,
-        )
-      } else {
-        inputPathElements.push(new Array(MERKLE_TREE_DEPTH).fill("0"))
+    // The root and every sibling path must come from the same tree snapshot:
+    // concurrent txs append leaves between separate fetches and the circuit
+    // asserts the path hashes up to the root.
+    let root = ""
+    let nextLeafIndex = 0
+    let inputPathElements: string[][] = []
+    for (let round = 0; ; round++) {
+      const real: MerkleProof[] = []
+      for (const u of inputs) {
+        if (u.amount.gt(new BN(0))) {
+          real.push(await fetchMerkleProof(args.treeKey, u.index))
+        }
       }
+      if (real.length > 0 && new Set(real.map((p) => p.root)).size === 1) {
+        root = real[0].root
+        nextLeafIndex = real[0].nextLeafIndex
+        let k = 0
+        inputPathElements = inputs.map((u) =>
+          u.amount.gt(new BN(0))
+            ? real[k++].pathElements
+            : new Array(MERKLE_TREE_DEPTH).fill("0"),
+        )
+        break
+      }
+      if (round >= 7) {
+        throw new Error("merkle proofs did not converge on one root")
+      }
+      await new Promise((r) => setTimeout(r, 50))
     }
 
     const outputs = [
@@ -970,17 +1068,34 @@ export class PrivacyCashClient {
     const change = totalInput.sub(gross)
     const extAmount = new BN(0)
 
-    const { root, nextLeafIndex } = await fetchTreeState(args.treeKey)
-
-    const inputPathElements: string[][] = []
-    for (const u of inputs) {
-      if (u.amount.gt(new BN(0))) {
-        inputPathElements.push(
-          (await fetchMerkleProof(args.treeKey, u.index)).pathElements,
-        )
-      } else {
-        inputPathElements.push(new Array(MERKLE_TREE_DEPTH).fill("0"))
+    // The root and every sibling path must come from the same tree snapshot:
+    // concurrent txs append leaves between separate fetches and the circuit
+    // asserts the path hashes up to the root.
+    let root = ""
+    let nextLeafIndex = 0
+    let inputPathElements: string[][] = []
+    for (let round = 0; ; round++) {
+      const real: MerkleProof[] = []
+      for (const u of inputs) {
+        if (u.amount.gt(new BN(0))) {
+          real.push(await fetchMerkleProof(args.treeKey, u.index))
+        }
       }
+      if (real.length > 0 && new Set(real.map((p) => p.root)).size === 1) {
+        root = real[0].root
+        nextLeafIndex = real[0].nextLeafIndex
+        let k = 0
+        inputPathElements = inputs.map((u) =>
+          u.amount.gt(new BN(0))
+            ? real[k++].pathElements
+            : new Array(MERKLE_TREE_DEPTH).fill("0"),
+        )
+        break
+      }
+      if (round >= 7) {
+        throw new Error("merkle proofs did not converge on one root")
+      }
+      await new Promise((r) => setTimeout(r, 50))
     }
 
     const outputs = [
