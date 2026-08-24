@@ -1,9 +1,9 @@
-use anyhow::{Context, Result};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{Connection, Executor, PgConnection, PgExecutor, PgPool, Postgres, Row, Transaction};
 use std::str::FromStr;
 
 use crate::indexer::{IndexedTransact, TransactKind};
+use crate::response::{ApiError, ApiErrorCode};
 
 #[derive(Clone)]
 pub struct Db {
@@ -11,23 +11,20 @@ pub struct Db {
 }
 
 impl Db {
-    pub async fn connect(database_url: &str) -> Result<Self> {
-        // WARNING : For Dev Testing
-        // reset(database_url);
-
+    pub async fn connect(database_url: &str) -> Self {
         let pool = PgPoolOptions::new()
             .max_connections(10)
             .connect(database_url)
             .await
-            .context("connect to postgres")?;
+            .expect("connect to database");
 
         let db = Self { pool };
         // Applies `backend/migrations/*.sql` via SQLx's migrator.
         sqlx::migrate!("./migrations")
             .run(&db.pool)
             .await
-            .context("run postgres migrations")?;
-        Ok(db)
+            .expect("run postgres migrations")?;
+        db
     }
 
     /// Expose pool for future modules (relayer, sqlx queries in routes).
@@ -36,15 +33,15 @@ impl Db {
         &self.pool
     }
 
-    pub async fn get_cursor(&self) -> Result<(Option<String>, u64)> {
-        let row: (Option<String>, i64) =
+    pub async fn get_cursor(&self) -> Result<(Option<String>, u64), DbError> {
+        let row: (Option<String>, u64) =
             sqlx::query_as("SELECT last_signature, last_slot FROM indexer_cursor WHERE id = 1")
                 .fetch_one(&self.pool)
                 .await?;
         Ok((row.0, row.1 as u64))
     }
 
-    pub async fn set_cursor(&self, signature: &str, slot: u64) -> Result<()> {
+    pub async fn set_cursor(&self, signature: &str, slot: u64) -> Result<(), DbError> {
         sqlx::query("UPDATE indexer_cursor SET last_signature = $1, last_slot = $2 WHERE id = 1")
             .bind(signature)
             .bind(slot as i64)
@@ -53,7 +50,7 @@ impl Db {
         Ok(())
     }
 
-    pub async fn has_tx(&self, signature: &str) -> Result<bool> {
+    pub async fn has_tx(&self, signature: &str) -> Result<bool, DbError> {
         let row: Option<(String,)> =
             sqlx::query_as("SELECT signature FROM indexed_txs WHERE signature = $1")
                 .bind(signature)
@@ -62,7 +59,11 @@ impl Db {
         Ok(row.is_some())
     }
 
-    pub async fn add_user(&self, wallet_pubkey: String, viewing_pubkey: Vec<u8>) -> Result<()> {
+    pub async fn add_user(
+        &self,
+        wallet_pubkey: String,
+        viewing_pubkey: Vec<u8>,
+    ) -> Result<(), DbError> {
         let query =
             sqlx::query("INSERT INTO users (wallet_pubkey, viewing_pubkey) VALUES ($1, $2)")
                 .bind(wallet_pubkey)
@@ -73,7 +74,7 @@ impl Db {
         Ok(())
     }
 
-    pub async fn get_viewing_key(&self, wallet_pubkey: String) -> Result<Vec<u8>> {
+    pub async fn get_viewing_key(&self, wallet_pubkey: String) -> Result<Vec<u8>, DbError> {
         let query = sqlx::query("SELECT viewing_pubkey FROM users WHERE wallet_pubkey = $1")
             .bind(wallet_pubkey)
             .fetch_one(&self.pool)
@@ -82,7 +83,7 @@ impl Db {
         Ok(ret)
     }
 
-    pub async fn has_wallet_pubkey(&self, wallet_pubkey: &str) -> Result<bool> {
+    pub async fn has_wallet_pubkey(&self, wallet_pubkey: &str) -> Result<bool, DbError> {
         let query = sqlx::query("SELECT * FROM users WHERE wallet_pubkey = $1")
             .bind(wallet_pubkey)
             .fetch_one(&self.pool)
@@ -91,7 +92,7 @@ impl Db {
         Ok(query.is_empty())
     }
 
-    pub async fn next_index(&self, tree_key: &str) -> Result<u32> {
+    pub async fn next_index(&self, tree_key: &str) -> Result<u32, DbError> {
         let row: Option<(i64,)> =
             sqlx::query_as("SELECT next_index FROM trees WHERE tree_key = $1")
                 .bind(tree_key)
@@ -115,7 +116,7 @@ impl Db {
         leaf_index: u64,
         limit: u16,
         tree_key: &String,
-    ) -> Result<Vec<(u64, Vec<u8>)>> {
+    ) -> Result<Vec<(u64, Vec<u8>)>, DbError> {
         let rows = sqlx::query::<sqlx::Postgres>(
             "SELECT * FROM commitments WHERE tree_key = $1 AND leaf_index >= $2 LIMIT $3",
         )
@@ -149,7 +150,7 @@ impl Db {
         &self,
         start_from: u64,
         limit: u16,
-    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, DbError> {
         let rows = sqlx::query::<sqlx::Postgres>(
             "SELECT ephemeral_pubkey, ciphertext FROM notes WHERE id > $1 LIMIT $2",
         )
@@ -173,7 +174,10 @@ impl Db {
         commitments and notes will be inserted in a single transaction
         so as to ensure that network's state remain consistent.
     */
-    pub async fn fill_commitment_and_insert_note(&self, tx: &IndexedTransact) -> Result<()> {
+    pub async fn fill_commitment_and_insert_note(
+        &self,
+        tx: &IndexedTransact,
+    ) -> Result<(), DbError> {
         let mut conn = self.pool.begin().await?;
 
         sqlx::query(
@@ -236,45 +240,44 @@ impl Db {
     }
 }
 
-use sqlx::AssertSqlSafe;
+#[derive(thiserror::Error, Debug)]
+pub enum DbError {
+    #[error("record not found")]
+    NotFound,
 
-pub async fn reset(database_url: &str) -> anyhow::Result<()> {
-    let opts = PgConnectOptions::from_str(database_url)?;
-    let db_name = opts
-        .get_database()
-        .ok_or_else(|| anyhow::anyhow!("DATABASE_URL must include a database name"))?
-        .to_string();
+    #[error("unique constraint violated on {0}")]
+    Duplicate(String),
 
-    // Guard against injection: only allow safe identifier characters.
-    // db_name is interpolated directly into DDL below, which can't be
-    // parameterized, so this check is the actual safety boundary.
-    if !db_name
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_')
-    {
-        anyhow::bail!("unsafe database name: {db_name}");
+    #[error("database connection failed")]
+    ConnectionFailed(#[source] sqlx::Error),
+
+    #[error("query failed")]
+    QueryFailed(#[source] sqlx::Error),
+}
+
+impl From<sqlx::Error> for DbError {
+    fn from(err: sqlx::Error) -> Self {
+        match &err {
+            sqlx::Error::RowNotFound => DbError::NotFound,
+            sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
+                DbError::Duplicate(db_err.constraint().unwrap_or_default().to_owned())
+            }
+            _ => DbError::QueryFailed(err),
+        }
     }
+}
 
-    let admin_opts = opts.clone().database("postgres");
-    let mut admin_conn = PgConnection::connect_with(&admin_opts).await?;
-
-    let query_terminate = format!(
-        r#"
-        SELECT pg_terminate_backend(pid)
-        FROM pg_stat_activity
-        WHERE datname = '{db}' AND pid <> pg_backend_pid();
-        "#,
-        db = db_name
-    );
-    sqlx::query(AssertSqlSafe(query_terminate))
-        .execute(&mut admin_conn)
-        .await?;
-
-    let query_drop = format!(r#"DROP DATABASE IF EXISTS "{}";"#, db_name);
-    sqlx::query(AssertSqlSafe(query_drop))
-        .execute(&mut admin_conn)
-        .await?;
-
-    drop(admin_conn);
-    Ok(())
+impl From<DbError> for ApiError {
+    fn from(err: DbError) -> Self {
+        match err {
+            DbError::NotFound => ApiError::new(ApiErrorCode::ValueNotFound, "Resource not found"),
+            DbError::Duplicate(field) => {
+                ApiError::new(ApiErrorCode::DuplicateValue, "Already exists")
+                    .with_field(field, "duplicate")
+            }
+            DbError::ConnectionFailed(_) | DbError::QueryFailed(_) => {
+                ApiError::new(ApiErrorCode::DbError, "Internal server error")
+            }
+        }
+    }
 }

@@ -6,7 +6,7 @@ edition = "2021"
 # Runtime + HTTP
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time"] }
 axum = "0.8"
-tower-http = { version = "0.6", features = ["cors", "trace"] }
+tower-http = { version = "0.6", features = ["cors", "trace","request-id"] }
 futures = "0.3"
 
 # Serde
@@ -43,3 +43,5 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 rs-merkle-tree = {git = "https://github.com/Cheapstar/rs-merkle-tree.git", features = ["rocksdb_store_v2"]}
 rocksdb = { version = "0.24" }
+uuid = { version = "1.25.0", features = ["v4"] }
+chrono = "0.4.45"

@@ -4,50 +4,55 @@ use axum::{
     response::Response,
     Json,
 };
+use serde::Serialize;
 use serde_json::{json, Value};
+use tower_http::request_id::RequestId;
 
-use crate::{error::AppError, state::AppState};
+use crate::{error::AppError, response::ApiResponse, state::AppState};
 
 pub async fn check_registered(
     State(state): State<AppState>,
     Path(path): Path<String>,
-) -> Result<bool, AppError> {
-    let is_registered = state
-        .db
-        .has_wallet_pubkey(&path)
-        .await
-        .map_err(|_| AppError::internal("Internal Server Error"))?;
+    Extension(req_id): Extension<RequestId>,
+) -> ApiResponse<bool> {
+    let is_registered = match state.db.has_wallet_pubkey(&path).await {
+        Ok(n) => n,
+        Err(e) => return ApiResponse::error(e.into(), req_id),
+    };
 
-    Ok(is_registered)
-}
-
-pub async fn add_user(
-    State(state): State<AppState>,
-    Json(payload): Json<AddUser>,
-) -> Result<Json<Value>, AppError> {
-    state
-        .db
-        .add_user(payload.wallet_pubkey, payload.viewing_pubkey)
-        .await
-        .map_err(|_| |_| AppError::internal("Internal Server Error"))?;
-
-    Ok(Json(json!({ "status": "ok" })))
-}
-
-pub async fn get_viewing_key(
-    State(state): State<AppState>,
-    Path(path): Path<String>,
-) -> Result<Json<Value>, AppError> {
-    let key = state
-        .db
-        .get_viewing_key(path)
-        .await
-        .map_err(|_| |_| AppError::internal("Internal Server Error"))?;
-
-    Ok(Json(json!({ "key" : key })))
+    ApiResponse::success(true, req_id)
 }
 
 struct AddUser {
     wallet_pubkey: String,
     viewing_pubkey: Vec<u8>,
+}
+pub async fn add_user(
+    State(state): State<AppState>,
+    Json(payload): Json<AddUser>,
+    Extension(req_id): Extension<RequestId>,
+) -> ApiResponse<String> {
+    match state
+        .db
+        .add_user(payload.wallet_pubkey, payload.viewing_pubkey)
+        .await
+    {
+        Ok(n) => n,
+        Err(e) => return ApiResponse::error(e.into(), req_id),
+    };
+
+    ApiResponse::success("User successfully added to the network".to_owned(), req_id)
+}
+
+pub async fn get_viewing_key(
+    State(state): State<AppState>,
+    Path(path): Path<String>,
+    Extension(req_id): Extension<RequestId>,
+) -> ApiResponse<Vec<u8>> {
+    let key = match state.db.get_viewing_key(path).await {
+        Ok(n) => n,
+        Err(e) => return ApiResponse::error(e.into(), req_id),
+    };
+
+    ApiResponse::success(key, req_id)
 }

@@ -8,8 +8,8 @@ use axum::middleware::from_fn_with_state;
 use axum::routing::{get, post, put};
 use axum::Router;
 
+use crate::admin;
 use crate::state::AppState;
-use crate::{admin, merkle};
 
 pub fn router(state: AppState) -> Router {
     // // Operator-only routes (mutating): guarded by the admin password middleware.
@@ -29,7 +29,7 @@ pub fn router(state: AppState) -> Router {
 
     Router::new()
         .route("/health", get(health::health))
-        .route("/indexer/status", get(indexer_status::indexer_status))
+        // .route("/indexer/status", get(indexer_status::indexer_status))
         .route("/indexer/status", get(indexer_status::indexer_status))
         .route("/api/merkle/{tree_key}", get(merkle::tree_state))
         .route(
