@@ -998,11 +998,16 @@ export class PrivacyCashClient {
     for (const n of inputNotes) markNoteSpent(this.publicKey, n.id, signature)
     if (change.gt(new BN(0))) {
       await waitForLeafIndex(args.treeKey, nextLeafIndex).catch(() => { })
+      const changeIndex = await this.locateNoteLeaf(
+        args.treeKey,
+        nextLeafIndex,
+        outputs[0],
+      ).catch(() => nextLeafIndex)
       saveNote(this.publicKey, {
         id: newNoteId(),
         amount: outputs[0].amount.toString(),
         blinding: outputs[0].blinding.toString(),
-        index: nextLeafIndex,
+        index: changeIndex,
         mintAddress: args.mintAddress,
         spent: false,
         createdAt: Date.now(),

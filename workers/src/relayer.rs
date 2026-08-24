@@ -103,7 +103,7 @@ async fn simulate_then_send(state: &AppState, wire_bytes: &[u8]) -> AppResult<St
         .map_err(|e| AppError::upstream(format!("send_transaction: {e}")))
 }
 
-async fn submit(state: &AppState, ixs: Vec<Instruction>) -> AppResult<RelayResponse> {
+async fn send_legacy(state: &AppState, ixs: Vec<Instruction>) -> AppResult<String> {
     let (blockhash, _) = state
         .rpc
         .get_latest_blockhash()
@@ -114,18 +114,14 @@ async fn submit(state: &AppState, ixs: Vec<Instruction>) -> AppResult<RelayRespo
     all.extend(ixs);
     let wire_bytes = wire::build_legacy_tx(&state.signer_pubkey(), &all, &blockhash, &state.keypair);
 
-    let sig = simulate_then_send(state, &wire_bytes).await?;
-    let status = wait_confirmed(state, &sig).await;
-    Ok(RelayResponse { signature: sig, slot: None, status })
+    simulate_then_send(state, &wire_bytes).await
 }
 
-/// Gasless relayer-signed submit using a Versioned v0 message that reuses the
-/// client's Address Lookup Table (SPL withdrawals overflow a legacy tx).
-async fn submit_v0(
+async fn send_v0(
     state: &AppState,
     ixs: Vec<Instruction>,
     alt_address: Pubkey,
-) -> AppResult<RelayResponse> {
+) -> AppResult<String> {
     let (blockhash, _) = state
         .rpc
         .get_latest_blockhash()
@@ -156,7 +152,23 @@ async fn submit_v0(
     )
     .map_err(|e| AppError::bad_request("ALT_COMPILE", format!("v0 compile: {e}")))?;
 
-    let sig = simulate_then_send(state, &wire_bytes).await?;
+    simulate_then_send(state, &wire_bytes).await
+}
+
+async fn submit(state: &AppState, ixs: Vec<Instruction>) -> AppResult<RelayResponse> {
+    let sig = send_legacy(state, ixs).await?;
+    let status = wait_confirmed(state, &sig).await;
+    Ok(RelayResponse { signature: sig, slot: None, status })
+}
+
+/// Gasless relayer-signed submit using a Versioned v0 message that reuses the
+/// client's Address Lookup Table (SPL withdrawals overflow a legacy tx).
+async fn submit_v0(
+    state: &AppState,
+    ixs: Vec<Instruction>,
+    alt_address: Pubkey,
+) -> AppResult<RelayResponse> {
+    let sig = send_v0(state, ixs, alt_address).await?;
     let status = wait_confirmed(state, &sig).await;
     Ok(RelayResponse { signature: sig, slot: None, status })
 }
@@ -369,20 +381,23 @@ pub async fn relay_withdraw(state: &AppState, req: WithdrawRequest) -> AppResult
         }
     }
     ixs.push(ix);
-    let result = match (t.kind, t.alt_address) {
-        (TransactKind::Spl, Some(alt)) => submit_v0(state, ixs, alt).await,
-        _ => submit(state, ixs).await,
+    let sent = match (t.kind, t.alt_address) {
+        (TransactKind::Spl, Some(alt)) => send_v0(state, ixs, alt).await,
+        _ => send_legacy(state, ixs).await,
     };
 
-    if result.is_ok() {
-        if let Err(e) = sync::sync_tree_forced(state).await {
-            worker::console_warn!("post-withdraw sync skipped: {e}");
+    match sent {
+        Ok(sig) => Ok(RelayResponse {
+            signature: sig,
+            slot: None,
+            status: "submitted".to_string(),
+        }),
+        Err(e) => {
+            let mut set = in_flight().lock().unwrap();
+            in_flight_remove(&mut set, &[n0, n1]);
+            Err(e)
         }
-    } else {
-        let mut set = in_flight().lock().unwrap();
-        in_flight_remove(&mut set, &[n0, n1]);
     }
-    result
 }
 
 /// Broadcast a client-signed transaction (hex wire bytes, legacy or v0).
@@ -401,13 +416,12 @@ pub async fn broadcast(state: &AppState, req: SubmitRequest) -> AppResult<RelayR
         .send_transaction(&bytes, state.skip_preflight)
         .await
         .map_err(|e| AppError::upstream(format!("send_transaction: {e}")))?;
-    let status = wait_confirmed(state, &sig).await;
 
-    if let Err(e) = sync::sync_tree_forced(state).await {
-        worker::console_warn!("post-broadcast sync skipped: {e}");
-    }
-
-    Ok(RelayResponse { signature: sig, slot: None, status })
+    Ok(RelayResponse {
+        signature: sig,
+        slot: None,
+        status: "submitted".to_string(),
+    })
 }
 
 async fn assert_targets_program(state: &AppState, parsed: &wire::ParsedTx) -> AppResult<()> {
