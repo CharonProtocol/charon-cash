@@ -67,6 +67,19 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
         }
     }
 
+    // Bind `tree_ata` to `mint`. On a first-ever deposit `tree_ata` doesn't
+    // exist yet and is validated instead by `CreateIdempotent` below; on
+    // every other path (withdrawal, fee payment, or a repeat deposit) it
+    // already exists and must belong to this tree's mint, or `global_config`
+    // -- the shared SPL-vault authority for every mint's tree -- could be
+    // used to sign a transfer out of a completely different mint's vault.
+    if !tree_ata.is_data_empty() {
+        let tree_ata_account = TokenAccount::from_account_view(tree_ata)?;
+        if tree_ata_account.mint() != mint.address() {
+            return Err(PrivacyCashError::InvalidMintAddress.into());
+        }
+    }
+
     let global = {
         let global_data = global_config.try_borrow()?;
         let global = try_from_bytes::<GlobalConfig>(&global_data[..GlobalConfig::LEN])

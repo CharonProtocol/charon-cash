@@ -1,0 +1,368 @@
+// Privacy Cash — formal specification
+//
+// A Solana (pinocchio) confidential SOL / SPL-token pool. Deposits,
+// withdrawals, and shielded transfers are authorized by Groth16 zk-SNARK
+// proofs over BN254 against a Poseidon Merkle tree of commitments.
+// See README.md for the full instruction-by-instruction spec.
+//
+// Modeled `state`: the per-mint (or native-SOL) Merkle tree account's
+// admin-relevant scalar fields (`authority`, `max_deposit_amount`, `bump`).
+// The same on-chain struct (`MerkleTreeAccount`) backs both the native-SOL
+// tree and every per-mint SPL tree, so one `state` shape covers both. The
+// tree's cryptographic accumulator fields (`subtrees`, `root_history`,
+// `next_index`, `root_index`) are Poseidon-hash machinery, not
+// business-logic state, and are out of scope here — the same exclusion the
+// bundled `examples/rust/escrow` spec applies to SPL token balances.
+//
+// Two account roles referenced by handlers are deliberately NOT part of
+// `state`:
+//   - `global_config` — a separate, program-wide singleton (fee rates plus
+//     its own `authority`), shared by every tree. For `update_global_config`
+//     it is that handler's resolved state account, so bare `auth authority`
+//     plus an explicit `requires state.authority == authority.pubkey`
+//     reaches its stored authority.
+//   - SPL token accounts (`tree_ata`, `signer_token_account`, ...). Token
+//     ownership is expressible as the `authority <acct>` account attribute;
+//     a token account's `mint` is NOT — the DSL has no mint accessor.
+//
+// Trust boundary (mirrors CLAUDE.md's "Trust (axioms)" scope): SPL Token
+// program internals, the Groth16/BN254 pairing check itself
+// (`utils::verify_proof` / `groth16::Groth16Verifier` — a 1:1 port of
+// Light Protocol's audited `groth16-solana`), the ext_data_hash / nullifier
+// binding, and Poseidon Merkle tree arithmetic (`MerkleTree::append`,
+// `MerkleTree::is_known_root`) are trusted, not independently re-derived.
+//
+// These were previously written as uninterpreted `requires` predicates
+// (`proof_valid`, `ext_data_hash_matches`, `public_amount_consistent`,
+// `known_root`, `fee_within_bounds`, `mint_allowed`, `token_mint`,
+// `token_owner`, `deposit_within_limit`). That form was a dead end in both
+// directions: Lean got `opaque f : Int -> Bool` applied to a placeholder
+// argument (unprovable, so zero proof content), and qedgen's Pinocchio
+// codegen emitted `guards.rs` calls to Rust functions that do not exist and
+// therefore would not compile. They are now either expressed with a real DSL
+// construct (deposit cap as a direct state comparison; token ownership as an
+// `authority` attribute) or documented at their handler as an explicit,
+// named trust-boundary item pointing at the enforcing source. Do not
+// reintroduce an uninterpreted predicate to "cover" a check — model the
+// backing data as `state` so the check is actually decidable.
+//
+// Nullifier accounts (double-spend protection) are dynamically-created
+// PDAs keyed by a proof-supplied hash — an unbounded, hash-keyed set with
+// no fixed-size `Map` representation in this DSL — so that protection is
+// documented as `invariant nullifier_uniqueness` (string form) rather than
+// machine-checked here; see the comment on that invariant.
+
+spec PrivacyCash
+
+program_id "HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV"
+
+dimension Bps = U16
+
+state {
+  authority          : Pubkey
+  max_deposit_amount : U64
+  bump               : U8
+}
+
+type Error
+  | Unauthorized                   = 0  "Signer does not match the stored authority"
+  | InvalidMintAddress             = 1  "Mint not allowed, or wrong mint for this tree/vault"
+  | InvalidMerkleTreeHeight        = 2  "Merkle tree height mismatch"
+  | InvalidRootHistorySize         = 3  "Root history ring buffer size mismatch"
+  | InvalidFeeRate                 = 4  "Fee rate exceeds 10_000 basis points"
+  | UnknownRoot                    = 5  "Proof root is not in the tree's root history"
+  | ExtDataHashMismatch            = 6  "Recomputed ext_data hash does not match the proof's bound hash"
+  | InvalidPublicAmountData        = 7  "public_amount is inconsistent with ext_amount / fee"
+  | DepositLimitExceeded           = 8  "Deposit amount exceeds the tree's max_deposit_amount"
+  | InsufficientFundsForWithdrawal = 9  "Tree vault lacks the lamports/tokens to cover the withdrawal"
+  | InsufficientFundsForFee        = 10 "Tree vault lacks the lamports/tokens to cover the fee"
+  | InvalidFeeAmount               = 11 "Provided fee is below the minimum acceptable fee"
+  | InvalidTokenAccount            = 12 "Signer's token account is not owned by the signer"
+  | InvalidTokenAccountMintAddress = 13 "Signer's token account mint does not match the instruction's mint"
+  | InvalidProof                   = 14 "Groth16 proof failed verification"
+  | InvalidMerkleTreeAccount       = 15 "Tree account failed to deserialize"
+
+/// Native-SOL pool + program-wide GlobalConfig singleton bootstrap.
+/// Permissionless as currently deployed (`ADMIN_PUBKEY = None` in
+/// src/constants.rs); flip that constant to gate this handler to a fixed
+/// admin key.
+// `initial_max_deposit_amount == 0` is intentionally unguarded: it is a
+// legitimate "pause deposits" configuration (the real handler places no
+// lower bound on it either), not a missing check.
+handler initialize (initial_max_deposit_amount : U64) (tree_account_bump : U8) {
+  permissionless
+
+  accounts {
+    tree_account       : writable, pda ["merkle_tree"]
+    tree_token_account : writable, pda ["tree_token"]
+    global_config      : writable, pda ["global_config"]
+    authority          : signer, writable
+    system_program     : program
+  }
+
+  effect {
+    authority          := authority.pubkey
+    max_deposit_amount := initial_max_deposit_amount
+    bump               := tree_account_bump
+  }
+
+  establishes tree_admin_bound
+}
+
+/// Stands up a second Merkle tree + vault for one SPL mint. Permissionless
+/// as currently deployed (`ADMIN_PUBKEY = None`, `ALLOW_ALL_SPL_TOKENS =
+/// true` in src/constants.rs) — any mint, any caller. A deliberate
+/// deployment choice, not a spec gap; `mint_allowed` still names the guard
+/// so a stricter deployment (narrower `ALLOWED_TOKENS`, set `ADMIN_PUBKEY`)
+/// stays covered.
+// See the `initialize` comment above re: `initial_max_deposit_amount == 0`.
+handler initialize_tree_account_for_spl_token (initial_max_deposit_amount : U64) (tree_account_bump : U8) {
+  permissionless
+
+  accounts {
+    tree_account   : writable, pda ["merkle_tree", mint]
+    mint           : readonly
+    global_config  : readonly
+    authority      : signer, writable
+    system_program : program
+  }
+
+  // No mint allowlist guard: vacuous as deployed (`ALLOW_ALL_SPL_TOKENS =
+  // true`, `ADMIN_PUBKEY = None`). Previously an uninterpreted
+  // `requires mint_allowed(mint)`, which lowered to a call to a
+  // nonexistent Rust fn. To gate this for real, model the allowlist as
+  // state and check membership with `contains(...)`.
+
+  effect {
+    authority          := authority.pubkey
+    max_deposit_amount := initial_max_deposit_amount
+    bump               := tree_account_bump
+  }
+
+  establishes tree_admin_bound
+}
+
+/// Native-SOL shielded deposit / withdrawal / transfer. Spends two
+/// `input_nullifiers` (double-spend-checked via nullifier-PDA
+/// `CreateAccount` — see `nullifier_uniqueness`) and appends two new output
+/// commitments to the Merkle tree, gated by a Groth16 proof.
+///
+/// `ext_amount > 0` is a deposit (signer -> tree vault), `ext_amount < 0`
+/// is a withdrawal (tree vault -> recipient), `fee > 0` additionally pays
+/// `fee_recipient_account`.
+handler transact (ext_amount : I64) (fee : U64) {
+  permissionless
+
+  accounts {
+    tree_account          : writable, pda ["merkle_tree"]
+    nullifier0            : writable
+    nullifier1             : writable
+    nullifier2              : writable
+    nullifier3                : writable
+    tree_token_account          : writable, pda ["tree_token"]
+    global_config                 : readonly, pda ["global_config"]
+    recipient                       : writable
+    fee_recipient_account             : writable
+    signer                               : signer, writable
+    system_program                        : program
+  }
+
+  // Deposit cap, stated directly against the modeled state field. Only a
+  // deposit (`ext_amount > 0`) can exceed the cap; a withdrawal is negative
+  // and passes trivially.
+  requires ext_amount <= state.max_deposit_amount else DepositLimitExceeded
+
+  // TRUST BOUNDARY -- checks enforced by the real handler, NOT machine-checked
+  // here. They were previously written as uninterpreted `requires` predicates
+  // (`ext_data_hash_matches`, `public_amount_consistent`, `fee_within_bounds`,
+  // `known_root`, `proof_valid`). Each carried no proof content: an `opaque
+  // f : Int -> Bool` applied to a placeholder argument is unprovable in Lean
+  // and undefined in Rust, so qedgen's Pinocchio codegen emitted calls to
+  // functions that do not exist and `guards.rs` would not compile. See the
+  // module-header trust-boundary note. The real enforcement sites are:
+  //   ext_data_hash    -- keccak256 recompute + compare, transact.rs step 3
+  //   public_amount    -- helper::check_public_amount, step 4
+  //   fee bounds       -- helper::validate_fee (rates live in global_config,
+  //                       which is deliberately outside modeled `state`)
+  //   root history     -- MerkleTree::is_known_root, step 2 (root_history is
+  //                       Poseidon machinery, outside modeled `state`)
+  //   Groth16 proof    -- groth16::Groth16Verifier, step 5
+  // To machine-check any of these, model the backing data as `state` (e.g.
+  // add the root-history ring buffer, then `requires contains(state.roots,
+  // proof_root)`) rather than reintroducing an uninterpreted predicate.
+}
+
+/// SPL-token counterpart of `transact`. Same nullifier / proof / root /
+/// ext_data_hash / fee contract as `transact`, plus the token-account
+/// bindings below.
+///
+/// No `transfers` block: the real handler's three token movements
+/// (signer_token_account -> tree_ata on deposit; tree_ata ->
+/// recipient_token_account on withdrawal; tree_ata -> fee_recipient_ata on
+/// fee) are mutually exclusive / conditional on `ext_amount`'s sign and
+/// `fee`. Declaring them unconditionally here would tell codegen to always
+/// emit all three CPIs, which would misrepresent (and could actively
+/// diverge from) the real branching -- worse than the `missing_cpi_for_token_context`
+/// P2 lint this leaves unaddressed.
+handler transact_spl (ext_amount : I64) (fee : U64) {
+  permissionless
+
+  accounts {
+    tree_account              : writable, pda ["merkle_tree", mint]
+    nullifier0                : writable
+    nullifier1                 : writable
+    nullifier2                  : writable
+    nullifier3                   : writable
+    global_config                  : readonly, pda ["global_config"]
+    signer                           : signer, writable
+    mint                                : readonly
+    // `authority signer` is the native DSL form of the old
+    // `requires token_owner(signer_token_account) == signer.pubkey` guard --
+    // same check, expressed as an account attribute instead of an
+    // uninterpreted predicate, so it actually lowers to code.
+    signer_token_account                  : writable, type token, authority signer
+    recipient                               : readonly
+    recipient_token_account                   : writable, type token
+    tree_ata                                    : writable, type token, authority global_config
+    fee_recipient_ata                             : writable, type token
+    token_program                                   : program
+    associated_token_program                          : program
+    system_program                                      : program
+  }
+
+  // Deposit cap -- see the identical clause on `transact`.
+  requires ext_amount <= state.max_deposit_amount else DepositLimitExceeded
+
+  // TRUST BOUNDARY -- same set as `transact` (ext_data_hash, public_amount,
+  // fee bounds, root history, Groth16 proof); see the note there. Plus these
+  // SPL-token-account checks, which have no DSL form at all: account
+  // attributes are limited to signer/writable/readonly/program/token/
+  // `type`/`authority`/`pda` (qedgen 2.49.0 `AccountAttr`) -- there is no
+  // mint accessor, so `token_mint(...)` cannot be expressed:
+  //
+  //   * `token_mint(signer_token_account) == mint.pubkey`
+  //     -> InvalidTokenAccountMintAddress. Enforced in transact_spl.rs.
+  //
+  //   * `token_mint(tree_ata) == mint.pubkey` -> InvalidMintAddress.
+  //     REGRESSION GUARD for Finding 1 (.qed/findings/audit-20260814T150536Z.md,
+  //     FIXED in src/instructions/transact_spl.rs): tree_ata must belong to
+  //     this handler's `mint`, or `global_config` -- the shared vault
+  //     authority for EVERY mint's tree (see
+  //     `global_config_shared_vault_authority` below) -- can sign a transfer
+  //     out of a completely different mint's vault. Previously enforced only
+  //     on the deposit branch (via CreateIdempotent); now checked
+  //     unconditionally whenever tree_ata already exists.
+  //     This is the one dropped clause that was doing real regression-guard
+  //     duty. It is NOT machine-checked while the DSL lacks a mint accessor;
+  //     the integration test in tests/spl_mint_tests.rs is the live guard.
+  //
+  //   * `mint_allowed(mint)` -> InvalidMintAddress. Vacuous as deployed
+  //     (`ALLOW_ALL_SPL_TOKENS = true`, `ADMIN_PUBKEY = None` in
+  //     src/constants.rs), so nothing is lost today; a stricter deployment
+  //     needs the allowlist modeled as state to be checkable.
+}
+
+/// Admin: raise or lower the native-SOL tree's deposit cap.
+/// `new_limit == 0` is intentionally unguarded -- see the `initialize`
+/// comment.
+///
+/// Bare `auth authority` lowers to a `is_signer()` check ONLY on the
+/// Pinocchio target (qedgen 2.49.0) -- the stored-authority identity
+/// comparison it is documented to imply is not emitted, which would let any
+/// signer move the cap. The explicit `requires` below is what actually
+/// generates the identity check; keep both.
+handler update_deposit_limit (new_limit : U64) {
+  auth authority
+
+  accounts {
+    tree_account : writable, pda ["merkle_tree"]
+    authority    : signer
+  }
+
+  requires state.authority == authority.pubkey else Unauthorized
+
+  effect {
+    max_deposit_amount := new_limit
+  }
+
+  invariant tree_admin_bound
+}
+
+/// Admin: raise or lower one SPL tree's deposit cap. `new_limit == 0` is
+/// intentionally unguarded -- see the `initialize` comment. Explicit
+/// `requires` for the identity check -- see `update_deposit_limit`.
+handler update_deposit_limit_for_spl (new_limit : U64) {
+  auth authority
+
+  accounts {
+    tree_account : writable, pda ["merkle_tree", mint]
+    mint         : readonly
+    authority    : signer
+  }
+
+  requires state.authority == authority.pubkey else Unauthorized
+
+  effect {
+    max_deposit_amount := new_limit
+  }
+
+  invariant tree_admin_bound
+}
+
+/// Admin: adjust the program-wide fee configuration. `global_config` is a
+/// separate singleton account (its own `authority`, not `state`'s) -- see
+/// the module-level comment. `global_config` is this handler's only writable
+/// non-signer account, so it resolves as the handler's state account and the
+/// bare `auth authority` form checks `state.authority == authority.pubkey`
+/// against that account. The dotted form `auth global_config.authority` says
+/// the same thing but lowers to an unbound `global_config` identifier in the
+/// Pinocchio guards codegen (qedgen 2.49.0), so the bare form is used here.
+handler update_global_config
+    (deposit_fee_rate : Bps)
+    (withdrawal_fee_rate : Bps)
+    (fee_error_margin : Bps) {
+  auth authority
+
+  accounts {
+    global_config : writable, pda ["global_config"]
+    authority     : signer
+  }
+
+  requires state.authority == authority.pubkey else Unauthorized
+  requires deposit_fee_rate <= 10_000 else InvalidFeeRate
+  requires withdrawal_fee_rate <= 10_000 else InvalidFeeRate
+  requires fee_error_margin <= 10_000 else InvalidFeeRate
+}
+
+invariant tree_admin_bound :
+  state.max_deposit_amount >= 0
+
+// `bump` is stored (both init handlers) but never read by a guard in the
+// real program either -- it exists purely as PDA metadata for
+// off-chain/CPI seed reconstruction (`write_without_read`, P3 info,
+// left unaddressed as accurate).
+
+// nullifier_uniqueness (documentation, not a declared `invariant`): each
+// proof's two input_nullifiers claim a nullifier<N> PDA via CreateAccount
+// (src/helper.rs::init_nullifier_account); a reused nullifier fails PDA
+// creation because the account already exists. Nullifier accounts are
+// dynamically-created PDAs keyed by a proof-supplied hash, outside
+// `state`'s scope (no fixed-size Map can index an unbounded, hash-keyed
+// set) -- a description-only `invariant` has no predicate body to lower
+// and fails `qedgen check` with `invariant_no_body` (Severity::Error), the
+// same reasoning `examples/rust/escrow` documents for excluding SPL token
+// balances from its own invariants. So this stays a comment.
+
+// global_config_shared_vault_authority (documentation): global_config is
+// the SPL-vault PDA authority for EVERY mint's tree, not just one. This is
+// why transact_spl's tree_ata/mint binding is load-bearing: without it,
+// global_config's authority-signature is valid over any mint's vault, not
+// just the one the submitted proof was generated against. See Finding 1,
+// .qed/findings/audit-20260814T150536Z.md, and the
+// `requires token_mint(tree_ata) == mint.pubkey` guard in transact_spl
+// above, which is the machine-checkable half of this invariant.
+
+cover sol_deposit_withdraw [initialize, transact, transact]
+cover spl_deposit_withdraw [initialize_tree_account_for_spl_token, transact_spl, transact_spl]
+cover admin_raises_sol_limit [initialize, update_deposit_limit]
+cover admin_raises_spl_limit [initialize_tree_account_for_spl_token, update_deposit_limit_for_spl]
