@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Payroll Flow — how 210 private payments run in 4 minutes</title>
+<style>
+  :root {
+    --paper: #ffffff; --panel: #f5f6f8; --panel-2: #eef0f4;
+    --line: #e4e7ec; --line-2: #d4d8e0;
+    --ink: #0e1116; --body-ink: #3f4757; --mute: #868f9e;
+    --accent: #5b54e6; --accent-soft: #ecebfc;
+    --green: #1a7f4e; --green-soft: #e7f4ed;
+    --amber: #9a6700; --amber-soft: #fff3d6;
+    --red: #b3373a; --red-soft: #fdecec;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--body-ink);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 48px 24px 96px; }
+  h1 { color: var(--ink); font-size: 34px; line-height: 1.2; margin: 0 0 8px; letter-spacing: -0.02em; }
+  h2 { color: var(--ink); font-size: 22px; margin: 56px 0 4px; letter-spacing: -0.01em; }
+  h2 .step { color: var(--accent); font-family: var(--mono); font-size: 14px; margin-right: 10px; }
+  .sub { color: var(--mute); margin: 0 0 24px; }
+  p { margin: 10px 0; }
+  .lead { font-size: 18px; color: var(--body-ink); max-width: 46em; }
+  code { font-family: var(--mono); font-size: 0.88em; background: var(--panel-2); padding: 1px 6px; border-radius: 6px; color: var(--ink); }
+  .card { border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; background: var(--paper); }
+  .grid { display: grid; gap: 12px; }
+  .cast { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); margin-top: 16px; }
+  .cast h3 { margin: 0 0 6px; font-size: 15px; color: var(--ink); }
+  .cast p { margin: 0; font-size: 14px; }
+  .tag { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; margin-bottom: 10px; letter-spacing: 0.02em; }
+  .tag.purple { background: var(--accent-soft); color: var(--accent); }
+  .tag.green { background: var(--green-soft); color: var(--green); }
+  .tag.amber { background: var(--amber-soft); color: var(--amber); }
+  .tag.red { background: var(--red-soft); color: var(--red); }
+  .stage { display: grid; grid-template-columns: 130px 1fr; gap: 18px; border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin: 14px 0; background: var(--paper); }
+  .stage .n { font-family: var(--mono); color: var(--accent); font-size: 13px; }
+  .stage h3 { margin: 2px 0 8px; color: var(--ink); font-size: 17px; }
+  .stage .viz { margin: 10px 0 4px; font-family: var(--mono); font-size: 13px; color: var(--ink); overflow-x: auto; white-space: nowrap; padding: 10px 12px; background: var(--panel); border-radius: 10px; }
+  .meta { font-size: 13.5px; margin: 6px 0 0; }
+  .meta b { color: var(--ink); font-weight: 600; }
+  .lanes { border: 1px solid var(--line); border-radius: 14px; padding: 20px; overflow-x: auto; background: var(--paper); }
+  .lane { display: flex; align-items: center; gap: 0; margin: 9px 0; min-width: 720px; }
+  .lane .who { width: 118px; flex: none; font-family: var(--mono); font-size: 12px; color: var(--mute); }
+  .node { flex: none; padding: 6px 12px; border-radius: 9px; font-family: var(--mono); font-size: 12.5px; border: 1px solid var(--line-2); background: var(--panel); color: var(--ink); }
+  .node.dep { background: var(--accent-soft); border-color: #c9c5f4; color: var(--accent); font-weight: 600; }
+  .node.spl { background: #f0edfd; border-color: #d8d3f7; }
+  .node.pay { background: var(--paper); }
+  .arr { flex: none; padding: 0 7px; color: var(--mute); font-family: var(--mono); font-size: 13px; }
+  .arr.wait { color: var(--amber); }
+  .bars { margin-top: 14px; }
+  .bar-row { display: grid; grid-template-columns: 210px 1fr 70px; gap: 12px; align-items: center; margin: 10px 0; font-size: 14px; }
+  .bar-track { background: var(--panel); border-radius: 8px; height: 26px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 8px; background: var(--accent); opacity: 0.85; }
+  .bar-fill.dim { opacity: 0.4; }
+  .bar-num { font-family: var(--mono); font-size: 13px; color: var(--ink); text-align: right; }
+  table { border-collapse: collapse; width: 100%; margin-top: 14px; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--ink); font-size: 13px; letter-spacing: 0.02em; border-bottom: 1px solid var(--line-2); }
+  td:first-child { color: var(--ink); }
+  .yes { color: var(--green); font-weight: 600; }
+  .no { color: var(--red); font-weight: 600; }
+  .part { color: var(--amber); font-weight: 600; }
+  .note { background: var(--panel); border-radius: 12px; padding: 14px 18px; font-size: 14px; margin: 16px 0; }
+  .note b { color: var(--ink); }
+  .footer { margin-top: 72px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--mute); font-size: 13px; }
+  @media (max-width: 720px) { .stage { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Private Payroll — the whole flow</h1>
+  <p class="lead">One employer, 16 pool wallets, 210 employees, 242 transactions, ~4 minutes — and nobody on-chain can prove which employee was paid from which deposit. This page walks the exact flow the engine runs, then explains the two ideas that make it fast: <b>native proving</b> and <b>16 parallel chains</b>.</p>
+
+  <h2><span class="step">00</span>The cast</h2>
+  <div class="grid cast">
+    <div class="card"><span class="tag purple">employer</span><h3>Treasury wallet</h3><p>Holds the company SOL. Funds all 16 pools at the start. Its signature unlocks the private vault.</p></div>
+    <div class="card"><span class="tag purple">shielded</span><h3>16 pool wallets</h3><p>Intermediate shielded wallets. Each one owns a slice of the deposited funds as private notes and pays ~13 employees.</p></div>
+    <div class="card"><span class="tag green">210</span><h3>Employees</h3><p>Receive normal SOL at their public address (v1) or a private note only they can spend (v2 shielded mode).</p></div>
+    <div class="card"><span class="tag amber">backend</span><h3>Relayer + mirror</h3><p>Builds each transaction's zero-knowledge proof from its D1 mirror of the note tree, signs nothing of yours, broadcasts.</p></div>
+    <div class="card"><span class="tag amber">chain</span><h3>Solana + merkle tree</h3><p>Every shielded tx appends 2 encrypted leaves to one tree and nullifies its input notes. This is the public ledger everything proves against.</p></div>
+  </div>
+
+  <h2><span class="step">01</span>Four stages, top to bottom</h2>
+  <p class="sub">Amounts shown for the benchmark run: salary 0.001 SOL (1,000,000 lamports) + relayer fee per pay.</p>
+
+  <div class="stage">
+    <div class="n">stage 1<br>~14s</div>
+    <div>
+      <h3>Deposit — public money enters the shielded pool</h3>
+      <div class="viz">treasury ──deposit(0.2138 SOL)──▶ [leaf 0..1] encrypted notes owned by treasury</div>
+      <p class="meta"><b>Public:</b> the deposit amount and who sent it. <b>Hidden:</b> the note contents (amount, owner, blinding) — leaves are ciphertexts.</p>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="n">stage 2<br>~10s</div>
+    <div>
+      <h3>Split — treasury shields funds to each pool</h3>
+      <div class="viz">treasury notes ──transfer──▶ pool #k note (target for ~13 pays) + treasury change</div>
+      <p class="meta">One shielded transfer per pool (16 total). The input nullifier is spent, two new leaves appear. <b>Public:</b> nothing new — no addresses, no amounts. <b>Hidden:</b> which pool got how much.</p>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="n">stage 3<br>~200s</div>
+    <div>
+      <h3>Payouts — 210 withdrawals, 16 at a time</h3>
+      <div class="viz">pool #k note ──withdraw──▶ employee address gets 0.00101 SOL · pool change note (next pay's input)</div>
+      <p class="meta">Each pay consumes the pool's note and produces a <b>change note</b> — that change is the input of the next pay. This chain-of-change is why a pool pays serially. <b>Public:</b> recipient address + amount of each withdrawal. <b>Hidden:</b> which deposit funded it, the pool's remaining balance.</p>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="n">stage 4<br>anytime</div>
+    <div>
+      <h3>Claim — employee side (v2 shielded mode)</h3>
+      <div class="viz">employee wallet ──scan tree──▶ finds notes encrypted to them ──withdraw──▶ plain SOL</div>
+      <p class="meta">In shielded mode the payout itself is a private note; the employee's wallet scans the tree, decrypts what is theirs, and withdraws whenever they want. <b>Public:</b> nothing until they exit. <b>Hidden:</b> that they were paid at all, and how much.</p>
+    </div>
+  </div>
+
+  <h2><span class="step">02</span>The mental model: 16 serial chains, run in parallel</h2>
+  <p class="sub">The question this answers: "you said each transaction needs the previous one to land — so how is this parallel?" Both are true, at different levels.</p>
+
+  <div class="lanes">
+    <div class="lane"><div class="who">pool 0</div><span class="node dep">deposit</span><span class="arr wait">→</span><span class="node spl">split</span><span class="arr wait">→</span><span class="node pay">pay 1</span><span class="arr wait">→</span><span class="node pay">pay 2</span><span class="arr wait">→</span><span class="node pay">pay 3</span><span class="arr wait">→</span><span class="node pay">…</span><span class="arr wait">→</span><span class="node pay">pay 13</span></div>
+    <div class="lane"><div class="who">pool 1</div><span class="node dep">deposit</span><span class="arr wait">→</span><span class="node spl">split</span><span class="arr wait">→</span><span class="node pay">pay 1</span><span class="arr wait">→</span><span class="node pay">pay 2</span><span class="arr wait">→</span><span class="node pay">…</span><span class="arr wait">→</span><span class="node pay">pay 13</span></div>
+    <div class="lane"><div class="who">pool 2</div><span class="node dep">deposit</span><span class="arr wait">→</span><span class="node spl">split</span><span class="arr wait">→</span><span class="node pay">pay 1</span><span class="arr wait">→</span><span class="node pay">…</span><span class="arr wait">→</span><span class="node pay">pay 13</span></div>
+    <div class="lane"><div class="who">…</div></div>
+    <div class="lane"><div class="who">pool 15</div><span class="node dep">deposit</span><span class="arr wait">→</span><span class="node spl">split</span><span class="arr wait">→</span><span class="node pay">pay 1</span><span class="arr wait">→</span><span class="node pay">…</span><span class="arr wait">→</span><span class="node pay">pay 14</span></div>
+  </div>
+
+  <p><b>Inside one lane, everything is serial.</b> Pay <i>n+1</i> spends the change note created by pay <i>n</i>, and its proof is built from the mirror's view of the tree — so it must wait until pay <i>n</i> is indexed. One deposit → one split → ~13 pays, strictly one after another.</p>
+  <p><b>Across lanes, nothing waits for anything.</b> Pool 7's chain never touches pool 2's notes. Every lane has its own deposit, its own split, its own chain of change notes. That is the entire trick: the 210 pays are not one queue of 210 — they are 16 queues of ~13, running at the same time.</p>
+  <div class="note"><b>Dependency rule in one line:</b> a transaction depends only on the transaction that created the note it spends — the previous pay <i>in its own lane</i>. The engine funds all lanes up front (16 deposits) precisely so no lane ever has to look at another lane.</div>
+
+  <h2><span class="step">03</span>Where the time went — and where it goes now</h2>
+  <p class="sub">Same 210-employee run, localhost surfpool, three configurations.</p>
+
+  <div class="bars">
+    <div class="bar-row"><div>JS prover (snarkjs)</div><div class="bar-track"><div class="bar-fill dim" style="width:100%"></div></div><div class="bar-num">902s</div></div>
+    <div class="bar-row"><div>native prover, 2 waves of 8</div><div class="bar-track"><div class="bar-fill" style="width:30%"></div></div><div class="bar-num">271s</div></div>
+    <div class="bar-row"><div>native prover, 16 lanes</div><div class="bar-track"><div class="bar-fill" style="width:25.5%"></div></div><div class="bar-num">230s</div></div>
+  </div>
+
+  <p><b>What changed:</b> the zero-knowledge proof for each transaction moved from JavaScript (snarkjs, ~9.4s) to a compiled C++ prover (rapidsnark, ~1s) — same circuit, same keys, same output, just computed natively. Proving stopped being the bottleneck.</p>
+  <p><b>What's left:</b> each pay's p50 is ~13s, and only ~1s of that is proving. The rest is waiting for the backend mirror to index the previous transaction — because the relayer builds every proof from mirror state, a pay can't even start until the mirror caught up. The mirror indexes at roughly 1 transaction/second, and 242 transactions at ~1/s ≈ 230s. That's the current floor, not the prover.</p>
+  <div class="note"><b>Path to 1 minute:</b> (1) pay several employees per transaction — needs a v2 circuit with multiple payout legs; (2) prove against an older tree root (valid for the last 100 roots) so pays don't wait for indexing at all. Both are backend/engine work; the client side is already as parallel as it can get.</div>
+
+  <h2><span class="step">04</span>Who can see what</h2>
+  <table>
+    <tr><th>Fact</th><th>On-chain observer</th><th>Relayer (ours)</th><th>Employer</th><th>Other employees</th></tr>
+    <tr><td>Employer deposited 0.2138 SOL</td><td class="yes">yes</td><td>yes</td><td>yes</td><td>yes (if watching)</td></tr>
+    <tr><td>Employee X received 0.00101 SOL</td><td class="yes">yes (v1 exits)</td><td>yes</td><td>yes (payroll list)</td><td>no</td></tr>
+    <tr><td>Which deposit funded employee X's pay</td><td class="no">no</td><td class="no">no</td><td>yes (by construction)</td><td class="no">no</td></tr>
+    <tr><td>Pool balances / remaining funds</td><td class="no">no</td><td class="no">no</td><td>yes</td><td class="no">no</td></tr>
+    <tr><td>Shielded payout exists at all (v2)</td><td class="no">no</td><td class="part">tree activity only</td><td>yes</td><td class="no">no</td></tr>
+  </table>
+  <p class="meta">The privacy guarantee is <b>linkability</b>, not invisibility: entries and exits are public by design (that's what entering/exiting a shielded pool means), but the connection between them is hidden behind the merkle tree, nullifiers, and encrypted notes — the same construction Tornado-style pools use, plus per-note owner commitments.</p>
+
+  <div class="footer">Numbers measured 2026-08-25 on localhost surfpool: 210 employees, 16 pools, salary 1,000,000 lamports + 10,100 relayer fee, zero failed pays and zero retries in the 230s run. See <code>ARCHITECTURE.html</code> for the component/data design and <code>payroll/src/lib/engine.ts</code> for the implementation.</div>
+
+</div>
+</body>
+</html>

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest"
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync } from "node:fs"
 import { join } from "node:path"
 
 import { WasmFactory } from "@lightprotocol/hasher.rs"
@@ -58,13 +58,13 @@ describe.skipIf(!haveArtifacts)("createRapidsnarkProver", () => {
       publicAmount: String(depositAmount),
       extDataHash,
       inAmount: inputs.map((x) => x.amount.toString(10)),
-      inPrivateKey: inputs.map((x) => x.keypair.privkey),
+      inPrivateKey: inputs.map((x) => x.keypair!.privkey),
       inBlinding: inputs.map((x) => x.blinding.toString(10)),
       inPathIndices: [0, 0],
       inPathElements: [dummyPath, dummyPath],
       outAmount: outputs.map((x) => x.amount.toString(10)),
       outBlinding: outputs.map((x) => x.blinding.toString(10)),
-      outPubkey: outputs.map((x) => x.keypair.pubkey),
+      outPubkey: outputs.map((x) => x.keypair!.pubkey),
       mintAddress: WRAPPED_SOL_MINT,
     }
 

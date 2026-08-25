@@ -21,6 +21,16 @@ declare module "snarkjs" {
       proof: unknown,
     ) => Promise<boolean>
   }
+  export const wtns: {
+    calculate: (
+      input: Record<string, unknown>,
+      wasm: string,
+      wtnsPath: string,
+    ) => Promise<void>
+  }
+  export const zKey: {
+    exportVerificationKey: (zkeyPath: string) => Promise<unknown>
+  }
 }
 
 declare module "ffjavascript" {
