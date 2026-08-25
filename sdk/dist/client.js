@@ -317,15 +317,26 @@ export class PrivacyCashClient {
     }
     async withdrawSOL(grossLamports, recipient, opts) {
         await this.unlock();
-        await this.syncNotes(SOL_TREE_KEY, true).catch(() => { });
-        return this.withdrawInternal({
-            treeKey: SOL_TREE_KEY,
-            mintAddress: WRAPPED_SOL_MINT,
-            grossLamports,
-            recipient: toPubkey(recipient),
-            isSpl: false,
-            relay: opts?.relay,
-        });
+        await this.syncNotes(SOL_TREE_KEY).catch(() => { });
+        try {
+            return await this.withdrawInternal({
+                treeKey: SOL_TREE_KEY,
+                mintAddress: WRAPPED_SOL_MINT,
+                grossLamports,
+                recipient: toPubkey(recipient),
+                isSpl: false,
+                relay: opts?.relay,
+            });
+        }
+        catch (e) {
+            // A spent nullifier means the local note set is stale (the note was
+            // spent elsewhere); rebuild it from scratch so the next attempt
+            // selects fresh inputs.
+            if (String(e).includes("NULLIFIER_SPENT")) {
+                await this.syncNotes(SOL_TREE_KEY, true).catch(() => { });
+            }
+            throw e;
+        }
     }
     /**
      * Shielded transfer: pay `netLamports` as a note only the recipient can spend.
@@ -456,16 +467,25 @@ export class PrivacyCashClient {
         await this.unlock();
         const mintPk = toPubkey(mint);
         const mintStr = mintPk.toBase58();
-        await this.syncNotes(mintStr, true).catch(() => { });
-        return this.withdrawInternal({
-            treeKey: mintStr,
-            mintAddress: mintStr,
-            grossLamports: Number(grossRaw),
-            recipient: toPubkey(recipient),
-            isSpl: true,
-            mint: mintPk,
-            relay: opts?.relay,
-        });
+        await this.syncNotes(mintStr).catch(() => { });
+        try {
+            return await this.withdrawInternal({
+                treeKey: mintStr,
+                mintAddress: mintStr,
+                grossLamports: Number(grossRaw),
+                recipient: toPubkey(recipient),
+                isSpl: true,
+                mint: mintPk,
+                relay: opts?.relay,
+            });
+        }
+        catch (e) {
+            // Same stale-note-set recovery as withdrawSOL.
+            if (String(e).includes("NULLIFIER_SPENT")) {
+                await this.syncNotes(mintStr, true).catch(() => { });
+            }
+            throw e;
+        }
     }
     getPrivateBalanceSOL() {
         return this.balanceForMint(WRAPPED_SOL_MINT);
@@ -721,11 +741,12 @@ export class PrivacyCashClient {
             markNoteSpent(this.publicKey, n.id, signature);
         if (change.gt(new BN(0))) {
             await waitForLeafIndex(args.treeKey, nextLeafIndex).catch(() => { });
+            const changeIndex = await this.locateNoteLeaf(args.treeKey, nextLeafIndex, outputs[0]).catch(() => nextLeafIndex);
             saveNote(this.publicKey, {
                 id: newNoteId(),
                 amount: outputs[0].amount.toString(),
                 blinding: outputs[0].blinding.toString(),
-                index: nextLeafIndex,
+                index: changeIndex,
                 mintAddress: args.mintAddress,
                 spent: false,
                 createdAt: Date.now(),
