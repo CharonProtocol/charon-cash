@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { chmod, mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
@@ -41,6 +41,10 @@ export function createRapidsnarkProver(
         opts.wasmPath,
         witnessPath,
       )
+      // The witness embeds the input notes' private keys. The mkdtemp dir is
+      // already 0700; pin the file itself to owner-only so it stays private
+      // even if the process dies before the finally-cleanup runs.
+      await chmod(witnessPath, 0o600)
       await execFileAsync(opts.proverBin, [
         opts.zkeyPath,
         witnessPath,
