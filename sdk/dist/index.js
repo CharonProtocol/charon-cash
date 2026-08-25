@@ -1,6 +1,6 @@
 export { PrivacyCashClient } from "./client";
 export { EncryptionService, Keypair, Utxo, deriveReceiveKeys, encryptUtxoTo, getExtDataHash, getMintAddressField, } from "./crypto";
-export { prove, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers, } from "./prover";
+export { prove, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers, setProver, } from "./prover";
 export { buildTransactTransaction, buildTransactIxData, buildTransactSplTransaction, buildTransactSplInstruction, deriveAccounts, deriveSplTreeAccount, } from "./program";
 export { ensureAlt, fetchAlt, splAltAddresses, envAltAddress, cachedAltAddress, cacheAltAddress, } from "./alt";
 export { LocalMirror, readSolTreeState, readTreeState, readGlobalFees } from "./local-provider";

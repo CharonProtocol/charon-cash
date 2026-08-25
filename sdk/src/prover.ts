@@ -20,6 +20,23 @@ export function setCircuitBuffers(wasm: Uint8Array, zkey: Uint8Array): void {
   zkeyBuf = zkey
 }
 
+/**
+ * Replacement prover for engine runners (server-side batch payroll): receives
+ * the stringified circuit input and returns a proof in the same shape as
+ * groth16.fullProve. The browser keeps the default snarkjs wasm prover; a
+ * native prover (e.g. rapidsnark) is injected by the payroll engine only.
+ */
+export type ProverOverride = (input: Record<string, unknown>) => Promise<{
+  proof: Proof
+  publicSignals: string[]
+}>
+
+let proverOverride: ProverOverride | null = null
+
+export function setProver(fn: ProverOverride | null): void {
+  proverOverride = fn
+}
+
 async function loadCircuit(): Promise<{ wasm: Uint8Array; zkey: Uint8Array }> {
   if (!wasmBuf) wasmBuf = new Uint8Array(await (await fetch(CIRCUIT.WASM_URL)).arrayBuffer())
   if (!zkeyBuf) zkeyBuf = new Uint8Array(await (await fetch(CIRCUIT.ZKEY_URL)).arrayBuffer())
@@ -34,9 +51,11 @@ export async function prove(input: Record<string, unknown>): Promise<{
   proof: Proof
   publicSignals: string[]
 }> {
+  const stringified = utils.stringifyBigInts(input) as Record<string, unknown>
+  if (proverOverride) return proverOverride(stringified)
   const { wasm, zkey } = await loadCircuit()
   return groth16.fullProve(
-    utils.stringifyBigInts(input) as Record<string, unknown>,
+    stringified,
     wasm,
     zkey,
     undefined,

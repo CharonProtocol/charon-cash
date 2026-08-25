@@ -8,6 +8,10 @@ export function setCircuitBuffers(wasm, zkey) {
     wasmBuf = wasm;
     zkeyBuf = zkey;
 }
+let proverOverride = null;
+export function setProver(fn) {
+    proverOverride = fn;
+}
 async function loadCircuit() {
     if (!wasmBuf)
         wasmBuf = new Uint8Array(await (await fetch(CIRCUIT.WASM_URL)).arrayBuffer());
@@ -20,8 +24,11 @@ async function loadCircuit() {
  * ArrayBuffers and reused. Mirrors privacy-cash-sdk prove() (single-thread).
  */
 export async function prove(input) {
+    const stringified = utils.stringifyBigInts(input);
+    if (proverOverride)
+        return proverOverride(stringified);
     const { wasm, zkey } = await loadCircuit();
-    return groth16.fullProve(utils.stringifyBigInts(input), wasm, zkey, undefined, { singleThread: true }, { singleThread: true });
+    return groth16.fullProve(stringified, wasm, zkey, undefined, { singleThread: true }, { singleThread: true });
 }
 /** Parse a groth16 proof into the byte layout the Pinocchio Proof struct expects. */
 export function parseProofToBytesArray(proof) {

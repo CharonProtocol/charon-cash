@@ -8,6 +8,17 @@ export interface Proof {
 /** Inject pre-loaded circuit buffers (used by tests / non-browser runners). */
 export declare function setCircuitBuffers(wasm: Uint8Array, zkey: Uint8Array): void;
 /**
+ * Replacement prover for engine runners (server-side batch payroll): receives
+ * the stringified circuit input and returns a proof in the same shape as
+ * groth16.fullProve. The browser keeps the default snarkjs wasm prover; a
+ * native prover (e.g. rapidsnark) is injected by the payroll engine only.
+ */
+export type ProverOverride = (input: Record<string, unknown>) => Promise<{
+    proof: Proof;
+    publicSignals: string[];
+}>;
+export declare function setProver(fn: ProverOverride | null): void;
+/**
  * Generate a groth16 proof in-browser. wasm/zkey are fetched once as
  * ArrayBuffers and reused. Mirrors privacy-cash-sdk prove() (single-thread).
  */

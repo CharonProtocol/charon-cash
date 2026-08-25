@@ -21,7 +21,9 @@ export {
   parseProofToBytesArray,
   parseToBytesArray,
   setCircuitBuffers,
+  setProver,
 } from "./prover"
+export type { ProverOverride } from "./prover"
 export {
   buildTransactTransaction,
   buildTransactIxData,

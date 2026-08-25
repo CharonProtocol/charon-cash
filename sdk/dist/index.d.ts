@@ -1,7 +1,8 @@
 export { PrivacyCashClient } from "./client";
 export type { Signer, DepositResult, WithdrawResult, SyncResult, PendingTransfer, OnSubmitted, } from "./client";
 export { EncryptionService, Keypair, Utxo, deriveReceiveKeys, encryptUtxoTo, getExtDataHash, getMintAddressField, } from "./crypto";
-export { prove, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers, } from "./prover";
+export { prove, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers, setProver, } from "./prover";
+export type { ProverOverride } from "./prover";
 export { buildTransactTransaction, buildTransactIxData, buildTransactSplTransaction, buildTransactSplInstruction, deriveAccounts, deriveSplTreeAccount, } from "./program";
 export type { ProofBytes, TransactAccounts } from "./program";
 export { ensureAlt, fetchAlt, splAltAddresses, envAltAddress, cachedAltAddress, cacheAltAddress, } from "./alt";
