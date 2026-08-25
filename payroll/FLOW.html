@@ -83,7 +83,7 @@
     <div class="card"><span class="tag purple">employer</span><h3>Treasury wallet</h3><p>Holds the company SOL. Funds all 16 pools at the start. Its signature unlocks the private vault.</p></div>
     <div class="card"><span class="tag purple">shielded</span><h3>16 pool wallets</h3><p>Intermediate shielded wallets. Each one owns a slice of the deposited funds as private notes and pays ~13 employees.</p></div>
     <div class="card"><span class="tag green">210</span><h3>Employees</h3><p>Receive normal SOL at their public address (v1) or a private note only they can spend (v2 shielded mode).</p></div>
-    <div class="card"><span class="tag amber">backend</span><h3>Relayer + mirror</h3><p>Builds each transaction's zero-knowledge proof from its D1 mirror of the note tree, signs nothing of yours, broadcasts.</p></div>
+    <div class="card"><span class="tag amber">backend</span><h3>Relayer + mirror</h3><p>Serves merkle paths from its D1 mirror of the note tree and broadcasts the client's finished proofs. Never sees keys, never proves, never holds funds.</p></div>
     <div class="card"><span class="tag amber">chain</span><h3>Solana + merkle tree</h3><p>Every shielded tx appends 2 encrypted leaves to one tree and nullifies its input notes. This is the public ledger everything proves against.</p></div>
   </div>
 
@@ -151,7 +151,7 @@
   </div>
 
   <p><b>What changed:</b> the zero-knowledge proof for each transaction moved from JavaScript (snarkjs, ~9.4s) to a compiled C++ prover (rapidsnark, ~1s) — same circuit, same keys, same output, just computed natively. Proving stopped being the bottleneck.</p>
-  <p><b>What's left:</b> each pay's p50 is ~13s, and only ~1s of that is proving. The rest is waiting for the backend mirror to index the previous transaction — because the relayer builds every proof from mirror state, a pay can't even start until the mirror caught up. The mirror indexes at roughly 1 transaction/second, and 242 transactions at ~1/s ≈ 230s. That's the current floor, not the prover.</p>
+  <p><b>What's left:</b> each pay's p50 is ~13s, and only ~1s of that is proving. The proof itself is computed on the employer's machine (the relayer never proves) — but it needs fresh inputs from the mirror: the change note's leaf and a current-root merkle path. So a pay can't even start until the mirror indexed the previous one. The mirror indexes at roughly 1 transaction/second, and 242 transactions at ~1/s ≈ 230s. That's the current floor, not the prover.</p>
   <div class="note"><b>Path to 1 minute:</b> (1) pay several employees per transaction — needs a v2 circuit with multiple payout legs; (2) prove against an older tree root (valid for the last 100 roots) so pays don't wait for indexing at all. Both are backend/engine work; the client side is already as parallel as it can get.</div>
 
   <h2><span class="step">04</span>Who can see what</h2>
