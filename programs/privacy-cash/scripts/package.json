@@ -1,0 +1,7 @@
+{
+  "name": "circom-scripts",
+  "private": true,
+  "dependencies": {
+    "circomlib": "0.5.5"
+  }
+}

@@ -3,7 +3,7 @@ use pinocchio_pubkey::declare_id;
 
 use crate::instructions::{
     process_initialize, process_initialize_tree_account_for_spl_token, process_transact,
-    process_transact_spl, process_update_global_config,
+    process_transact_batch3, process_transact_spl, process_update_global_config,
     update_deposit_limit::process_update_deposit_limit,
     update_deposit_limit_for_spl::process_update_deposit_limit_for_spl, PrivacyCashInstructions,
 };
@@ -36,6 +36,7 @@ fn process_instructions(
             process_initialize_tree_account_for_spl_token(accounts, data)?
         }
         PrivacyCashInstructions::Transact => process_transact(accounts, data)?,
+        PrivacyCashInstructions::TransactBatch3 => process_transact_batch3(accounts, data)?,
         PrivacyCashInstructions::TransactSpl => process_transact_spl(accounts, data)?,
         PrivacyCashInstructions::UpdateDepositLimit => {
             process_update_deposit_limit(accounts, data)?
