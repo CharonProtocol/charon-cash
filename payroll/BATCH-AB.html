@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Batch Payout A/B</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --bg: #0C0E12;
+    --panel: #151823;
+    --panel-2: #1B1F2C;
+    --line: #262B3B;
+    --text: #E9EBF4;
+    --muted: #98A0B6;
+    --accent: #8B85F0;
+    --base: #5C6478;
+    --good: #3FD68F;
+    --good-ink: #0B1F16;
+    --warn: #E5A54B;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #F3F4F9;
+      --panel: #FFFFFF;
+      --panel-2: #EDEFF6;
+      --line: #D9DDE9;
+      --text: #171923;
+      --muted: #5A617A;
+      --accent: #6A61E8;
+      --base: #8B93A8;
+      --good: #0E9F6E;
+      --good-ink: #FFFFFF;
+      --warn: #B4770E;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #F3F4F9;
+    --panel: #FFFFFF;
+    --panel-2: #EDEFF6;
+    --line: #D9DDE9;
+    --text: #171923;
+    --muted: #5A617A;
+    --accent: #6A61E8;
+    --base: #8B93A8;
+    --good: #0E9F6E;
+    --good-ink: #FFFFFF;
+    --warn: #B4770E;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 48px 24px 72px; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 10px;
+  }
+  h1 {
+    font-size: clamp(30px, 5vw, 42px);
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    line-height: 1.1;
+    margin: 0 0 8px;
+    text-wrap: balance;
+  }
+  .sub { color: var(--muted); max-width: 62ch; margin: 0 0 36px; }
+  .sub strong { color: var(--text); font-weight: 600; }
+
+  section { margin-top: 44px; }
+  h2 {
+    font-size: 13px;
+    font-family: var(--mono);
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 16px;
+  }
+
+  .verdict { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 640px) { .verdict { grid-template-columns: 1fr; } }
+  .vcard {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px 20px 20px;
+  }
+  .vcard .label { font-size: 12.5px; color: var(--muted); font-weight: 500; }
+  .vnums {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    margin: 6px 0 14px;
+  }
+  .from { font-size: 26px; font-weight: 500; color: var(--muted); }
+  .arrow { color: var(--muted); font-size: 20px; }
+  .to { font-size: 40px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; }
+  .unit { font-size: 15px; color: var(--muted); font-weight: 500; }
+  .chip {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--good-ink);
+    background: var(--good);
+    border-radius: 999px;
+    padding: 2px 11px;
+    letter-spacing: 0.02em;
+  }
+  .vnote { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+
+  .chart { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; margin-top: 14px; }
+  .chart + .chart { margin-top: 14px; }
+  .chart-title { font-size: 14px; font-weight: 600; margin-bottom: 14px; }
+  .crow { display: grid; grid-template-columns: 96px 1fr 84px; gap: 12px; align-items: center; margin: 9px 0; }
+  .crow .lb { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+  .crow .val { font-family: var(--mono); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+  .track { height: 14px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+  .fill { height: 100%; border-radius: 4px; }
+  .fill.base { background: var(--base); }
+  .fill.acc  { background: var(--accent); }
+
+  .tblwrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 14px; }
+  th, td { padding: 10px 14px; text-align: right; border-bottom: 1px solid var(--line); }
+  th { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; background: var(--panel); }
+  td:first-child, th:first-child { text-align: left; }
+  td { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  td:first-child { font-family: var(--sans); color: var(--muted); }
+  tr:last-child td { border-bottom: none; }
+  td .b { color: var(--accent); font-weight: 600; }
+  td .same { color: var(--muted); }
+
+  .math { list-style: none; padding: 0; margin: 0; }
+  .math li {
+    display: grid; grid-template-columns: 1fr auto; gap: 16px;
+    padding: 12px 2px; border-bottom: 1px solid var(--line); align-items: baseline;
+  }
+  .math li:last-child { border-bottom: none; }
+  .math .expr { font-family: var(--mono); font-size: 14px; color: var(--muted); }
+  .math .expr b { color: var(--text); font-weight: 500; }
+  .math .res { font-family: var(--mono); font-size: 16px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+
+  .gauge { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; }
+  .gauge-title { font-size: 14px; font-weight: 600; margin-bottom: 14px; }
+  .rail { position: relative; height: 18px; background: var(--panel-2); border-radius: 4px; }
+  .rail .fill { width: 98.7%; background: var(--accent); }
+  .rail .limit {
+    position: absolute; top: -5px; bottom: -5px; right: 0; width: 2px;
+    background: var(--warn);
+  }
+  .rail-lbl { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .callout {
+    border-left: 3px solid var(--warn);
+    background: var(--panel);
+    border-radius: 0 10px 10px 0;
+    padding: 14px 18px;
+    margin-top: 16px;
+    font-size: 14.5px;
+  }
+  .callout + .callout { margin-top: 12px; border-left-color: var(--accent); }
+  .callout b { font-weight: 600; }
+
+  ul.facts { margin: 0; padding: 0 0 0 20px; }
+  ul.facts li { margin: 7px 0; }
+  ul.facts li::marker { color: var(--accent); }
+  .k { font-family: var(--mono); font-size: 0.92em; background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; white-space: nowrap; }
+
+  .foot { margin-top: 52px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); font-family: var(--mono); line-height: 1.7; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">privacy-cash · surfpool localnet · measured 2026-08-27</p>
+  <h1>Batch Payout A/B</h1>
+  <p class="sub">Both sides ran for real, in one session, on the same fresh local chain: <strong>16 employer pools, 210 employees, 5,000,000 lamports each</strong>. Side A pays every employee with the existing 1-to-1 instruction. Side B pays <strong>2 employees per proof</strong> with the new <span class="k">TransactBatch3</span> instruction. Chain reset and re-deployed before each side. No projected numbers on this page — every figure below came out of a run.</p>
+
+  <div class="verdict">
+    <div class="vcard">
+      <div class="label">Pay phase — all 210 employees paid</div>
+      <div class="vnums"><span class="from">82.4 s</span><span class="arrow">&#8594;</span><span class="to">32.4</span><span class="unit">s</span></div>
+      <span class="chip">2.55&#215; faster</span>
+      <p class="vnote">First deposit confirmed to last payout confirmed.</p>
+    </div>
+    <div class="vcard">
+      <div class="label">End-to-end, including setup</div>
+      <div class="vnums"><span class="from">84.4 s</span><span class="arrow">&#8594;</span><span class="to">54.3</span><span class="unit">s</span></div>
+      <span class="chip">1.55&#215; faster</span>
+      <p class="vnote">Batch pays ~20 s extra once for prover load + lookup table; it still wins.</p>
+    </div>
+  </div>
+
+  <section>
+    <h2>The two runs</h2>
+    <div class="chart">
+      <div class="chart-title">Pay phase wall clock</div>
+      <div class="crow"><span class="lb">1-to-1</span><div class="track"><div class="fill base" style="width:100%"></div></div><span class="val">82.4 s</span></div>
+      <div class="crow"><span class="lb">Batch &#215;2</span><div class="track"><div class="fill acc" style="width:39.3%"></div></div><span class="val">32.4 s</span></div>
+    </div>
+    <div class="chart">
+      <div class="chart-title">End-to-end (setup + deposits + payouts)</div>
+      <div class="crow"><span class="lb">1-to-1</span><div class="track"><div class="fill base" style="width:100%"></div></div><span class="val">84.4 s</span></div>
+      <div class="crow"><span class="lb">Batch &#215;2</span><div class="track"><div class="fill acc" style="width:64.3%"></div></div><span class="val">54.3 s</span></div>
+    </div>
+    <div class="chart">
+      <div class="chart-title">Payout transactions put on-chain</div>
+      <div class="crow"><span class="lb">1-to-1</span><div class="track"><div class="fill base" style="width:100%"></div></div><span class="val">210</span></div>
+      <div class="crow"><span class="lb">Batch &#215;2</span><div class="track"><div class="fill acc" style="width:53.3%"></div></div><span class="val">112</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Every measured metric</h2>
+    <div class="tblwrap">
+      <table>
+        <thead>
+          <tr><th>Metric</th><th>1-to-1 payout</th><th>Batch (2/proof)</th><th>Delta</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Employees paid (mirror events)</td><td>210</td><td><span class="b">210</span></td><td><span class="same">same</span></td></tr>
+          <tr><td>Payout txs on-chain</td><td>210</td><td><span class="b">112</span></td><td>&#8722;46.7%</td></tr>
+          <tr><td>All txs incl. 16 deposits</td><td>226</td><td><span class="b">128</span></td><td>&#8722;43.4%</td></tr>
+          <tr><td>ZK proofs — payouts</td><td>210</td><td><span class="b">112</span></td><td>1.875&#215; fewer</td></tr>
+          <tr><td>Prove time p50 / max</td><td>1,373 / 2,113 ms</td><td><span class="b">1,242 / 5,127 ms</span></td><td><span class="same">similar</span></td></tr>
+          <tr><td>Total proving work (CPU ms)</td><td>317,874</td><td><span class="b">180,977</span></td><td>1.76&#215; less</td></tr>
+          <tr><td>Pay phase wall</td><td>82,435 ms</td><td><span class="b">32,362 ms</span></td><td>2.55&#215; faster</td></tr>
+          <tr><td>End-to-end wall</td><td>84,362 ms</td><td><span class="b">54,315 ms</span></td><td>1.55&#215; faster</td></tr>
+          <tr><td>Setup (provers + ALT)</td><td>1,927 ms</td><td>21,953 ms</td><td>+20.0 s once</td></tr>
+          <tr><td>Tree leaves written</td><td>452</td><td><span class="b">368</span></td><td>&#8722;18.6%</td></tr>
+          <tr><td>Largest tx (limit 1,232 B)</td><td>not capped</td><td><span class="b">1,216 B</span></td><td>16 B spare</td></tr>
+          <tr><td>Fee per employee</td><td>12,500 lam</td><td><span class="b">12,500 lam</span></td><td><span class="same">identical</span></td></tr>
+          <tr><td>Failed txs / lane failures</td><td>0 / 0</td><td><span class="b">0 / 0</span></td><td><span class="same">clean</span></td></tr>
+          <tr><td>Chain vs replica after run</td><td>exact match</td><td><span class="b">exact match</span></td><td><span class="same">root in history</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="vnote">One batch prove peaked at 5,127 ms under load; the p50 is what the wall clock actually rode on.</p>
+  </section>
+
+  <section>
+    <h2>Labeled arithmetic</h2>
+    <ul class="math">
+      <li><span class="expr">pay phase &nbsp;82,435 &#247; 32,362</span><span class="res">2.55&#215;</span></li>
+      <li><span class="expr">end-to-end &nbsp;84,362 &#247; 54,315</span><span class="res">1.55&#215;</span></li>
+      <li><span class="expr">payout proofs &nbsp;210 &#247; 112</span><span class="res">1.875&#215; fewer</span></li>
+      <li><span class="expr">per employee &nbsp;392.5 ms &#8594; 154.1 ms &nbsp;(pay wall &#247; 210)</span><span class="res">2.55&#215;</span></li>
+      <li><span class="expr">per employee &nbsp;401.7 ms &#8594; 258.6 ms &nbsp;(end-to-end &#247; 210)</span><span class="res">1.55&#215;</span></li>
+      <li><span class="expr">setup amortized &nbsp;20,026 ms &#247; 210</span><span class="res">+95 ms/employee</span></li>
+      <li><span class="expr">leaves &nbsp;452 &#8594; 368 &nbsp;(change note rides the same proof)</span><span class="res">&#8722;84 leaves</span></li>
+      <li><span class="expr">fees &nbsp;25,000 per batch tx = 2 &#215; 12,500</span><span class="res">parity</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>The 1,232-byte wall</h2>
+    <div class="gauge">
+      <div class="gauge-title">Batch payout tx &#8212; largest of 112, at pay 5,000,000</div>
+      <div class="rail"><div class="fill acc"></div><div class="limit"></div></div>
+      <div class="rail-lbl"><span>1,216 B used</span><span>1,232 B Solana packet limit</span></div>
+    </div>
+    <div class="callout">
+      <b>Why 2 employees per proof and not more.</b> Solana&#8217;s 1,232-byte transaction packet is the binding constraint, not the prover. Each extra employee adds a ~121-byte encrypted note; a proof paying 4 employees exists and proves offline (736 ms/proof, measured earlier), but its transaction cannot fit in any Solana packet. 2-per-proof with a shared lookup table lands at 1,216 B with 16 B to spare. Getting past this needs a different encoding or client-built proofs &#8212; not a bigger circuit.
+    </div>
+    <div class="callout">
+      <b>Bigger pays break the old path first.</b> Measured today: a 1-to-1 payout at 50,000,000 lamports serializes to 1,233 bytes &#8212; one byte over &#8212; and is rejected, because the SDK&#8217;s single-payout path carries no lookup table. The batch path is the one with headroom.
+    </div>
+  </section>
+
+  <section>
+    <h2>Answers</h2>
+    <ul class="facts">
+      <li><b>Is batching really faster end-to-end?</b> Yes &#8212; 2.55&#215; on the pay phase, 1.55&#215; end-to-end after paying its own 20 s setup, with zero failures on either side.</li>
+      <li><b>What does it cost?</b> Nothing per employee: identical 12,500-lamport fee, same Groth16 verification on-chain, 1.875&#215; fewer signatures and transactions for the chain to carry.</li>
+      <li><b>What&#8217;s the ceiling?</b> 2 employees per proof &#8212; the packet limit, not the prover. Sub-minute for 210 needs client-built proofs or a leaner output encoding.</li>
+      <li><b>Is the old path untouched?</b> Yes. <span class="k">Transact</span> (1-to-1) is byte-identical to before; <span class="k">TransactBatch3</span> ships beside it as instruction 7 with its own verifying key. Both ran clean in the same session.</li>
+      <li><b>Context for the 84 s baseline.</b> That number is itself 2.7&#215; faster than the best 230 s of the relayer-built-proofs era &#8212; in-process arkworks provers plus client-signed transactions did that; batching stacks on top of it.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>The journey to here</h2>
+    <div class="tblwrap">
+      <table>
+        <thead>
+          <tr><th>Stage</th><th>Date</th><th>What was running</th><th>210 employees</th><th>New bottleneck</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>snarkjs JS</td><td>Aug 22&#8211;23</td><td style="text-align:left">snarkjs in JS workers; relayer builds every proof from the D1 mirror; workers capped in waves of 4 after 16 froze the laptop</td><td><b>902 s &#8776; 15 min</b></td><td style="text-align:left">4.0 s/proof, 502 MB per worker</td></tr>
+          <tr><td>rapidsnark</td><td>Aug 25</td><td style="text-align:left">rapidsnark C++ injected, 2&#215;8 waves</td><td><b>271 s</b></td><td style="text-align:left">~1 tx/s mirror indexing</td></tr>
+          <tr><td>16 lanes</td><td>Aug 25</td><td style="text-align:left">best tuning of the relayer-built era</td><td><b>230 s</b></td><td style="text-align:left">every proof waits for the mirror (p50 13 s/pay)</td></tr>
+          <tr><td>arkworks</td><td>Aug 26</td><td style="text-align:left">persistent Rust prover-server, in-process proving, client-signed txs, chain-truth proxy</td><td><b>81.3 s pay wall</b></td><td style="text-align:left">4 provers = laptop RAM ceiling</td></tr>
+          <tr><td>fresh baseline</td><td>Aug 27</td><td style="text-align:left">same architecture, clean A/B re-measure (this page)</td><td><b>84.4 s</b></td><td style="text-align:left">1 proof + 1 tx per employee</td></tr>
+          <tr><td>batch &#215;2</td><td>Aug 27</td><td style="text-align:left">TransactBatch3 on-chain, 2 employees/proof, shared lookup table (this page)</td><td><span class="b">54.3 s</span></td><td style="text-align:left">1,232 B packet caps 2/proof</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="vnote">Whole arc: 902 s &#8594; 54.3 s = <b>16.6&#215;</b> &#8212; 10.7&#215; from the proving stack and architecture, 1.55&#215; from batching on top. Sub-minute for 210 required exactly the two levers named back then: client-built proofs and batch payouts.</p>
+  </section>
+
+  <section>
+    <h2>Conditions &amp; verification</h2>
+    <ul class="facts">
+      <li>Chain wiped, program re-deployed, D1 re-migrated, mirror re-synced before <i>each</i> side (<span class="k">bench/reset-env.sh</span>); both sides started from leaf 0, genesis root.</li>
+      <li>Same 16 employer pools, same 210 registered recipients (13&#8211;14 per pool), same pay of 5,000,000 lamports, same four parallel provers, same relayer and proxy.</li>
+      <li>After each run the on-chain tree PDA was read back and compared to the mirror: next index and root matched exactly (452/452 and 368/368 leaves), final root present in root history.</li>
+      <li>Fresh local ceremony for the batch circuit (powersoftau pot15 &#8594; Groth16), verifying key embedded in the program, swap convention diffed byte-for-byte against the production circuit&#8217;s key.</li>
+      <li>Employee outputs are standard encrypted notes, same format as 1-to-1 payouts, so the existing withdrawal flow is unchanged (withdrawals were not exercised in this bench).</li>
+    </ul>
+  </section>
+
+  <div class="foot">
+    harness: payroll/rust-prover-bench/bench/run.mjs (1-to-1) &#183; run-batch.mjs (batch) &#183; reset-env.sh (env)<br>
+    raw summaries: /tmp/pfast/run-2026-08-27T07-04-11-310Z.json &#183; /tmp/pfast-batch/run-batch-2026-08-27T07-*.json<br>
+    local surfpool only &#183; branch payroll &#183; uncommitted by instruction &#183; nothing pushed
+  </div>
+
+</div>
+</body>
+</html>
