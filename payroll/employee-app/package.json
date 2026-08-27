@@ -1,0 +1,36 @@
+{
+  "name": "privacy-cash-employee",
+  "version": "0.1.0",
+  "main": "index.ts",
+  "private": true,
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "build:bridge": "node bridge/build-bridge.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@solana-mobile/mobile-wallet-adapter-protocol": "^2.2.9",
+    "@solana-mobile/mobile-wallet-adapter-protocol-web3js": "^2.2.9",
+    "@solana/web3.js": "^1.95.4",
+    "buffer": "^6.0.3",
+    "expo": "~57.0.11",
+    "expo-status-bar": "~57.0.1",
+    "privacy-cash-sdk": "file:../../sdk",
+    "react": "19.2.3",
+    "react-native": "0.86.2",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-svg": "15.15.4",
+    "react-native-webview": "13.16.1",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.28.0",
+    "@types/react": "~19.2.2",
+    "babel-preset-expo": "~57.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "~6.0.3"
+  }
+}

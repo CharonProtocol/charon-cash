@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Payroll Employee",
+    "slug": "privacy-cash-employee",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "payrollemployee",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B0E13"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "dev.privacycash.employee"
+    },
+    "android": {
+      "package": "dev.privacycash.employee",
+      "icon": "./assets/icon.png",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0A0D12"
+      },
+      "edgeToEdgeEnabled": false
+    },
+    "plugins": [],
+    "jsEngine": "hermes"
+  }
+}
