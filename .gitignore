@@ -43,3 +43,5 @@ docs/
 
 # local CLI tool state (not project work)
 .commandcode/
+programs/privacy-cash/target/
+programs/privacy-cash/artifacts/circuits/*.ptau
