@@ -4,9 +4,10 @@
 
 import { execFile, spawn } from "node:child_process"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import os, { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
+import { fileURLToPath } from "node:url"
 
 import { existsSync } from "node:fs"
 import { Keypair, PublicKey, VersionedTransaction } from "@solana/web3.js"
@@ -24,7 +25,9 @@ const RPC = process.env.RPC ?? "http://127.0.0.1:8899"
 const PROXY = process.env.PROXY ?? "http://127.0.0.1:8788"
 const PROGRAM_ID = new PublicKey(process.env.PROGRAM_ID ?? "721TvnSURopg7FCsP5ZL9WzWMWXxUutehPGJ81bhwQbr")
 const PROVER_BIN = process.env.RAPIDSNARK_BIN ?? "/tmp/rapidsnark-src/build_osx/src/prover"
-const CIRCUIT = process.env.CIRCUIT ?? "/Users/singupallikartik/Developer/chat/privacy-cash/programs/privacy-cash/artifacts/circuits/transaction2"
+// repo root derived from this file's location (bench/ -> rust-prover-bench -> payroll -> repo)
+const REPO = fileURLToPath(new URL("../../../", import.meta.url))
+const CIRCUIT = process.env.CIRCUIT ?? REPO + "programs/privacy-cash/artifacts/circuits/transaction2"
 const FEE_SLACK_PER_HOP = 1_000_000n // 0.001 SOL per hop for relayer fee
 const OUT_DIR = process.env.OUT_DIR ?? "/tmp/pfast"
 
@@ -37,8 +40,17 @@ sdk.setBackendUrl(PROXY)
 const proveTimes = []
 // cap concurrent proves: 16 simultaneous rapidsnark processes thrash the
 // 4P+4E cores (measured 0.57s solo -> 7.8s at 16-way contention)
-const ARK_BIN = process.env.ARK_BIN ?? "/Users/singupallikartik/Developer/chat/privacy-cash/payroll/rust-prover-bench/target/release/prover-server"
-const ARK_PROVERS = Number(process.env.ARK_PROVERS ?? 4)
+const ARK_BIN = process.env.ARK_BIN ?? REPO + "payroll/rust-prover-bench/target/release/prover-server"
+// prover count scales with the machine: each arkworks server is ~200MB RSS but
+// ~1.2GB of safe headroom under prove load (measured: 6 provers swap-storm an
+// 8GB laptop, 4 run clean); reserve 3GB for system + chain + worker + proxy.
+// 8GB/8-core laptop -> 4 (matches measurement); 16GB -> 9; 32GB -> capped at 16 lanes.
+function defaultProvers() {
+  const gb = os.totalmem() / 2 ** 30
+  const cpus = Math.max(1, os.cpus().length)
+  return Math.max(1, Math.min(16, Math.floor((gb - 3) / 1.25), Math.floor(cpus * 0.75)))
+}
+const ARK_PROVERS = Number(process.env.ARK_PROVERS ?? defaultProvers())
 const PROVE_CONCURRENCY = Number(process.env.PROVE_CONCURRENCY ?? (existsSync(ARK_BIN) ? ARK_PROVERS : 4))
 let proveActive = 0
 const proveWaiters = []

@@ -5,7 +5,7 @@
 
 import http from "node:http"
 import { WasmFactory } from "@lightprotocol/hasher.rs"
-import { PublicKey } from "@solana/web3.js"
+import { AddressLookupTableAccount, PublicKey } from "@solana/web3.js"
 import { ZERO_BYTES } from "./zeros.mjs"
 
 const BACKEND = process.env.BACKEND ?? "http://127.0.0.1:8787"
@@ -93,9 +93,11 @@ function hexToByteArr(hex) {
 // transact ix: disc | proofA 64 | proofB 128 | proofC 64 | root 32 | publicAmount 32
 //            | extDataHash 32 | nullifier0 32 | nullifier1 32 | commitment0 32 | commitment1 32
 //            | extAmount i64le | fee u64le | len u32le enc1 | len u32le enc2 | bump0 bump1
+// batch3 (disc 7): same shape but THREE commitments + THREE length-prefixed encs.
 function decodeTransactIx(data) {
   const disc = data[0]
-  if (disc !== 2 && disc !== 3) return null
+  if (disc !== 2 && disc !== 3 && disc !== 7) return null
+  const nOut = disc === 7 ? 3 : 2
   let o = 1
   const take32 = () => { const s = data.subarray(o, o + 32); o += 32; return s }
   o += 64 + 128 + 64 // proof
@@ -104,30 +106,47 @@ function decodeTransactIx(data) {
   take32() // extDataHash
   const n0 = take32()
   const n1 = take32()
-  const c0 = take32()
-  const c1 = take32()
+  const commitments = []
+  for (let i = 0; i < nOut; i++) commitments.push(take32())
   o += 16 // extAmount + fee
   const readLenPrefixed = () => {
     const len = data.readUInt32LE(o); o += 4
     const s = data.subarray(o, o + len); o += len
     return s
   }
-  const enc1 = readLenPrefixed()
-  const enc2 = readLenPrefixed()
+  const enc = []
+  for (let i = 0; i < nOut; i++) enc.push(readLenPrefixed())
   return {
     root: bufHex(root),
     nullifiers: [bufHex(n0), bufHex(n1)],
-    commitments: [bufHex(c0), bufHex(c1)],
-    enc: [bufHex(enc1), bufHex(enc2)],
+    commitments: commitments.map(bufHex),
+    enc: enc.map(bufHex),
   }
 }
 function bufHex(b) {
   return Buffer.from(b).toString("hex")
 }
 
-// Minimal signed-tx parser: legacy + versioned (v0 w/o ALT).
+// Minimal signed-tx parser: legacy + versioned (v0, with ALT).
 // Returns [{ programIdHex, data }]. Counts are shortvec compact-u16.
-function parseTx(bytes) {
+// ALT entries are resolved by fetching each referenced table over RPC (cached):
+// full key list = static keys ++ writable loaded ++ readonly loaded.
+const altCache = new Map() // tablePubkeyHex -> [addrHex]
+async function loadAlt(tableHex) {
+  if (altCache.has(tableHex)) return altCache.get(tableHex)
+  const b58 = new PublicKey(Buffer.from(tableHex, "hex")).toBase58()
+  const acc = await rpcCall("getAccountInfo", [b58, { encoding: "base64" }])
+  const addrs = []
+  if (acc?.value?.data) {
+    const raw = Buffer.from(acc.value.data[0], "base64")
+    const state = AddressLookupTableAccount.deserialize(raw)
+    for (const a of state.addresses) addrs.push(bufHex(a.toBytes()))
+  }
+  altCache.set(tableHex, addrs)
+  return addrs
+}
+
+async function parseTx(bytes) {
   const cur = {
     b: bytes,
     o: 0,
@@ -157,11 +176,29 @@ function parseTx(bytes) {
     msg.u8() // numReadonly
   }
   const nKeys = msg.cu16()
-  const staticKeys = []
+  const allKeys = []
   for (let i = 0; i < nKeys; i++) {
-    staticKeys.push(bufHex(msg.bytes(32)))
+    allKeys.push(bufHex(msg.bytes(32)))
   }
-  if (versionByte & 0x04) throw new Error("v0 ALT resolution unsupported")
+  if (versionByte & 0x04) {
+    const nTables = msg.cu16()
+    const loadedWritable = []
+    const loadedReadonly = []
+    for (let t = 0; t < nTables; t++) {
+      const tableHex = bufHex(msg.bytes(32))
+      const nW = msg.cu16()
+      const writableIdx = []
+      for (let i = 0; i < nW; i++) writableIdx.push(msg.u8())
+      const nR = msg.cu16()
+      const readonlyIdx = []
+      for (let i = 0; i < nR; i++) readonlyIdx.push(msg.u8())
+      const addrs = await loadAlt(tableHex)
+      for (const idx of writableIdx) loadedWritable.push(addrs[idx])
+      for (const idx of readonlyIdx) loadedReadonly.push(addrs[idx])
+    }
+    // runtime layout: static ++ writable ++ readonly
+    allKeys.push(...loadedWritable, ...loadedReadonly)
+  }
   msg.bytes(32) // blockhash
   const nIx = msg.cu16()
   const out = []
@@ -171,7 +208,7 @@ function parseTx(bytes) {
     msg.bytes(nAcc)
     const dataLen = msg.cu16()
     const data = msg.bytes(dataLen)
-    out.push({ programIdHex: staticKeys[pidIdx] ?? null, data: Buffer.from(data) })
+    out.push({ programIdHex: allKeys[pidIdx] ?? null, data: Buffer.from(data) })
   }
   return out
 }
@@ -223,6 +260,9 @@ async function watchLoop() {
           // that appear in getSignaturesForAddress (i.e. are in a slot), and
           // waiting for "confirmed" here added multi-second replica lag under
           // load — long enough for the SDK's 10s locateNoteLeaf to give up.
+          if (!p.confirmedAt) {
+            console.log(`[watch] ${new Date().toISOString()} status ${sigs[i].slice(0, 16)} ${status} slot=${v.slot} (+${Math.round((Date.now() - p.submittedAt) / 100) / 10}s)`)
+          }
           p.confirmedAt = Date.now()
           p.slot = v.slot
         }
@@ -249,19 +289,18 @@ async function watchLoop() {
         p.processed = true
         const d = p.decode
         sigLeaf.set(sig, replica.nextIndex)
-        appendLeaf(d.commitments[0], d.enc[0], sig, slot)
-        appendLeaf(d.commitments[1], d.enc[1], sig, slot)
-        encIndex.set(d.enc[0], replica.nextIndex - 2)
-        encIndex.set(d.enc[1], replica.nextIndex - 1)
-        spentNullifiers.add(d.nullifiers[0])
-        spentNullifiers.add(d.nullifiers[1])
+        for (let i = 0; i < d.commitments.length; i++) {
+          appendLeaf(d.commitments[i], d.enc[i], sig, slot)
+          encIndex.set(d.enc[i], replica.nextIndex - 1)
+        }
+        for (const nf of d.nullifiers) spentNullifiers.add(nf)
         processedSigs.add(sig)
         pending.delete(sig)
         stats.processed++
         stats.confirmed++
       }
       if (batch.length) {
-        console.log(`[watch] processed ${batch.length} txs -> nextIndex=${replica.nextIndex}`)
+        console.log(`[watch] ${new Date().toISOString()} processed ${batch.length} txs -> nextIndex=${replica.nextIndex} (age ${batch.map(({ p }) => Math.round((Date.now() - p.submittedAt) / 100) / 10 + "s").join(",")})`)
         while (waiters.length) waiters.shift()()
       }
     }
@@ -321,7 +360,7 @@ const server = http.createServer(async (req, res) => {
         try {
           const sig = data.signature
           let decoded = null
-          for (const ix of parseTx(txBytes)) {
+          for (const ix of await parseTx(txBytes)) {
             if (ix.programIdHex === base58ToHex(PROGRAM_ID)) {
               decoded = decodeTransactIx(ix.data)
               if (decoded) break
@@ -332,6 +371,7 @@ const server = http.createServer(async (req, res) => {
           // submitTransaction returns exactly that, and it matches getSignaturesForAddress.
           pending.set(sig, { decode: decoded, submittedAt: Date.now() })
           stats.submitted++
+          console.log(`[submit] ${new Date().toISOString()} tracked ${sig.slice(0, 16)} disc=${decoded.commitments.length === 3 ? 7 : 2}`)
         } catch (e) {
           console.error("[submit] decode failed:", e.message)
         }

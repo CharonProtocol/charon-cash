@@ -17,7 +17,7 @@ use ark_std::rand::thread_rng;
 use num_bigint::{BigInt, BigUint};
 use serde_json::{json, Value};
 
-const CIRCUIT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../programs/privacy-cash/artifacts/circuits/transaction2");
+const DEFAULT_CIRCUIT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../programs/privacy-cash/artifacts/circuits/transaction2");
 
 fn flatten(v: &Value, out: &mut Vec<BigInt>) {
     match v {
@@ -79,14 +79,16 @@ fn main() -> color_eyre::Result<()> {
     let threads: usize = env::var("ARK_THREADS").ok().and_then(|s| s.parse().ok()).unwrap_or(1);
     rayon::ThreadPoolBuilder::new().num_threads(threads).build_global()?;
     let g2_swap = env::var("ARK_G2").as_deref() == Ok("c1c0");
+    let circuit = env::var("ARK_CIRCUIT").unwrap_or_else(|_| DEFAULT_CIRCUIT.to_string());
+    eprintln!("circuit             {circuit}");
 
     let t = std::time::Instant::now();
-    let mut zr = File::open(format!("{CIRCUIT}.zkey"))?;
+    let mut zr = File::open(format!("{circuit}.zkey"))?;
     let (pk, _np) = read_zkey(&mut zr)?;
     eprintln!("zkey load           {:>9.2?}   (threads={threads}, g2_swap={g2_swap})", t.elapsed());
 
     let t = std::time::Instant::now();
-    let cfg = CircomConfig::<Fr>::new(format!("{CIRCUIT}.wasm"), format!("{CIRCUIT}.r1cs"))?;
+    let cfg = CircomConfig::<Fr>::new(format!("{circuit}.wasm"), format!("{circuit}.r1cs"))?;
     eprintln!("r1cs+wasm load      {:>9.2?}", t.elapsed());
 
     let mut builder = CircomBuilder::<Fr>::new(cfg);
