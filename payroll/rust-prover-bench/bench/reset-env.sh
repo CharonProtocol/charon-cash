@@ -53,15 +53,15 @@ sleep 12
 solana program deploy --url http://localhost:8899 --keypair ~/.config/solana/id.json \
   --program-id target/deploy/privacy_cash-keypair.json target/deploy/privacy_cash.so >/dev/null
 
-# 3. D1 wipe + migrations
+# 3. D1 wipe + migrations, THEN dev. Order matters: with dev running first,
+# its D1 object can flush an empty db over the migrated file and every PUT
+# answers 500 "internal error". Migrate first, start dev after.
 rm -rf workers/.wrangler/state
+(cd workers && $WRANGLER d1 migrations apply privacy-cash --local > /tmp/d1-migrate.log 2>&1) || { echo "D1 MIGRATIONS FAILED:"; tail -5 /tmp/d1-migrate.log; exit 1; }
 (cd workers && nohup $WRANGLER dev \
   --port 8787 \
   --var PROGRAM_ID:$PROG_ID \
   --var SUPPORTED_MINTS:11111111111111111111111111111112 > /tmp/wrangler.log 2>&1 &)
-sleep 8
-# migrations with the same pinned wrangler binary as dev; surface failures
-(cd workers && $WRANGLER d1 migrations apply privacy-cash --local > /tmp/d1-migrate.log 2>&1) || { echo "D1 MIGRATIONS FAILED:"; tail -5 /tmp/d1-migrate.log; exit 1; }
 
 # 4. fund relayer + initialize + sync
 solana airdrop 500 --url http://localhost:8899 --keypair /tmp/deploy-payer.json \
