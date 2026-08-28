@@ -221,8 +221,11 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
         .invoke_signed(&[Signer::from(&global_seeds)])?;
     }
 
-    MerkleTree::append::<Poseidon>(proof.output_commitments[0], &mut tree)?;
-    MerkleTree::append::<Poseidon>(proof.output_commitments[1], &mut tree)?;
+    MerkleTree::append_pair::<Poseidon>(
+        proof.output_commitments[0],
+        proof.output_commitments[1],
+        &mut tree,
+    )?;
 
     Ok(())
 }

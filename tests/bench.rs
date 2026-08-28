@@ -482,8 +482,8 @@ fn seed_one_deposit(ctx: &BenchContext, amount: u64, off_chain_tree: &mut Merkle
         authority: ctx.authority.pubkey().to_bytes(),
     };
     OnChainMerkleTree::intialize::<Poseidon>(&mut on_chain_tree).unwrap();
-    OnChainMerkleTree::append::<Poseidon>(commitment0, &mut on_chain_tree).unwrap();
-    OnChainMerkleTree::append::<Poseidon>(commitment1, &mut on_chain_tree).unwrap();
+    OnChainMerkleTree::append_pair::<Poseidon>(commitment0, commitment1, &mut on_chain_tree)
+        .unwrap();
 
     (deposited, on_chain_tree)
 }
