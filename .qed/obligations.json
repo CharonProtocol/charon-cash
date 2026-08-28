@@ -1,0 +1,348 @@
+{
+  "schema_version": 2,
+  "spec": "privacy_cash.qedspec",
+  "spec_hash": "2acc6cc07211e434",
+  "backends": [
+    "kani",
+    "proptest",
+    "lean"
+  ],
+  "entries": [
+    {
+      "backend": "kani",
+      "kind": "guard_rejection",
+      "scope": "transact",
+      "key": "transact",
+      "status": "emitted",
+      "artifact": "verify_transact_rejects_invalid"
+    },
+    {
+      "backend": "kani",
+      "kind": "guard_rejection",
+      "scope": "transact_spl",
+      "key": "transact_spl",
+      "status": "emitted",
+      "artifact": "verify_transact_spl_rejects_invalid"
+    },
+    {
+      "backend": "kani",
+      "kind": "guard_rejection",
+      "scope": "update_deposit_limit",
+      "key": "update_deposit_limit",
+      "status": "emitted",
+      "artifact": "verify_update_deposit_limit_rejects_invalid"
+    },
+    {
+      "backend": "kani",
+      "kind": "guard_rejection",
+      "scope": "update_deposit_limit_for_spl",
+      "key": "update_deposit_limit_for_spl",
+      "status": "emitted",
+      "artifact": "verify_update_deposit_limit_for_spl_rejects_invalid"
+    },
+    {
+      "backend": "kani",
+      "kind": "guard_rejection",
+      "scope": "update_global_config",
+      "key": "update_global_config",
+      "status": "emitted",
+      "artifact": "verify_update_global_config_rejects_invalid"
+    },
+    {
+      "backend": "kani",
+      "kind": "invariant_preservation",
+      "scope": "initialize",
+      "key": "establishes_tree_admin_bound",
+      "status": "emitted",
+      "artifact": "verify_initialize_establishes_tree_admin_bound"
+    },
+    {
+      "backend": "kani",
+      "kind": "invariant_preservation",
+      "scope": "initialize_tree_account_for_spl_token",
+      "key": "establishes_tree_admin_bound",
+      "status": "emitted",
+      "artifact": "verify_initialize_tree_account_for_spl_token_establishes_tree_admin_bound"
+    },
+    {
+      "backend": "kani",
+      "kind": "invariant_preservation",
+      "scope": "update_deposit_limit",
+      "key": "preserves_tree_admin_bound",
+      "status": "emitted",
+      "artifact": "verify_update_deposit_limit_preserves_tree_admin_bound"
+    },
+    {
+      "backend": "kani",
+      "kind": "invariant_preservation",
+      "scope": "update_deposit_limit_for_spl",
+      "key": "preserves_tree_admin_bound",
+      "status": "emitted",
+      "artifact": "verify_update_deposit_limit_for_spl_preserves_tree_admin_bound"
+    },
+    {
+      "backend": "kani",
+      "kind": "effect_conformance",
+      "scope": "initialize",
+      "key": "verify_initialize_effect_authority",
+      "status": "emitted",
+      "artifact": "verify_initialize_effect_authority"
+    },
+    {
+      "backend": "kani",
+      "kind": "effect_conformance",
+      "scope": "initialize",
+      "key": "verify_initialize_effect_max_deposit_amount",
+      "status": "emitted",
+      "artifact": "verify_initialize_effect_max_deposit_amount"
+    },
+    {
+      "backend": "kani",
+      "kind": "effect_conformance",
+      "scope": "initialize",
+      "key": "verify_initialize_effect_bump",
+      "status": "emitted",
+      "artifact": "verify_initialize_effect_bump"
+    },
+    {
+      "backend": "kani",
+      "kind": "effect_conformance",
+      "scope": "initialize_tree_account_for_spl_token",
+      "key": "verify_initialize_tree_account_for_spl_token_effect_authority",
+      "status": "emitted",
+      "artifact": "verify_initialize_tree_account_for_spl_token_effect_authority"
+    },
+    {
+      "backend": "kani",
+      "kind": "effect_conformance",
+      "scope": "initialize_tree_account_for_spl_token",
+      "key": "verify_initialize_tree_account_for_spl_token_effect_max_deposit_amount",
+      "status": "emitted",
+      "artifact": "verify_initialize_tree_account_for_spl_token_effect_max_deposit_amount"
+    },
+    {
+      "backend": "kani",
+      "kind": "effect_conformance",
+      "scope": "initialize_tree_account_for_spl_token",
+      "key": "verify_initialize_tree_account_for_spl_token_effect_bump",
+      "status": "emitted",
+      "artifact": "verify_initialize_tree_account_for_spl_token_effect_bump"
+    },
+    {
+      "backend": "kani",
+      "kind": "effect_conformance",
+      "scope": "update_deposit_limit",
+      "key": "verify_update_deposit_limit_effect_max_deposit_amount",
+      "status": "emitted",
+      "artifact": "verify_update_deposit_limit_effect_max_deposit_amount"
+    },
+    {
+      "backend": "kani",
+      "kind": "effect_conformance",
+      "scope": "update_deposit_limit_for_spl",
+      "key": "verify_update_deposit_limit_for_spl_effect_max_deposit_amount",
+      "status": "emitted",
+      "artifact": "verify_update_deposit_limit_for_spl_effect_max_deposit_amount"
+    },
+    {
+      "backend": "kani",
+      "kind": "cover",
+      "scope": "file",
+      "key": "sol_deposit_withdraw::0",
+      "status": "emitted",
+      "artifact": "cover_sol_deposit_withdraw"
+    },
+    {
+      "backend": "kani",
+      "kind": "cover",
+      "scope": "file",
+      "key": "spl_deposit_withdraw::0",
+      "status": "emitted",
+      "artifact": "cover_spl_deposit_withdraw"
+    },
+    {
+      "backend": "kani",
+      "kind": "cover",
+      "scope": "file",
+      "key": "admin_raises_sol_limit::0",
+      "status": "emitted",
+      "artifact": "cover_admin_raises_sol_limit"
+    },
+    {
+      "backend": "kani",
+      "kind": "cover",
+      "scope": "file",
+      "key": "admin_raises_spl_limit::0",
+      "status": "emitted",
+      "artifact": "cover_admin_raises_spl_limit"
+    },
+    {
+      "backend": "proptest",
+      "kind": "invariant_preservation",
+      "scope": "initialize",
+      "key": "establishes_tree_admin_bound",
+      "status": "emitted",
+      "artifact": "initialize_establishes_tree_admin_bound"
+    },
+    {
+      "backend": "proptest",
+      "kind": "invariant_preservation",
+      "scope": "initialize_tree_account_for_spl_token",
+      "key": "establishes_tree_admin_bound",
+      "status": "emitted",
+      "artifact": "initialize_tree_account_for_spl_token_establishes_tree_admin_bound"
+    },
+    {
+      "backend": "proptest",
+      "kind": "invariant_preservation",
+      "scope": "update_deposit_limit",
+      "key": "preserves_tree_admin_bound",
+      "status": "emitted",
+      "artifact": "update_deposit_limit_preserves_tree_admin_bound"
+    },
+    {
+      "backend": "proptest",
+      "kind": "invariant_preservation",
+      "scope": "update_deposit_limit_for_spl",
+      "key": "preserves_tree_admin_bound",
+      "status": "emitted",
+      "artifact": "update_deposit_limit_for_spl_preserves_tree_admin_bound"
+    },
+    {
+      "backend": "proptest",
+      "kind": "guard_rejection",
+      "scope": "transact",
+      "key": "transact",
+      "status": "emitted",
+      "artifact": "transact_rejects_invalid"
+    },
+    {
+      "backend": "proptest",
+      "kind": "guard_rejection",
+      "scope": "transact_spl",
+      "key": "transact_spl",
+      "status": "emitted",
+      "artifact": "transact_spl_rejects_invalid"
+    },
+    {
+      "backend": "proptest",
+      "kind": "guard_rejection",
+      "scope": "update_deposit_limit",
+      "key": "update_deposit_limit",
+      "status": "unsupported",
+      "reason": "proptest_guard_not_expressible"
+    },
+    {
+      "backend": "proptest",
+      "kind": "guard_rejection",
+      "scope": "update_deposit_limit_for_spl",
+      "key": "update_deposit_limit_for_spl",
+      "status": "unsupported",
+      "reason": "proptest_guard_not_expressible"
+    },
+    {
+      "backend": "proptest",
+      "kind": "guard_rejection",
+      "scope": "update_global_config",
+      "key": "update_global_config",
+      "status": "emitted",
+      "artifact": "update_global_config_rejects_invalid"
+    },
+    {
+      "backend": "lean",
+      "kind": "abort",
+      "scope": "transact",
+      "key": "abort_0",
+      "status": "emitted",
+      "artifact": "transact_aborts_if_DepositLimitExceeded"
+    },
+    {
+      "backend": "lean",
+      "kind": "abort",
+      "scope": "transact_spl",
+      "key": "abort_0",
+      "status": "emitted",
+      "artifact": "transact_spl_aborts_if_DepositLimitExceeded"
+    },
+    {
+      "backend": "lean",
+      "kind": "abort",
+      "scope": "update_deposit_limit",
+      "key": "abort_0",
+      "status": "emitted",
+      "artifact": "update_deposit_limit_aborts_if_Unauthorized"
+    },
+    {
+      "backend": "lean",
+      "kind": "abort",
+      "scope": "update_deposit_limit_for_spl",
+      "key": "abort_0",
+      "status": "emitted",
+      "artifact": "update_deposit_limit_for_spl_aborts_if_Unauthorized"
+    },
+    {
+      "backend": "lean",
+      "kind": "abort",
+      "scope": "update_global_config",
+      "key": "abort_0",
+      "status": "emitted",
+      "artifact": "update_global_config_aborts_if_Unauthorized"
+    },
+    {
+      "backend": "lean",
+      "kind": "abort",
+      "scope": "update_global_config",
+      "key": "abort_1",
+      "status": "emitted",
+      "artifact": "update_global_config_aborts_if_InvalidFeeRate_0"
+    },
+    {
+      "backend": "lean",
+      "kind": "abort",
+      "scope": "update_global_config",
+      "key": "abort_2",
+      "status": "emitted",
+      "artifact": "update_global_config_aborts_if_InvalidFeeRate_1"
+    },
+    {
+      "backend": "lean",
+      "kind": "abort",
+      "scope": "update_global_config",
+      "key": "abort_3",
+      "status": "emitted",
+      "artifact": "update_global_config_aborts_if_InvalidFeeRate_2"
+    },
+    {
+      "backend": "lean",
+      "kind": "cover",
+      "scope": "file",
+      "key": "sol_deposit_withdraw::0",
+      "status": "emitted",
+      "artifact": "cover_sol_deposit_withdraw"
+    },
+    {
+      "backend": "lean",
+      "kind": "cover",
+      "scope": "file",
+      "key": "spl_deposit_withdraw::0",
+      "status": "emitted",
+      "artifact": "cover_spl_deposit_withdraw"
+    },
+    {
+      "backend": "lean",
+      "kind": "cover",
+      "scope": "file",
+      "key": "admin_raises_sol_limit::0",
+      "status": "emitted",
+      "artifact": "cover_admin_raises_sol_limit"
+    },
+    {
+      "backend": "lean",
+      "kind": "cover",
+      "scope": "file",
+      "key": "admin_raises_spl_limit::0",
+      "status": "emitted",
+      "artifact": "cover_admin_raises_spl_limit"
+    }
+  ]
+}

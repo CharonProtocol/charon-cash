@@ -12,3 +12,22 @@ app/.env.local
 # IDE
 .vscode
 .idea
+
+.codegraph/
+
+# QEDGen — tool install, build output, and scratch run state.
+# The qedgen skill and its 26 MB binary belong in ~/.agents/skills/qedgen,
+# not in the project; see the QEDGen verification section of README.md.
+/.agents/
+/programs/target/
+**/.qed/*.log
+**/.qed/last-error.*
+**/.qed/verify-evidence.json
+/fuzz/*/target/
+
+# ...but the generated crate's lockfile must be committed: codegen's built-in
+# compile check runs cargo with --locked and fails without it.
+!/programs/Cargo.lock
+
+/.claude/
+/CLAUDE.md
