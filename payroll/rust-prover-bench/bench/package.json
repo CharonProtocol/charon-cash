@@ -6,7 +6,7 @@
     "@lightprotocol/hasher.rs": "0.2.1",
     "@solana/web3.js": "1.98.4",
     "ffjavascript": "0.3.1",
-    "privacy-cash-sdk": "0.1.7",
+    "privacy-cash-sdk": "file:../../../sdk",
     "snarkjs": "0.7.6",
     "tweetnacl": "1.0.3"
   }
