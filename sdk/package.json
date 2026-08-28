@@ -46,7 +46,11 @@
     "ethers": "^6.17.0",
     "ffjavascript": "^0.3.1",
     "snarkjs": "^0.7.6",
-    "tweetnacl": "^1.0.3"
+    "tweetnacl": "^1.0.3",
+    "@noble/ciphers": "^2.3.0",
+    "@noble/curves": "^2.3.0",
+    "@noble/hashes": "^2.3.0",
+    "@solana/codecs": "^8.0.0"
   },
   "devDependencies": {
     "@types/bn.js": "^5.2.0",
