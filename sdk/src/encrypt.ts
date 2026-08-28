@@ -110,7 +110,7 @@ export async function aes_decrypt(data: Uint8Array, decryptionKey: Uint8Array) {
  */
 export class EncryptionService {
   public static readonly ENCRYPTION_VERSION_V1 = Uint8Array.from([
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+    0, 0, 0, 0, 0, 0, 0, 1,
   ]);
 
   // This represents the wallet's X25519 keypair

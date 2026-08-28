@@ -11,7 +11,7 @@ import { openDB, type IDBPDatabase } from "idb";
 
 const CURRENTDBVERSION = 1;
 
-type Schema = {
+export type StoredNoteSchema = {
   id?: number;
   encryptedNote: Uint8Array;
   walletPubkey: string;
@@ -59,12 +59,12 @@ export class StorageService {
    * @param note
    */
   async insertNote(walletPubkey: string, note: Uint8Array) {
-    const schema: Schema = {
+    const StoredNoteSchema: StoredNoteSchema = {
       encryptedNote: note,
       walletPubkey: walletPubkey,
     };
 
-    await this.db.add(STORENAME, schema);
+    await this.db.add(STORENAME, StoredNoteSchema);
   }
 
   /**
@@ -75,12 +75,12 @@ export class StorageService {
   insertNoteInBatch(notes: [Uint8Array], walletPubkey: string) {
     const tx = this.db.transaction(STORENAME, "readwrite");
     notes.forEach((note) => {
-      const schema: Schema = {
+      const StoredNoteSchema: StoredNoteSchema = {
         encryptedNote: note,
         walletPubkey,
       };
 
-      tx.store.add(schema);
+      tx.store.add(StoredNoteSchema);
     });
     tx.commit();
   }
@@ -88,10 +88,14 @@ export class StorageService {
   /**
    *
    * @param walletPubkey
-   * @returns [`Schema`]
+   * @returns [`StoredNoteSchema = {
+                    id: number;
+                    encryptedNote: Uint8Array;
+                    walletPubkey: string;
+        };`]
    */
   async fetchNotes(walletPubkey: string) {
-    const notes = await this.db.getAllKeysFromIndex(
+    const notes = await this.db.getAllFromIndex(
       STORENAME,
       "walletPubkey",
       walletPubkey,

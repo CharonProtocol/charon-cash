@@ -8,7 +8,11 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use tower_http::request_id::RequestId;
 
-use crate::{error::AppError, response::ApiResponse, state::AppState};
+use crate::{
+    error::AppError,
+    response::{ApiError, ApiResponse},
+    state::AppState,
+};
 
 pub async fn check_registered(
     State(state): State<AppState>,
@@ -20,7 +24,11 @@ pub async fn check_registered(
         Err(e) => return ApiResponse::error(e.into(), req_id),
     };
 
-    ApiResponse::success(true, req_id)
+    if n {
+        ApiResponse::success(true, req_id)
+    } else {
+        ApiResponse::success(false, req_id)
+    }
 }
 
 struct AddUser {
