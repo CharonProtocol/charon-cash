@@ -13,10 +13,11 @@
 For this the `encrypted_output1` and `encrypted_output2` that we send in `process_transact` instruction we have to modify them a bit
 
 ```
-encrypted_output = ephemeral_pubkey (32 bytes)
+encrypted_output = version(8 bytes) + ephemeral_pubkey (32 bytes)
 + nonce (12 bytes, for AES-GCM)
-+ authTag (16 bytes)
 + ciphertext (variable length)
++ authTag (16 bytes)
+
 ```
 
 This makes everything On-Chain and that as only source of truth.
