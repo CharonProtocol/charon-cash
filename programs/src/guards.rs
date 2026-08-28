@@ -41,6 +41,12 @@ pub fn transact(ctx: &Transact, ext_amount: i64, fee: u64) -> ProgramResult {
     if !(((ext_amount) as i128) <= ((__state.max_deposit_amount.get()) as i128)) {
         return Err(ProgramError::from(PrivacyCashError::DepositLimitExceeded));
     }
+    // requires: s.next_index % 2 = 0
+    if !(__state.next_index.get() % 2 == 0) {
+        return Err(ProgramError::from(
+            PrivacyCashError::InvalidMerkleTreeAccount,
+        ));
+    }
     Ok(())
 }
 
@@ -52,6 +58,12 @@ pub fn transact_spl(ctx: &TransactSpl, ext_amount: i64, fee: u64) -> ProgramResu
     // requires: ext_amount ≤ (((s.max_deposit_amount) : Int))
     if !(((ext_amount) as i128) <= ((__state.max_deposit_amount.get()) as i128)) {
         return Err(ProgramError::from(PrivacyCashError::DepositLimitExceeded));
+    }
+    // requires: s.next_index % 2 = 0
+    if !(__state.next_index.get() % 2 == 0) {
+        return Err(ProgramError::from(
+            PrivacyCashError::InvalidMerkleTreeAccount,
+        ));
     }
     Ok(())
 }

@@ -31,7 +31,13 @@ impl MerkleTree {
     /// Do not reintroduce it on an instruction path. It advances `next_index`
     /// by one, and `append_pair` is only correct because `next_index` is
     /// always even; a single append would leave the tree in a state that
-    /// `append_pair` rejects outright.
+    /// `append_pair` rejects outright. That parity is the `tree_index_even`
+    /// invariant in `privacy_cash.qedspec`, machine-checked by the generated
+    /// proptest and Crucible harnesses.
+    #[deprecated(
+        since = "0.1.0",
+        note = "single-leaf append is off the instruction path; use                 MerkleTree::append_pair. Kept only as the reference                 implementation for the equivalence test. Calling this from an                 instruction advances next_index by one and breaks the                 even-parity precondition append_pair depends on."
+    )]
     pub fn append<H: Hasher>(
         leaf: [u8; 32],
         tree_account: &mut MerkleTreeAccount,
@@ -198,6 +204,7 @@ impl MerkleTree {
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // the whole point of these tests is to compare against `append`
 mod tests {
     use super::*;
     use light_hasher::Poseidon;

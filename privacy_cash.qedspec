@@ -6,13 +6,23 @@
 // See README.md for the full instruction-by-instruction spec.
 //
 // Modeled `state`: the per-mint (or native-SOL) Merkle tree account's
-// admin-relevant scalar fields (`authority`, `max_deposit_amount`, `bump`).
-// The same on-chain struct (`MerkleTreeAccount`) backs both the native-SOL
-// tree and every per-mint SPL tree, so one `state` shape covers both. The
-// tree's cryptographic accumulator fields (`subtrees`, `root_history`,
-// `next_index`, `root_index`) are Poseidon-hash machinery, not
-// business-logic state, and are out of scope here — the same exclusion the
-// bundled `examples/rust/escrow` spec applies to SPL token balances.
+// admin-relevant scalar fields (`authority`, `max_deposit_amount`, `bump`),
+// plus the leaf counter `next_index`. The same on-chain struct
+// (`MerkleTreeAccount`) backs both the native-SOL tree and every per-mint
+// SPL tree, so one `state` shape covers both. The tree's cryptographic
+// accumulator fields (`subtrees`, `root_history`, `root_index`) are
+// Poseidon-hash machinery, not business-logic state, and are out of scope
+// here — the same exclusion the bundled `examples/rust/escrow` spec applies
+// to SPL token balances.
+//
+// `next_index` is modeled as a plain counter, NOT as Poseidon machinery. It
+// earns its place because `MerkleTree::append_pair` is only correct while it
+// is even: one `transact` appends its two output commitments as siblings at
+// 2k and 2k+1, and a misaligned pair would silently build a different tree
+// rather than fail. `tree_index_even` below is that precondition, and the
+// `requires state.next_index % 2 == 0` on both transact handlers is the
+// guard the real program enforces (src/merkle_tree.rs::append_pair, which
+// returns InvalidMerkleTreeAccount on an odd index).
 //
 // Two account roles referenced by handlers are deliberately NOT part of
 // `state`:
@@ -29,8 +39,13 @@
 // program internals, the Groth16/BN254 pairing check itself
 // (`utils::verify_proof` / `groth16::Groth16Verifier` — a 1:1 port of
 // Light Protocol's audited `groth16-solana`), the ext_data_hash / nullifier
-// binding, and Poseidon Merkle tree arithmetic (`MerkleTree::append`,
+// binding, and Poseidon Merkle tree arithmetic (`MerkleTree::append_pair`,
 // `MerkleTree::is_known_root`) are trusted, not independently re-derived.
+// `append_pair` is what both transact handlers call. The single-leaf
+// `MerkleTree::append` is deprecated and retained only as the reference
+// implementation its equivalence test compares against; no instruction
+// reaches it. What IS re-derived here is the parity of `next_index` that
+// `append_pair` depends on — the hashing itself remains trusted.
 //
 // These were previously written as uninterpreted `requires` predicates
 // (`proof_valid`, `ext_data_hash_matches`, `public_amount_consistent`,
@@ -62,6 +77,7 @@ state {
   authority          : Pubkey
   max_deposit_amount : U64
   bump               : U8
+  next_index         : U32
 }
 
 type Error
@@ -104,9 +120,11 @@ handler initialize (initial_max_deposit_amount : U64) (tree_account_bump : U8) {
     authority          := authority.pubkey
     max_deposit_amount := initial_max_deposit_amount
     bump               := tree_account_bump
+    next_index         := 0
   }
 
   establishes tree_admin_bound
+  establishes tree_index_even
 }
 
 /// Stands up a second Merkle tree + vault for one SPL mint. Permissionless
@@ -137,15 +155,19 @@ handler initialize_tree_account_for_spl_token (initial_max_deposit_amount : U64)
     authority          := authority.pubkey
     max_deposit_amount := initial_max_deposit_amount
     bump               := tree_account_bump
+    next_index         := 0
   }
 
   establishes tree_admin_bound
+  establishes tree_index_even
 }
 
 /// Native-SOL shielded deposit / withdrawal / transfer. Spends two
 /// `input_nullifiers` (double-spend-checked via nullifier-PDA
 /// `CreateAccount` — see `nullifier_uniqueness`) and appends two new output
-/// commitments to the Merkle tree, gated by a Groth16 proof.
+/// commitments to the Merkle tree, gated by a Groth16 proof. The pair goes in
+/// through one `MerkleTree::append_pair` walk, so `next_index` advances by
+/// exactly two and stays even.
 ///
 /// `ext_amount > 0` is a deposit (signer -> tree vault), `ext_amount < 0`
 /// is a withdrawal (tree vault -> recipient), `fee > 0` additionally pays
@@ -190,6 +212,19 @@ handler transact (ext_amount : I64) (fee : U64) {
   // To machine-check any of these, model the backing data as `state` (e.g.
   // add the root-history ring buffer, then `requires contains(state.roots,
   // proof_root)`) rather than reintroducing an uninterpreted predicate.
+
+  // Both output commitments go in through one leaf-to-root walk
+  // (`MerkleTree::append_pair`), which is only sound when they land as
+  // siblings -- hence the parity guard below. One walk also means the
+  // root-history ring gains a single entry per transaction rather than two,
+  // so a root stays valid for 100 transactions instead of 50.
+  requires state.next_index % 2 == 0 else InvalidMerkleTreeAccount
+
+  effect {
+    next_index := state.next_index + 2
+  }
+
+  invariant tree_index_even
 }
 
 /// SPL-token counterpart of `transact`. Same nullifier / proof / root /
@@ -260,6 +295,19 @@ handler transact_spl (ext_amount : I64) (fee : U64) {
   //     (`ALLOW_ALL_SPL_TOKENS = true`, `ADMIN_PUBKEY = None` in
   //     src/constants.rs), so nothing is lost today; a stricter deployment
   //     needs the allowlist modeled as state to be checkable.
+
+  // Both output commitments go in through one leaf-to-root walk
+  // (`MerkleTree::append_pair`), which is only sound when they land as
+  // siblings -- hence the parity guard below. One walk also means the
+  // root-history ring gains a single entry per transaction rather than two,
+  // so a root stays valid for 100 transactions instead of 50.
+  requires state.next_index % 2 == 0 else InvalidMerkleTreeAccount
+
+  effect {
+    next_index := state.next_index + 2
+  }
+
+  invariant tree_index_even
 }
 
 /// Admin: raise or lower the native-SOL tree's deposit cap.
@@ -336,6 +384,15 @@ handler update_global_config
 
 invariant tree_admin_bound :
   state.max_deposit_amount >= 0
+
+// Every tree opens at index 0, and only `transact` / `transact_spl` move the
+// counter -- always by exactly two, because each appends exactly two output
+// commitments. So the leaf counter is even at every observable point.
+// `MerkleTree::append_pair` relies on this: it hashes the two commitments
+// together at level 0 on the assumption they are siblings, which holds only
+// for an even starting index.
+invariant tree_index_even :
+  state.next_index % 2 == 0
 
 // `bump` is stored (both init handlers) but never read by a guard in the
 // real program either -- it exists purely as PDA metadata for

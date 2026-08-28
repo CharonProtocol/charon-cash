@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "spec": "privacy_cash.qedspec",
-  "spec_hash": "2acc6cc07211e434",
+  "spec_hash": "2dfea9883fc4b969",
   "backends": [
     "kani",
     "proptest",
@@ -59,10 +59,42 @@
     {
       "backend": "kani",
       "kind": "invariant_preservation",
+      "scope": "initialize",
+      "key": "establishes_tree_index_even",
+      "status": "emitted",
+      "artifact": "verify_initialize_establishes_tree_index_even"
+    },
+    {
+      "backend": "kani",
+      "kind": "invariant_preservation",
       "scope": "initialize_tree_account_for_spl_token",
       "key": "establishes_tree_admin_bound",
       "status": "emitted",
       "artifact": "verify_initialize_tree_account_for_spl_token_establishes_tree_admin_bound"
+    },
+    {
+      "backend": "kani",
+      "kind": "invariant_preservation",
+      "scope": "initialize_tree_account_for_spl_token",
+      "key": "establishes_tree_index_even",
+      "status": "emitted",
+      "artifact": "verify_initialize_tree_account_for_spl_token_establishes_tree_index_even"
+    },
+    {
+      "backend": "kani",
+      "kind": "invariant_preservation",
+      "scope": "transact",
+      "key": "preserves_tree_index_even",
+      "status": "emitted",
+      "artifact": "verify_transact_preserves_tree_index_even"
+    },
+    {
+      "backend": "kani",
+      "kind": "invariant_preservation",
+      "scope": "transact_spl",
+      "key": "preserves_tree_index_even",
+      "status": "emitted",
+      "artifact": "verify_transact_spl_preserves_tree_index_even"
     },
     {
       "backend": "kani",
@@ -107,6 +139,14 @@
     {
       "backend": "kani",
       "kind": "effect_conformance",
+      "scope": "initialize",
+      "key": "verify_initialize_effect_next_index",
+      "status": "emitted",
+      "artifact": "verify_initialize_effect_next_index"
+    },
+    {
+      "backend": "kani",
+      "kind": "effect_conformance",
       "scope": "initialize_tree_account_for_spl_token",
       "key": "verify_initialize_tree_account_for_spl_token_effect_authority",
       "status": "emitted",
@@ -127,6 +167,30 @@
       "key": "verify_initialize_tree_account_for_spl_token_effect_bump",
       "status": "emitted",
       "artifact": "verify_initialize_tree_account_for_spl_token_effect_bump"
+    },
+    {
+      "backend": "kani",
+      "kind": "effect_conformance",
+      "scope": "initialize_tree_account_for_spl_token",
+      "key": "verify_initialize_tree_account_for_spl_token_effect_next_index",
+      "status": "emitted",
+      "artifact": "verify_initialize_tree_account_for_spl_token_effect_next_index"
+    },
+    {
+      "backend": "kani",
+      "kind": "effect_conformance",
+      "scope": "transact",
+      "key": "verify_transact_effect_next_index",
+      "status": "emitted",
+      "artifact": "verify_transact_effect_next_index"
+    },
+    {
+      "backend": "kani",
+      "kind": "effect_conformance",
+      "scope": "transact_spl",
+      "key": "verify_transact_spl_effect_next_index",
+      "status": "emitted",
+      "artifact": "verify_transact_spl_effect_next_index"
     },
     {
       "backend": "kani",
@@ -187,10 +251,42 @@
     {
       "backend": "proptest",
       "kind": "invariant_preservation",
+      "scope": "initialize",
+      "key": "establishes_tree_index_even",
+      "status": "emitted",
+      "artifact": "initialize_establishes_tree_index_even"
+    },
+    {
+      "backend": "proptest",
+      "kind": "invariant_preservation",
       "scope": "initialize_tree_account_for_spl_token",
       "key": "establishes_tree_admin_bound",
       "status": "emitted",
       "artifact": "initialize_tree_account_for_spl_token_establishes_tree_admin_bound"
+    },
+    {
+      "backend": "proptest",
+      "kind": "invariant_preservation",
+      "scope": "initialize_tree_account_for_spl_token",
+      "key": "establishes_tree_index_even",
+      "status": "emitted",
+      "artifact": "initialize_tree_account_for_spl_token_establishes_tree_index_even"
+    },
+    {
+      "backend": "proptest",
+      "kind": "invariant_preservation",
+      "scope": "transact",
+      "key": "preserves_tree_index_even",
+      "status": "emitted",
+      "artifact": "transact_preserves_tree_index_even"
+    },
+    {
+      "backend": "proptest",
+      "kind": "invariant_preservation",
+      "scope": "transact_spl",
+      "key": "preserves_tree_index_even",
+      "status": "emitted",
+      "artifact": "transact_spl_preserves_tree_index_even"
     },
     {
       "backend": "proptest",
@@ -259,10 +355,26 @@
     {
       "backend": "lean",
       "kind": "abort",
+      "scope": "transact",
+      "key": "abort_1",
+      "status": "emitted",
+      "artifact": "transact_aborts_if_InvalidMerkleTreeAccount"
+    },
+    {
+      "backend": "lean",
+      "kind": "abort",
       "scope": "transact_spl",
       "key": "abort_0",
       "status": "emitted",
       "artifact": "transact_spl_aborts_if_DepositLimitExceeded"
+    },
+    {
+      "backend": "lean",
+      "kind": "abort",
+      "scope": "transact_spl",
+      "key": "abort_1",
+      "status": "emitted",
+      "artifact": "transact_spl_aborts_if_InvalidMerkleTreeAccount"
     },
     {
       "backend": "lean",
