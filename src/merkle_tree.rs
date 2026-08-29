@@ -60,9 +60,13 @@ impl MerkleTree {
 
         let mut proof = [[0u8; 32]; MERKLE_TREE_HEIGHT as usize];
 
+        // Hoisted for the same reason as in `append_pair`: `zero_bytes()`
+        // returns a 1 KB array by value and the loop reads one entry of it.
+        let zero_bytes = H::zero_bytes();
+
         for i in 0..height {
             let subtree = &mut tree_account.subtrees[i];
-            let zero_byte = H::zero_bytes()[i];
+            let zero_byte = zero_bytes[i];
 
             if current_index % 2 == 0 {
                 left = current_level_hash;

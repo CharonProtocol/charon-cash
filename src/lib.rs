@@ -10,6 +10,7 @@ use crate::instructions::{
 
 pub mod constants;
 pub mod error;
+pub mod field;
 pub mod groth16;
 pub mod helper;
 pub mod instructions;
@@ -19,7 +20,14 @@ pub mod utils;
 
 declare_id!("HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV");
 
-entrypoint!(process_instructions);
+// The widest instruction, `transact_spl`, takes 16 accounts. Sizing the
+// entrypoint's account array to that instead of the 255-slot default keeps the
+// entrypoint stack frame an order of magnitude smaller.
+//
+// The allocator stays: `solana-bn254` allocates its result buffer inside every
+// `alt_bn128` syscall wrapper, so `no_allocator!` would abort the program in
+// `verify_proof`.
+entrypoint!(process_instructions, 16);
 
 fn process_instructions(
     _program_id: &Address,
