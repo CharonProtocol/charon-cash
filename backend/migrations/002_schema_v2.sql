@@ -27,12 +27,13 @@ CREATE TABLE IF NOT EXISTS commitments (
 
 -- This table will be filled by indexer.
 -- id : is added for tracking notes on client side
--- ephemeral_pubkey - note's ephemeral x25519 key used for encryption/decryption
--- ciphertext : encrypted notes
+-- ciphertext : encrypted notes version(8 bytes) + ephemeral_pubkey (32 bytes)
+-- + nonce (12 bytes, for AES-GCM)
+-- + ciphertext (variable length)
+-- + authTag (16 bytes)
 -- updated_at : time at the insertion
 CREATE TABLE IF NOT EXISTS notes (
     id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    ephemeral_pubkey BYTEA NOT NULL,
     ciphertext       BYTEA NOT NULL,
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );

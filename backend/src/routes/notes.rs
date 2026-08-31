@@ -13,7 +13,7 @@ use crate::{
     state::AppState,
 };
 
-type Note = (Vec<u8>, Vec<u8>);
+type Note = (Vec<u8>);
 
 pub async fn send_notes(
     State(state): State<AppState>,

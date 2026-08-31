@@ -6,7 +6,6 @@ import {
   TRANSACT_SPL_IX_DISCRIMINATOR,
 } from "./constants";
 import { Proof } from "./prover";
-import { ProofBytes } from "./program";
 import { MerkleProofPair } from "./api";
 
 // Adjust endian ('le' | 'be') to match how Node bytes were produced on the Rust side.
@@ -167,4 +166,15 @@ export function buildMerkleCircuitInputs(pair: MerkleProofPair) {
   const root = bytesToBN(pair.proof1.root).toString();
 
   return { inPathElements, inPathIndices, root };
+}
+
+export interface ProofBytes {
+  proofA: number[];
+  proofB: number[];
+  proofC: number[];
+  root: number[];
+  publicAmount: number[];
+  extDataHash: number[];
+  inputNullifiers: number[][];
+  outputCommitments: number[][];
 }

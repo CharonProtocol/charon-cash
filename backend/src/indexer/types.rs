@@ -23,23 +23,8 @@ pub enum TransactKind {
 pub struct DecodedTransact {
     pub kind: TransactKind,
     pub output_commitments: [[u8; 32]; 2],
-    pub encrypted_note1: EncryptedNote,
-    pub encrypted_note2: EncryptedNote,
-}
-
-/// This is added as per the new note sharing architecture
-///     ephemeral_pubkey : note's randomly generated pubkey used for encryption and decryption
-///     cipher_text : nonce + authTag  + encrypted_note
-/// ```no_run
-/// encrypted_output = ephemeral_pubkey (32 bytes)
-/// + nonce (12 bytes, for AES-GCM)
-/// + authTag (16 bytes)
-/// + ciphertext (variable length)
-/// ```
-#[derive(Debug, Clone)]
-pub struct EncryptedNote {
-    pub ephemeral_pubkey: Vec<u8>,
-    pub ciphertext: Vec<u8>,
+    pub encrypted_note1: Vec<u8>,
+    pub encrypted_note2: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]

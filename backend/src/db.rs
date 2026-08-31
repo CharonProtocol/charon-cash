@@ -150,21 +150,19 @@ impl Db {
         &self,
         start_from: u64,
         limit: u16,
-    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, DbError> {
-        let rows = sqlx::query::<sqlx::Postgres>(
-            "SELECT ephemeral_pubkey, ciphertext FROM notes WHERE id > $1 LIMIT $2",
-        )
-        .bind(start_from as i64)
-        .bind(limit as i32)
-        .fetch_all(&self.pool)
-        .await?;
+    ) -> Result<Vec<(Vec<u8>)>, DbError> {
+        let rows =
+            sqlx::query::<sqlx::Postgres>("SELECT ciphertext FROM notes WHERE id > $1 LIMIT $2")
+                .bind(start_from as i64)
+                .bind(limit as i32)
+                .fetch_all(&self.pool)
+                .await?;
 
-        let mut ret: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
+        let mut ret: Vec<(Vec<u8>)> = Vec::new();
         for row in rows {
-            let ephemeral_pubkey = row.try_get::<Vec<u8>, _>("ephemeral_pubkey")?;
             let ciphertext = row.try_get::<Vec<u8>, _>("ciphertext")?;
 
-            ret.push((ephemeral_pubkey, ciphertext));
+            ret.push(ciphertext);
         }
 
         Ok(ret)
@@ -205,15 +203,12 @@ impl Db {
         .execute(&mut *conn)
         .await?;
 
-        let note_rows = sqlx::query::<sqlx::Postgres>(
-            "INSERT INTO notes (ephemeral_pubkey,ciphertext) VALUES ($1,$2),($3,$4);",
-        )
-        .bind(tx.decoded.encrypted_note1.ephemeral_pubkey.as_slice())
-        .bind(tx.decoded.encrypted_note1.ciphertext.as_slice())
-        .bind(tx.decoded.encrypted_note2.ephemeral_pubkey.as_slice())
-        .bind(tx.decoded.encrypted_note2.ciphertext.as_slice())
-        .execute(&mut *conn)
-        .await?;
+        let note_rows =
+            sqlx::query::<sqlx::Postgres>("INSERT INTO notes ciphertext VALUES ($1),($2);")
+                .bind(tx.decoded.encrypted_note1)
+                .bind(tx.decoded.encrypted_note2)
+                .execute(&mut *conn)
+                .await?;
 
         let new_next = tx.curr_index + 2;
 

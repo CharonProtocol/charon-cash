@@ -44,7 +44,7 @@ import {
 } from "./utils";
 import { getExtDataHash } from "./crypto";
 import { parseProofToBytesArray, parseToBytesArray, prove } from "./prover";
-import { ProofBytes } from "./program";
+import { ProofBytes } from "./utils";
 
 export interface Signer {
   publicKey: PublicKey;
