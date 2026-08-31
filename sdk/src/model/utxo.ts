@@ -10,6 +10,7 @@ import { PublicKey } from "@solana/web3.js";
 import BN from "bn.js";
 import { ethers } from "ethers";
 import { Keypair } from "./keypair.js";
+import { getMintAddressField } from "../utils.js";
 
 // Byte layout (all integers big-endian):
 // [0..8)    amount       (8 bytes,  u64)
@@ -94,8 +95,8 @@ export class Utxo {
     ]);
   }
 
-  async getNullifier(): Promise<string> {
-    const commitmentValue = await this.getCommitment();
+  getNullifier(): string {
+    const commitmentValue = this.getCommitment();
     const signature = this.keypair.sign(
       commitmentValue,
       new BN(this.index).toString(),
@@ -166,19 +167,4 @@ export class Utxo {
       mintAddress,
     });
   }
-}
-
-export function getMintAddressField(mint: PublicKey): string {
-  const mintStr = mint.toString();
-
-  // Special case for SOL (system program)
-  if (mintStr === "11111111111111111111111111111112") {
-    return mintStr;
-  }
-
-  // For SPL tokens (USDC, USDT, etc): use first 31 bytes (248 bits)
-  // This provides better collision resistance than 8 bytes while still fitting in the field
-  // We will only suppport private SOL, USDC and USDT send, so there won't be any collision.
-  const mintBytes = mint.toBytes();
-  return new BN(mintBytes.slice(0, 31), "be").toString();
 }

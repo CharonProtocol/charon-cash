@@ -54,10 +54,10 @@ pub async fn add_user(
 
 pub async fn get_viewing_key(
     State(state): State<AppState>,
-    Path(path): Path<String>,
+    Path(recipient_pubkey): Path<String>,
     Extension(req_id): Extension<RequestId>,
 ) -> ApiResponse<Vec<u8>> {
-    let key = match state.db.get_viewing_key(path).await {
+    let key = match state.db.get_viewing_key(recipient_pubkey).await {
         Ok(n) => n,
         Err(e) => return ApiResponse::error(e.into(), req_id),
     };

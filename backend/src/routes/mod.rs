@@ -33,7 +33,7 @@ pub fn router(state: AppState) -> Router {
         .route("/indexer/status", get(indexer_status::indexer_status))
         .route("/api/merkle/{tree_key}", get(merkle::tree_state))
         .route(
-            "/api/merkle/{tree_key}/proof/{leaf_index}",
+            "/api/merkle/{tree_key}/proof/{leaf_index1},{leaf_index2}",
             get(merkle::proof),
         )
         .route(
@@ -42,7 +42,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/api/registration/reigster/", post(register::add_user))
         .route(
-            "/api/registration/get_viewing_key/",
+            "/api/registration/get_viewing_key/{recipient_pubkey}",
             post(register::get_viewing_key),
         )
         .route("/api/notes/send_notes/", get(notes::send_notes))

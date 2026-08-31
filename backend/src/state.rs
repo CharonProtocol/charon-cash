@@ -16,6 +16,7 @@ pub struct AppState {
 }
 
 #[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TreeState {
     pub tree_key: String,
     pub next_leaf_index: u64,

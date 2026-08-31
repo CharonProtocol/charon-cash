@@ -1,0 +1,142 @@
+import { PublicKey } from "@solana/web3.js";
+import BN from "bn.js";
+
+export async function getRecipientViewingKey(pubkey: PublicKey) {
+  let response = await fetch(
+    `${process.env.API_URL}/api/registration/get_viewing_key/${encodeURIComponent(pubkey.toString())}`,
+  );
+
+  if (!response.ok) {
+    throw await err(response, "Couldn't Retreive RecipientInfo");
+  }
+
+  let json = await response.json();
+
+  return json.data.proof1.data;
+}
+
+export async function checkRegistration(pubkey: PublicKey) {
+  const response = await fetch(
+    `${process.env.API_URL}/api/registration/check/${encodeURIComponent(pubkey.toString())}`,
+  );
+
+  if (!response.ok) {
+    throw await err(response, "Failed to verify registration");
+  }
+
+  return await response.json();
+}
+
+export type RegistrationInfo = {
+  wallet_pubkey: PublicKey;
+  viewing_pubkey: ViewingKey;
+};
+
+type ViewingKey = Uint8Array;
+
+export async function registerUserInfo(info: RegistrationInfo) {
+  if (info.viewing_pubkey.length != 32) {
+    throw new Error("Length of viewing key must be 32");
+  }
+
+  const response = await fetch(
+    `${process.env.API_URL}/api/registration/register`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(info),
+    },
+  );
+
+  if (!response.ok) {
+    throw await err(response, "Failed To Register User");
+  }
+}
+
+export type TreeState = {
+  nextLeafIndex: BN;
+  treeKey: string;
+  currentRoot: Uint8Array;
+};
+
+export async function getTreeState(mintAddress: string): Promise<TreeState> {
+  const response = await fetch(
+    `${process.env.API_URL}/api/merkle/${encodeURIComponent(mintAddress)}`,
+  );
+
+  if (!response.ok) {
+    throw await err(response, "Failed to get tree State");
+  }
+
+  let json = await response.json();
+
+  let treeState: TreeState = {
+    nextLeafIndex: new BN(json.data.proof1.nextLeafIndex),
+    treeKey: json.data.proof1.treeKey,
+    currentRoot: Uint8Array.from(json.data.proof1.currentRoot),
+  };
+  return treeState;
+}
+
+export type MerkleProof = {
+  proof: Uint8Array[];
+  leaf: Uint8Array;
+  index: number;
+  root: Uint8Array;
+};
+
+export type MerkleProofPair = {
+  proof1: MerkleProof;
+  proof2: MerkleProof;
+};
+
+export async function getMerkleProofForLeaves(
+  mintAddress: string,
+  leafIndex1: string,
+  leafIndex2: string,
+): Promise<MerkleProofPair> {
+  if (leafIndex1 === "0" && leafIndex2 === "0") {
+    throw new Error(
+      "At least one of leafIndex1 or leafIndex2 must be non-zero.",
+    );
+  }
+
+  const response = await fetch(
+    `${process.env.API_URL}/api/merkle/${encodeURIComponent(mintAddress)}/proof/${leafIndex1},${leafIndex2}`,
+  );
+
+  if (!response.ok) {
+    throw await err(response, "Failed to get leaf proof");
+  }
+
+  let json = await response.json();
+
+  let merkleProof1: MerkleProof = {
+    proof: (json.data.proof1.proof as number[][]).map((node) =>
+      Uint8Array.from(node),
+    ),
+    leaf: Uint8Array.from(json.data.proof1.leaf),
+    index: json.data.proof1.index,
+    root: Uint8Array.from(json.data.proof1.root),
+  };
+  let merkleProof2: MerkleProof = {
+    proof: (json.data.proof12.proof as number[][]).map((node) =>
+      Uint8Array.from(node),
+    ),
+    leaf: Uint8Array.from(json.data.proof2.leaf),
+    index: json.data.proof2.index,
+    root: Uint8Array.from(json.data.proof2.root),
+  };
+  return {
+    proof1: merkleProof1,
+    proof2: merkleProof2,
+  };
+}
+
+async function err(response: Response, msg?: string) {
+  return new Error(
+    `${msg},  Status: ${response.status}, Error: ${(await response.json()).data.err}`,
+  );
+}

@@ -1,73 +1,73 @@
-import { SOL_TREE_KEY, backendUrl } from "./constants"
+import { SOL_TREE_KEY, backendUrl } from "./constants";
 
 export interface RelayerInfo {
-  programId: string
-  feeRecipient: string
-  withdrawalFeeRateBps: number
-  feeErrorMarginBps: number
-  supportedMints: { mint: string; feeAta: string }[]
+  programId: string;
+  feeRecipient: string;
+  withdrawalFeeRateBps: number;
+  feeErrorMarginBps: number;
+  supportedMints: { mint: string; feeAta: string }[];
 }
 
 export interface TreeState {
-  nextLeafIndex: number
+  nextLeafIndex: number;
   /** Merkle root as a decimal field-element string (circuit-ready). */
-  root: string
-  knownRoots: string[]
+  root: string;
+  knownRoots: string[];
 }
 
 export interface MerkleProof {
   /** 26 sibling hashes as decimal field-element strings (circuit-ready). */
-  pathElements: string[]
+  pathElements: string[];
   /** 26 direction bits (0 = left, 1 = right). */
-  pathIndices: number[]
+  pathIndices: number[];
 }
 
 export interface IndexedUtxo {
-  leafIndex: number
-  commitment: string
-  encryptedOutputHex: string
-  signature: string
-  slot: number
+  leafIndex: number;
+  commitment: string;
+  encryptedOutputHex: string;
+  signature: string;
+  slot: number;
 }
 
 export interface UtxoRangePage {
-  treeKey: string
-  start: number
-  end: number
-  total: number
-  nextIndex: number
-  hasMore: boolean
-  utxos: IndexedUtxo[]
+  treeKey: string;
+  start: number;
+  end: number;
+  total: number;
+  nextIndex: number;
+  hasMore: boolean;
+  utxos: IndexedUtxo[];
 }
 
 export interface UtxoCheckResult {
-  exists: boolean
-  treeKey?: string
-  leafIndex?: number
-  commitment?: string
-  signature?: string
-  slot?: number
+  exists: boolean;
+  treeKey?: string;
+  leafIndex?: number;
+  commitment?: string;
+  signature?: string;
+  slot?: number;
 }
 
 // Backend URL override set by the host app via setBackendUrl(). When empty,
 // getBackendUrl() falls back to the zero-config default in constants.backendUrl()
 // (VITE_BACKEND_URL, or http://localhost:8080 if that is unset), so the SDK runs
 // with no environment configuration at all.
-let BACKEND_URL = ""
+let BACKEND_URL = "";
 
 export function setBackendUrl(url: string): void {
-  BACKEND_URL = url.replace(/\/$/, "")
+  BACKEND_URL = url.replace(/\/$/, "");
 }
 export function getBackendUrl(): string {
-  return BACKEND_URL || backendUrl()
+  return BACKEND_URL || backendUrl();
 }
 
 function u8ToHex(bytes: Uint8Array): string {
-  let out = ""
+  let out = "";
   for (let i = 0; i < bytes.length; i++) {
-    out += bytes[i].toString(16).padStart(2, "0")
+    out += bytes[i].toString(16).padStart(2, "0");
   }
-  return out
+  return out;
 }
 
 export async function submitTransaction(
@@ -77,23 +77,23 @@ export async function submitTransaction(
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ transaction: u8ToHex(serializedTx) }),
-  })
-  const text = await res.text()
-  let data: unknown = null
+  });
+  const text = await res.text();
+  let data: unknown = null;
   if (text) {
     try {
-      data = JSON.parse(text)
+      data = JSON.parse(text);
     } catch {
-      data = text
+      data = text;
     }
   }
   if (!res.ok) {
-    const err = (data as { error?: { message?: string } } | null)?.error
-    throw new Error(err?.message ?? `HTTP ${res.status}`)
+    const err = (data as { error?: { message?: string } } | null)?.error;
+    throw new Error(err?.message ?? `HTTP ${res.status}`);
   }
-  const payload = data as { signature?: string; status?: string } | null
+  const payload = data as { signature?: string; status?: string } | null;
   if (!payload?.signature) {
-    throw new Error("relayer returned no signature")
+    throw new Error("relayer returned no signature");
   }
   if (
     payload.status &&
@@ -101,31 +101,31 @@ export async function submitTransaction(
     payload.status !== "submitted" &&
     payload.status !== "ok"
   ) {
-    throw new Error(`relayer status: ${payload.status}`)
+    throw new Error(`relayer status: ${payload.status}`);
   }
-  return payload.signature
+  return payload.signature;
 }
 
 /** Relayer-signed withdraw: POST proof fields; backend builds + signs + submits. */
 export async function relayWithdraw(req: {
-  kind: "sol" | "spl"
-  proofA: number[]
-  proofB: number[]
-  proofC: number[]
-  root: number[]
-  publicAmount: number[]
-  extDataHash: number[]
-  inputNullifiers: number[][]
-  outputCommitments: number[][]
-  extAmount: number
-  fee: number
-  encryptedOutput1: Uint8Array
-  encryptedOutput2: Uint8Array
+  kind: "sol" | "spl";
+  proofA: number[];
+  proofB: number[];
+  proofC: number[];
+  root: number[];
+  publicAmount: number[];
+  extDataHash: number[];
+  inputNullifiers: number[][];
+  outputCommitments: number[][];
+  extAmount: number;
+  fee: number;
+  encryptedOutput1: Uint8Array;
+  encryptedOutput2: Uint8Array;
   /** SOL: wallet. SPL: recipient ATA. */
-  recipient: string
-  mint?: string
+  recipient: string;
+  mint?: string;
   /** SPL: wallet that owns the recipient ATA. */
-  recipientOwner?: string
+  recipientOwner?: string;
 }): Promise<string> {
   const body = {
     kind: req.kind,
@@ -144,28 +144,28 @@ export async function relayWithdraw(req: {
     recipient: req.recipient,
     mint: req.mint,
     recipient_owner: req.recipientOwner,
-  }
+  };
   const res = await fetch(getBackendUrl() + "/api/relayer", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
-  })
-  const text = await res.text()
-  let data: unknown = null
+  });
+  const text = await res.text();
+  let data: unknown = null;
   if (text) {
     try {
-      data = JSON.parse(text)
+      data = JSON.parse(text);
     } catch {
-      data = text
+      data = text;
     }
   }
   if (!res.ok) {
-    const err = (data as { error?: { message?: string } } | null)?.error
-    throw new Error(err?.message ?? `HTTP ${res.status}`)
+    const err = (data as { error?: { message?: string } } | null)?.error;
+    throw new Error(err?.message ?? `HTTP ${res.status}`);
   }
-  const payload = data as { signature?: string; status?: string } | null
+  const payload = data as { signature?: string; status?: string } | null;
   if (!payload?.signature) {
-    throw new Error("relayer returned no signature")
+    throw new Error("relayer returned no signature");
   }
   if (
     payload.status &&
@@ -173,48 +173,48 @@ export async function relayWithdraw(req: {
     payload.status !== "submitted" &&
     payload.status !== "ok"
   ) {
-    throw new Error(`relayer status: ${payload.status}`)
+    throw new Error(`relayer status: ${payload.status}`);
   }
-  return payload.signature
+  return payload.signature;
 }
 
 export function bytesToHex(bytes: ArrayLike<number>): string {
-  let out = "0x"
+  let out = "0x";
   for (let i = 0; i < bytes.length; i++)
-    out += (bytes as number[])[i].toString(16).padStart(2, "0")
-  return out
+    out += (bytes as number[])[i].toString(16).padStart(2, "0");
+  return out;
 }
 function hexToDecimal(hex: string): string {
-  return BigInt(hex).toString()
+  return BigInt(hex).toString();
 }
 
 /** Poseidon / Fr decimal string → 32-byte big-endian hex (no 0x). */
 export function fieldToHex32(dec: string): string {
-  let hex = BigInt(dec).toString(16)
-  if (hex.length % 2) hex = "0" + hex
-  return hex.padStart(64, "0")
+  let hex = BigInt(dec).toString(16);
+  if (hex.length % 2) hex = "0" + hex;
+  return hex.padStart(64, "0");
 }
 
 async function getJson(path: string): Promise<any> {
-  const res = await fetch(getBackendUrl() + path)
-  const text = await res.text()
-  let data: unknown = null
+  const res = await fetch(getBackendUrl() + path);
+  const text = await res.text();
+  let data: unknown = null;
   if (text) {
     try {
-      data = JSON.parse(text)
+      data = JSON.parse(text);
     } catch {
-      data = text
+      data = text;
     }
   }
   if (!res.ok) {
-    const err = (data as { error?: { message?: string } } | null)?.error
-    throw new Error(err?.message ?? `HTTP ${res.status}`)
+    const err = (data as { error?: { message?: string } } | null)?.error;
+    throw new Error(err?.message ?? `HTTP ${res.status}`);
   }
-  return data
+  return data;
 }
 
 export async function fetchRelayerInfo(): Promise<RelayerInfo> {
-  const r = await getJson("/api/relayer/info")
+  const r = await getJson("/api/relayer/info");
   return {
     programId: r.program_id,
     feeRecipient: r.fee_recipient,
@@ -224,61 +224,63 @@ export async function fetchRelayerInfo(): Promise<RelayerInfo> {
       mint: m.mint,
       feeAta: m.fee_ata,
     })),
-  }
+  };
 }
 
 export interface BlockhashInfo {
-  blockhash: string
-  slot: number
+  blockhash: string;
+  slot: number;
 }
 
 /** Latest blockhash + slot from the backend — no client RPC needed to build a tx. */
 export async function fetchBlockhash(): Promise<BlockhashInfo> {
-  const r = await getJson("/api/relayer/blockhash")
-  return { blockhash: r.blockhash, slot: Number(r.slot) }
+  const r = await getJson("/api/relayer/blockhash");
+  return { blockhash: r.blockhash, slot: Number(r.slot) };
 }
 
 /** Raw Address Lookup Table account bytes (hex), or null if it doesn't exist. */
 export async function fetchAltAccount(address: string): Promise<string | null> {
-  const r = await getJson(`/api/relayer/alt/${encodeURIComponent(address)}`)
-  return r.exists ? (r.data_hex as string) : null
+  const r = await getJson(`/api/relayer/alt/${encodeURIComponent(address)}`);
+  return r.exists ? (r.data_hex as string) : null;
 }
 
 export async function fetchTreeState(treeKey: string): Promise<TreeState> {
-  const s = await getJson(`/api/merkle/${encodeURIComponent(treeKey)}`)
+  const s = await getJson(`/api/merkle/${encodeURIComponent(treeKey)}`);
   return {
     nextLeafIndex: s.next_leaf_index,
     root: hexToDecimal("0x" + s.current_root),
     knownRoots: (s.known_roots ?? []).map((h: string) =>
       hexToDecimal("0x" + h),
     ),
-  }
+  };
 }
 
 export async function fetchMerkleProof(
   treeKey: string,
-  leafIndex: number,
+  leafIndex1: number,
+  leafIndex2: number,
 ): Promise<MerkleProof> {
   const p = await getJson(
-    `/api/merkle/${encodeURIComponent(treeKey)}/proof/${leafIndex}`,
-  )
-  const raw = p.path_elements
-  const isNested = Array.isArray(raw) && raw.length > 0 && Array.isArray(raw[0])
+    `/api/merkle/${encodeURIComponent(treeKey)}/proof/${leafIndex1},${leafIndex2}`,
+  );
+  const raw = p.path_elements;
+  const isNested =
+    Array.isArray(raw) && raw.length > 0 && Array.isArray(raw[0]);
   const asHex = isNested
     ? (raw as ArrayLike<number>[]).map((b) => bytesToHex(b))
-    : (raw as string[])
+    : (raw as string[]);
   return {
     pathElements: asHex.map(hexToDecimal),
     pathIndices: p.path_indices,
-  }
+  };
 }
 
 export async function isNullifierSpent(hashHex: string): Promise<boolean> {
   try {
-    const r = await getJson(`/api/nullifier/${encodeURIComponent(hashHex)}`)
-    return !!r.spent
+    const r = await getJson(`/api/nullifier/${encodeURIComponent(hashHex)}`);
+    return !!r.spent;
   } catch {
-    return false
+    return false;
   }
 }
 
@@ -291,8 +293,8 @@ export async function fetchUtxoRange(
     tree_key: treeKey,
     start: String(start),
     end: String(end),
-  })
-  const r = await getJson(`/api/utxos/range?${q}`)
+  });
+  const r = await getJson(`/api/utxos/range?${q}`);
   return {
     treeKey: r.tree_key,
     start: r.start,
@@ -307,19 +309,17 @@ export async function fetchUtxoRange(
       signature: u.signature as string,
       slot: Number(u.slot),
     })),
-  }
+  };
 }
 
 export async function checkEncryptedOutput(
   encryptedHex: string,
   treeKey?: string,
 ): Promise<UtxoCheckResult> {
-  const hex = encryptedHex.replace(/^0x/i, "").toLowerCase()
-  const q = treeKey
-    ? `?tree_key=${encodeURIComponent(treeKey)}`
-    : ""
-  const r = await getJson(`/api/utxos/check/${encodeURIComponent(hex)}${q}`)
-  if (!r.exists) return { exists: false }
+  const hex = encryptedHex.replace(/^0x/i, "").toLowerCase();
+  const q = treeKey ? `?tree_key=${encodeURIComponent(treeKey)}` : "";
+  const r = await getJson(`/api/utxos/check/${encodeURIComponent(hex)}${q}`);
+  if (!r.exists) return { exists: false };
   return {
     exists: true,
     treeKey: r.tree_key,
@@ -327,12 +327,12 @@ export async function checkEncryptedOutput(
     commitment: r.commitment,
     signature: r.signature,
     slot: Number(r.slot),
-  }
+  };
 }
 
 export interface WaitOpts {
-  timeoutMs?: number
-  intervalMs?: number
+  timeoutMs?: number;
+  intervalMs?: number;
 }
 
 /** Poll until `next_leaf_index > minLeafIndex` (i.e. leaves through minLeafIndex exist). */
@@ -341,19 +341,19 @@ export async function waitForLeafIndex(
   minLeafIndex: number,
   opts: WaitOpts = {},
 ): Promise<TreeState> {
-  const timeoutMs = opts.timeoutMs ?? 60_000
-  const intervalMs = opts.intervalMs ?? 750
-  const deadline = Date.now() + timeoutMs
-  let last: TreeState | null = null
+  const timeoutMs = opts.timeoutMs ?? 60_000;
+  const intervalMs = opts.intervalMs ?? 750;
+  const deadline = Date.now() + timeoutMs;
+  let last: TreeState | null = null;
   while (Date.now() < deadline) {
-    last = await fetchTreeState(treeKey)
-    if (last.nextLeafIndex > minLeafIndex) return last
-    await sleep(intervalMs)
+    last = await fetchTreeState(treeKey);
+    if (last.nextLeafIndex > minLeafIndex) return last;
+    await sleep(intervalMs);
   }
   throw new Error(
     `indexer timeout waiting for leaf ${minLeafIndex} on tree ${treeKey}` +
       (last ? ` (next=${last.nextLeafIndex})` : ""),
-  )
+  );
 }
 
 /** Poll until an encrypted output hex appears in the indexer. */
@@ -362,25 +362,25 @@ export async function waitForEncryptedOutput(
   treeKey?: string,
   opts: WaitOpts = {},
 ): Promise<UtxoCheckResult> {
-  const timeoutMs = opts.timeoutMs ?? 60_000
-  const intervalMs = opts.intervalMs ?? 750
-  const deadline = Date.now() + timeoutMs
+  const timeoutMs = opts.timeoutMs ?? 60_000;
+  const intervalMs = opts.intervalMs ?? 750;
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const r = await checkEncryptedOutput(encryptedHex, treeKey)
-    if (r.exists) return r
-    await sleep(intervalMs)
+    const r = await checkEncryptedOutput(encryptedHex, treeKey);
+    if (r.exists) return r;
+    await sleep(intervalMs);
   }
-  throw new Error("indexer timeout waiting for encrypted output")
+  throw new Error("indexer timeout waiting for encrypted output");
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms))
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 export function solTreeKey(): string {
-  return SOL_TREE_KEY
+  return SOL_TREE_KEY;
 }
 
 export function splTreeKey(mint: string): string {
-  return mint
+  return mint;
 }

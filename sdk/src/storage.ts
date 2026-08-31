@@ -97,11 +97,31 @@ export class StorageService {
   async fetchNotes(walletPubkey: string) {
     const notes = await this.db.getAllFromIndex(
       STORENAME,
-      "walletPubkey",
+      "users",
       walletPubkey,
     );
-
     return notes;
+  }
+
+  async fetchPair(walletPubkey: string, id1: number, id2: number) {
+    const tx = this.db.transaction(STORENAME, "readonly");
+    const noteStore = tx.objectStore(STORENAME);
+    const firstNote = await noteStore.get(IDBKeyRange.only(id1));
+    const secondNote = await noteStore.get(IDBKeyRange.only(id2));
+
+    tx.commit();
+
+    return [firstNote, secondNote];
+  }
+
+  async fetchSingle(walletPubkey: string, id1: number) {
+    const tx = this.db.transaction(STORENAME, "readonly");
+    const noteStore = tx.objectStore(STORENAME);
+    const firstNote = await noteStore.get(IDBKeyRange.only(id1));
+
+    tx.commit();
+
+    return firstNote;
   }
 
   async getMerkleIndex() {
