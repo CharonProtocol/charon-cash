@@ -12,7 +12,7 @@ export async function getRecipientViewingKey(pubkey: PublicKey) {
 
   let json = await response.json();
 
-  return json.data.proof1.data;
+  return Uint8Array.from(json.data as number[]);
 }
 
 export async function checkRegistration(pubkey: PublicKey) {
@@ -73,9 +73,9 @@ export async function getTreeState(mintAddress: string): Promise<TreeState> {
   let json = await response.json();
 
   let treeState: TreeState = {
-    nextLeafIndex: new BN(json.data.proof1.nextLeafIndex),
-    treeKey: json.data.proof1.treeKey,
-    currentRoot: Uint8Array.from(json.data.proof1.currentRoot),
+    nextLeafIndex: new BN(json.data.nextLeafIndex),
+    treeKey: json.data.treeKey,
+    currentRoot: Uint8Array.from(json.data.currentRoot as number[]),
   };
   return treeState;
 }

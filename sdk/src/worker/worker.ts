@@ -30,16 +30,22 @@ async function startWorker(walletPubkey: string, signedMessage: Uint8Array) {
   while (true) {
     let encryptedNotes = await fetchNotes();
 
+    let newNotesAdded = false;
+
     for (let e_note of encryptedNotes) {
       try {
         let decryptedNote = await encryptionService.decrypt(e_note);
 
         await storageService.saveNote(walletPubkey, decryptedNote);
+        newNotesAdded = true;
       } catch (error) {
         continue;
       }
     }
 
+    if (newNotesAdded) {
+      postMessage("syncNotes");
+    }
     await new Promise((resolve) => setTimeout(resolve, POLL_TIME));
   }
 }
