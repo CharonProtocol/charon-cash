@@ -140,3 +140,24 @@ async function err(response: Response, msg?: string) {
     `${msg},  Status: ${response.status}, Error: ${(await response.json()).data.err}`,
   );
 }
+
+export type EncryptedNotes = Uint8Array[];
+
+export async function fetchNotes() {
+  const response = await fetch(`${process.env.API_URL}/api/notes/send_notes/`);
+
+  if (!response.ok) {
+    throw await err(response, "Failed To Fetch Notes");
+  }
+
+  const json = await response.json();
+
+  // it will return number[][]
+  // [notes_in_bytes]
+
+  const encryptedNotes: EncryptedNotes = (json.data as number[][]).map(
+    (e_note: number[]) => Uint8Array.from(e_note),
+  );
+
+  return encryptedNotes;
+}

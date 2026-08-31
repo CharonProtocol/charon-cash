@@ -58,7 +58,7 @@ export class StorageService {
    * @param walletPubkey : wallet whose note this belongs to
    * @param note
    */
-  async insertNote(walletPubkey: string, note: Uint8Array) {
+  async saveNote(walletPubkey: string, note: Uint8Array) {
     const StoredNoteSchema: StoredNoteSchema = {
       encryptedNote: note,
       walletPubkey: walletPubkey,
@@ -72,7 +72,7 @@ export class StorageService {
    * @param walletPubkey : wallet whose note this belongs to
    * @param note
    */
-  insertNoteInBatch(notes: [Uint8Array], walletPubkey: string) {
+  saveNoteBatch(notes: [Uint8Array], walletPubkey: string) {
     const tx = this.db.transaction(STORENAME, "readwrite");
     notes.forEach((note) => {
       const StoredNoteSchema: StoredNoteSchema = {
@@ -94,7 +94,7 @@ export class StorageService {
                     walletPubkey: string;
         };`]
    */
-  async fetchNotes(walletPubkey: string) {
+  async loadNotes(walletPubkey: string) {
     const notes = await this.db.getAllFromIndex(
       STORENAME,
       "users",
@@ -103,7 +103,7 @@ export class StorageService {
     return notes;
   }
 
-  async fetchPair(walletPubkey: string, id1: number, id2: number) {
+  async loadPairOfNotes(walletPubkey: string, id1: number, id2: number) {
     const tx = this.db.transaction(STORENAME, "readonly");
     const noteStore = tx.objectStore(STORENAME);
     const firstNote = await noteStore.get(IDBKeyRange.only(id1));
@@ -114,7 +114,7 @@ export class StorageService {
     return [firstNote, secondNote];
   }
 
-  async fetchSingle(walletPubkey: string, id1: number) {
+  async loadSingleNote(walletPubkey: string, id1: number) {
     const tx = this.db.transaction(STORENAME, "readonly");
     const noteStore = tx.objectStore(STORENAME);
     const firstNote = await noteStore.get(IDBKeyRange.only(id1));

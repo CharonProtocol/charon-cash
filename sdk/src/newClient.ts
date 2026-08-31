@@ -137,8 +137,7 @@ class SilentPay {
 
     const storageService = await StorageService.start();
     // fetch all the notes from local storage and keep them in memory
-    // TODO : Optimize this step by adding spent field while storing
-    let storedNotes = await storageService.fetchNotes(
+    let storedNotes = await storageService.loadNotes(
       owner.publicKey.toString(),
     );
 
@@ -426,7 +425,7 @@ class SilentPay {
     let inputUtxos: Utxo[] = [];
 
     if (requiredNotes.length < 2) {
-      let encryptedNote = await this.storageService.fetchSingle(
+      let encryptedNote = await this.storageService.loadSingleNote(
         this.signer.publicKey.toString(),
         requiredNotes[0].note_id,
       );
@@ -442,7 +441,7 @@ class SilentPay {
       inputUtxos.push(input1);
       inputUtxos.push(input2);
     } else {
-      let encryptedNotes = await this.storageService.fetchPair(
+      let encryptedNotes = await this.storageService.loadPairOfNotes(
         this.signer.publicKey.toString(),
         requiredNotes[0].note_id,
         requiredNotes[1].note_id,
@@ -628,4 +627,6 @@ class SilentPay {
 
     let txid = await this.connection.sendRawTransaction(signedTx.serialize());
   }
+
+  async syncNotes() {}
 }
