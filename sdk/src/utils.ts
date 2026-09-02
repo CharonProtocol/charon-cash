@@ -7,6 +7,7 @@ import {
 } from "./constants";
 import { Proof } from "./prover";
 import { MerkleProofPair } from "./api";
+import { sha256 } from "ethers/crypto";
 
 // Adjust endian ('le' | 'be') to match how Node bytes were produced on the Rust side.
 export function bytesToBN(bytes: Uint8Array): BN {
@@ -177,4 +178,43 @@ export interface ProofBytes {
   extDataHash: number[];
   inputNullifiers: number[][];
   outputCommitments: number[][];
+}
+
+export function getExtDataHash(ext: {
+  recipient: PublicKey | string;
+  extAmount: BN | number | string;
+  encryptedOutput1: Uint8Array;
+  encryptedOutput2: Uint8Array;
+  fee: BN | number | string;
+  feeRecipient: PublicKey | string;
+  mintAddress: PublicKey | string;
+}): Uint8Array {
+  const recipient = toPubkeyBytes(ext.recipient);
+  const feeRecipient = toPubkeyBytes(ext.feeRecipient);
+  const mint = toPubkeyBytes(ext.mintAddress);
+  const extAmount = new BN(ext.extAmount.toString());
+  const fee = new BN(ext.fee.toString());
+
+  const data = Buffer.concat([
+    recipient,
+    new BN(extAmount).toTwos(64).toArrayLike(Buffer, "le", 8),
+    toU32LE(ext.encryptedOutput1.length),
+    Buffer.from(ext.encryptedOutput1),
+    toU32LE(ext.encryptedOutput2.length),
+    Buffer.from(ext.encryptedOutput2),
+    fee.toArrayLike(Buffer, "le", 8),
+    feeRecipient,
+    mint,
+  ]);
+  return Buffer.from(sha256(data).slice(2), "hex");
+}
+
+function toU32LE(n: number): Buffer {
+  const b = Buffer.alloc(4);
+  b.writeUInt32LE(n >>> 0, 0);
+  return b;
+}
+
+function toPubkeyBytes(v: PublicKey | string): Buffer {
+  return Buffer.from((v instanceof PublicKey ? v : new PublicKey(v)).toBytes());
 }

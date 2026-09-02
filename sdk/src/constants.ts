@@ -22,7 +22,12 @@ export const TRANSACT_SPL_IX_DISCRIMINATOR = Buffer.from([
 
 export const PROGRAM_ID = new PublicKey("11111111111111111111111111111112");
 export const ALT_ADDRESS = new PublicKey("11111111111111111111111111111112");
-export const FEE_RECIPIENT = new PublicKey("11111111111111111111111111111112");
+export const FEE_RECIPIENT = new PublicKey(
+  "5kHwyJA15XjiHYxUTGif8NoH25h1dTxjqhscTnf4V1Ua",
+);
+export const SOL_TREE_ACCOUNT = new PublicKey(
+  "9FAfzUefuymRifcKspFqLgY4yRnRMw2bwUdheAkDVvj9",
+);
 
 export const SEED = {
   TREE_ACCOUNT: "merkle_tree",

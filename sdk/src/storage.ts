@@ -4,7 +4,8 @@
  *      encryptedOutput will be stored corresponding to the specific walletPubkey
  *
  *  2. LocalStorage
- *     silent-pay-merkle-index : to keep track of the decrypted notes.
+ *     SilentPayLastFetchedIndex : to keep track of the decrypted notes, it shall be sent
+ *            while fetching new notes.
  */
 
 import { openDB, type IDBPDatabase } from "idb";
@@ -19,11 +20,12 @@ export type StoredNoteSchema = {
 
 const Indexes = {
   users: "walletPubkey",
+  walletPubkeyAndID: ["walletPubkey", "id"],
 };
 
 const STORENAME = "SILENTPAY_NOTES";
 
-const SilentPayMerkleIndex = "SILENT_PAY_MERKLE_INDEX";
+const SilentPayLastFetchedIndex = "SILENT_FETCHED_NOTE_INDEX";
 
 export class StorageService {
   private db: IDBPDatabase;
@@ -46,8 +48,8 @@ export class StorageService {
       },
     });
 
-    if (!localStorage.getItem(SilentPayMerkleIndex)) {
-      localStorage.setItem(SilentPayMerkleIndex, "0");
+    if (!localStorage.getItem(SilentPayLastFetchedIndex)) {
+      localStorage.setItem(SilentPayLastFetchedIndex, "0");
     }
 
     return new StorageService(db);
@@ -69,20 +71,21 @@ export class StorageService {
 
   /**
    *
-   * @param walletPubkey : wallet whose note this belongs to
+   * @param walletPubkey
    * @param note
    */
-  saveNoteBatch(notes: [Uint8Array], walletPubkey: string) {
+  async saveNoteBatch(walletPubkey: string, notes: Uint8Array[]) {
     const tx = this.db.transaction(STORENAME, "readwrite");
-    notes.forEach((note) => {
-      const StoredNoteSchema: StoredNoteSchema = {
+    for (let note of notes) {
+      const storedNote: StoredNoteSchema = {
         encryptedNote: note,
         walletPubkey,
       };
 
-      tx.store.add(StoredNoteSchema);
-    });
-    tx.commit();
+      tx.store.add(storedNote);
+    }
+
+    await tx.commit();
   }
 
   /**
@@ -103,32 +106,54 @@ export class StorageService {
     return notes;
   }
 
-  async loadPairOfNotes(walletPubkey: string, id1: number, id2: number) {
+  /**
+   *
+   * @param walletPubkey
+   * @param fromId : notes with id greater than this
+   * @returns array of notes
+   */
+  async loadNotesFrom(walletPubkey: string, fromId: number) {
+    return this.db.getAllFromIndex(
+      STORENAME,
+      "walletPubkeyAndID",
+      IDBKeyRange.bound(
+        [walletPubkey, fromId],
+        [walletPubkey, Infinity],
+        true,
+        false,
+      ),
+    );
+  }
+
+  async loadPairOfNotes(id1: number, id2: number) {
     const tx = this.db.transaction(STORENAME, "readonly");
     const noteStore = tx.objectStore(STORENAME);
     const firstNote = await noteStore.get(IDBKeyRange.only(id1));
     const secondNote = await noteStore.get(IDBKeyRange.only(id2));
 
-    tx.commit();
+    await tx.commit();
 
     return [firstNote, secondNote];
   }
 
-  async loadSingleNote(walletPubkey: string, id1: number) {
+  async loadSingleNote(id1: number) {
     const tx = this.db.transaction(STORENAME, "readonly");
     const noteStore = tx.objectStore(STORENAME);
     const firstNote = await noteStore.get(IDBKeyRange.only(id1));
 
-    tx.commit();
+    await tx.commit();
 
     return firstNote;
   }
 
-  async getMerkleIndex() {
-    return Number(localStorage.getItem(SilentPayMerkleIndex));
+  async getLastFetchedNote() {
+    return Number(localStorage.getItem(SilentPayLastFetchedIndex));
   }
 
-  async updateMerkleIndex(newIndex: number) {
-    return localStorage.setItem(SilentPayMerkleIndex, newIndex.toString(10));
+  async updateLastFetchedNote(newIndex: number) {
+    return localStorage.setItem(
+      SilentPayLastFetchedIndex,
+      newIndex.toString(10),
+    );
   }
 }

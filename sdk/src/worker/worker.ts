@@ -2,50 +2,53 @@ import { fetchNotes } from "../api";
 import { EncryptionService } from "../encrypt";
 import { StorageService } from "../storage";
 
-const POLL_TIME = 10 * 1000; // in ms
+const POLL_TIME = 10 * 1000;
 
-/**
- * These params are required to start encryption and storage service
- *
- * @param walletPubkey
- * @param signedMessage
- * @returns
- */
-function createWorker(walletPubkey: string, signedMessage: Uint8Array) {
-  const worker = new Worker(new URL("./worker.ts", import.meta.url), {
-    type: "module",
-  });
-  worker.addEventListener("start", () => {
-    startWorker(walletPubkey, signedMessage);
-  });
-  return worker;
-}
+self.addEventListener("message", async (event) => {
+  if (event.data.type !== "start") {
+    return;
+  }
 
-// Worker will have its own encryptionService and storageService
-async function startWorker(walletPubkey: string, signedMessage: Uint8Array) {
-  let encryptionService =
-    await EncryptionService.startEncryptionService(signedMessage);
-  let storageService = await StorageService.start();
+  const { walletPubkey, masterSeed } = event.data;
+
+  await startWorker(walletPubkey, masterSeed);
+});
+
+async function startWorker(walletPubkey: string, masterSeed: Uint8Array) {
+  const encryptionService =
+    await EncryptionService.startEncryptionService(masterSeed);
+
+  const storageService = await StorageService.start();
+
+  let lastFetchedNoteIndex = await storageService.getLastFetchedNote();
 
   while (true) {
-    let encryptedNotes = await fetchNotes();
+    const encryptedNotes = await fetchNotes(lastFetchedNoteIndex);
 
     let newNotesAdded = false;
 
-    for (let e_note of encryptedNotes) {
+    for (const encryptedNote of encryptedNotes) {
       try {
-        let decryptedNote = await encryptionService.decrypt(e_note);
+        const decryptedNote = await encryptionService.decrypt(encryptedNote);
 
         await storageService.saveNote(walletPubkey, decryptedNote);
+
         newNotesAdded = true;
-      } catch (error) {
+      } catch {
         continue;
       }
+
+      lastFetchedNoteIndex++;
     }
 
     if (newNotesAdded) {
-      postMessage("syncNotes");
+      self.postMessage({
+        type: "syncNotes",
+      });
     }
+
+    storageService.updateLastFetchedNote(lastFetchedNoteIndex);
+
     await new Promise((resolve) => setTimeout(resolve, POLL_TIME));
   }
 }

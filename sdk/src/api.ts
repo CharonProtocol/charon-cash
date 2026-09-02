@@ -1,7 +1,7 @@
 import { PublicKey } from "@solana/web3.js";
 import BN from "bn.js";
 
-export async function getRecipientViewingKey(pubkey: PublicKey) {
+export async function fetchRecipientViewingKey(pubkey: PublicKey) {
   let response = await fetch(
     `${process.env.API_URL}/api/registration/get_viewing_key/${encodeURIComponent(pubkey.toString())}`,
   );
@@ -61,7 +61,7 @@ export type TreeState = {
   currentRoot: Uint8Array;
 };
 
-export async function getTreeState(mintAddress: string): Promise<TreeState> {
+export async function fetchTreeState(mintAddress: string): Promise<TreeState> {
   const response = await fetch(
     `${process.env.API_URL}/api/merkle/${encodeURIComponent(mintAddress)}`,
   );
@@ -92,7 +92,7 @@ export type MerkleProofPair = {
   proof2: MerkleProof;
 };
 
-export async function getMerkleProofForLeaves(
+export async function fetchMerkleProofForLeaves(
   mintAddress: string,
   leafIndex1: string,
   leafIndex2: string,
@@ -122,7 +122,7 @@ export async function getMerkleProofForLeaves(
     root: Uint8Array.from(json.data.proof1.root),
   };
   let merkleProof2: MerkleProof = {
-    proof: (json.data.proof12.proof as number[][]).map((node) =>
+    proof: (json.data.proof2.proof as number[][]).map((node) =>
       Uint8Array.from(node),
     ),
     leaf: Uint8Array.from(json.data.proof2.leaf),
@@ -143,8 +143,10 @@ async function err(response: Response, msg?: string) {
 
 export type EncryptedNotes = Uint8Array[];
 
-export async function fetchNotes() {
-  const response = await fetch(`${process.env.API_URL}/api/notes/send_notes/`);
+export async function fetchNotes(lastFetchedNoteIndex: number) {
+  const response = await fetch(
+    `${process.env.API_URL}/api/notes/send_notes/${lastFetchedNoteIndex}`,
+  );
 
   if (!response.ok) {
     throw await err(response, "Failed To Fetch Notes");

@@ -28,9 +28,9 @@ import {
 import { register } from "module";
 import {
   checkRegistration,
-  getMerkleProofForLeaves,
-  getRecipientViewingKey,
-  getTreeState,
+  fetchMerkleProofForLeaves,
+  fetchRecipientViewingKey,
+  fetchTreeState,
   registerUserInfo,
   RegistrationInfo,
 } from "./api";
@@ -42,9 +42,8 @@ import {
   ExtData,
   serializeProofAndExtData,
 } from "./utils";
-import { getExtDataHash } from "./crypto";
 import { parseProofToBytesArray, parseToBytesArray, prove } from "./prover";
-import { ProofBytes } from "./utils";
+import { ProofBytes, getExtDataHash } from "./utils";
 
 export interface Signer {
   publicKey: PublicKey;
@@ -66,7 +65,7 @@ type NotesInfo = {
   notes: SanitizedNote[];
 };
 
-class SilentPay {
+export class SilentPay {
   private connection: Connection;
   public publicKey: PublicKey;
   private encryptionService: EncryptionService;
@@ -74,9 +73,10 @@ class SilentPay {
   private storageService: StorageService;
   private isRuning?: boolean = false;
   private lightwasm: LightWasm;
-  private feeRecipient: PublicKey = new PublicKey(process.env.FEE_RECIPIENT!);
 
   mintToNotesMap: Map<string, NotesInfo>;
+  lastLoadedNote: number;
+  worker: Worker;
 
   private constructor({
     connection,
@@ -87,6 +87,8 @@ class SilentPay {
     isRuning,
     lightwasm,
     mintToNotesMap,
+    lastLoadedNote,
+    worker,
   }: {
     connection: Connection;
     publicKey: PublicKey;
@@ -96,6 +98,8 @@ class SilentPay {
     isRuning: boolean;
     lightwasm: LightWasm;
     mintToNotesMap: Map<string, NotesInfo>;
+    lastLoadedNote: number;
+    worker: Worker;
   }) {
     this.publicKey = publicKey;
     this.signer = signer;
@@ -105,6 +109,14 @@ class SilentPay {
     this.connection = connection;
     this.lightwasm = lightwasm;
     this.mintToNotesMap = mintToNotesMap;
+    this.lastLoadedNote = lastLoadedNote;
+    this.worker = worker;
+
+    worker.addEventListener("message", (event) => {
+      if (event.data.type === "syncNotes") {
+        this.syncNotes();
+      }
+    });
   }
 
   static async generateClient({
@@ -140,6 +152,8 @@ class SilentPay {
     let storedNotes = await storageService.loadNotes(
       owner.publicKey.toString(),
     );
+
+    let lastLoadedNote = storedNotes[storedNotes.length - 1].id;
 
     let mintToNotesMap = new Map<string, NotesInfo>();
 
@@ -194,6 +208,8 @@ class SilentPay {
 
     let connection = new Connection(RPC_url);
 
+    let worker = createSilentPayWorker(owner.publicKey.toString(), masterSeed);
+
     return new SilentPay({
       connection,
       publicKey: owner.publicKey,
@@ -203,6 +219,8 @@ class SilentPay {
       isRuning: true,
       lightwasm,
       mintToNotesMap,
+      lastLoadedNote,
+      worker,
     });
   }
 
@@ -224,8 +242,8 @@ class SilentPay {
     // sumINs + publicAmount = sumOuts
     let publicAmount = extAmount.add(FIELD_SIZE).mod(FIELD_SIZE);
 
-    let treeState = await getTreeState(mintAddress);
-    const recipientViewingKey = await getRecipientViewingKey(
+    let treeState = await fetchTreeState(mintAddress);
+    const recipientViewingKey = await fetchRecipientViewingKey(
       new PublicKey(recipientKey),
     );
 
@@ -426,7 +444,6 @@ class SilentPay {
 
     if (requiredNotes.length < 2) {
       let encryptedNote = await this.storageService.loadSingleNote(
-        this.signer.publicKey.toString(),
         requiredNotes[0].note_id,
       );
       let input1 = Utxo.deserialize(
@@ -442,7 +459,6 @@ class SilentPay {
       inputUtxos.push(input2);
     } else {
       let encryptedNotes = await this.storageService.loadPairOfNotes(
-        this.signer.publicKey.toString(),
         requiredNotes[0].note_id,
         requiredNotes[1].note_id,
       );
@@ -469,7 +485,7 @@ class SilentPay {
     // sumINs + publicAmount = sumOuts
     let publicAmount = extAmount.sub(fee).add(FIELD_SIZE).mod(FIELD_SIZE);
 
-    let treeState = await getTreeState(mintAddress);
+    let treeState = await fetchTreeState(mintAddress);
     const recipientViewingKey = this.encryptionService.getViewingKey();
 
     const totalInputs: BN = inputUtxos.reduce(
@@ -515,7 +531,7 @@ class SilentPay {
     };
 
     const extDataHash = getExtDataHash(extData);
-    const merkleProofPair = await getMerkleProofForLeaves(
+    const merkleProofPair = await fetchMerkleProofForLeaves(
       mintAddress,
       inputUtxos[0].index.toString(10),
       inputUtxos[1].index.toString(10),
@@ -628,5 +644,73 @@ class SilentPay {
     let txid = await this.connection.sendRawTransaction(signedTx.serialize());
   }
 
-  async syncNotes() {}
+  async syncNotes() {
+    let loadNewNotes = await this.storageService.loadNotesFrom(
+      this.signer.publicKey.toString(),
+      this.lastLoadedNote,
+    );
+
+    await Promise.all(
+      loadNewNotes.map(
+        async ({
+          encryptedNote,
+          id,
+          walletPubkey,
+        }: StoredNoteSchema): Promise<undefined> => {
+          const decryptedNote = Utxo.deserialize(
+            await this.encryptionService.decrypt(encryptedNote),
+            this.lightwasm,
+          );
+
+          if (!this.mintToNotesMap.has(decryptedNote.mintAddress)) {
+            let newNotesInfo: NotesInfo = {
+              totalAmount: new BN(0),
+              maxAmountInSingleTransaction: new BN(0),
+              notes: [],
+            };
+
+            this.mintToNotesMap.set(decryptedNote.mintAddress, newNotesInfo);
+          }
+
+          let requiredNotesInfo = this.mintToNotesMap.get(
+            decryptedNote.mintAddress,
+          )!;
+
+          requiredNotesInfo.totalAmount = requiredNotesInfo.totalAmount.add(
+            decryptedNote.amount.abs(),
+          );
+
+          let newNote: SanitizedNote = {
+            note_id: id!,
+            walletPubkey,
+            amount: decryptedNote.amount,
+          };
+          requiredNotesInfo.notes.push(newNote);
+        },
+      ),
+    );
+
+    this.mintToNotesMap.forEach((notesInfo) => {
+      notesInfo.notes.sort((a, b) => a.amount.sub(b.amount).toNumber());
+
+      let n = notesInfo.notes.length;
+      notesInfo.maxAmountInSingleTransaction = notesInfo.notes[
+        n - 1
+      ].amount.add(notesInfo.notes[n - 2].amount);
+    });
+  }
+}
+
+function createSilentPayWorker(walletPubkey: string, masterSeed: Uint8Array) {
+  const worker = new Worker(new URL("./worker/worker.ts", import.meta.url), {
+    type: "module",
+  });
+
+  worker.postMessage({
+    type: "start",
+    walletPubkey,
+    masterSeed,
+  });
+
+  return worker;
 }

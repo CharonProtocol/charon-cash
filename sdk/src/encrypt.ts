@@ -1,7 +1,7 @@
 /**
  *  Flow of encryption key generation
  *
- *  1. Generate random X25519 Keypair
+ *  1. Generate random X25519 CipherKeypair
  *       (note_p,note_s) = x25519()
  *  2. Get the recipient pubkey
  *        (recv_p)
@@ -15,14 +15,14 @@ import * as webCryptoHash from "@noble/hashes/webcrypto.js";
 import * as webCryptoCipher from "@noble/ciphers/webcrypto.js";
 import { randomBytes } from "@noble/ciphers/utils.js";
 
-interface Keypair {
+interface CipherKeypair {
   publicKey: Uint8Array;
   secretKey: Uint8Array;
 }
 
-export async function generateX25519Keypair(
+export async function generateX25519CipherKeypair(
   seed?: Uint8Array | string,
-): Promise<Keypair> {
+): Promise<CipherKeypair> {
   if (seed) {
     const ikm =
       typeof seed === "string" ? new TextEncoder().encode(seed) : seed;
@@ -41,14 +41,14 @@ export async function generateX25519Keypair(
 
     return { secretKey, publicKey };
   } else {
-    const keypair = await webX25519.keygen();
+    const CipherKeypair = await webX25519.keygen();
     const pub_key = (await webX25519.utils.convertPublicKey(
-      keypair.publicKey,
+      CipherKeypair.publicKey,
       "spki",
       "raw",
     )) as Uint8Array<ArrayBufferLike>;
     const s_key = (await webX25519.utils.convertSecretKey(
-      keypair.secretKey,
+      CipherKeypair.secretKey,
       "pkcs8",
       "raw",
     )) as Uint8Array<ArrayBufferLike>;
@@ -57,7 +57,7 @@ export async function generateX25519Keypair(
 }
 
 export async function generateSharedSecret(
-  client: Keypair,
+  client: CipherKeypair,
   pubKey: Uint8Array,
 ) {
   const shared_secret = await webX25519.getSharedSecret(
@@ -113,20 +113,20 @@ export class EncryptionService {
     0, 0, 0, 0, 0, 0, 0, 1,
   ]);
 
-  // This represents the wallet's X25519 keypair
-  private keypair: Keypair;
+  // This represents the wallet's X25519 CipherKeypair
+  private CipherKeypair: CipherKeypair;
 
-  private constructor(keypair: Keypair) {
-    this.keypair = keypair;
+  private constructor(CipherKeypair: CipherKeypair) {
+    this.CipherKeypair = CipherKeypair;
   }
 
   public static async startEncryptionService(masterSeed: Uint8Array | string) {
-    const keypair = await generateX25519Keypair(masterSeed);
-    return new EncryptionService(keypair);
+    const CipherKeypair = await generateX25519CipherKeypair(masterSeed);
+    return new EncryptionService(CipherKeypair);
   }
 
   getViewingKey() {
-    return this.keypair.publicKey;
+    return this.CipherKeypair.publicKey;
   }
 
   /**
@@ -137,32 +137,27 @@ export class EncryptionService {
    * `[version (8B) | ephemeral_pubkey (32B) | iv/nonce (12B) | ciphertext + authTag (16B)]`
    */
   async encrypt(data: Uint8Array, targetViewingKey: Uint8Array) {
-    // Note's ephemeral keypair used for sharedSecret/Encryption
+    // Note's ephemeral CipherKeypair used for sharedSecret/Encryption
     // After encryption secret key will be discarded making the target only one that can
     // decrypt the note .
-    const noteEphemeralKeypair = await generateX25519Keypair();
-
-    console.log("ephemeral public:", noteEphemeralKeypair.publicKey.toString());
-    console.log("target public:", targetViewingKey.toString());
+    const noteEphemeralCipherKeypair = await generateX25519CipherKeypair();
 
     const sharedSecret = await generateSharedSecret(
-      noteEphemeralKeypair,
+      noteEphemeralCipherKeypair,
       targetViewingKey,
     );
-
-    console.log("encrypt shared:", sharedSecret.toString());
 
     const encryptionKey =
       await this.generateEncryptionDecryptionKey(sharedSecret);
 
     const ciphertext = await aes_encrypt(data, encryptionKey);
 
-    // EncryptionService.ENCRYPTION_VERSION_V1.length + noteEphemeralKeypair.publicKey.length +ciphertext.length;
+    // EncryptionService.ENCRYPTION_VERSION_V1.length + noteEphemeralCipherKeypair.publicKey.length +ciphertext.length;
     const encryptedOutputLength = 8 + 32 + ciphertext.length;
     const encryptedOutput = new Uint8Array(encryptedOutputLength);
 
     encryptedOutput.set(EncryptionService.ENCRYPTION_VERSION_V1);
-    encryptedOutput.set(noteEphemeralKeypair.publicKey, 8);
+    encryptedOutput.set(noteEphemeralCipherKeypair.publicKey, 8);
     encryptedOutput.set(ciphertext, 40);
 
     return encryptedOutput;
@@ -180,16 +175,10 @@ export class EncryptionService {
 
     const ephemeralPubkey = encryptedOutput.slice(8, 40);
 
-    console.log("received ephemeral public:", ephemeralPubkey.toString());
-
-    console.log("bob public:", this.keypair.publicKey.toString());
-
     const sharedSecret = await generateSharedSecret(
-      this.keypair,
+      this.CipherKeypair,
       ephemeralPubkey,
     );
-
-    console.log("Shared Secret ", sharedSecret.toString());
 
     const decryptionKey =
       await this.generateEncryptionDecryptionKey(sharedSecret);
