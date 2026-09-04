@@ -157,54 +157,62 @@ export class SilentPay {
 
     let mintToNotesMap = new Map<string, NotesInfo>();
 
-    await Promise.all(
-      storedNotes.map(
-        async ({
-          encryptedNote,
-          id,
-          walletPubkey,
-        }: StoredNoteSchema): Promise<undefined> => {
-          const decryptedNote = Utxo.deserialize(
-            await encryptionService.decrypt(encryptedNote),
-            lightwasm,
-          );
-
-          if (!mintToNotesMap.has(decryptedNote.mintAddress)) {
-            let newNotesInfo: NotesInfo = {
-              totalAmount: new BN(0),
-              maxAmountInSingleTransaction: new BN(0),
-              notes: [],
-            };
-
-            mintToNotesMap.set(decryptedNote.mintAddress, newNotesInfo);
-          }
-
-          let requiredNotesInfo = mintToNotesMap.get(
-            decryptedNote.mintAddress,
-          )!;
-
-          requiredNotesInfo.totalAmount = requiredNotesInfo.totalAmount.add(
-            decryptedNote.amount.abs(),
-          );
-
-          let newNote: SanitizedNote = {
-            note_id: id!,
+    if (storedNotes.length > 0) {
+      await Promise.all(
+        storedNotes.map(
+          async ({
+            encryptedNote,
+            id,
             walletPubkey,
-            amount: decryptedNote.amount,
-          };
-          requiredNotesInfo.notes.push(newNote);
-        },
-      ),
-    );
+          }: StoredNoteSchema): Promise<undefined> => {
+            const decryptedNote = Utxo.deserialize(
+              await encryptionService.decrypt(encryptedNote),
+              lightwasm,
+            );
 
-    mintToNotesMap.forEach((notesInfo) => {
-      notesInfo.notes.sort((a, b) => a.amount.sub(b.amount).toNumber());
+            if (!mintToNotesMap.has(decryptedNote.mintAddress)) {
+              let newNotesInfo: NotesInfo = {
+                totalAmount: new BN(0),
+                maxAmountInSingleTransaction: new BN(0),
+                notes: [],
+              };
 
-      let n = notesInfo.notes.length;
-      notesInfo.maxAmountInSingleTransaction = notesInfo.notes[
-        n - 1
-      ].amount.add(notesInfo.notes[n - 2].amount);
-    });
+              mintToNotesMap.set(decryptedNote.mintAddress, newNotesInfo);
+            }
+
+            let requiredNotesInfo = mintToNotesMap.get(
+              decryptedNote.mintAddress,
+            )!;
+
+            requiredNotesInfo.totalAmount = requiredNotesInfo.totalAmount.add(
+              decryptedNote.amount.abs(),
+            );
+
+            let newNote: SanitizedNote = {
+              note_id: id!,
+              walletPubkey,
+              amount: decryptedNote.amount,
+            };
+            requiredNotesInfo.notes.push(newNote);
+          },
+        ),
+      );
+
+      mintToNotesMap.forEach((notesInfo) => {
+        notesInfo.notes.sort((a, b) => a.amount.sub(b.amount).toNumber());
+
+        let n = notesInfo.notes.length;
+
+        if (n > 2) {
+          notesInfo.maxAmountInSingleTransaction = notesInfo.notes[
+            n - 1
+          ].amount.add(notesInfo.notes[n - 2].amount);
+        } else {
+          notesInfo.maxAmountInSingleTransaction =
+            notesInfo.notes[n - 1].amount;
+        }
+      });
+    }
 
     let connection = new Connection(RPC_url);
 
@@ -645,59 +653,69 @@ export class SilentPay {
   }
 
   async syncNotes() {
-    let loadNewNotes = await this.storageService.loadNotesFrom(
+    let newNotes = await this.storageService.loadNotesFrom(
       this.signer.publicKey.toString(),
       this.lastLoadedNote,
     );
 
-    await Promise.all(
-      loadNewNotes.map(
-        async ({
-          encryptedNote,
-          id,
-          walletPubkey,
-        }: StoredNoteSchema): Promise<undefined> => {
-          const decryptedNote = Utxo.deserialize(
-            await this.encryptionService.decrypt(encryptedNote),
-            this.lightwasm,
-          );
-
-          if (!this.mintToNotesMap.has(decryptedNote.mintAddress)) {
-            let newNotesInfo: NotesInfo = {
-              totalAmount: new BN(0),
-              maxAmountInSingleTransaction: new BN(0),
-              notes: [],
-            };
-
-            this.mintToNotesMap.set(decryptedNote.mintAddress, newNotesInfo);
-          }
-
-          let requiredNotesInfo = this.mintToNotesMap.get(
-            decryptedNote.mintAddress,
-          )!;
-
-          requiredNotesInfo.totalAmount = requiredNotesInfo.totalAmount.add(
-            decryptedNote.amount.abs(),
-          );
-
-          let newNote: SanitizedNote = {
-            note_id: id!,
+    if (newNotes.length > 0) {
+      await Promise.all(
+        newNotes.map(
+          async ({
+            encryptedNote,
+            id,
             walletPubkey,
-            amount: decryptedNote.amount,
-          };
-          requiredNotesInfo.notes.push(newNote);
-        },
-      ),
-    );
+          }: StoredNoteSchema): Promise<undefined> => {
+            const decryptedNote = Utxo.deserialize(
+              await this.encryptionService.decrypt(encryptedNote),
+              this.lightwasm,
+            );
 
-    this.mintToNotesMap.forEach((notesInfo) => {
-      notesInfo.notes.sort((a, b) => a.amount.sub(b.amount).toNumber());
+            if (!this.mintToNotesMap.has(decryptedNote.mintAddress)) {
+              let newNotesInfo: NotesInfo = {
+                totalAmount: new BN(0),
+                maxAmountInSingleTransaction: new BN(0),
+                notes: [],
+              };
 
-      let n = notesInfo.notes.length;
-      notesInfo.maxAmountInSingleTransaction = notesInfo.notes[
-        n - 1
-      ].amount.add(notesInfo.notes[n - 2].amount);
-    });
+              this.mintToNotesMap.set(decryptedNote.mintAddress, newNotesInfo);
+            }
+
+            let requiredNotesInfo = this.mintToNotesMap.get(
+              decryptedNote.mintAddress,
+            )!;
+
+            requiredNotesInfo.totalAmount = requiredNotesInfo.totalAmount.add(
+              decryptedNote.amount,
+            );
+
+            let newNote: SanitizedNote = {
+              note_id: id!,
+              walletPubkey,
+              amount: decryptedNote.amount,
+            };
+            requiredNotesInfo.notes.push(newNote);
+          },
+        ),
+      );
+
+      this.mintToNotesMap.forEach((notesInfo) => {
+        notesInfo.notes.sort((a, b) => a.amount.sub(b.amount).toNumber());
+
+        let n = notesInfo.notes.length;
+
+        if (n > 2) {
+          notesInfo.maxAmountInSingleTransaction = notesInfo.notes[
+            n - 1
+          ].amount.add(notesInfo.notes[n - 2].amount);
+        } else {
+          notesInfo.maxAmountInSingleTransaction =
+            notesInfo.notes[n - 1].amount;
+        }
+      });
+    }
+
+    this.lastLoadedNote += newNotes.length;
   }
 }
 
