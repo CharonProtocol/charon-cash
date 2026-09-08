@@ -472,9 +472,15 @@ async function buildTransact(poolIdx, note, firstEmp, nPay) {
 //     were tried and rejected: the mirror lags the chain, so replicaAge
 //     understates and pending-counting double-counts landed txs — both caused
 //     constant false rebuilds that slowed the whole pipeline down.
-const PIPELINE_SLOTS = 8
-const GATE_AGE = 90
-const SEND_ANYWAY_AGE = 97
+// batch5 appends 10 leaves/tx (2x batch3's 6), so its in-flight share of the
+// 100-root window doubles too: 8 slots x 10 = 80 in-flight + a gate pass at 90
+// tipped past 100 once in the first 210-run (1 lane, UnknownRoot=5). batch5
+// drops to 4 slots x 10 = 40 in-flight and gates at 40: worst case 40 + 40 +
+// landing stragglers stays under 100. Pay is prover-bound (11.7s wall), so the
+// tighter pipeline costs nothing measurable.
+const PIPELINE_SLOTS = MODE5 ? 4 : 8
+const GATE_AGE = MODE5 ? 40 : 90
+const SEND_ANYWAY_AGE = MODE5 ? 60 : 97
 let slotsHeld = 0
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 async function acquireSlot() {
@@ -513,6 +519,18 @@ async function payBatchV1(poolIdx) {
   }
 
   let paid = 0
+  // batch5 transacts cost 239,715 CU. The surfpool v1 runtime ignores the tx's
+  // cuLimit config and budgets each instruction at its DEFAULT cost, summed:
+  // unknown BPF programs default to 200k, a SystemProgram transfer to 3k
+  // (measured: [b5,b5,transfer] capped at 200k+200k+3k = 403k and died).
+  // So the filler must be an ix whose default is 200k but whose real cost is
+  // tiny — a no-accounts SPL Memo call. [b5,b5,memo] budgets 600k for ~480k
+  // actually used: 2 proofs + memo land in one tx = 8 salaries/tx.
+  const fillerIx = () => ({
+    programId: "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+    accounts: [],
+    data: new Uint8Array([0]),
+  })
   for (let b = 0; b < nBatchTx; b += PER_TX) {
     const t0 = Date.now()
     await acquireSlot()
@@ -523,10 +541,11 @@ async function payBatchV1(poolIdx) {
       const tProved = Date.now()
       for (;;) {
         const { blockhash } = await sdk.fetchBlockhash()
+        const txIxs = MODE5 ? [...built.map(x => x.instruction), fillerIx()] : built.map(x => x.instruction)
         const { bytes, size, signature } = buildV1Tx(
           employers[poolIdx], blockhash,
-          built.map(x => x.instruction),
-          { cuLimit: PER_TX * CU_PER_TRANSACT + 100_000, loadedDataSize: 64 * 1024 * 1024 },
+          txIxs,
+          { cuLimit: MODE5 ? 600_000 : PER_TX * CU_PER_TRANSACT + 100_000, loadedDataSize: 64 * 1024 * 1024 },
         )
         if (process.env.TX_DUMP) await writeFile(process.env.TX_DUMP, bytes)
 
