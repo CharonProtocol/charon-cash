@@ -57,6 +57,8 @@ nohup "$SURFPOOL" start $SURFPOOL_FLAGS > /dev/null 2>&1 &
 sleep 12
 
 # 2. redeploy the current program build (runbook may pick a stale artifact)
+# fresh machines: fund the deploy payer first; an already-funded key errors harmlessly
+solana airdrop 200 --url http://localhost:8899 ~/.config/solana/id.json >/dev/null 2>&1 || true
 solana program deploy --url http://localhost:8899 --keypair ~/.config/solana/id.json \
   --program-id target/deploy/privacy_cash-keypair.json target/deploy/privacy_cash.so >/dev/null
 

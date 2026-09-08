@@ -27,6 +27,21 @@ against a local surfpool chain, using the arkworks prover-server pool
   (run under node, not bun: snarkjs web-worker crashes under bun).
 - `zeros.mjs` — merkle zero table for HEIGHT=26 (used by proxy.mjs).
 
+## One command (fresh machine)
+
+```sh
+zsh payroll/rust-prover-bench/bench/run-210.sh
+```
+
+Installs whatever is missing (bun, Solana CLI incl. cargo-build-sbf, rust
+stable, surfpool >= 1.5.0 with the txv1 feature), generates keypairs and
+`workers/.dev.vars` on first run, builds the program and prover-server,
+resets the env, then runs `BATCH5=1 bun run-batch-v1.mjs 16 210`. The prover
+pool auto-sizes from RAM and cores (`min(16, (GB-3)/1.25, cores*0.75)`), so
+wall time adapts to the machine: 8GB / 8-core = 4 provers = 12.7s measured;
+a 32GB / 12-core box gets 9 provers. The batch5 zkey is committed at
+`programs/privacy-cash/artifacts/circuits/transaction_batch5.zkey`.
+
 ## Environment
 
 1. surfpool on :8899 with the program deployed
