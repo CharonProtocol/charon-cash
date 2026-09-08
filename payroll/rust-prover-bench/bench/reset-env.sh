@@ -15,6 +15,10 @@ WRANGLER="$HOME/.npm/_npx/32026684e21afda6/node_modules/.bin/wrangler"
 # then the standard install path, then PATH
 SURFPOOL="${SURFPOOL_BIN:-$HOME/.local/bin/surfpool}"
 [[ -x "$SURFPOOL" ]] || SURFPOOL="$(command -v surfpool || true)"
+# v1 wire benches MUST run the 1.5.0 binary with the txv1 feature: the stock
+# surfpool rejects >1232B txs with the legacy size cap and the failure shows
+# up as a mysterious "VersionedTransaction too large" from the relayer.
+[[ -n "$SURFPOOL_BIN" ]] || echo "WARNING: SURFPOOL_BIN unset — starting $SURFPOOL without v1 support; v1 benches will fail"
 # extra surfpool start flags, e.g. SURFPOOL_FLAGS="--feature txv1hPU76QFBVeq3942jJ65e9Em2xbdbCJrzX8sM4U4"
 SURFPOOL_FLAGS=(${=SURFPOOL_FLAGS})
 

@@ -1,14 +1,9 @@
 use crate::error::PrivacyCashError;
+use crate::field;
 use crate::groth16::{Groth16Verifier, Groth16Verifyingkey};
-use crate::state::{Proof, ProofBatch3};
-use ark_bn254::Fr;
-use ark_ff::PrimeField;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
-use core::ops::Neg;
+use crate::state::{Proof, ProofBatch3, ProofBatch5};
 use light_hasher::{Hasher, Sha256};
 use pinocchio::error::ProgramError;
-
-type G1 = ark_bn254::g1::G1Affine;
 
 pub const VERIFYING_KEY: Groth16Verifyingkey = Groth16Verifyingkey {
     nr_pubinputs: 7,
@@ -151,23 +146,28 @@ pub fn calculate_complete_ext_data_hash(
     fee_recipient: &[u8; 32],
     mint_address: &[u8; 32],
 ) -> Result<[u8; 32], ProgramError> {
-    let mut data = Vec::new();
+    let len1 = (encrypted_output1.len() as u32).to_le_bytes();
+    let len2 = (encrypted_output2.len() as u32).to_le_bytes();
 
-    data.extend_from_slice(recipient);
-    data.extend_from_slice(&ext_amount.to_le_bytes());
-    data.extend_from_slice(&(encrypted_output1.len() as u32).to_le_bytes());
-    data.extend_from_slice(encrypted_output1);
-    data.extend_from_slice(&(encrypted_output2.len() as u32).to_le_bytes());
-    data.extend_from_slice(encrypted_output2);
-    data.extend_from_slice(&fee.to_le_bytes());
-    data.extend_from_slice(fee_recipient);
-    data.extend_from_slice(mint_address);
-
-    Sha256::hash(&data).map_err(|_| ProgramError::InvalidInstructionData)
+    Sha256::hashv(&[
+        recipient,
+        &ext_amount.to_le_bytes(),
+        &len1,
+        encrypted_output1,
+        &len2,
+        encrypted_output2,
+        &fee.to_le_bytes(),
+        fee_recipient,
+        mint_address,
+    ])
+    .map_err(|_| ProgramError::InvalidInstructionData)
 }
 
 pub fn ext_data_hash_matches(calculated: [u8; 32], proof_hash: [u8; 32]) -> bool {
-    Fr::from_le_bytes_mod_order(&calculated) == Fr::from_be_bytes_mod_order(&proof_hash)
+    let mut calculated_be = calculated;
+    calculated_be.reverse();
+
+    field::reduce_mod_r_be(calculated_be) == field::reduce_mod_r_be(proof_hash)
 }
 
 pub fn check_public_amount(ext_amount: i64, fee: u64, public_amount_bytes: [u8; 32]) -> bool {
@@ -175,29 +175,58 @@ pub fn check_public_amount(ext_amount: i64, fee: u64, public_amount_bytes: [u8; 
         return false;
     }
 
-    let fee_fr = Fr::from(fee);
-    let ext_amount_fr = if ext_amount >= 0 {
-        Fr::from(ext_amount as u64)
+    let expected: [u8; 32] = if ext_amount > 0 {
+        let ext = ext_amount as u64;
+        if ext <= fee {
+            return false;
+        }
+        let mut out = [0u8; 32];
+        out[24..].copy_from_slice(&(ext - fee).to_be_bytes());
+        out
     } else {
-        let abs_ext_amount = match ext_amount.checked_neg() {
-            Some(val) => val,
-            None => return false,
+        let subtract = if ext_amount == 0 {
+            fee as u128
+        } else {
+            (-ext_amount) as u128 + fee as u128
         };
-        Fr::from(abs_ext_amount as u64)
+        if subtract == 0 {
+            [0u8; 32]
+        } else {
+            let mut sub_be = [0u8; 32];
+            sub_be[16..].copy_from_slice(&subtract.to_be_bytes());
+            match field::sub_be(&field::FR_BE, &sub_be) {
+                (value, false) => value,
+                _ => return false,
+            }
+        }
     };
 
-    if ext_amount > 0 && ext_amount_fr <= fee_fr {
-        return false;
+    field::reduce_mod_r_be(public_amount_bytes) == expected
+}
+
+/// Negate the G1 point in proof_a for the pairing equation: (x, y) -> (x, q - y).
+/// Both coordinates are 32-byte big-endian on the wire (same form the
+/// alt_bn128_*_be syscalls take), so the negation is a single
+/// borrow-propagating subtraction on the y coordinate as-is. Bounds and
+/// on-curve checks for the untouched x coordinate, and for the negated point
+/// itself, are re-done by the alt_bn128 syscalls downstream.
+pub fn negate_g1(point: &[u8; 64]) -> Option<[u8; 64]> {
+    let mut negated = *point;
+
+    let y: &[u8; 32] = (&point[32..64]).try_into().ok()?;
+
+    if y == &[0u8; 32] || !field::lt_be(y, &field::FQ_BE) {
+        return None;
     }
 
-    let result_public_amount = if ext_amount >= 0 {
-        ext_amount_fr - fee_fr
-    } else {
-        -(ext_amount_fr + fee_fr)
-    };
+    let (negated_y, borrow) = field::sub_be(&field::FQ_BE, y);
+    if borrow {
+        return None;
+    }
 
-    let provided_amount = Fr::from_be_bytes_mod_order(&public_amount_bytes);
-    result_public_amount == provided_amount
+    negated[32..64].copy_from_slice(&negated_y);
+
+    Some(negated)
 }
 
 pub fn verify_proof(proof: &Proof, verifying_key: &Groth16Verifyingkey) -> bool {
@@ -211,38 +240,9 @@ pub fn verify_proof(proof: &Proof, verifying_key: &Groth16Verifyingkey) -> bool 
     public_inputs_vec[5] = proof.output_commitments[0];
     public_inputs_vec[6] = proof.output_commitments[1];
 
-    // First deserialize PROOF_A into a G1 point (validates it is on-curve),
-    // then negate it, as required by the pairing equation.
-    let g1_point = match G1::deserialize_with_mode(
-        &*[&change_endianness(&proof.proof_a[0..64]), &[0u8][..]].concat(),
-        Compress::No,
-        Validate::Yes,
-    ) {
-        Ok(point) => point,
-        Err(_) => return false,
-    };
-
-    let mut proof_a_neg = [0u8; 65];
-    if g1_point
-        .neg()
-        .x
-        .serialize_with_mode(&mut proof_a_neg[..32], Compress::No)
-        .is_err()
-    {
-        return false;
-    }
-    if g1_point
-        .neg()
-        .y
-        .serialize_with_mode(&mut proof_a_neg[32..], Compress::No)
-        .is_err()
-    {
-        return false;
-    }
-
-    let proof_a: [u8; 64] = match change_endianness(&proof_a_neg[..64]).try_into() {
-        Ok(array) => array,
-        Err(_) => return false,
+    let proof_a: [u8; 64] = match negate_g1(&proof.proof_a) {
+        Some(bytes) => bytes,
+        None => return false,
     };
 
     let mut verifier = match Groth16Verifier::new(
@@ -258,18 +258,6 @@ pub fn verify_proof(proof: &Proof, verifying_key: &Groth16Verifyingkey) -> bool 
 
     verifier.verify().unwrap_or(false)
 }
-
-pub fn change_endianness(bytes: &[u8]) -> Vec<u8> {
-    let mut vec = Vec::new();
-    for b in bytes.chunks(32) {
-        for byte in b.iter().rev() {
-            vec.push(*byte);
-        }
-    }
-    vec
-}
-
-
 
 /// Verifying key for Transaction(26, 2, 3) — the batch payout circuit
 /// (2 employees + change per proof). Generated from the batch3 ceremony zkey;
@@ -371,6 +359,114 @@ pub const VERIFYING_KEY_BATCH3: Groth16Verifyingkey = Groth16Verifyingkey {
     ],
 };
 
+pub const VERIFYING_KEY_BATCH5: Groth16Verifyingkey = Groth16Verifyingkey {
+    nr_pubinputs: 10,
+    vk_alpha_g1: [
+        42, 197, 6, 75, 141, 233, 124, 40, 13, 210, 222, 81, 155, 195, 12, 156,
+        230, 21, 160, 110, 182, 53, 123, 56, 76, 3, 115, 56, 176, 66, 181, 184,
+        17, 213, 231, 149, 138, 102, 16, 162, 85, 10, 19, 183, 11, 94, 215, 185,
+        142, 65, 77, 149, 67, 179, 114, 78, 185, 137, 122, 207, 116, 33, 235, 16,
+    ],
+    vk_beta_g2: [
+        4, 215, 76, 13, 101, 179, 18, 181, 2, 210, 183, 207, 107, 71, 81, 215,
+        76, 179, 41, 228, 134, 129, 96, 181, 33, 239, 141, 209, 149, 107, 135, 118,
+        22, 249, 117, 174, 207, 42, 50, 6, 116, 181, 228, 32, 159, 175, 140, 147,
+        135, 202, 97, 60, 230, 129, 142, 18, 193, 112, 196, 120, 177, 163, 171, 31,
+        5, 100, 221, 229, 196, 189, 191, 225, 249, 102, 97, 239, 239, 124, 205, 86,
+        20, 237, 235, 214, 124, 19, 193, 212, 229, 79, 181, 155, 224, 168, 250, 35,
+        5, 165, 169, 41, 70, 117, 129, 184, 243, 213, 203, 64, 31, 30, 200, 174,
+        76, 108, 227, 43, 162, 165, 52, 188, 146, 170, 84, 226, 106, 127, 212, 87,
+    ],
+    vk_gamme_g2: [
+        25, 142, 147, 147, 146, 13, 72, 58, 114, 96, 191, 183, 49, 251, 93, 37,
+        241, 170, 73, 51, 53, 169, 231, 18, 151, 228, 133, 183, 174, 243, 18, 194,
+        24, 0, 222, 239, 18, 31, 30, 118, 66, 106, 0, 102, 94, 92, 68, 121,
+        103, 67, 34, 212, 247, 94, 218, 221, 70, 222, 189, 92, 217, 146, 246, 237,
+        9, 6, 137, 208, 88, 95, 240, 117, 236, 158, 153, 173, 105, 12, 51, 149,
+        188, 75, 49, 51, 112, 179, 142, 243, 85, 172, 218, 220, 209, 34, 151, 91,
+        18, 200, 94, 165, 219, 140, 109, 235, 74, 171, 113, 128, 141, 203, 64, 143,
+        227, 209, 231, 105, 12, 67, 211, 123, 76, 230, 204, 1, 102, 250, 125, 170,
+    ],
+    vk_delta_g2: [
+        37, 87, 214, 22, 184, 18, 17, 82, 120, 251, 113, 134, 160, 4, 136, 233,
+        237, 50, 43, 249, 224, 190, 123, 207, 123, 135, 51, 187, 79, 36, 228, 47,
+        27, 227, 62, 158, 226, 201, 186, 235, 229, 168, 114, 119, 147, 232, 48, 53,
+        171, 151, 22, 205, 49, 63, 166, 195, 200, 30, 122, 120, 173, 25, 67, 151,
+        34, 36, 106, 225, 161, 146, 155, 113, 100, 32, 96, 100, 30, 88, 208, 71,
+        143, 29, 31, 168, 9, 223, 44, 88, 238, 216, 140, 193, 217, 133, 158, 249,
+        29, 126, 198, 33, 187, 231, 31, 212, 56, 227, 66, 30, 167, 131, 224, 240,
+        84, 148, 129, 230, 181, 13, 52, 134, 216, 192, 25, 247, 235, 78, 44, 160,
+    ],
+    vk_ic: &[
+        [
+            6, 164, 251, 17, 58, 217, 159, 22, 2, 67, 218, 136, 223, 97, 105, 165,
+            175, 251, 80, 145, 102, 161, 108, 18, 219, 195, 167, 131, 192, 212, 150, 114,
+            24, 26, 240, 92, 229, 30, 104, 58, 8, 150, 224, 30, 43, 174, 176, 191,
+            233, 0, 104, 109, 68, 164, 103, 115, 26, 24, 225, 220, 38, 248, 252, 221,
+        ],
+        [
+            13, 192, 191, 60, 139, 81, 90, 180, 192, 187, 12, 94, 12, 176, 156, 90,
+            106, 88, 215, 107, 255, 206, 182, 117, 153, 82, 50, 173, 57, 38, 220, 171,
+            27, 153, 38, 15, 199, 3, 230, 215, 77, 17, 252, 221, 135, 125, 200, 152,
+            119, 10, 17, 54, 83, 245, 130, 105, 222, 147, 239, 78, 180, 42, 56, 86,
+        ],
+        [
+            0, 125, 215, 32, 68, 85, 33, 41, 64, 160, 193, 223, 125, 48, 95, 157,
+            243, 186, 254, 58, 140, 204, 48, 19, 84, 208, 120, 158, 146, 3, 4, 13,
+            5, 123, 69, 53, 10, 44, 114, 27, 166, 172, 193, 251, 68, 116, 157, 164,
+            37, 215, 54, 222, 135, 106, 17, 65, 162, 179, 188, 196, 88, 210, 226, 77,
+        ],
+        [
+            26, 33, 210, 185, 203, 156, 4, 184, 4, 149, 148, 217, 74, 161, 116, 192,
+            173, 90, 96, 37, 245, 139, 110, 120, 85, 21, 139, 166, 222, 36, 8, 211,
+            3, 97, 143, 137, 229, 87, 87, 119, 175, 206, 211, 251, 45, 4, 225, 12,
+            133, 239, 11, 237, 246, 0, 165, 238, 157, 119, 123, 113, 184, 48, 15, 214,
+        ],
+        [
+            42, 36, 202, 166, 238, 89, 67, 51, 228, 194, 91, 124, 4, 156, 33, 99,
+            44, 36, 82, 213, 104, 6, 171, 110, 194, 108, 18, 9, 107, 35, 40, 26,
+            13, 186, 87, 11, 132, 242, 7, 18, 150, 144, 210, 70, 165, 4, 127, 183,
+            244, 218, 244, 200, 132, 10, 235, 216, 9, 124, 97, 195, 202, 7, 40, 233,
+        ],
+        [
+            7, 158, 165, 8, 101, 204, 139, 29, 204, 193, 114, 154, 72, 52, 116, 112,
+            172, 16, 86, 48, 156, 42, 242, 151, 234, 63, 14, 160, 56, 99, 207, 254,
+            22, 155, 108, 178, 103, 224, 122, 91, 87, 153, 136, 215, 101, 178, 9, 77,
+            59, 211, 154, 144, 73, 113, 30, 147, 121, 116, 86, 99, 97, 168, 237, 220,
+        ],
+        [
+            43, 179, 35, 233, 101, 64, 126, 55, 21, 7, 201, 97, 19, 110, 236, 205,
+            192, 65, 41, 109, 242, 53, 109, 134, 94, 88, 3, 84, 59, 102, 102, 85,
+            8, 211, 46, 89, 222, 80, 54, 30, 207, 87, 151, 23, 10, 3, 87, 1,
+            64, 22, 11, 9, 156, 191, 18, 250, 0, 23, 43, 43, 117, 19, 186, 166,
+        ],
+        [
+            43, 76, 194, 133, 222, 30, 131, 49, 167, 249, 138, 129, 70, 28, 202, 228,
+            20, 235, 164, 61, 41, 75, 19, 239, 4, 99, 220, 88, 168, 195, 167, 155,
+            43, 58, 198, 3, 174, 140, 158, 231, 198, 54, 51, 51, 202, 214, 27, 198,
+            171, 115, 18, 79, 52, 191, 76, 252, 251, 92, 27, 74, 56, 136, 120, 43,
+        ],
+        [
+            13, 247, 73, 168, 113, 5, 46, 153, 43, 102, 211, 164, 194, 216, 76, 100,
+            13, 145, 207, 226, 118, 29, 225, 39, 113, 244, 32, 12, 177, 227, 144, 179,
+            4, 241, 102, 224, 82, 57, 196, 68, 246, 72, 15, 58, 41, 95, 235, 135,
+            8, 16, 89, 239, 190, 203, 49, 18, 99, 205, 156, 182, 4, 207, 109, 201,
+        ],
+        [
+            7, 235, 30, 38, 144, 189, 207, 200, 89, 111, 201, 72, 115, 47, 12, 85,
+            204, 160, 233, 133, 201, 216, 128, 36, 149, 236, 61, 180, 44, 57, 92, 40,
+            30, 74, 185, 180, 72, 189, 46, 2, 200, 235, 238, 178, 92, 175, 243, 220,
+            76, 221, 128, 89, 7, 14, 8, 160, 178, 139, 33, 147, 61, 30, 19, 209,
+        ],
+        [
+            16, 95, 32, 5, 251, 6, 252, 88, 34, 145, 76, 211, 94, 192, 140, 79,
+            110, 139, 47, 167, 181, 255, 181, 248, 107, 112, 86, 9, 233, 191, 159, 158,
+            39, 124, 92, 225, 45, 98, 201, 235, 233, 85, 17, 45, 21, 18, 132, 21,
+            40, 121, 178, 60, 190, 70, 241, 57, 44, 234, 84, 43, 127, 70, 102, 26,
+        ],
+    ],
+};
+
 /// ext_data_hash for batch payouts: same recipe as
 /// calculate_complete_ext_data_hash but over 3 encrypted outputs.
 pub fn calculate_complete_ext_data_hash_batch3(
@@ -381,19 +477,24 @@ pub fn calculate_complete_ext_data_hash_batch3(
     fee_recipient: &[u8; 32],
     mint_address: &[u8; 32],
 ) -> Result<[u8; 32], ProgramError> {
-    let mut data = Vec::new();
+    let len0 = (encrypted_outputs[0].len() as u32).to_le_bytes();
+    let len1 = (encrypted_outputs[1].len() as u32).to_le_bytes();
+    let len2 = (encrypted_outputs[2].len() as u32).to_le_bytes();
 
-    data.extend_from_slice(recipient);
-    data.extend_from_slice(&ext_amount.to_le_bytes());
-    for enc in encrypted_outputs {
-        data.extend_from_slice(&(enc.len() as u32).to_le_bytes());
-        data.extend_from_slice(enc);
-    }
-    data.extend_from_slice(&fee.to_le_bytes());
-    data.extend_from_slice(fee_recipient);
-    data.extend_from_slice(mint_address);
-
-    Sha256::hash(&data).map_err(|_| ProgramError::InvalidInstructionData)
+    Sha256::hashv(&[
+        recipient,
+        &ext_amount.to_le_bytes(),
+        &len0,
+        encrypted_outputs[0],
+        &len1,
+        encrypted_outputs[1],
+        &len2,
+        encrypted_outputs[2],
+        &fee.to_le_bytes(),
+        fee_recipient,
+        mint_address,
+    ])
+    .map_err(|_| ProgramError::InvalidInstructionData)
 }
 
 pub fn verify_proof_batch3(proof: &ProofBatch3, verifying_key: &Groth16Verifyingkey) -> bool {
@@ -408,36 +509,78 @@ pub fn verify_proof_batch3(proof: &ProofBatch3, verifying_key: &Groth16Verifying
     public_inputs_vec[6] = proof.output_commitments[1];
     public_inputs_vec[7] = proof.output_commitments[2];
 
-    let g1_point = match G1::deserialize_with_mode(
-        &*[&change_endianness(&proof.proof_a[0..64]), &[0u8][..]].concat(),
-        Compress::No,
-        Validate::Yes,
+    let proof_a: [u8; 64] = match negate_g1(&proof.proof_a) {
+        Some(bytes) => bytes,
+        None => return false,
+    };
+
+    let mut verifier = match Groth16Verifier::new(
+        &proof_a,
+        &proof.proof_b,
+        &proof.proof_c,
+        &public_inputs_vec,
+        verifying_key,
     ) {
-        Ok(point) => point,
+        Ok(v) => v,
         Err(_) => return false,
     };
 
-    let mut proof_a_neg = [0u8; 65];
-    if g1_point
-        .neg()
-        .x
-        .serialize_with_mode(&mut proof_a_neg[..32], Compress::No)
-        .is_err()
-    {
-        return false;
-    }
-    if g1_point
-        .neg()
-        .y
-        .serialize_with_mode(&mut proof_a_neg[32..], Compress::No)
-        .is_err()
-    {
-        return false;
-    }
+    verifier.verify().unwrap_or(false)
+}
 
-    let proof_a: [u8; 64] = match change_endianness(&proof_a_neg[..64]).try_into() {
-        Ok(array) => array,
-        Err(_) => return false,
+/// ext_data_hash for batch payouts: same recipe as
+/// calculate_complete_ext_data_hash but over 5 encrypted outputs.
+pub fn calculate_complete_ext_data_hash_batch5(
+    recipient: &[u8; 32],
+    ext_amount: i64,
+    encrypted_outputs: [&[u8]; 5],
+    fee: u64,
+    fee_recipient: &[u8; 32],
+    mint_address: &[u8; 32],
+) -> Result<[u8; 32], ProgramError> {
+    let len0 = (encrypted_outputs[0].len() as u32).to_le_bytes();
+    let len1 = (encrypted_outputs[1].len() as u32).to_le_bytes();
+    let len2 = (encrypted_outputs[2].len() as u32).to_le_bytes();
+    let len3 = (encrypted_outputs[3].len() as u32).to_le_bytes();
+    let len4 = (encrypted_outputs[4].len() as u32).to_le_bytes();
+
+    Sha256::hashv(&[
+        recipient,
+        &ext_amount.to_le_bytes(),
+        &len0,
+        encrypted_outputs[0],
+        &len1,
+        encrypted_outputs[1],
+        &len2,
+        encrypted_outputs[2],
+        &len3,
+        encrypted_outputs[3],
+        &len4,
+        encrypted_outputs[4],
+        &fee.to_le_bytes(),
+        fee_recipient,
+        mint_address,
+    ])
+    .map_err(|_| ProgramError::InvalidInstructionData)
+}
+
+pub fn verify_proof_batch5(proof: &ProofBatch5, verifying_key: &Groth16Verifyingkey) -> bool {
+    let mut public_inputs_vec: [[u8; 32]; 10] = [[0u8; 32]; 10];
+
+    public_inputs_vec[0] = proof.root;
+    public_inputs_vec[1] = proof.public_amount;
+    public_inputs_vec[2] = proof.ext_data_hash;
+    public_inputs_vec[3] = proof.input_nullifiers[0];
+    public_inputs_vec[4] = proof.input_nullifiers[1];
+    public_inputs_vec[5] = proof.output_commitments[0];
+    public_inputs_vec[6] = proof.output_commitments[1];
+    public_inputs_vec[7] = proof.output_commitments[2];
+    public_inputs_vec[8] = proof.output_commitments[3];
+    public_inputs_vec[9] = proof.output_commitments[4];
+
+    let proof_a: [u8; 64] = match negate_g1(&proof.proof_a) {
+        Some(bytes) => bytes,
+        None => return false,
     };
 
     let mut verifier = match Groth16Verifier::new(
@@ -480,6 +623,9 @@ mod tests {
 #[cfg(test)]
 mod transfer_tests {
     use super::*;
+    use ark_bn254::Fr;
+    use ark_ff::PrimeField;
+    use ark_serialize::CanonicalSerialize;
 
     fn fr_to_be_bytes(f: Fr) -> [u8; 32] {
         let mut bytes = Vec::new();
@@ -514,5 +660,261 @@ mod transfer_tests {
         let fee: u64 = 1;
         let public_amount = fr_to_be_bytes(-(Fr::from(5u64) + Fr::from(fee)));
         assert!(check_public_amount(ext_amount, fee, public_amount));
+    }
+}
+
+#[cfg(test)]
+mod equivalence {
+    use super::*;
+    use ark_bn254::{G1Affine, G1Projective};
+    use ark_bn254::Fr;
+    use ark_ec::{AffineRepr, CurveGroup, PrimeGroup};
+    use ark_ff::PrimeField;
+    use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
+    use core::ops::Neg;
+
+    struct Lcg(u64);
+    impl Lcg {
+        fn next_u64(&mut self) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            self.0
+        }
+    }
+
+    fn fr_to_be_bytes(f: Fr) -> [u8; 32] {
+        let mut bytes = Vec::new();
+        f.serialize_uncompressed(&mut bytes).unwrap();
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&bytes);
+        arr.reverse();
+        arr
+    }
+
+    fn reference_ext_data_hash_matches(calculated: [u8; 32], proof_hash: [u8; 32]) -> bool {
+        Fr::from_le_bytes_mod_order(&calculated) == Fr::from_be_bytes_mod_order(&proof_hash)
+    }
+
+    fn reference_check_public_amount(
+        ext_amount: i64,
+        fee: u64,
+        public_amount_bytes: [u8; 32],
+    ) -> bool {
+        if ext_amount == i64::MIN {
+            return false;
+        }
+
+        let fee_fr = Fr::from(fee);
+        let ext_amount_fr = if ext_amount >= 0 {
+            Fr::from(ext_amount as u64)
+        } else {
+            let abs_ext_amount = match ext_amount.checked_neg() {
+                Some(val) => val,
+                None => return false,
+            };
+            Fr::from(abs_ext_amount as u64)
+        };
+
+        if ext_amount > 0 && ext_amount_fr <= fee_fr {
+            return false;
+        }
+
+        let result_public_amount = if ext_amount >= 0 {
+            ext_amount_fr - fee_fr
+        } else {
+            -(ext_amount_fr + fee_fr)
+        };
+
+        let provided_amount = Fr::from_be_bytes_mod_order(&public_amount_bytes);
+        result_public_amount == provided_amount
+    }
+
+    fn reference_change_endianness(bytes: &[u8]) -> Vec<u8> {
+        let mut vec = Vec::new();
+        for b in bytes.chunks(32) {
+            for byte in b.iter().rev() {
+                vec.push(*byte);
+            }
+        }
+        vec
+    }
+
+    fn reference_negate_g1(wire: &[u8; 64]) -> Option<[u8; 64]> {
+        let wire_be: Vec<u8> = [
+            reference_change_endianness(&wire[0..64]).as_slice(),
+            &[0u8][..],
+        ]
+        .concat();
+        let g1_point =
+            G1Affine::deserialize_with_mode(wire_be.as_slice(), Compress::No, Validate::Yes)
+                .ok()?;
+
+        let mut proof_a_neg = [0u8; 65];
+        g1_point
+            .neg()
+            .x
+            .serialize_with_mode(&mut proof_a_neg[..32], Compress::No)
+            .ok()?;
+        g1_point
+            .neg()
+            .y
+            .serialize_with_mode(&mut proof_a_neg[32..], Compress::No)
+            .ok()?;
+
+        reference_change_endianness(&proof_a_neg[..64])
+            .as_slice()
+            .try_into()
+            .ok()
+    }
+
+    #[test]
+    fn ext_data_hash_matches_matches_arkworks() {
+        let mut rng = Lcg(0x5eed);
+
+        let mut pairs: Vec<([u8; 32], [u8; 32])> = Vec::new();
+        for _ in 0..256 {
+            let mut a = [0u8; 32];
+            let mut b = [0u8; 32];
+            for (x, y) in a.iter_mut().zip(b.iter_mut()) {
+                *x = rng.next_u64() as u8;
+                *y = rng.next_u64() as u8;
+            }
+            pairs.push((a, b));
+        }
+        for _ in 0..256 {
+            let mut value = [0u8; 32];
+            for byte in value.iter_mut() {
+                *byte = rng.next_u64() as u8;
+            }
+            let mut as_le = value;
+            as_le.reverse();
+            pairs.push((as_le, value));
+        }
+
+        for (calculated, proof_hash) in pairs {
+            assert_eq!(
+                ext_data_hash_matches(calculated, proof_hash),
+                reference_ext_data_hash_matches(calculated, proof_hash),
+                "pair {:02x?} {:02x?}",
+                calculated,
+                proof_hash
+            );
+        }
+    }
+
+    #[test]
+    fn check_public_amount_matches_arkworks() {
+        let mut rng = Lcg(0xC0FFEE);
+
+        let mut amounts: Vec<i64> =
+            vec![0, 1, 2, -1, -2, i64::MAX, i64::MIN, i64::MIN + 1];
+        let mut fees: Vec<u64> = vec![0, 1, 2, u64::MAX, u64::MAX - 1];
+        for _ in 0..16 {
+            amounts.push(rng.next_u64() as i64);
+            fees.push(rng.next_u64());
+        }
+
+        for amount in &amounts {
+            for fee in &fees {
+                let mut candidates: Vec<[u8; 32]> = vec![[0u8; 32]];
+                if let Some(expected) = reference_expected_public_amount(*amount, *fee) {
+                    candidates.push(expected);
+                    let mut plus_one = expected;
+                    plus_one[31] = plus_one[31].wrapping_add(1);
+                    candidates.push(plus_one);
+                }
+                let mut random = [0u8; 32];
+                for byte in random.iter_mut() {
+                    *byte = rng.next_u64() as u8;
+                }
+                candidates.push(random);
+
+                for candidate in candidates {
+                    assert_eq!(
+                        check_public_amount(*amount, *fee, candidate),
+                        reference_check_public_amount(*amount, *fee, candidate),
+                        "amount {} fee {} candidate {:02x?}",
+                        amount,
+                        fee,
+                        candidate
+                    );
+                }
+            }
+        }
+    }
+
+    fn reference_expected_public_amount(ext_amount: i64, fee: u64) -> Option<[u8; 32]> {
+        if ext_amount == i64::MIN {
+            return None;
+        }
+        if ext_amount > 0 && ext_amount as u64 <= fee {
+            return None;
+        }
+        let fee_fr = Fr::from(fee);
+        let result = if ext_amount >= 0 {
+            Fr::from(ext_amount as u64) - fee_fr
+        } else {
+            -(Fr::from(((-ext_amount) as u64)) + fee_fr)
+        };
+        Some(fr_to_be_bytes(result))
+    }
+
+    /// ark serializes Fp limbs little-endian; the wire/syscall form is
+    /// big-endian, so each 32-byte coordinate is byte-reversed on the way out
+    /// (same conversion the prover's serialize_g1 does with fq_to_be_bytes_32).
+    fn point_to_wire(point: &G1Affine) -> [u8; 64] {
+        let mut x = Vec::new();
+        let mut y = Vec::new();
+        point.x().unwrap().serialize_uncompressed(&mut x).unwrap();
+        point.y().unwrap().serialize_uncompressed(&mut y).unwrap();
+
+        let mut wire = [0u8; 64];
+        wire[0..32].copy_from_slice(&x);
+        wire[32..64].copy_from_slice(&y);
+        wire[0..32].reverse();
+        wire[32..64].reverse();
+        wire
+    }
+
+    #[test]
+    fn negate_g1_matches_arkworks() {
+        for i in 1..=64u64 {
+            let scalar = Fr::from(i);
+            let point: G1Affine = (G1Projective::generator() * scalar).into();
+            let wire = point_to_wire(&point);
+
+            let got = negate_g1(&wire);
+            let expected = reference_negate_g1(&wire);
+            assert_eq!(got, expected, "point {}", i);
+
+            let negated: G1Affine = (G1Projective::generator() * (-scalar)).into();
+            let negated_wire = point_to_wire(&negated);
+            assert_eq!(&got.unwrap()[32..], &negated_wire[32..], "point {} y", i);
+        }
+    }
+
+    #[test]
+    fn negate_g1_rejects_invalid_y() {
+        let generator_wire = point_to_wire(&G1Affine::generator());
+
+        let mut y_zero = generator_wire;
+        y_zero[32..64].copy_from_slice(&[0u8; 32]);
+        assert_eq!(negate_g1(&y_zero), None);
+
+        // Wire coordinates are big-endian, so the field-size boundary values
+        // go in as-is.
+        let mut y_equals_q = generator_wire;
+        y_equals_q[32..64].copy_from_slice(&crate::field::FQ_BE);
+        assert_eq!(negate_g1(&y_equals_q), None);
+
+        let mut y_above_q = crate::field::FQ_BE;
+        y_above_q[0] += 1;
+        let mut y_greater = generator_wire;
+        y_greater[32..64].copy_from_slice(&y_above_q);
+        assert_eq!(negate_g1(&y_greater), None);
+
+        assert_eq!(negate_g1(&[0u8; 64]), None);
     }
 }

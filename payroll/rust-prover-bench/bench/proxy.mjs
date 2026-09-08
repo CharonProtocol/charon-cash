@@ -94,10 +94,11 @@ function hexToByteArr(hex) {
 //            | extDataHash 32 | nullifier0 32 | nullifier1 32 | commitment0 32 | commitment1 32
 //            | extAmount i64le | fee u64le | len u32le enc1 | len u32le enc2 | bump0 bump1
 // batch3 (disc 7): same shape but THREE commitments + THREE length-prefixed encs.
+// batch5 (disc 8): FIVE commitments + FIVE length-prefixed encs (4 employees + change).
 function decodeTransactIx(data) {
   const disc = data[0]
-  if (disc !== 2 && disc !== 3 && disc !== 7) return null
-  const nOut = disc === 7 ? 3 : 2
+  if (disc !== 2 && disc !== 3 && disc !== 7 && disc !== 8) return null
+  const nOut = disc === 7 ? 3 : disc === 8 ? 5 : 2
   let o = 1
   const take32 = () => { const s = data.subarray(o, o + 32); o += 32; return s }
   o += 64 + 128 + 64 // proof
@@ -377,6 +378,18 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost")
   const path = url.pathname
   try {
+    // --- intercepted: blockhash (served locally) ---
+    // wrangler dev dies under 16-lane load mid-bench, killing every payout
+    // lane's fetchBlockhash; the proxy already holds a direct RPC connection,
+    // so serve this one endpoint from here and keep the relayer off the
+    // payout hot path (submits still go through it).
+    if (req.method === "GET" && path === "/api/relayer/blockhash") {
+      const bh = await rpcCall("getLatestBlockhash", [{ commitment: "confirmed" }])
+      const slot = await rpcCall("getSlot", [])
+      json(res, 200, { blockhash: bh.value.blockhash, slot: slot })
+      return
+    }
+
     // --- intercepted: submit ---
     if (req.method === "POST" && path === "/api/relayer/submit") {
       const body = JSON.parse((await readBody(req)).toString())
@@ -406,7 +419,8 @@ const server = http.createServer(async (req, res) => {
           pending.set(sig, { decode: decodes, submittedAt: Date.now() })
           stats.submitted++
           const nC = decodes.reduce((s, d) => s + d.commitments.length, 0)
-          console.log(`[submit] ${new Date().toISOString()} tracked ${sig.slice(0, 16)} ixs=${decodes.length} disc=${nC === decodes.length * 3 ? 7 : 2}`)
+          const disc = nC === decodes.length * 5 ? 8 : nC === decodes.length * 3 ? 7 : 2
+          console.log(`[submit] ${new Date().toISOString()} tracked ${sig.slice(0, 16)} ixs=${decodes.length} disc=${disc}`)
         } catch (e) {
           console.error("[submit] decode failed:", e.message)
         }

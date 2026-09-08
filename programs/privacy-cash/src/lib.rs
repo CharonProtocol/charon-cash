@@ -3,13 +3,15 @@ use pinocchio_pubkey::declare_id;
 
 use crate::instructions::{
     process_initialize, process_initialize_tree_account_for_spl_token, process_transact,
-    process_transact_batch3, process_transact_spl, process_update_global_config,
+    process_transact_batch3, process_transact_batch5, process_transact_spl,
+    process_update_global_config,
     update_deposit_limit::process_update_deposit_limit,
     update_deposit_limit_for_spl::process_update_deposit_limit_for_spl, PrivacyCashInstructions,
 };
 
 pub mod constants;
 pub mod error;
+pub mod field;
 pub mod groth16;
 pub mod helper;
 pub mod instructions;
@@ -19,7 +21,7 @@ pub mod utils;
 
 declare_id!("9PpZ9iUSCk6fuv4MvFEkN64hd7kkh28GxGLgSUDRZA9V");
 
-entrypoint!(process_instructions);
+entrypoint!(process_instructions, 16);
 
 fn process_instructions(
     _program_id: &Address,
@@ -37,6 +39,7 @@ fn process_instructions(
         }
         PrivacyCashInstructions::Transact => process_transact(accounts, data)?,
         PrivacyCashInstructions::TransactBatch3 => process_transact_batch3(accounts, data)?,
+        PrivacyCashInstructions::TransactBatch5 => process_transact_batch5(accounts, data)?,
         PrivacyCashInstructions::TransactSpl => process_transact_spl(accounts, data)?,
         PrivacyCashInstructions::UpdateDepositLimit => {
             process_update_deposit_limit(accounts, data)?

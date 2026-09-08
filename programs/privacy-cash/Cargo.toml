@@ -18,13 +18,13 @@ num-derive = "0.4.2"
 solana-clock = "3.0.1"
 shank = "0.4.8"
 light-hasher = "4.0.0"
+solana-bn254 = "3.2.1"
+
+[dev-dependencies]
 ark-bn254 = "0.6.0"
 ark-ff = "0.6.0"
 ark-serialize = "0.6.0"
 num-bigint = "0.4"
-solana-bn254 = "3.2.1"
-
-[dev-dependencies]
 litesvm = "0.10.0"
 litesvm-token = "0.10.0"
 

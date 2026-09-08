@@ -165,3 +165,74 @@ impl<'a> TransactArgsBatch3<'a> {
         })
     }
 }
+
+// Batch payout variant of Proof/TransactArgs for Transaction(26, 2, 5): the
+// same JoinSplit shape but 5 output commitments (4 employees + change).
+pub const PROOF_BATCH5_SIZE: usize = core::mem::size_of::<ProofBatch5>();
+pub const FIXED_TRANSACT_BATCH5_ARGS_SIZE: usize =
+    PROOF_BATCH5_SIZE + core::mem::size_of::<ExtDataMinified>();
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
+pub struct ProofBatch5 {
+    pub proof_a: [u8; 64],
+    pub proof_b: [u8; 128],
+    pub proof_c: [u8; 64],
+    pub root: [u8; 32],
+    pub public_amount: [u8; 32],
+    pub ext_data_hash: [u8; 32],
+    pub input_nullifiers: [[u8; 32]; 2],
+    pub output_commitments: [[u8; 32]; 5],
+}
+
+pub struct TransactArgsBatch5<'a> {
+    pub proof: &'a ProofBatch5,
+    pub ext_data_minified: ExtDataMinified,
+    pub encrypted_outputs: [&'a [u8]; 5],
+    pub nullifier_bump0: u8,
+    pub nullifier_bump1: u8,
+}
+
+impl<'a> TransactArgsBatch5<'a> {
+    pub fn try_from_bytes(data: &'a [u8]) -> Result<Self, ProgramError> {
+        if data.len() < FIXED_TRANSACT_BATCH5_ARGS_SIZE {
+            return Err(ProgramError::InvalidInstructionData);
+        }
+
+        let proof = bytemuck::try_from_bytes::<ProofBatch5>(&data[..PROOF_BATCH5_SIZE])
+            .map_err(|_| ProgramError::InvalidInstructionData)?;
+
+        let ext_data_minified = bytemuck::try_pod_read_unaligned::<ExtDataMinified>(
+            &data[PROOF_BATCH5_SIZE..FIXED_TRANSACT_BATCH5_ARGS_SIZE],
+        )
+        .map_err(|_| ProgramError::InvalidInstructionData)?;
+
+        let mut offset = FIXED_TRANSACT_BATCH5_ARGS_SIZE;
+        let encrypted_outputs = [
+            read_length_prefixed_slice(data, &mut offset)?,
+            read_length_prefixed_slice(data, &mut offset)?,
+            read_length_prefixed_slice(data, &mut offset)?,
+            read_length_prefixed_slice(data, &mut offset)?,
+            read_length_prefixed_slice(data, &mut offset)?,
+        ];
+
+        if data.len() < offset + 2 {
+            return Err(ProgramError::InvalidInstructionData);
+        }
+
+        let nullifier_bump0 = data[offset];
+        let nullifier_bump1 = data[offset + 1];
+        offset += 2;
+        if offset != data.len() {
+            return Err(ProgramError::InvalidInstructionData);
+        }
+
+        Ok(Self {
+            proof,
+            ext_data_minified,
+            encrypted_outputs,
+            nullifier_bump0,
+            nullifier_bump1,
+        })
+    }
+}

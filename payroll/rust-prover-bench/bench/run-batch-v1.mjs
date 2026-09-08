@@ -34,10 +34,20 @@ const REPO = fileURLToPath(new URL("../../../", import.meta.url))
 const ARTIFACTS = REPO + "programs/privacy-cash/artifacts/circuits"
 const T2_CIRCUIT = process.env.CIRCUIT ?? ARTIFACTS + "/transaction2"
 const B3_CIRCUIT = process.env.B3_CIRCUIT ?? ARTIFACTS + "/transaction_batch3"
+const B5_CIRCUIT = process.env.B5_CIRCUIT ?? ARTIFACTS + "/transaction_batch5"
+// BATCH5=1 switches the payout circuit to Transaction(26,2,5): 4 employees +
+// change per proof (5 output commitments, disc 8). ~1.5KB ixData per transact,
+// so only 2 fit a 4,096B v1 tx.
+const MODE5 = process.env.BATCH5 === "1"
+const CIRCUIT_PREFIX = MODE5 ? B5_CIRCUIT : B3_CIRCUIT
+const EMP_PER_PROOF = MODE5 ? 4 : 2
+const OUTS = EMP_PER_PROOF + 1
 const ARK_BIN = process.env.ARK_BIN ?? REPO + "payroll/rust-prover-bench/target/release/prover-server"
-// transacts packed per v1 tx — size-capped ~3 (4,096B tx, ~1.1KB ixData each);
-// CU is set once per tx as PER_TX x 165k + margin
-const PER_TX = Number(process.env.PER_TX ?? 3)
+// transacts packed per v1 tx — size-capped (4,096B tx: 3 batch3 ixs ~1.1KB
+// each, 2 batch5 ixs ~1.5KB each); CU is set once per tx as
+// PER_TX x CU_PER_TRANSACT + margin (groth16 verify grows with public inputs)
+const PER_TX = Number(process.env.PER_TX ?? (MODE5 ? 2 : 3))
+const CU_PER_TRANSACT = Number(process.env.CU_PER_TRANSACT ?? (MODE5 ? 220_000 : 165_000))
 function defaultProvers() {
   const gb = os.totalmem() / 2 ** 30
   const cpus = Math.max(1, os.cpus().length)
@@ -255,7 +265,7 @@ logEvent(-1, -1, "register", { employees: TOTAL, ms: Date.now() - T_REG })
 const relayerInfo = await sdk.fetchRelayerInfo()
 const feeBps = relayerInfo.withdrawalFeeRateBps
 const feeFloor = relayerInfo.minTransferFee ?? 0
-const feePerTx = BigInt(Math.max(Math.ceil((Number(2n * PAY) * feeBps) / 10000), feeFloor))
+const feePerTx = BigInt(Math.max(Math.ceil((Number(BigInt(EMP_PER_PROOF) * PAY) * feeBps) / 10000), feeFloor))
 console.log(`fee per batch tx: ${feePerTx} (bps=${feeBps}, floor=${feeFloor})`)
 
 // ---------------- phase 1: deposits (t2 prover), nBatchTx per pool ----------------
@@ -267,10 +277,10 @@ sdk.setProver(async (input) => proveOn(t2Pool, input))
 
 async function depositPool(poolIdx) {
   const empCount = poolSizes[poolIdx]
-  const nBatchTx = Math.ceil(empCount / 2)
+  const nBatchTx = Math.ceil(empCount / EMP_PER_PROOF)
   const signer = localSigner(employers[poolIdx])
   const client = new sdk.PrivacyCashClient(signer, PROGRAM_ID)
-  const depAmount = 2n * PAY + feePerTx + SLACK_PER_TX
+  const depAmount = BigInt(EMP_PER_PROOF) * PAY + feePerTx + SLACK_PER_TX
   const notes = []
   for (let d = 0; d < nBatchTx; d++) {
     const before = new Set(sdk.unspentNotes(client.publicKey).map(n => n.blinding))
@@ -294,14 +304,14 @@ t2Pool.kill()
 console.log("t2 provers stopped")
 
 // ---------------- phase 2: batch3 payouts packed into v1 txs ----------------
-console.log("spawning", ARK_PROVERS, "batch3 provers")
-const b3Pool = new ArkPool(ARK_PROVERS, B3_CIRCUIT)
+console.log("spawning", ARK_PROVERS, MODE5 ? "batch5" : "batch3", "provers")
+const b3Pool = new ArkPool(ARK_PROVERS, CIRCUIT_PREFIX)
 livePools.add(b3Pool)
 await b3Pool.warmup()
 
-function buildBatch3IxData(proof, extAmount, fee, encs, bump0, bump1) {
+function buildBatchIxData(disc, proof, extAmount, fee, encs, bump0, bump1) {
   const parts = [
-    Buffer.from([7]),
+    Buffer.from([disc]),
     Buffer.from(proof.proofA),
     Buffer.from(proof.proofB),
     Buffer.from(proof.proofC),
@@ -310,9 +320,7 @@ function buildBatch3IxData(proof, extAmount, fee, encs, bump0, bump1) {
     Buffer.from(proof.extDataHash),
     Buffer.from(proof.inputNullifiers[0]),
     Buffer.from(proof.inputNullifiers[1]),
-    Buffer.from(proof.outputCommitments[0]),
-    Buffer.from(proof.outputCommitments[1]),
-    Buffer.from(proof.outputCommitments[2]),
+    ...proof.outputCommitments.map((c) => Buffer.from(c)),
     new BN(extAmount).toTwos(64).toArrayLike(Buffer, "le", 8),
     new BN(fee).toArrayLike(Buffer, "le", 8),
   ]
@@ -325,9 +333,15 @@ function buildBatch3IxData(proof, extAmount, fee, encs, bump0, bump1) {
   return Buffer.concat(parts)
 }
 
-// one independent batch3 transact: consumes its own deposit note, pays 2
-// employees, keeps its own change. No chaining between transacts.
-async function buildTransact(poolIdx, note, empA, empB, isTailSingle) {
+// one independent transact: consumes its own deposit note, pays nPay
+// employees, keeps its own change. No chaining between transacts. Unused
+// employee slots are zero-amount self-notes (structural padding).
+
+// per-lane employee recipient keys, filled by payBatchV1 before any prove
+const laneEmpKeys = new Map()
+const empKeysAt = (poolIdx, i) => laneEmpKeys.get(poolIdx)[i]
+
+async function buildTransact(poolIdx, note, firstEmp, nPay) {
   const { client } = depResults[poolIdx]
   const utxoKeypair = client.utxoKeypair
   const wasm = client.wasm
@@ -344,32 +358,33 @@ async function buildTransact(poolIdx, note, empA, empB, isTailSingle) {
   const proofInfo = await sdk.fetchMerkleProof(sdk.SOL_TREE_KEY, note.index)
   const nextLeafIndex = proofInfo.nextLeafIndex
 
-  const nPay = isTailSingle ? 1 : 2
   const net = BigInt(nPay) * PAY
   const totalInput = BigInt(note.amount)
   const changeAmt = totalInput - net - feePerTx
 
-  const outputs = [
-    new sdk.Utxo({
-      wasm, amount: PAY.toString(), pubkey: empA.notePubkey,
-      index: nextLeafIndex, mintAddress: sdk.WRAPPED_SOL_MINT,
-    }),
-    isTailSingle
-      ? new sdk.Utxo({ wasm, amount: "0", keypair: utxoKeypair, index: nextLeafIndex + 1, mintAddress: sdk.WRAPPED_SOL_MINT })
-      : new sdk.Utxo({
-          wasm, amount: PAY.toString(), pubkey: empB.notePubkey,
-          index: nextLeafIndex + 1, mintAddress: sdk.WRAPPED_SOL_MINT,
-        }),
-    new sdk.Utxo({ wasm, amount: changeAmt.toString(), keypair: utxoKeypair, index: nextLeafIndex + 2, mintAddress: sdk.WRAPPED_SOL_MINT }),
-  ]
+  const outputs = []
+  for (let i = 0; i < EMP_PER_PROOF; i++) {
+    if (i < nPay) {
+      const emp = empKeysAt(poolIdx, firstEmp + i)
+      outputs.push(new sdk.Utxo({
+        wasm, amount: PAY.toString(), pubkey: emp.notePubkey,
+        index: nextLeafIndex + i, mintAddress: sdk.WRAPPED_SOL_MINT,
+      }))
+    } else {
+      outputs.push(new sdk.Utxo({ wasm, amount: "0", keypair: utxoKeypair, index: nextLeafIndex + i, mintAddress: sdk.WRAPPED_SOL_MINT }))
+    }
+  }
+  outputs.push(new sdk.Utxo({ wasm, amount: changeAmt.toString(), keypair: utxoKeypair, index: nextLeafIndex + EMP_PER_PROOF, mintAddress: sdk.WRAPPED_SOL_MINT }))
 
-  const encs = [
-    await sdk.encryptUtxoTo(Buffer.from(empA.encPubkey, "hex"), outputs[0]),
-    isTailSingle
-      ? await client.enc.encryptUtxo(outputs[1])
-      : await sdk.encryptUtxoTo(Buffer.from(empB.encPubkey, "hex"), outputs[1]),
-    await client.enc.encryptUtxo(outputs[2]),
-  ]
+  const encs = []
+  for (let i = 0; i < EMP_PER_PROOF; i++) {
+    encs.push(
+      i < nPay
+        ? await sdk.encryptUtxoTo(Buffer.from(empKeysAt(poolIdx, firstEmp + i).encPubkey, "hex"), outputs[i])
+        : await client.enc.encryptUtxo(outputs[i])
+    )
+  }
+  encs.push(await client.enc.encryptUtxo(outputs[EMP_PER_PROOF]))
 
   const extDataHash = getExtDataHashBatch3({
     recipient: feeRecipient, extAmount: 0, encs, fee: feePerTx, feeRecipient, mintAddress: sdk.WRAPPED_SOL_MINT,
@@ -410,11 +425,11 @@ async function buildTransact(poolIdx, note, empA, empB, isTailSingle) {
     publicAmount: pub[1],
     extDataHash: pub[2],
     inputNullifiers: [pub[3], pub[4]],
-    outputCommitments: [pub[5], pub[6], pub[7]],
+    outputCommitments: pub.slice(5, 5 + OUTS).map((c) => Array.from(c)),
   }
 
   const accounts = sdk.deriveAccounts(PROGRAM_ID, Uint8Array.from(pub[3]), Uint8Array.from(pub[4]))
-  const ixData = buildBatch3IxData(proofSubmit, 0, feePerTx, encs, accounts.bump0, accounts.bump1)
+  const ixData = buildBatchIxData(MODE5 ? 8 : 7, proofSubmit, 0, feePerTx, encs, accounts.bump0, accounts.bump1)
 
   // roles for the v1 builder: writable = 1, signer = 2
   const sys = SystemProgram.programId.toBase58()
@@ -439,15 +454,17 @@ async function buildTransact(poolIdx, note, empA, empB, isTailSingle) {
 }
 
 // Root-history pipeline bound: the program accepts a proof root only while it is
-// among the last 100 appended roots, and every landed tx appends 9 leaves
-// (3 transacts x 3 commitments). Unbounded lanes pushed 144-leaf bursts through a
-// 100-leaf window -> UnknownRoot (custom error 5) at the ~5.9k-CU merkle check.
+// among the last 100 appended roots, and every landed tx appends
+// PER_TX x OUTS leaves (9 for batch3, 10 for batch5). Unbounded lanes pushed
+// 144-leaf bursts through a 100-leaf window -> UnknownRoot (custom error 5) at
+// the ~5.9k-CU merkle check.
 // Two layers:
 //  1. PIPELINE_SLOTS caps groups inside the fetch->prove->submit lifecycle. Only
 //     slot-holders land txs, so by Little's law the leaves that land between any
-//     group's proof fetch and its exec are ~9 x slots: exec age ~72 for 8 slots,
-//     inside the window with margin. (9 slots sat at ~81 and one burst tipped
-//     past 100 once, at ARK_THREADS=2 cycling speed.)
+//     group's proof fetch and its exec are ~(PER_TX x OUTS) x slots: ~72 for
+//     batch3 at 8 slots, ~80 for batch5, inside the window with margin.
+//     (9 slots sat at ~81 and one burst tipped past 100 once, at
+//     ARK_THREADS=2 cycling speed.)
 //  2. A tripwire on the TRUE chain age: age = chainNextIndex(now) -
 //     chainNextIndex(at fetch), read from the tree PDA (u32le @ 8). Proofs older
 //     than GATE_AGE are rebuilt fresh (a rebuild converges: new proofs start at
@@ -474,7 +491,7 @@ async function payBatchV1(poolIdx) {
   const { notes } = depResults[poolIdx]
   const empCount = poolSizes[poolIdx]
   const employeeOff = poolSizes.slice(0, poolIdx).reduce((s, x) => s + x, 0)
-  const nBatchTx = Math.ceil(empCount / 2)
+  const nBatchTx = Math.ceil(empCount / EMP_PER_PROOF)
 
   const empKeys = []
   for (let seq = 0; seq < empCount; seq++) {
@@ -482,17 +499,15 @@ async function payBatchV1(poolIdx) {
     if (!k) throw new Error(`employee ${employeeOff + seq} has no recipient keys`)
     empKeys.push(k)
   }
+  laneEmpKeys.set(poolIdx, empKeys)
 
   const proveGroup = async (b) => {
     // build + prove PER_TX independent transacts in parallel
     const group = []
     for (let g = b; g < Math.min(b + PER_TX, nBatchTx); g++) {
-      const firstEmp = g * 2
-      const isTailSingle = empCount - firstEmp === 1
-      group.push(
-        buildTransact(poolIdx, notes[g], empKeys[firstEmp], empKeys[firstEmp + 1], isTailSingle)
-          .then(r => ({ ...r, isTailSingle }))
-      )
+      const firstEmp = g * EMP_PER_PROOF
+      const nPay = Math.min(EMP_PER_PROOF, empCount - firstEmp)
+      group.push(buildTransact(poolIdx, notes[g], firstEmp, nPay))
     }
     return Promise.all(group)
   }
@@ -511,8 +526,9 @@ async function payBatchV1(poolIdx) {
         const { bytes, size, signature } = buildV1Tx(
           employers[poolIdx], blockhash,
           built.map(x => x.instruction),
-          { cuLimit: PER_TX * 165_000 + 100_000, loadedDataSize: 64 * 1024 * 1024 },
+          { cuLimit: PER_TX * CU_PER_TRANSACT + 100_000, loadedDataSize: 64 * 1024 * 1024 },
         )
+        if (process.env.TX_DUMP) await writeFile(process.env.TX_DUMP, bytes)
 
         const age = (await chainNextIndex()) - fetchIdx
         if (age > GATE_AGE && rebuilds < 2) {
@@ -527,7 +543,11 @@ async function payBatchV1(poolIdx) {
         }
 
         const tSend0 = Date.now()
-        const sig = await sdk.submitTransaction(Buffer.from(bytes))
+        // DIRECT_SEND=1 bypasses the proxy/relayer (debug: isolates CU-config
+        // mangling in the submit path; the proxy won't track these txs)
+        const sig = process.env.DIRECT_SEND === "1"
+          ? await rpc("sendTransaction", [Buffer.from(bytes).toString("base64"), { encoding: "base64", skipPreflight: false, preflightCommitment: "confirmed" }])
+          : await sdk.submitTransaction(Buffer.from(bytes))
         const sendMs = Date.now() - tSend0
         const employees = built.reduce((s, x) => s + x.employees, 0)
         paid += employees
@@ -581,7 +601,7 @@ const summary = {
   pools: POOLS,
   employees: TOTAL,
   payLamports: PAY.toString(),
-  employeesPerProof: 2,
+  employeesPerProof: EMP_PER_PROOF,
   transactsPerV1Tx: PER_TX,
   depositsLanded: deposits.length,
   v1TxsSent: pays.length,

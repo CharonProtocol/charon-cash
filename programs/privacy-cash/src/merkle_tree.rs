@@ -41,10 +41,11 @@ impl MerkleTree {
         let mut right;
 
         let mut proof = [[0u8; 32]; MERKLE_TREE_HEIGHT as usize];
+        let zero_bytes = H::zero_bytes();
 
         for i in 0..height {
             let subtree = &mut tree_account.subtrees[i];
-            let zero_byte = H::zero_bytes()[i];
+            let zero_byte = zero_bytes[i];
 
             if current_index % 2 == 0 {
                 left = current_level_hash;

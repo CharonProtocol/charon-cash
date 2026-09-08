@@ -3,7 +3,7 @@ use pinocchio::{
     account::AccountView,
     cpi::{Seed, Signer},
     error::ProgramError,
-    sysvars::{rent::Rent, Sysvar},
+    sysvars::rent::Rent,
     Address, ProgramResult,
 };
 use pinocchio_system::instructions::CreateAccount;
@@ -73,12 +73,21 @@ pub fn verify_cross_nullifier(account: &AccountView) -> ProgramResult {
     Ok(())
 }
 
+/// The verify_pda below is the only thing binding the created account to
+/// proof.input_nullifiers[i]. It cannot be dropped in favor of the
+/// invoke_signed CPI below it: the runtime unions PDA-derived signers with
+/// the transaction's own signers, so an attacker can pass a keypair they
+/// control as the nullifier account, sign the transaction with it, and
+/// satisfy CreateAccount's signer requirement without the seeds ever
+/// matching — leaving the genuine nullifier PDA unclaimed and the note
+/// spendable twice.
 pub fn init_nullifier_account(
     payer: &AccountView,
     nullifier_account: &AccountView,
     seed_prefix: &[u8],
     nullifier_hash: &[u8; 32],
     bump: u8,
+    rent: &Rent,
 ) -> ProgramResult {
     verify_uninitialized(nullifier_account)?;
 
@@ -90,7 +99,7 @@ pub fn init_nullifier_account(
     )?;
 
     let space = core::mem::size_of::<NullifierAccount>();
-    let lamports = Rent::get()?.try_minimum_balance(space)?;
+    let lamports = rent.try_minimum_balance(space)?;
 
     let seeds = [
         Seed::from(seed_prefix),

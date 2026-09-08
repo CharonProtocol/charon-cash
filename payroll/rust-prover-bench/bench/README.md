@@ -126,7 +126,8 @@ ARK_THREADS=2 bun run-batch-v1.mjs 16 210   # pools, employees (PER_TX env, defa
 |---|---|---|
 | v0 batch3, 1 transact/tx (105 txs) | 30.9 s | 105 |
 | v1 batch3, 3 transacts/tx, ARK_THREADS=1 | 21.2 s | 48 |
-| v1 batch3, ARK_THREADS=2 | **17.7 s** | 48 |
+| v1 batch3, ARK_THREADS=2 | **17.7 s** (re-run 18.3 s) | 48 |
+| v1 batch5 (4 emp/proof) | **blocked** — see CU ceiling below | — |
 
 17.7s detail: 0 lane failures, 0 proof rebuilds (gate never fired),
 210/210 paid, max tx 3,206 B (limit 4,096), replica == chain at 560
@@ -135,6 +136,32 @@ leaves, proxy 160/160 processed. 112 batch3 proofs x ~0.5s / 4 provers =
 tx-rate bottleneck (3x fewer txs, ~3x less fee/relayer load). More or
 faster provers would cut the wall roughly linearly; 4 x 1-thread is this
 laptop's memory-safe ceiling, ARK_THREADS=2 uses the remaining cores.
-Next real step below ~15s is a wider batch circuit (4 employees/proof
-halves the proof count), not tx-layer work.
+
+## The CU ceiling: why batch5 cannot land (measured 2026-09-08)
+
+A wider circuit — `transaction_batch5` = Transaction(26,2,5), 4 employees
++ change per proof, 10 public inputs — was wired end-to-end (circom,
+zkey, `VERIFYING_KEY_BATCH5`, disc 8, `BATCH5=1` bench mode). It proves
+at 679ms p50 (vs batch3's 643ms for half the employees) and the
+instruction **executes correctly on-chain** (proof verified, 5 leaves
+appended). It still cannot ship, because of compute budget:
+
+- The v1 runtime (surfpool 1.5.0 / agave 4.1.2, feature on) applies a
+  per-tx budget of **200,000 x numInstructions** and ignores the
+  requested `cuLimit` config. Four controlled experiments: 1-ix tx →
+  "consumed X of 200000", 2-ix → "of 400000", 3-ix → "of 600000",
+  regardless of the configured value. No single instruction can ever get
+  more than 200k CU.
+- batch3 transact: **184,000–187,000 CU** measured across 9 landed
+  instructions (~14k headroom).
+- batch5 transact: **241,010 CU** measured (succeeded as ix0 of a 2-ix
+  tx, then starved ix1). Marginal cost ≈ 27.5k CU per extra output, so
+  even a 4-output variant (~213k) is over the ceiling. **3 outputs is
+  provably the widest batch this chain can execute.**
+
+Levers that would unblock wider batches: a runtime with a raiseable
+per-instruction budget (chain upgrade, out of scope) or shaving ~25%
+off the instruction (fewer public inputs / cheaper verifier — its own
+project). The v0 escape hatch doesn't fit: a batch3+ ix (~1.1 kB data)
+cannot fit the 1,232-byte legacy tx.
 

@@ -2,6 +2,7 @@ pub mod initialize;
 pub mod initialize_tree_account_for_spl_token;
 pub mod transact;
 pub mod transact_batch3;
+pub mod transact_batch5;
 pub mod transact_spl;
 pub mod update_deposit_limit;
 pub mod update_deposit_limit_for_spl;
@@ -11,6 +12,7 @@ pub use initialize::*;
 pub use initialize_tree_account_for_spl_token::*;
 pub use transact::*;
 pub use transact_batch3::*;
+pub use transact_batch5::*;
 pub use transact_spl::*;
 pub use update_global_config::*;
 
@@ -25,6 +27,7 @@ pub enum PrivacyCashInstructions {
     UpdateDepositLimitForSpl = 5,
     UpdateGlobalConfig = 6,
     TransactBatch3 = 7,
+    TransactBatch5 = 8,
 }
 
 impl TryFrom<&u8> for PrivacyCashInstructions {
@@ -40,6 +43,7 @@ impl TryFrom<&u8> for PrivacyCashInstructions {
             5 => Ok(PrivacyCashInstructions::UpdateDepositLimitForSpl),
             6 => Ok(PrivacyCashInstructions::UpdateGlobalConfig),
             7 => Ok(PrivacyCashInstructions::TransactBatch3),
+            8 => Ok(PrivacyCashInstructions::TransactBatch5),
             _ => Err(ProgramError::InvalidInstructionData),
         }
     }

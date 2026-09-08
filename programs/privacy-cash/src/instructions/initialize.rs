@@ -71,6 +71,8 @@ pub fn process_initialize(accounts: &[AccountView], data: &[u8]) -> ProgramResul
         )?;
     }
 
+    let rent = Rent::get()?;
+
     let tree_account_seed = [
         Seed::from(TREE_ACCOUNT_SEED),
         Seed::from(&tree_account_bump),
@@ -80,7 +82,7 @@ pub fn process_initialize(accounts: &[AccountView], data: &[u8]) -> ProgramResul
     CreateAccount {
         from: authority,
         to: tree_account,
-        lamports: Rent::get()?.try_minimum_balance(MerkleTreeAccount::LEN)?,
+        lamports: rent.try_minimum_balance(MerkleTreeAccount::LEN)?,
         space: MerkleTreeAccount::LEN as u64,
         owner: &Address::from(crate::ID),
     }
@@ -107,7 +109,7 @@ pub fn process_initialize(accounts: &[AccountView], data: &[u8]) -> ProgramResul
     CreateAccount {
         from: authority,
         to: tree_token_account,
-        lamports: Rent::get()?.try_minimum_balance(TreeTokenAccount::LEN)?,
+        lamports: rent.try_minimum_balance(TreeTokenAccount::LEN)?,
         space: TreeTokenAccount::LEN as u64,
         owner: &Address::from(crate::ID),
     }
@@ -126,7 +128,7 @@ pub fn process_initialize(accounts: &[AccountView], data: &[u8]) -> ProgramResul
     CreateAccount {
         from: authority,
         to: global_config,
-        lamports: Rent::get()?.try_minimum_balance(GlobalConfig::LEN)?,
+        lamports: rent.try_minimum_balance(GlobalConfig::LEN)?,
         space: GlobalConfig::LEN as u64,
         owner: &Address::from(crate::ID),
     }
