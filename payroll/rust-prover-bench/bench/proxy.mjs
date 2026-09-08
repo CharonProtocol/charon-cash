@@ -147,6 +147,38 @@ async function loadAlt(tableHex) {
 }
 
 async function parseTx(bytes) {
+  // v1 (SIMD-0385): [0x81][header 3][mask u32le][blockhash 32][numIx u8][numAddr u8]
+  // [addrs x32][config values in mask order][ix headers 4B + payloads]; sigs at tail.
+  // No sig-count prefix, no ALTs.
+  if (bytes[0] === 0x81) {
+    let o = 1
+    o += 3 // header
+    const mask = bytes.readUInt32LE(o); o += 4
+    o += 32 // blockhash
+    const nIx = bytes[o++]
+    const nAddr = bytes[o++]
+    const allKeys = []
+    for (let i = 0; i < nAddr; i++) { allKeys.push(bufHex(bytes.subarray(o, o + 32))); o += 32 }
+    if ((mask & 0b11) === 0b11) o += 8 // priority fee u64
+    if (mask & 0b100) o += 4           // CU limit u32
+    if (mask & 0b1000) o += 4          // loaded accounts data size u32
+    if (mask & 0b10000) o += 4         // heap size u32
+    // all ix headers in one block, then payloads per ix
+    const headers = []
+    for (let i = 0; i < nIx; i++) {
+      const pidIdx = bytes[o++]
+      const nAcc = bytes[o++]
+      const dataLen = bytes.readUInt16LE(o); o += 2
+      headers.push({ pidIdx, nAcc, dataLen })
+    }
+    const out = []
+    for (const h of headers) {
+      o += h.nAcc
+      const data = bytes.subarray(o, o + h.dataLen); o += h.dataLen
+      out.push({ programIdHex: allKeys[h.pidIdx] ?? null, data: Buffer.from(data) })
+    }
+    return out
+  }
   const cur = {
     b: bytes,
     o: 0,
@@ -287,13 +319,14 @@ async function watchLoop() {
       batch.reverse()
       for (const { sig, p, slot } of batch) {
         p.processed = true
-        const d = p.decode
         sigLeaf.set(sig, replica.nextIndex)
-        for (let i = 0; i < d.commitments.length; i++) {
-          appendLeaf(d.commitments[i], d.enc[i], sig, slot)
-          encIndex.set(d.enc[i], replica.nextIndex - 1)
+        for (const d of p.decode) {
+          for (let i = 0; i < d.commitments.length; i++) {
+            appendLeaf(d.commitments[i], d.enc[i], sig, slot)
+            encIndex.set(d.enc[i], replica.nextIndex - 1)
+          }
+          for (const nf of d.nullifiers) spentNullifiers.add(nf)
         }
-        for (const nf of d.nullifiers) spentNullifiers.add(nf)
         processedSigs.add(sig)
         pending.delete(sig)
         stats.processed++
@@ -359,19 +392,21 @@ const server = http.createServer(async (req, res) => {
       if (upstream.status === 200 && data?.signature) {
         try {
           const sig = data.signature
-          let decoded = null
+          // a packed tx carries multiple transact ixs — track them all in order
+          const decodes = []
           for (const ix of await parseTx(txBytes)) {
             if (ix.programIdHex === base58ToHex(PROGRAM_ID)) {
-              decoded = decodeTransactIx(ix.data)
-              if (decoded) break
+              const d = decodeTransactIx(ix.data)
+              if (d) decodes.push(d)
             }
           }
-          if (!decoded) throw new Error("no transact ix found")
+          if (!decodes.length) throw new Error("no transact ix found")
           // note: sig here is base58 of the first ed25519 signature over the tx;
           // submitTransaction returns exactly that, and it matches getSignaturesForAddress.
-          pending.set(sig, { decode: decoded, submittedAt: Date.now() })
+          pending.set(sig, { decode: decodes, submittedAt: Date.now() })
           stats.submitted++
-          console.log(`[submit] ${new Date().toISOString()} tracked ${sig.slice(0, 16)} disc=${decoded.commitments.length === 3 ? 7 : 2}`)
+          const nC = decodes.reduce((s, d) => s + d.commitments.length, 0)
+          console.log(`[submit] ${new Date().toISOString()} tracked ${sig.slice(0, 16)} ixs=${decodes.length} disc=${nC === decodes.length * 3 ? 7 : 2}`)
         } catch (e) {
           console.error("[submit] decode failed:", e.message)
         }

@@ -281,6 +281,8 @@ pub struct ParsedTx {
     pub signatures: Vec<Vec<u8>>,
     /// 0 = legacy, 1+ = versioned (message uses the v0 layout).
     pub versioned: bool,
+    /// SIMD-0385 v1 layout (sigs at tail, inline addresses, config mask).
+    pub v1: bool,
     /// [num_required_signatures, num_readonly_signed, num_readonly_unsigned]
     pub header: [u8; 3],
     pub static_keys: Vec<Pubkey>,
@@ -289,6 +291,121 @@ pub struct ParsedTx {
 }
 
 pub fn parse_tx(bytes: &[u8]) -> Result<ParsedTx, String> {
+    // v1 transactions are their own envelope: [0x81][message][signatures at tail]
+    if bytes.first() == Some(&0x81) {
+        return parse_tx_v1(bytes);
+    }
+    parse_tx_v0_legacy(bytes)
+}
+
+/// v1 (SIMD-0385): message = [0x81][header 3][config_mask u32le][blockhash 32]
+/// [num_instructions u8][num_addresses u8][addresses x32][config values in mask
+/// order][instruction headers 4B + payloads]; signatures (header.0 x 64B) follow
+/// the message. Config values: bits 0-1 priority fee u64le, bit 2 CU limit u32le,
+/// bit 3 loaded-accounts-data-size u32le, bit 4 heap size u32le. No ALTs.
+fn parse_tx_v1(bytes: &[u8]) -> Result<ParsedTx, String> {
+    let mut off = 1usize; // version byte
+    let header: [u8; 3] = bytes
+        .get(off..off + 3)
+        .and_then(|h| h.try_into().ok())
+        .ok_or("tx too short: v1 header")?;
+    off += 3;
+    let mask = bytes
+        .get(off..off + 4)
+        .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+        .ok_or("tx too short: v1 config mask")?;
+    off += 4;
+    if mask & !0b1_1111 != 0 {
+        return Err(format!("v1: unknown config mask bits 0x{mask:08x}"));
+    }
+    if mask & 0b11 != 0 && mask & 0b11 != 0b11 {
+        return Err("v1: priority fee mask needs both low bits".into());
+    }
+
+    off += 32; // blockhash
+    if off > bytes.len() {
+        return Err("tx too short: v1 blockhash".into());
+    }
+    let ix_count = *bytes.get(off).ok_or("tx too short: v1 ix count")? as usize;
+    off += 1;
+    let addr_count = *bytes.get(off).ok_or("tx too short: v1 address count")? as usize;
+    off += 1;
+    if addr_count > 64 {
+        return Err(format!("v1: too many addresses ({addr_count} > 64)"));
+    }
+    let mut static_keys = Vec::with_capacity(addr_count);
+    for _ in 0..addr_count {
+        let k = bytes.get(off..off + 32).ok_or("tx too short: v1 address")?;
+        static_keys.push(Pubkey(k.try_into().unwrap()));
+        off += 32;
+    }
+    // config values, in mask order
+    for (bits, len) in [(0b11u32, 8usize), (0b100, 4), (0b1000, 4), (0b1_0000, 4)] {
+        if mask & bits == bits {
+            off += len;
+        }
+    }
+
+    // instruction headers sit in ONE contiguous 4-byte-per-ix block, payloads follow
+    struct V1IxHeader {
+        program_id_index: u16,
+        acct_count: usize,
+        data_len: usize,
+    }
+    let mut headers = Vec::with_capacity(ix_count);
+    for _ in 0..ix_count {
+        let program_id_index = *bytes.get(off).ok_or("tx too short: v1 ix program index")? as u16;
+        off += 1;
+        let acct_count = *bytes.get(off).ok_or("tx too short: v1 ix accounts")? as usize;
+        off += 1;
+        let data_len = bytes
+            .get(off..off + 2)
+            .map(|b| u16::from_le_bytes(b.try_into().unwrap()))
+            .ok_or("tx too short: v1 ix data len")? as usize;
+        off += 2;
+        headers.push(V1IxHeader { program_id_index, acct_count, data_len });
+    }
+    let mut instructions = Vec::with_capacity(ix_count);
+    for h in &headers {
+        let accounts = bytes
+            .get(off..off + h.acct_count)
+            .ok_or("tx too short: v1 ix account list")?
+            .to_vec();
+        off += h.acct_count;
+        let data = bytes
+            .get(off..off + h.data_len)
+            .ok_or("tx too short: v1 ix data")?
+            .to_vec();
+        off += h.data_len;
+        instructions.push(ParsedIx {
+            program_id_index: h.program_id_index,
+            accounts,
+            data,
+        });
+    }
+
+    // signatures live at the tail, count = header.0, order = first N addresses
+    let nsig = header[0] as usize;
+    if bytes.len() < off + nsig * 64 {
+        return Err("tx too short: v1 signatures".into());
+    }
+    let signatures = bytes[off..off + nsig * 64]
+        .chunks(64)
+        .map(|s| s.to_vec())
+        .collect();
+
+    Ok(ParsedTx {
+        signatures,
+        versioned: true,
+        v1: true,
+        header,
+        static_keys,
+        instructions,
+        lookups: Vec::new(),
+    })
+}
+
+fn parse_tx_v0_legacy(bytes: &[u8]) -> Result<ParsedTx, String> {
     let mut off = 0usize;
     let sig_count = read_compact_u16(bytes, &mut off).ok_or("tx too short: signature count")? as usize;
     let mut signatures = Vec::with_capacity(sig_count);
@@ -365,7 +482,7 @@ pub fn parse_tx(bytes: &[u8]) -> Result<ParsedTx, String> {
         }
     }
 
-    Ok(ParsedTx { signatures, versioned, header, static_keys, instructions, lookups })
+    Ok(ParsedTx { signatures, versioned, v1: false, header, static_keys, instructions, lookups })
 }
 
 /// Resolve the full account-key list: static keys, then all lookup-table
@@ -471,5 +588,55 @@ mod tests {
         assert_eq!(keys[parsed.instructions[0].accounts[2] as usize], pk(4));
         // payer resolved through static keys
         assert_eq!(keys[parsed.instructions[0].accounts[3] as usize], payer);
+    }
+
+    #[test]
+    fn v1_tx_round_trip() {
+        // hand-encode the layout proven against kit 8.2 + surfpool enable_tx_v1:
+        // [0x81][header 3][mask u32le][blockhash 32][num_ix u8][num_addr u8]
+        // [addrs][configs in mask order][ix headers 4B + payloads][sig tail]
+        let payer = pk(1);
+        let dest = pk(2);
+        let prog = pk(9);
+        let mut m = Vec::new();
+        m.push(0x81u8);
+        m.extend_from_slice(&[1, 0, 1]); // 1 sig, none readonly-signed, 1 readonly unsigned
+        m.extend_from_slice(&0b1100u32.to_le_bytes()); // CU limit + loaded data size
+        m.extend_from_slice(&[42u8; 32]); // blockhash
+        m.push(2); // instructions
+        m.push(3); // addresses
+        m.extend_from_slice(&payer.0);
+        m.extend_from_slice(&dest.0);
+        m.extend_from_slice(&prog.0);
+        m.extend_from_slice(&150_000u32.to_le_bytes());
+        m.extend_from_slice(&(64u32 * 1024 * 1024).to_le_bytes());
+        // ix headers sit in one contiguous block, payloads follow per ix
+        m.extend_from_slice(&[2, 2]);
+        m.extend_from_slice(&12u16.to_le_bytes());
+        m.extend_from_slice(&[2, 3]);
+        m.extend_from_slice(&0u16.to_le_bytes());
+        m.extend_from_slice(&[0, 1]);
+        m.extend_from_slice(&[9u8; 12]);
+        m.extend_from_slice(&[0, 1, 2]);
+        // signature tail
+        m.extend_from_slice(&[7u8; 64]);
+
+        let parsed = parse_tx(&m).unwrap();
+        assert!(parsed.versioned);
+        assert!(parsed.v1);
+        assert_eq!(parsed.header, [1, 0, 1]);
+        assert_eq!(parsed.signatures.len(), 1);
+        assert_eq!(parsed.signatures[0], vec![7u8; 64]);
+        assert_eq!(parsed.lookups.len(), 0);
+        assert_eq!(parsed.static_keys.len(), 3);
+        assert_eq!(parsed.instructions.len(), 2);
+        assert_eq!(parsed.instructions[0].data, vec![9u8; 12]);
+        assert_eq!(parsed.instructions[1].accounts, vec![0, 1, 2]);
+
+        // resolve_keys must resolve through the inline address list with no tables
+        let keys = resolve_keys(&parsed, &[]).unwrap();
+        assert_eq!(keys[parsed.instructions[0].program_id_index as usize], prog);
+        assert_eq!(keys[parsed.instructions[0].accounts[0] as usize], payer);
+        assert_eq!(keys[parsed.instructions[1].accounts[2] as usize], prog);
     }
 }

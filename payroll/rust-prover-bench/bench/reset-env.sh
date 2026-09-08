@@ -11,9 +11,12 @@ WRANGLER="$HOME/.npm/_npx/32026684e21afda6/node_modules/.bin/wrangler"
 [[ -x "$WRANGLER" ]] || WRANGLER="$(command -v wrangler || true)"
 [[ -n "$WRANGLER" ]] || WRANGLER="npx -y wrangler"
 
-# surfpool binary: same fallback pattern
-SURFPOOL="$HOME/.local/bin/surfpool"
+# surfpool binary: env override first (e.g. SURFPOOL_BIN=~/.local/share/surfpool150/surfpool),
+# then the standard install path, then PATH
+SURFPOOL="${SURFPOOL_BIN:-$HOME/.local/bin/surfpool}"
 [[ -x "$SURFPOOL" ]] || SURFPOOL="$(command -v surfpool || true)"
+# extra surfpool start flags, e.g. SURFPOOL_FLAGS="--feature txv1hPU76QFBVeq3942jJ65e9Em2xbdbCJrzX8sM4U4"
+SURFPOOL_FLAGS=(${=SURFPOOL_FLAGS})
 
 # the program build must exist: keypair + .so with a matching declare_id
 [[ -f target/deploy/privacy_cash-keypair.json && -f target/deploy/privacy_cash.so ]] || {
@@ -46,7 +49,7 @@ if [[ ! -f /tmp/deploy-payer.json ]]; then
 fi
 
 # 1. fresh chain
-nohup "$SURFPOOL" start > /dev/null 2>&1 &
+nohup "$SURFPOOL" start $SURFPOOL_FLAGS > /dev/null 2>&1 &
 sleep 12
 
 # 2. redeploy the current program build (runbook may pick a stale artifact)

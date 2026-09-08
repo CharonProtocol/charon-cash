@@ -36,6 +36,19 @@ if (typeof sdk.setBackendUrl !== "function" || typeof sdk.setProver !== "functio
 }
 sdk.setBackendUrl(PROXY)
 
+// Watchdog: an SDK fetch that never resolves would hang the run at 0% CPU
+// with the chain work already done (observed once). Dump state and exit.
+const WATCHDOG_MIN = Number(process.env.WATCHDOG_MIN ?? 12)
+setTimeout(async () => {
+  console.error(`WATCHDOG: no exit after ${WATCHDOG_MIN}min — dumping state and exiting`)
+  try {
+    const status = await (await fetch(PROXY + "/local/status")).json()
+    const pays = events.filter(e => e.phase === "pay").length
+    console.error(JSON.stringify({ txsProcessedByProxy: status.stats?.processed, failed: status.stats?.failed, payEvents: pays, lastEvent: events.at(-1) }))
+  } catch { /* proxy may be gone */ }
+  process.exit(1)
+}, WATCHDOG_MIN * 60_000).unref()
+
 // rapidsnark prover (identical to payroll/src/lib/native-prover.ts)
 const proveTimes = []
 // cap concurrent proves: 16 simultaneous rapidsnark processes thrash the

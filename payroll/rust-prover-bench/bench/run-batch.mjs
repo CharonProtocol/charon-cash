@@ -56,6 +56,18 @@ const OUT_DIR = process.env.OUT_DIR ?? "/tmp/pfast-batch"
 
 if (typeof sdk.setBackendUrl !== "function") throw new Error("SDK exports missing")
 sdk.setBackendUrl(PROXY)
+
+// Watchdog: an SDK fetch that never resolves would hang the run at 0% CPU
+// with the chain work already done (observed once). Dump state and exit.
+const WATCHDOG_MIN = Number(process.env.WATCHDOG_MIN ?? 12)
+setTimeout(async () => {
+  console.error(`WATCHDOG: no exit after ${WATCHDOG_MIN}min — dumping state and exiting`)
+  try {
+    const status = await (await fetch(PROXY + "/local/status")).json()
+    console.error(JSON.stringify({ txsProcessedByProxy: status.stats?.processed, failed: status.stats?.failed, pending: status.pending?.length }))
+  } catch { /* proxy may be gone */ }
+  process.exit(1)
+}, WATCHDOG_MIN * 60_000).unref()
 console.log(`machine: ${os.cpus().length} cores / ${(os.totalmem() / 2 ** 30).toFixed(1)}GB -> ${ARK_PROVERS} provers, waits ${WAIT_MS / 1000}s (override: ARK_PROVERS, ARK_THREADS, WAIT_MS)`)
 
 // ---------------- ark prover pool (one per circuit phase) ----------------
