@@ -178,3 +178,20 @@ tx: **8 salaries per tx**. Memo is a normal mainnet program, so this
 packs on any chain running the same runtime — but a chain that honors
 the `cuLimit` config would need no pad at all (ask for 600k directly).
 
+**append_pair (2026-09-09).** The merkle append itself had the same
+shape of waste: two consecutive appends each walk all 26 tree levels,
+and the second walk overwrites every level the first wrote. A
+parity-aware `append_many` pairs a leaf landing on an even index with
+its neighbour under one level-0 hash — 26 hashes per pair instead of
+52 — and is correct for any starting parity (deposits interleave
+single leaves). Only the final root enters root_history; intermediate
+roots of a multi-leaf transact are unobservable, and one root per
+transact instead of per leaf slows eviction of the 100-root window by
+the batch size. Unit tests assert byte-equality against the shipped
+single-leaf append across starting parities 0–3 and sizes 1–6; the
+68-test real-proof suite passes unchanged. Measured on-chain: batch5
+transact **239,715 → 195,497 CU** (n=18, range 194.0k–196.5k, −18.4%)
+— every batch5 instruction now fits one 200k default. Pay wall is
+unchanged at ~12-14s: proving, not chain execution, is the
+bottleneck.
+

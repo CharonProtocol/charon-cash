@@ -204,9 +204,7 @@ pub fn process_transact_batch3(accounts: &[AccountView], data: &[u8]) -> Program
         fee_recipient_account.set_lamports(new_fee_recipient_balance);
     }
 
-    MerkleTree::append::<Poseidon>(proof.output_commitments[0], tree)?;
-    MerkleTree::append::<Poseidon>(proof.output_commitments[1], tree)?;
-    MerkleTree::append::<Poseidon>(proof.output_commitments[2], tree)?;
+    MerkleTree::append_many::<Poseidon>(&proof.output_commitments, tree)?;
 
     Ok(())
 }
