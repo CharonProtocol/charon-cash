@@ -8,7 +8,10 @@ asks for **one** signature to deposit the shortfall. Every payout is then a
 gasless relayer-signed withdrawal: employees receive ordinary SOL/SPL at their
 address, and the payout transactions are ZK-unlinkable to the funding deposit.
 
-Run `payroll/DESIGN.md` for the full product/design record. This folder is
+`payroll/DESIGN-V2.md` holds the design record; `payroll/SPEED-JOURNEY.html`
+tells the measured optimization story (902 s down to 12.7 s for 210 salaries,
+rerunnable anywhere with `zsh payroll/rust-prover-bench/bench/run-210.sh`).
+Older explainers live in `payroll/docs/archive/`. This folder is
 self-contained: nothing outside `payroll/` is modified by this app.
 
 ## Run it
@@ -163,4 +166,3 @@ MINT=<mint> TREASURER_KEYPAIR=<path-to-funded-keypair> bun scripts/e2e-spl-v2.mj
   review card's private-mode fee estimate includes it.
 - Receipts (with JSON/CSV export) live in this browser's localStorage only;
   on-chain signatures are the source of truth.
-- Never `git push` this branch.
