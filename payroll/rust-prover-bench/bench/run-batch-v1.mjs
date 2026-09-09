@@ -26,6 +26,11 @@ import { buildV1Tx } from "./v1-tx.mjs"
 const POOLS = Number(process.argv[2] ?? process.env.POOLS ?? 16)
 const TOTAL = Number(process.argv[3] ?? process.env.EMPLOYEES ?? 210)
 const PAY = BigInt(process.argv[4] ?? process.env.PAY ?? "5000000")
+// VARIED=1: every employee gets their own deterministic amount (co-prime
+// stride keeps them distinct; 7-digit amounts keep the encrypted-note text
+// length where the wire sizes were measured).
+const VARIED = process.env.VARIED === "1"
+const payAmtAt = (g) => (VARIED ? BigInt(1_000_000 + ((g * 7919) % 8_000_000)) : PAY)
 const RPC = process.env.RPC ?? "http://127.0.0.1:8899"
 const PROXY = process.env.PROXY ?? "http://127.0.0.1:8788"
 const PROGRAM_ID = new PublicKey(process.env.PROGRAM_ID ?? "721TvnSURopg7FCsP5ZL9WzWMWXxUutehPGJ81bhwQbr")
@@ -280,7 +285,18 @@ async function depositPool(poolIdx) {
   const nBatchTx = Math.ceil(empCount / EMP_PER_PROOF)
   const signer = localSigner(employers[poolIdx])
   const client = new sdk.PrivacyCashClient(signer, PROGRAM_ID)
-  const depAmount = BigInt(EMP_PER_PROOF) * PAY + feePerTx + SLACK_PER_TX
+  // each deposit note funds one transact, so size it for this pool's most
+  // expensive employee group (uniform in PAY mode, varied in VARIED mode)
+  const employeeOff = poolSizes.slice(0, poolIdx).reduce((s, x) => s + x, 0)
+  let maxGroupSum = 0n
+  for (let g = 0; g < nBatchTx; g++) {
+    const firstEmp = g * EMP_PER_PROOF
+    const nPay = Math.min(EMP_PER_PROOF, empCount - firstEmp)
+    let sum = 0n
+    for (let i = 0; i < nPay; i++) sum += payAmtAt(employeeOff + firstEmp + i)
+    if (sum > maxGroupSum) maxGroupSum = sum
+  }
+  const depAmount = maxGroupSum + feePerTx + SLACK_PER_TX
   const notes = []
   for (let d = 0; d < nBatchTx; d++) {
     const before = new Set(sdk.unspentNotes(client.publicKey).map(n => n.blinding))
@@ -358,7 +374,9 @@ async function buildTransact(poolIdx, note, firstEmp, nPay) {
   const proofInfo = await sdk.fetchMerkleProof(sdk.SOL_TREE_KEY, note.index)
   const nextLeafIndex = proofInfo.nextLeafIndex
 
-  const net = BigInt(nPay) * PAY
+  const employeeOff = poolSizes.slice(0, poolIdx).reduce((s, x) => s + x, 0)
+  let net = 0n
+  for (let i = 0; i < nPay; i++) net += payAmtAt(employeeOff + firstEmp + i)
   const totalInput = BigInt(note.amount)
   const changeAmt = totalInput - net - feePerTx
 
@@ -367,7 +385,7 @@ async function buildTransact(poolIdx, note, firstEmp, nPay) {
     if (i < nPay) {
       const emp = empKeysAt(poolIdx, firstEmp + i)
       outputs.push(new sdk.Utxo({
-        wasm, amount: PAY.toString(), pubkey: emp.notePubkey,
+        wasm, amount: payAmtAt(employeeOff + firstEmp + i).toString(), pubkey: emp.notePubkey,
         index: nextLeafIndex + i, mintAddress: sdk.WRAPPED_SOL_MINT,
       }))
     } else {
@@ -616,10 +634,36 @@ const proveTotalMs = proveTimes.reduce((s, p) => s + p.total, 0)
 const proveMax = proveTimes.reduce((s, p) => Math.max(s, p.total), 0)
 const proveP50 = proveTimes.slice().sort((a, b) => a.total - b.total)[Math.floor(proveTimes.length / 2)]?.total ?? 0
 
+// ---------------- per-employee amount check (VARIED) ----------------
+// Every employee syncs their own notes through the indexer and must hold
+// exactly their expected amount. This decrypts through the employee's own
+// keys, so it is end-to-end: deposit -> proof -> chain -> indexer -> employee.
+let amountCheck = null
+if (VARIED) {
+  const mismatches = []
+  const T_VER = Date.now()
+  for (let i = 0; i < employees.length; i += 25) {
+    await Promise.all(employees.slice(i, i + 25).map(async (empKp, j) => {
+      const g = i + j
+      const client = new sdk.PrivacyCashClient(localSigner(empKp), PROGRAM_ID)
+      await client.syncNotes(sdk.SOL_TREE_KEY)
+      const amounts = sdk.unspentNotes(client.publicKey).map((n) => BigInt(n.amount))
+      if (!amounts.includes(payAmtAt(g))) {
+        mismatches.push({ employee: g, expected: payAmtAt(g).toString(), found: amounts.map(String) })
+      }
+    }))
+  }
+  amountCheck = { employees: employees.length, mismatches: mismatches.length, ms: Date.now() - T_VER }
+  console.log(`amount check: ${employees.length - mismatches.length}/${employees.length} employees hold exactly their own amount`)
+  if (mismatches.length) console.error("first mismatches:", mismatches.slice(0, 5))
+}
+
 const summary = {
   pools: POOLS,
   employees: TOTAL,
   payLamports: PAY.toString(),
+  varied: VARIED,
+  amountCheck,
   employeesPerProof: EMP_PER_PROOF,
   transactsPerV1Tx: PER_TX,
   depositsLanded: deposits.length,
@@ -647,4 +691,4 @@ const stamp = new Date(T_START).toISOString().replace(/[:.]/g, "-")
 await mkdir(OUT_DIR, { recursive: true })
 await writeFile(join(OUT_DIR, `run-batch-v1-${stamp}.json`), JSON.stringify({ summary, events, proveTimes }, null, 2))
 console.log("wrote", join(OUT_DIR, `run-batch-v1-${stamp}.json`))
-if (failures.length || verify.nextIndexMatch === false) process.exit(1)
+if (failures.length || verify.nextIndexMatch === false || (amountCheck && amountCheck.mismatches > 0)) process.exit(1)
