@@ -149,4 +149,18 @@ describe("Storage Service ", () => {
     expect(note.walletPubkey).toBe(charlie);
     expect(note.id).toBe(23);
   });
+
+  test("User can load note index", async () => {
+    let index = await storage.getNextNodeToFetchIndex(alice);
+
+    expect(index.index).toBe(0);
+    expect(index.walletPubkey).toBe(alice);
+  });
+  test("User can save note", async () => {
+    let save = await storage.updateNextNodeToFetchIndex(alice, 0);
+    let index = await storage.getNextNodeToFetchIndex(alice);
+
+    expect(index.index).toBe(0);
+    expect(index.walletPubkey).toBe(alice);
+  });
 });

@@ -3,7 +3,7 @@
  *  1. IndexedDB
  *      encryptedOutput will be stored corresponding to the specific walletPubkey
  *
- *  2. LocalStorage
+ *  2. window.localStorage
  *     SilentPayLastFetchedIndex : to keep track of the decrypted notes, it shall be sent
  *            while fetching new notes.
  */
@@ -17,13 +17,18 @@ export type StoredNoteSchema = {
   encryptedNote: Uint8Array;
   walletPubkey: string;
 };
+export type IndexWalletSchema = {
+  walletPubkey: string;
+  index: string;
+};
 
 const Indexes = {
   users: "walletPubkey",
   walletPubkeyAndID: ["walletPubkey", "id"],
 };
 
-const STORENAME = "SILENTPAY_NOTES";
+const NOTES_STORE = "SILENTPAY_NOTES";
+const INDEX_STORE = "SILENT_PAY_NOTE_INDEX_PER_WALLET";
 
 const SilentPayLastFetchedIndex = "SILENT_FETCHED_NOTE_INDEX";
 
@@ -37,20 +42,32 @@ export class StorageService {
   static async start() {
     const db = await openDB("SilentPay", CURRENTDBVERSION, {
       upgrade(db) {
-        const store = db.createObjectStore(STORENAME, {
+        // schema for this is
+        // StoredNoteSchema = {
+        //         id?: number;
+        //         encryptedNote: Uint8Array;
+        //         walletPubkey: string;
+        //   };
+        const noteStore = db.createObjectStore(NOTES_STORE, {
           keyPath: "id",
           autoIncrement: true,
         });
 
         Object.entries(Indexes).forEach(([key, value]) => {
-          store.createIndex(key, value);
+          noteStore.createIndex(key, value);
+        });
+
+        // per wallet index
+        // schema for this is
+        // PerWalletIndex = {
+        //         walletPubkey: string;
+        //         index: string;
+        //   };
+        const indexStore = db.createObjectStore(INDEX_STORE, {
+          keyPath: "walletPubkey",
         });
       },
     });
-
-    if (!localStorage.getItem(SilentPayLastFetchedIndex)) {
-      localStorage.setItem(SilentPayLastFetchedIndex, "0");
-    }
 
     return new StorageService(db);
   }
@@ -66,7 +83,7 @@ export class StorageService {
       walletPubkey: walletPubkey,
     };
 
-    await this.db.add(STORENAME, StoredNoteSchema);
+    await this.db.add(NOTES_STORE, StoredNoteSchema);
   }
 
   /**
@@ -75,7 +92,7 @@ export class StorageService {
    * @param note
    */
   async saveNoteBatch(walletPubkey: string, notes: Uint8Array[]) {
-    const tx = this.db.transaction(STORENAME, "readwrite");
+    const tx = this.db.transaction(NOTES_STORE, "readwrite");
     for (let note of notes) {
       const storedNote: StoredNoteSchema = {
         encryptedNote: note,
@@ -97,9 +114,9 @@ export class StorageService {
                     walletPubkey: string;
         };`]
    */
-  async loadNotes(walletPubkey: string) {
+  async loadNotes(walletPubkey: string): Promise<StoredNoteSchema[]> {
     const notes = await this.db.getAllFromIndex(
-      STORENAME,
+      NOTES_STORE,
       "users",
       walletPubkey,
     );
@@ -112,9 +129,12 @@ export class StorageService {
    * @param fromId : notes with id greater than this
    * @returns array of notes
    */
-  async loadNotesFrom(walletPubkey: string, fromId: number) {
+  async loadNotesFrom(
+    walletPubkey: string,
+    fromId: number,
+  ): Promise<StoredNoteSchema[]> {
     return this.db.getAllFromIndex(
-      STORENAME,
+      NOTES_STORE,
       "walletPubkeyAndID",
       IDBKeyRange.bound(
         [walletPubkey, fromId],
@@ -125,9 +145,9 @@ export class StorageService {
     );
   }
 
-  async loadPairOfNotes(id1: number, id2: number) {
-    const tx = this.db.transaction(STORENAME, "readonly");
-    const noteStore = tx.objectStore(STORENAME);
+  async loadPairOfNotes(id1: number, id2: number): Promise<StoredNoteSchema[]> {
+    const tx = this.db.transaction(NOTES_STORE, "readonly");
+    const noteStore = tx.objectStore(NOTES_STORE);
     const firstNote = await noteStore.get(IDBKeyRange.only(id1));
     const secondNote = await noteStore.get(IDBKeyRange.only(id2));
 
@@ -136,9 +156,9 @@ export class StorageService {
     return [firstNote, secondNote];
   }
 
-  async loadSingleNote(id1: number) {
-    const tx = this.db.transaction(STORENAME, "readonly");
-    const noteStore = tx.objectStore(STORENAME);
+  async loadSingleNote(id1: number): Promise<StoredNoteSchema> {
+    const tx = this.db.transaction(NOTES_STORE, "readonly");
+    const noteStore = tx.objectStore(NOTES_STORE);
     const firstNote = await noteStore.get(IDBKeyRange.only(id1));
 
     await tx.commit();
@@ -146,14 +166,25 @@ export class StorageService {
     return firstNote;
   }
 
-  async getLastFetchedNote() {
-    return Number(localStorage.getItem(SilentPayLastFetchedIndex));
+  async getNextNodeToFetchIndex(
+    walletPubkey: string,
+  ): Promise<IndexWalletSchema> {
+    const tx = await this.db.get(INDEX_STORE, walletPubkey);
+
+    // Here the starting index is "1" because in postgres default index starts from 1
+    return { walletPubkey: walletPubkey, index: tx ? tx.index : 1 };
   }
 
-  async updateLastFetchedNote(newIndex: number) {
-    return localStorage.setItem(
-      SilentPayLastFetchedIndex,
-      newIndex.toString(10),
-    );
+  async updateNextNodeToFetchIndex(walletPubkey: string, newIndex: number) {
+    const tx = await this.db.put(INDEX_STORE, {
+      walletPubkey: walletPubkey,
+      index: newIndex,
+    });
+
+    return tx;
+  }
+
+  async stop() {
+    this.db.close();
   }
 }
