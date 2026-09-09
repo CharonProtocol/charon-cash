@@ -150,7 +150,17 @@ export class EncryptionService {
     const encryptionKey =
       await this.generateEncryptionDecryptionKey(sharedSecret);
 
-    const ciphertext = await aes_encrypt(data, encryptionKey);
+    // compression should happen before encryption
+    const cs = new CompressionStream("gzip");
+
+    const compressedPromise = new Response(cs.readable).arrayBuffer();
+
+    const writer = cs.writable.getWriter();
+    await writer.write(data as Uint8Array<ArrayBuffer>);
+    await writer.close();
+
+    const compressedData = new Uint8Array(await compressedPromise);
+    const ciphertext = await aes_encrypt(compressedData, encryptionKey);
 
     // EncryptionService.ENCRYPTION_VERSION_V1.length + noteEphemeralCipherKeypair.publicKey.length +ciphertext.length;
     const encryptedOutputLength = 8 + 32 + ciphertext.length;
@@ -184,9 +194,23 @@ export class EncryptionService {
       await this.generateEncryptionDecryptionKey(sharedSecret);
 
     const ciphertext = encryptedOutput.slice(40);
-    const deciphertext = await aes_decrypt(ciphertext, decryptionKey);
 
-    return deciphertext;
+    const deciphertext = await aes_decrypt(
+      Buffer.from(ciphertext),
+      decryptionKey,
+    );
+
+    // decompression should happen after decryption
+    const cs = new DecompressionStream("gzip");
+    const decompressedPromise = new Response(cs.readable).arrayBuffer();
+
+    const writer = cs.writable.getWriter();
+    await writer.write(deciphertext);
+    await writer.close();
+
+    const decompressedData = new Uint8Array(await decompressedPromise);
+
+    return decompressedData;
   }
 
   async generateEncryptionDecryptionKey(sharedSecret: Uint8Array) {
