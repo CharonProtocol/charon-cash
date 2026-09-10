@@ -17,7 +17,7 @@ pub async fn indexer_status(
     let (last_signature, last_slot) = match state.db.get_cursor().await {
         Ok(cursor) => cursor,
         Err(e) => {
-            tracing::error!("Fetch indexer failed ", e.to_string());
+            tracing::error!("Fetch indexer failed: {}", e);
             return ApiResponse::error(e.into(), req_id);
         }
     };
@@ -33,7 +33,7 @@ pub async fn indexer_status(
 }
 
 #[derive(Serialize)]
-struct IndexerStatus {
+pub struct IndexerStatus {
     pub last_signature: String,
     pub last_slot: u64,
 }

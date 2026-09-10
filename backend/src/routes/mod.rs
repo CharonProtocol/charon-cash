@@ -40,11 +40,11 @@ pub fn router(state: AppState) -> Router {
             "/api/registration/check/{wallet_pubkey}",
             get(register::check_registered),
         )
-        .route("/api/registration/reigster/", post(register::add_user))
+        .route("/api/registration/register/", post(register::add_user))
         .route(
-            "/api/registration/get_viewing_key/",
-            post(register::get_viewing_key),
+            "/api/registration/get_viewing_key/{wallet_pubkey}",
+            get(register::get_viewing_key),
         )
-        .route("/api/notes/send_notes/", get(notes::send_notes))
+        .route("/api/notes/send_notes/{index}", get(notes::send_notes))
         .with_state(state)
 }

@@ -1,15 +1,23 @@
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
-use axum::Json;
-use rs_merkle_tree::tree::MerkleProof;
+use axum::Extension;
 use rs_merkle_tree::Node;
-use serde::ser::SerializeStruct;
 use serde::Serialize;
 use tower_http::request_id::RequestId;
 
-use crate::error::AppError;
 use crate::response::{ApiError, ApiResponse};
 use crate::state::{AppState, TreeState};
+
+#[derive(Serialize)]
+pub struct MerkleProofResponse {
+    pub proof: Vec<String>,
+    pub leaf: String,
+    pub index: u64,
+    pub root: String,
+}
+
+fn node_hex(node: &Node) -> String {
+    node.to_string()
+}
 
 pub async fn tree_state(
     State(state): State<AppState>,
@@ -60,7 +68,7 @@ pub async fn tree_state(
 
     let tree_state = TreeState {
         next_leaf_index: num_leaves,
-        current_root: root,
+        current_root: node_hex(&root),
         tree_key,
     };
 
@@ -71,7 +79,7 @@ pub async fn proof(
     State(state): State<AppState>,
     Path((tree_key, leaf_index)): Path<(String, u64)>,
     Extension(req_id): Extension<RequestId>,
-) -> ApiResponse<MerkleProof> {
+) -> ApiResponse<MerkleProofResponse> {
     tracing::info!("Accessing merkle manager for proof generation");
     let lock = state.merkle_manager.read().await;
     tracing::info!("Accessed merkle manager.");
@@ -112,28 +120,13 @@ pub async fn proof(
         }
     };
 
-    ApiResponse::success(proof, req_id)
-}
-
-impl<const DEPTH: usize> Serialize for MerkleProof<DEPTH> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut s = serializer.serialize_struct("MerkleProof", 4)?;
-        s.serialize_field("proof", &self.proof)?;
-        s.serialize_field("leaf", &self.leaf)?;
-        s.serialize_field("index", &self.index)?;
-        s.serialize_field("root", &self.root)?;
-        s.end()
-    }
-}
-
-impl Serialize for Node {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_bytes(self.as_ref())
-    }
+    ApiResponse::success(
+        MerkleProofResponse {
+            proof: proof.proof.iter().map(node_hex).collect(),
+            leaf: node_hex(&proof.leaf),
+            index: proof.index,
+            root: node_hex(&proof.root),
+        },
+        req_id,
+    )
 }

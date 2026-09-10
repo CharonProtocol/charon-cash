@@ -41,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
 
     let config = Config::from_env()?;
 
-    let db = Db::connect(&config.database_url).await?;
+    let db = Db::connect(&config.database_url).await;
 
     let merkle_manager = Arc::new(RwLock::new(MerkleManager::new().await?));
 

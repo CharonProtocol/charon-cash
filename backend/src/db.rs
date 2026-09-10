@@ -23,7 +23,7 @@ impl Db {
         sqlx::migrate!("./migrations")
             .run(&db.pool)
             .await
-            .expect("run postgres migrations")?;
+            .expect("run postgres migrations");
         db
     }
 
@@ -34,7 +34,7 @@ impl Db {
     }
 
     pub async fn get_cursor(&self) -> Result<(Option<String>, u64), DbError> {
-        let row: (Option<String>, u64) =
+        let row: (Option<String>, i64) =
             sqlx::query_as("SELECT last_signature, last_slot FROM indexer_cursor WHERE id = 1")
                 .fetch_one(&self.pool)
                 .await?;
@@ -84,12 +84,11 @@ impl Db {
     }
 
     pub async fn has_wallet_pubkey(&self, wallet_pubkey: &str) -> Result<bool, DbError> {
-        let query = sqlx::query("SELECT * FROM users WHERE wallet_pubkey = $1")
+        let row = sqlx::query("SELECT 1 FROM users WHERE wallet_pubkey = $1")
             .bind(wallet_pubkey)
-            .fetch_one(&self.pool)
+            .fetch_optional(&self.pool)
             .await?;
-
-        Ok(query.is_empty())
+        Ok(row.is_some())
     }
 
     pub async fn next_index(&self, tree_key: &str) -> Result<u32, DbError> {

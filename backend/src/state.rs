@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use rs_merkle_tree::Node;
 use serde::Serialize;
 use tokio::sync::RwLock;
 
@@ -19,5 +18,6 @@ pub struct AppState {
 pub struct TreeState {
     pub tree_key: String,
     pub next_leaf_index: u64,
-    pub current_root: Node,
+    /// Hex-encoded Poseidon root (`0x…`).
+    pub current_root: String,
 }

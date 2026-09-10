@@ -1,16 +1,12 @@
 use axum::{
-    body::Body,
     extract::{Path, State},
-    response::Response,
-    Json,
+    Extension, Json,
 };
-use serde::Serialize;
-use serde_json::{json, Value};
+use serde::Deserialize;
 use tower_http::request_id::RequestId;
 
 use crate::{
-    error::AppError,
-    response::{ApiError, ApiResponse},
+    response::ApiResponse,
     state::AppState,
 };
 
@@ -24,21 +20,18 @@ pub async fn check_registered(
         Err(e) => return ApiResponse::error(e.into(), req_id),
     };
 
-    if n {
-        ApiResponse::success(true, req_id)
-    } else {
-        ApiResponse::success(false, req_id)
-    }
+    ApiResponse::success(is_registered, req_id)
 }
 
-struct AddUser {
+#[derive(Deserialize)]
+pub struct AddUser {
     wallet_pubkey: String,
     viewing_pubkey: Vec<u8>,
 }
 pub async fn add_user(
     State(state): State<AppState>,
-    Json(payload): Json<AddUser>,
     Extension(req_id): Extension<RequestId>,
+    Json(payload): Json<AddUser>,
 ) -> ApiResponse<String> {
     match state
         .db

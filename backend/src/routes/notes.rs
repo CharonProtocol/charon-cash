@@ -1,15 +1,11 @@
 use axum::{
-    body::Body,
     extract::{Path, State},
-    response::Response,
-    Json,
+    Extension,
 };
-use serde_json::{json, Value};
 use tower_http::request_id::RequestId;
 
 use crate::{
-    error::AppError,
-    response::{ApiError, ApiResponse},
+    response::ApiResponse,
     state::AppState,
 };
 
