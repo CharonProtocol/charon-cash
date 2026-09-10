@@ -985,6 +985,120 @@ fn scenario_transact_spl_deposit(ctx: &BenchContext, tree_ata_exists: bool) -> E
     }
 }
 
+fn native_mint_account() -> Account {
+    let mint = Mint {
+        mint_authority: COption::None,
+        supply: 0,
+        decimals: 9,
+        is_initialized: true,
+        freeze_authority: COption::None,
+    };
+    let mut data = vec![0u8; Mint::LEN];
+    Mint::pack(mint, &mut data).unwrap();
+    account_with_data(spl_token::ID, data)
+}
+
+fn native_token_account(owner: Pubkey) -> Account {
+    let rent = Rent::default().minimum_balance(SplTokenAccount::LEN);
+    let acct = SplTokenAccount {
+        mint: spl_token::native_mint::ID,
+        owner,
+        amount: 0,
+        delegate: COption::None,
+        state: AccountState::Initialized,
+        is_native: COption::Some(rent),
+        delegated_amount: 0,
+        close_authority: COption::None,
+    };
+    let mut data = vec![0u8; SplTokenAccount::LEN];
+    SplTokenAccount::pack(acct, &mut data).unwrap();
+    Account {
+        lamports: rent,
+        data,
+        owner: spl_token::ID,
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
+#[test]
+fn wrap_sol_set_lamports_balances() {
+    let ctx = setup();
+    let wrap_amount = LAMPORTS_PER_SOL;
+    let vault = funded_tree_token_account(
+        ctx.authority.pubkey(),
+        ctx.tree_token_bump,
+        wrap_amount,
+    );
+    let vault_before = vault.lamports;
+    let pool_wsol_key = Pubkey::new_unique();
+    let pool_wsol = native_token_account(ctx.global_config);
+    let pool_before = pool_wsol.lamports;
+    let native_mint = spl_token::native_mint::ID;
+
+    let mut data = vec![PrivacyCashInstructions::WrapSol as u8];
+    data.extend_from_slice(&wrap_amount.to_le_bytes());
+
+    let instruction = Instruction {
+        program_id: ctx.program_id,
+        accounts: vec![
+            AccountMeta::new(ctx.tree_token_account, false),
+            AccountMeta::new(pool_wsol_key, false),
+            AccountMeta::new_readonly(native_mint, false),
+            AccountMeta::new(ctx.random_user.pubkey(), true),
+            AccountMeta::new_readonly(spl_token::ID, false),
+            AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
+        ],
+        data,
+    };
+
+    let accounts = vec![
+        (ctx.tree_token_account, vault),
+        (pool_wsol_key, pool_wsol),
+        (native_mint, native_mint_account()),
+        (ctx.random_user.pubkey(), funded_account(10 * LAMPORTS_PER_SOL)),
+        mollusk_svm_programs_token::token::keyed_account(),
+        system_program_keyed_account(),
+    ];
+
+    let amount_le = wrap_amount.to_le_bytes();
+    let sync_native = Instruction {
+        program_id: spl_token::ID,
+        accounts: vec![AccountMeta::new(pool_wsol_key, false)],
+        data: vec![17],
+    };
+
+    ctx.mollusk.process_and_validate_instruction_chain(
+        &[
+            (
+                &instruction,
+                &[
+                    Check::success(),
+                    Check::account(&ctx.tree_token_account)
+                        .lamports(vault_before - wrap_amount)
+                        .owner(&ctx.program_id)
+                        .build(),
+                    Check::account(&pool_wsol_key)
+                        .lamports(pool_before + wrap_amount)
+                        .owner(&spl_token::ID)
+                        .build(),
+                ],
+            ),
+            (
+                &sync_native,
+                &[
+                    Check::success(),
+                    Check::account(&pool_wsol_key)
+                        .lamports(pool_before + wrap_amount)
+                        .data_slice(64, &amount_le)
+                        .build(),
+                ],
+            ),
+        ],
+        &accounts,
+    );
+}
+
 #[test]
 fn bench_all() {
     let ctx = setup();

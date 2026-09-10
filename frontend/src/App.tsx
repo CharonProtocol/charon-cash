@@ -50,7 +50,7 @@ export default function App() {
       <footer className="border-t border-border bg-secondary/60 py-6">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 sm:flex-row">
           <p className="font-mono text-[11px] text-muted-foreground">
-            Privacy Cash · wallet-signed deposits · relayer-signed withdraws
+            Privacy Cash · wallet-signed deposits · relayer-signed withdraws &amp; swaps
           </p>
           <div className="flex items-center gap-4 font-mono text-[11px] text-muted-foreground">
             <button onClick={() => handleNavigate("landing")} className="hover:text-primary">

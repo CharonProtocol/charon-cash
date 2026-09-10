@@ -9,6 +9,7 @@ import {
 } from "@solana/web3.js"
 import {
   createAssociatedTokenAccountIdempotentInstruction,
+  createSyncNativeInstruction,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token"
 import BN from "bn.js"
@@ -608,12 +609,15 @@ export function buildSwapTransaction(
     ),
   ]
   if (solToSpl) {
+    // Lamport move only. Token SyncNative must be a later instruction so it
+    // is not a CPI in the same instruction as set_lamports.
     instructions.push(
       buildWrapSolInstruction({
         programId: params.programId,
         signer: payer,
         amount: amountIn,
       }),
+      createSyncNativeInstruction(swap.poolWsolAccount, TOKEN_PROGRAM_ID),
     )
   }
   instructions.push(ix)

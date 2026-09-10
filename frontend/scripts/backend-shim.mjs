@@ -185,7 +185,29 @@ async function rescan() {
   const perTree = new Map() // treeKey -> commitment decimals[]
 
   for (const s of ordered) {
-    const t = await conn.getTransaction(s.signature, { maxSupportedTransactionVersion: 1 })
+    let t = null
+    try {
+      t = await conn.getTransaction(s.signature, { maxSupportedTransactionVersion: 0 })
+    } catch {
+      t = null
+    }
+    if (!t) {
+      try {
+        const rpc = await fetch(RPC, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "getTransaction",
+            params: [s.signature, { encoding: "json", commitment: "confirmed", maxSupportedTransactionVersion: 1 }],
+          }),
+        })
+        t = (await rpc.json()).result
+      } catch {
+        continue
+      }
+    }
     if (!t) continue
     const msg = t.transaction.message
     const meta = t.meta
@@ -472,6 +494,9 @@ Bun.serve({
         if (p === "/api/prove") {
           const proof = await hostedProve(body)
           return json({ success: true, data: proof })
+        }
+        if (p === "/api/jupiter/route") {
+          return json(await jupiterRoute(body))
         }
         if (p === "/api/relayer/swap") {
           return json(await relaySwap(body))
@@ -807,6 +832,52 @@ async function proveViaServeLocked(circuitInput) {
   serveProc.stdin.write(JSON.stringify(circuitInput) + "\n")
   const line = await readServeLine()
   return JSON.parse(line)
+}
+
+async function jupiterRoute(body) {
+  const inputMint = body.inputMint ?? body.input_mint
+  const outputMint = body.outputMint ?? body.output_mint
+  const amount = String(body.amount ?? "")
+  const [globalCfg] = PublicKey.findProgramAddressSync([Buffer.from("global_config")], PROGRAM)
+  const userPublicKey = body.userPublicKey ?? body.user_public_key ?? globalCfg.toBase58()
+  const slippageBps = String(body.slippageBps ?? body.slippage_bps ?? 100)
+  if (!inputMint || !outputMint || !amount || amount === "0") {
+    throw new Error("jupiter route needs inputMint, outputMint, amount")
+  }
+  const quoteUrl = new URL("https://lite-api.jup.ag/swap/v1/quote")
+  quoteUrl.searchParams.set("inputMint", inputMint)
+  quoteUrl.searchParams.set("outputMint", outputMint)
+  quoteUrl.searchParams.set("amount", amount)
+  quoteUrl.searchParams.set("slippageBps", slippageBps)
+  quoteUrl.searchParams.set("maxAccounts", "32")
+  quoteUrl.searchParams.set("onlyDirectRoutes", "true")
+  quoteUrl.searchParams.set("dexes", "Raydium,Raydium CLMM,Orca,Whirlpool,Meteora,Meteora DLMM")
+  const quote = await (await fetch(quoteUrl)).json()
+  if (quote.error || !quote.outAmount) {
+    throw new Error(`jupiter quote failed: ${JSON.stringify(quote)}`)
+  }
+  const swap = await (await fetch("https://lite-api.jup.ag/swap/v1/swap-instructions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      quoteResponse: quote,
+      userPublicKey,
+      wrapAndUnwrapSol: false,
+      destinationTokenAccount: undefined,
+    }),
+  })).json()
+  const ix = swap.swapInstruction ?? swap.swap_instruction
+  if (!ix) throw new Error(`jupiter swap-instructions failed: ${JSON.stringify(swap)}`)
+  const routeAccounts = (ix.accounts ?? ix.keys ?? []).map((a) => ({
+    pubkey: a.pubkey,
+    isWritable: !!(a.isWritable ?? a.is_writable),
+  }))
+  return {
+    minOut: String(quote.otherAmountThreshold ?? quote.outAmount),
+    outAmount: String(quote.outAmount),
+    route_data: "0x" + Buffer.from(ix.data, "base64").toString("hex"),
+    route_accounts: routeAccounts,
+  }
 }
 
 async function relaySwap(body) {

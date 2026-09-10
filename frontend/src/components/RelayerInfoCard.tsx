@@ -97,8 +97,8 @@ export function RelayerInfoCard({ refreshKey }: { refreshKey: number }) {
           </Button>
         </CardTitle>
         <CardDescription>
-          Program id, fee recipient, and rates. Withdraw proofs must hash this fee
-          recipient — the relayer signs and submits the withdraw on-chain.
+          Program id, fee recipient, and rates. Withdraw and swap proofs are
+          relayer-signed — the browser never submits those transactions.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">

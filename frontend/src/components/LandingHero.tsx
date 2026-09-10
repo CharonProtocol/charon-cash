@@ -1,4 +1,4 @@
-import { ArrowRight, Lock, Server, ShieldCheck, Zap } from "lucide-react"
+import { ArrowLeftRight, ArrowRight, Lock, Server, ShieldCheck, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 interface LandingHeroProps {
@@ -60,9 +60,9 @@ function MerkleHero() {
 
 const STATS = [
   { k: "Tree", v: "26 levels", s: "Poseidon Merkle" },
-  { k: "Proof", v: "Groth16", s: "BN254, client-side" },
-  { k: "Deposit", v: "Wallet-signed", s: "broadcast via backend" },
+  { k: "Proof", v: "Groth16", s: "BN254, hosted prove" },
   { k: "Withdraw", v: "Relayer-signed", s: "no browser RPC submit" },
+  { k: "Swap", v: "Atomic v1", s: "shielded SOL ↔ SPL" },
 ]
 
 const FEATURES = [
@@ -84,6 +84,12 @@ const FEATURES = [
     body: "Nullifiers are written on-chain as PDAs. Once a note is spent it can never be reused — cryptographically enforced.",
     tag: "On-chain nullifier set",
   },
+  {
+    icon: ArrowLeftRight,
+    title: "Atomic private swap",
+    body: "Swap shielded SOL for USDC (or back) in one v1 instruction: two JoinSplits plus Jupiter. Funds never unshield to a public wallet. The relayer signs — Phantom cannot sign v1 yet.",
+    tag: "Jupiter CPI · relayer-signed",
+  },
 ]
 
 const STEPS = [
@@ -102,6 +108,11 @@ const STEPS = [
     title: "Withdraw to a fresh address",
     body: "Prove ownership in-browser; the relayer signs and lands the withdraw. The pool pays a brand-new address with no link back to the deposit.",
   },
+  {
+    n: "4",
+    title: "Or swap without unshielding",
+    body: "Spend a private note, Jupiter-swap inside the pool, and receive a new note of the other asset in one relayer-signed v1 transaction.",
+  },
 ]
 
 export function LandingHero({ onNavigate }: LandingHeroProps) {
@@ -117,10 +128,10 @@ export function LandingHero({ onNavigate }: LandingHeroProps) {
             <span className="accent-text">Transact in complete silence.</span>
           </h1>
           <p className="max-w-prose text-lg leading-relaxed text-muted-foreground">
-            Deposit SOL or SPL tokens, hold a secret note, and withdraw to a fresh
-            address with a client-side ZK proof. Deposits are wallet-signed;
-            withdrawals are relayer-signed — the browser never talks to Yellowstone
-            or submits withdraws over a public RPC key.
+            Deposit SOL or SPL tokens, hold a secret note, withdraw to a fresh
+            address, or swap privately without unshielding. Deposits are wallet-signed;
+            withdrawals and swaps are relayer-signed — the browser never submits
+            those transactions over a public RPC key.
           </p>
           <div className="flex flex-wrap items-center gap-3 pt-1">
             <Button size="lg" onClick={() => onNavigate("app")} className="px-6">
@@ -164,12 +175,12 @@ export function LandingHero({ onNavigate }: LandingHeroProps) {
           <p className="eyebrow !mb-0">Architecture highlights</p>
           <h2 className="h-display text-3xl text-foreground">Built for privacy and speed</h2>
           <p className="max-w-xl text-sm text-muted-foreground">
-            Deposit with your wallet. Withdraw with a client-side proof — the
-            relayer signs and lands the transaction. Secrets never leave the browser.
+            Deposit with your wallet. Withdraw or swap with a client-side proof —
+            the relayer signs and lands the transaction. Secrets never leave the browser.
           </p>
         </div>
 
-        <div className="grid gap-5 md:grid-cols-3">
+        <div className="grid gap-5 md:grid-cols-2">
           {FEATURES.map((f) => {
             const Icon = f.icon
             return (
@@ -195,13 +206,13 @@ export function LandingHero({ onNavigate }: LandingHeroProps) {
           <div>
             <h2 className="h-display text-2xl text-foreground">How Privacy Cash works</h2>
             <p className="text-sm text-muted-foreground">
-              Three steps to anonymize a Solana transaction.
+              Shield, prove, withdraw — or swap without leaving the pool.
             </p>
           </div>
-          <Button onClick={() => onNavigate("app")}>Start a deposit</Button>
+          <Button onClick={() => onNavigate("app")}>Open the app</Button>
         </div>
 
-        <div className="grid gap-5 md:grid-cols-3">
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {STEPS.map((s) => (
             <div
               key={s.n}

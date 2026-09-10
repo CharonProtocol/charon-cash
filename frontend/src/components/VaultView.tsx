@@ -27,8 +27,8 @@ export function VaultView({ refreshKey }: { refreshKey: number }) {
             Your spending secrets are stored <strong className="font-medium text-foreground">only</strong> as an
             encrypted blob on the backend — the server can&apos;t read it, and nothing sensitive
             is kept in this browser. Decrypted notes exist solely in memory after you unlock. You
-            can export / import JSON; deposits need a wallet signature, withdrawals only need
-            unlock + proof — the <strong className="font-medium text-foreground">relayer signs</strong> the on-chain withdraw.
+            can export / import JSON; deposits need a wallet signature, withdrawals and
+            private swaps only need unlock + proof — the <strong className="font-medium text-foreground">relayer signs</strong> the on-chain tx.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={refresh} className="shrink-0">

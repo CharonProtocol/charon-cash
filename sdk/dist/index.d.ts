@@ -1,5 +1,5 @@
 export { PrivacyCashClient } from "./client";
-export type { Signer, DepositResult, WithdrawResult, SyncResult, } from "./client";
+export type { Signer, DepositResult, WithdrawResult, SwapResult, SyncResult, } from "./client";
 export { EncryptionService, Keypair, Utxo, getExtDataHash, getMintAddressField, getSwapInExtDataHash, getSwapOutExtDataHash, } from "./crypto";
 export { prove, proveSnarkjs, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers, } from "./prover";
 export { buildTransactTransaction, buildTransactIxData, buildTransactSplTransaction, buildTransactSplInstruction, buildSwapInstruction, buildSwapIxData, buildSwapTransaction, buildWrapSolInstruction, deriveAccounts, deriveSplTreeAccount, deriveSwapAccounts, } from "./program";
@@ -8,8 +8,8 @@ export { compileV1Transaction, signWireTransaction, v1SignedSize, V1_MAX_SIZE, V
 export { ensureAlt, fetchAlt, splAltAddresses, envAltAddress, cachedAltAddress, cacheAltAddress, } from "./alt";
 export type { AltSigner } from "./alt";
 export { LocalMirror, readSolTreeState, readTreeState, readGlobalFees } from "./local-provider";
-export { fetchRelayerInfo, fetchBlockhash, fetchAltAccount, fetchTreeState, fetchMerkleProof, fetchUtxoRange, checkEncryptedOutput, waitForLeafIndex, waitForEncryptedOutput, isNullifierSpent, submitTransaction, relayWithdraw, relaySwap, fieldToHex32, setBackendUrl, getBackendUrl, solTreeKey, splTreeKey, } from "./merkle";
-export type { RelayerInfo, BlockhashInfo, TreeState, MerkleProof, IndexedUtxo, UtxoRangePage, UtxoCheckResult, } from "./merkle";
+export { fetchRelayerInfo, fetchBlockhash, fetchAltAccount, fetchTreeState, fetchMerkleProof, fetchUtxoRange, checkEncryptedOutput, waitForLeafIndex, waitForEncryptedOutput, isNullifierSpent, submitTransaction, relayWithdraw, relaySwap, fetchJupiterRoute, fieldToHex32, setBackendUrl, getBackendUrl, solTreeKey, splTreeKey, } from "./merkle";
+export type { RelayerInfo, BlockhashInfo, TreeState, MerkleProof, IndexedUtxo, UtxoRangePage, UtxoCheckResult, JupiterRoute, } from "./merkle";
 export { loadNotes, unspentNotes, saveNote, upsertNote, markNoteSpent, totalBalance, exportNotes, importNotes, clearNotes, newNoteId, getSyncOffset, setSyncOffset, resetSyncOffset, } from "./notes";
 export type { Note } from "./notes";
 export { encryptNotesBlob, decryptNotesBlob, pushEncryptedNotes, pullEncryptedNotes, } from "./notestore";

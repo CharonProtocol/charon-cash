@@ -1,4 +1,6 @@
 // Surfpool e2e: deposit SOL, then atomic SOL↔USDC swap via shim-signed v1 Swap ix.
+// Merkle paths come from a local mirror of leaves this script inserted (same as
+// e2e-surfpool private transfer). Both trees must start at next_index 0.
 // Requires ./run.sh (surfpool + shim) and `cargo build --manifest-path crates/privacy-cash-prover/Cargo.toml`.
 // Run: bun scripts/e2e-swap.mjs
 import { readFileSync } from "node:fs"
@@ -21,7 +23,7 @@ import {
   prove, parseToBytesArray,
   buildTransactIxData, deriveAccounts,
   FIELD_SIZE, MERKLE_TREE_DEPTH, WRAPPED_SOL_MINT,
-  setBackendUrl, relaySwap, fetchMerkleProof,
+  setBackendUrl, relaySwap,
 } from "privacy-cash-sdk"
 
 const here = fileURLToPath(new URL(".", import.meta.url))
@@ -71,6 +73,18 @@ class Mirror {
     }
   }
   indexOf(leaf) { return this.layers[0].indexOf(leaf) }
+  /** Path for a real note. Leaf index must match the on-chain insert index. */
+  pathForNote(n, dummyPath) {
+    if (!n.amount || n.amount.toString() === "0") return dummyPath
+    const local = this.indexOf(n.getCommitment())
+    if (local < 0) throw new Error("spend note is not in the local merkle mirror")
+    if (local !== Number(n.index)) {
+      throw new Error(
+        `local leaf ${local} != chain index ${n.index}; prove from a mirror of on-chain leaves only (empty tree + inserts), not the shim indexer`,
+      )
+    }
+    return this.path(local)
+  }
   path(index) {
     const els = []
     for (let lv = 0; lv < DEPTH; lv++) {
@@ -301,21 +315,6 @@ async function jupiterRoute(inputMint, outputMint, amount, userPublicKey) {
   }
 }
 
-async function seedMirror(mirror, treeKey) {
-  try {
-    const r = await fetch(`${BACKEND}/api/utxos/range?tree_key=${encodeURIComponent(treeKey)}&start=0&end=10000`)
-    const page = await r.json()
-    const rows = [...(page.utxos ?? [])].sort((a, b) => a.leaf_index - b.leaf_index)
-    for (const u of rows) {
-      const hex = String(u.commitment).replace(/^0x/i, "")
-      mirror.insert(be(Buffer.from(hex, "hex")).toString())
-    }
-    console.log("  seeded", treeKey, "leaves", rows.length)
-  } catch (e) {
-    console.log("  seed", treeKey, "skipped:", e.message)
-  }
-}
-
 async function inspectSwap(sig, label) {
   const res = await fetch(RPC, {
     method: "POST",
@@ -399,24 +398,7 @@ async function runSwap({
     outMint,
   })
 
-  const inTreeKey = solToSpl ? "sol" : USDC.toBase58()
-  const inPaths = await Promise.all(inNotes.map(async (n) => {
-    if (!n.amount || n.amount.toString() === "0") return dummyPath
-    let lastErr
-    for (let i = 0; i < 12; i++) {
-      try {
-        return (await fetchMerkleProof(inTreeKey, n.index)).pathElements
-      } catch (e) {
-        lastErr = e
-        const local = inMirror.indexOf(n.getCommitment())
-        if (local === n.index) {
-          try { return inMirror.path(local) } catch { /* wait for indexer */ }
-        }
-        await new Promise((r) => setTimeout(r, 800))
-      }
-    }
-    throw lastErr
-  }))
+  const inPaths = inNotes.map((n) => inMirror.pathForNote(n, dummyPath))
 
   const proofIn = await proveLeg({
     root: be(await readRoot(inTree)).toString(),
@@ -484,7 +466,16 @@ async function main() {
   await syncSurfpoolClock()
 
   const solTree = await initSolTree()
-  await initSplTree(USDC)
+  const usdcTree = await initSplTree(USDC)
+  const solNext = await readNext(solTree)
+  const usdcNext = await readNext(usdcTree)
+  if (solNext > 0 || usdcNext > 0) {
+    throw new Error(
+      `trees not empty (sol next_index=${solNext}, usdc next_index=${usdcNext}). ` +
+        `Like e2e-surfpool, this script proves from a local mirror of leaves it inserted. ` +
+        `Reset surfpool or redeploy so both trees start at next_index 0.`,
+    )
+  }
 
   const enc = new EncryptionService()
   enc.deriveFromSignature(nacl.sign.detached(new TextEncoder().encode(SIGN_MSG), payer.secretKey))
@@ -492,8 +483,6 @@ async function main() {
   const dummyPath = new Array(DEPTH).fill("0")
   const solMirror = new Mirror(wasm)
   const usdcMirror = new Mirror(wasm)
-  await seedMirror(solMirror, "sol")
-  await seedMirror(usdcMirror, USDC.toBase58())
 
   const amount = 10_000_000
   if ((await conn.getBalance(payer.publicKey)) < 0.2 * LAMPORTS_PER_SOL) {

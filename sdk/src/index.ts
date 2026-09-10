@@ -3,6 +3,7 @@ export type {
   Signer,
   DepositResult,
   WithdrawResult,
+  SwapResult,
   SyncResult,
 } from "./client"
 export {
@@ -66,6 +67,7 @@ export {
   submitTransaction,
   relayWithdraw,
   relaySwap,
+  fetchJupiterRoute,
   fieldToHex32,
   setBackendUrl,
   getBackendUrl,
@@ -80,6 +82,7 @@ export type {
   IndexedUtxo,
   UtxoRangePage,
   UtxoCheckResult,
+  JupiterRoute,
 } from "./merkle"
 export {
   loadNotes,

@@ -14,6 +14,7 @@ import {
   envProgramId,
   FIELD_SIZE,
   MERKLE_TREE_DEPTH,
+  NATIVE_MINT,
   SIGN_MESSAGE,
   SOL_TREE_KEY,
   WRAPPED_SOL_MINT,
@@ -24,9 +25,12 @@ import {
   Utxo,
   getExtDataHash,
   getMintAddressField,
+  getSwapInExtDataHash,
+  getSwapOutExtDataHash,
 } from "./crypto"
 import {
   bytesToHex,
+  fetchJupiterRoute,
   fetchMerkleProof,
   fetchRelayerInfo,
   fetchBlockhash,
@@ -35,6 +39,7 @@ import {
   fieldToHex32,
   isNullifierSpent,
   submitTransaction,
+  relaySwap,
   relayWithdraw,
   waitForLeafIndex,
   type RelayerInfo,
@@ -61,6 +66,7 @@ import { parseProofToBytesArray, parseToBytesArray, prove } from "./prover"
 import {
   buildTransactSplTransaction,
   buildTransactTransaction,
+  deriveSwapAccounts,
   type ProofBytes,
 } from "./program"
 import {
@@ -95,6 +101,31 @@ export interface SyncResult {
   scanned: number
   added: number
   spent: number
+}
+
+export interface SwapResult {
+  signature: string
+  amountIn: string
+  minAmountOut: string
+  fromMint: string
+  outMint: string
+  nullifiers: string[]
+}
+
+function mixerTreeKey(mint: string): string {
+  return mint === WRAPPED_SOL_MINT ? SOL_TREE_KEY : mint
+}
+
+function isSolMixerMint(mint: string): boolean {
+  return (
+    mint === WRAPPED_SOL_MINT ||
+    mint === NATIVE_MINT.toBase58() ||
+    mint === PublicKey.default.toBase58()
+  )
+}
+
+function jupiterMint(mixerMint: string): string {
+  return isSolMixerMint(mixerMint) ? NATIVE_MINT.toBase58() : mixerMint
 }
 
 const DEPOSIT_FEE = 0
@@ -219,16 +250,33 @@ export class PrivacyCashClient {
     await this.persistNotes().catch(() => {})
   }
 
-  /** Unlock + rescan + persist. Powers the UI "Load notes" action. */
+  /** Unlock + rescan SOL and supported SPL trees + persist. Powers the UI "Load notes" action. */
   async refreshNotes(): Promise<SyncResult> {
     await this.unlock()
-    const r = await this.syncNotes(SOL_TREE_KEY).catch(() => ({
-      scanned: 0,
-      added: 0,
-      spent: 0,
-    }))
+    const acc: SyncResult = { scanned: 0, added: 0, spent: 0 }
+    const add = (r: SyncResult) => {
+      acc.scanned += r.scanned
+      acc.added += r.added
+      acc.spent += r.spent
+    }
+    add(
+      await this.syncNotes(SOL_TREE_KEY).catch(() => ({
+        scanned: 0,
+        added: 0,
+        spent: 0,
+      })),
+    )
+    for (const m of this.info?.supportedMints ?? []) {
+      add(
+        await this.syncNotes(m.mint).catch(() => ({
+          scanned: 0,
+          added: 0,
+          spent: 0,
+        })),
+      )
+    }
     await this.persistNotes().catch(() => {})
-    return r
+    return acc
   }
 
   /**
@@ -580,6 +628,327 @@ export class PrivacyCashClient {
     const dep = await this.depositSPL(mint, amountRaw)
     await this.waitForNoteIndexed(mintStr, dep.leafIndex)
     return this.withdrawSPL(mint, amountRaw, recipient, { relay: true, ...opts })
+  }
+
+  /**
+   * Jupiter quote for a private SOL↔SPL swap. Does not unlock notes.
+   * `fromMint` / `outMint` are mixer mints (`WRAPPED_SOL_MINT` or an SPL mint).
+   */
+  async quotePrivateSwap(args: {
+    fromMint: PublicKey | string
+    outMint: PublicKey | string
+    amountIn: number | string
+    slippageBps?: number
+  }): Promise<{ minOut: string; outAmount: string }> {
+    await this.init()
+    const fromMint = toPubkey(args.fromMint).toBase58() === NATIVE_MINT.toBase58()
+      ? WRAPPED_SOL_MINT
+      : toPubkey(args.fromMint).toBase58()
+    const outMint = toPubkey(args.outMint).toBase58() === NATIVE_MINT.toBase58()
+      ? WRAPPED_SOL_MINT
+      : toPubkey(args.outMint).toBase58()
+    if (isSolMixerMint(fromMint) === isSolMixerMint(outMint)) {
+      throw new Error("swap is SOL ↔ SPL only")
+    }
+    const splMint = new PublicKey(isSolMixerMint(fromMint) ? outMint : fromMint)
+    const { globalConfig } = deriveSwapAccounts(this.programId!, splMint)
+    const route = await fetchJupiterRoute({
+      inputMint: jupiterMint(fromMint),
+      outputMint: jupiterMint(outMint),
+      amount: args.amountIn,
+      userPublicKey: globalConfig.toBase58(),
+      slippageBps: args.slippageBps,
+    })
+    if (!route.minOut || route.minOut === "0") {
+      throw new Error("jupiter quote returned no output")
+    }
+    return { minOut: route.minOut, outAmount: route.outAmount }
+  }
+
+  /**
+   * Atomic private swap: spend shielded notes, Jupiter CPI, reshield the output.
+   * Relayer signs the v1 packet (Phantom cannot). Wallet only signs the unlock message.
+   */
+  async swapPrivate(args: {
+    fromMint: PublicKey | string
+    outMint: PublicKey | string
+    amountIn: number | string
+    slippageBps?: number
+  }): Promise<SwapResult> {
+    await this.unlock()
+    const fromMint =
+      toPubkey(args.fromMint).toBase58() === NATIVE_MINT.toBase58()
+        ? WRAPPED_SOL_MINT
+        : toPubkey(args.fromMint).toBase58()
+    const outMint =
+      toPubkey(args.outMint).toBase58() === NATIVE_MINT.toBase58()
+        ? WRAPPED_SOL_MINT
+        : toPubkey(args.outMint).toBase58()
+    if (isSolMixerMint(fromMint) === isSolMixerMint(outMint)) {
+      throw new Error("swap is SOL ↔ SPL only")
+    }
+
+    const inTreeKey = mixerTreeKey(fromMint)
+    const outTreeKey = mixerTreeKey(outMint)
+    await this.syncNotes(inTreeKey).catch(() => {})
+
+    const amountIn = new BN(args.amountIn.toString())
+    if (amountIn.lten(0)) throw new Error("enter a valid amount")
+
+    const wasm = this.wasm!
+    const utxoKeypair = this.utxoKeypair!
+    const dummyPath = new Array(MERKLE_TREE_DEPTH).fill("0")
+
+    const sorted = unspentNotes(this.publicKey)
+      .filter((n) => n.mintAddress === fromMint)
+      .sort((a, b) => Number(b.amount) - Number(a.amount))
+    if (sorted.length === 0) throw new Error("no spendable notes for the input mint")
+
+    let inputNotes = sorted.filter((n) => BigInt(n.amount) >= BigInt(amountIn.toString()))
+    if (inputNotes.length === 0) {
+      const a = sorted[0]
+      const need = BigInt(amountIn.toString()) - BigInt(a.amount)
+      const b = sorted.slice(1).find((n) => BigInt(n.amount) >= need)
+      if (!b && BigInt(a.amount) < BigInt(amountIn.toString())) {
+        throw new Error(
+          `insufficient private balance: have ${a.amount}, need ${amountIn.toString()}`,
+        )
+      }
+      inputNotes = b ? [a, b] : [a]
+    } else {
+      inputNotes = [inputNotes[0]]
+    }
+
+    const realInputs = inputNotes.map(
+      (n) =>
+        new Utxo({
+          wasm,
+          amount: n.amount,
+          blinding: n.blinding,
+          keypair: utxoKeypair,
+          index: n.index,
+          mintAddress: fromMint,
+        }),
+    )
+    const inputs =
+      realInputs.length === 2
+        ? realInputs
+        : [
+            realInputs[0],
+            new Utxo({
+              wasm,
+              keypair: utxoKeypair,
+              amount: "0",
+              mintAddress: fromMint,
+            }),
+          ]
+
+    const totalInput = inputs.reduce((s, x) => s.add(x.amount), new BN(0))
+    if (amountIn.gt(totalInput)) {
+      throw new Error(
+        `insufficient private balance: have ${totalInput.toString()}, need ${amountIn.toString()}`,
+      )
+    }
+    const changeAmt = totalInput.sub(amountIn)
+
+    const inTree = await fetchTreeState(inTreeKey)
+    const outTree = await fetchTreeState(outTreeKey)
+
+    const inputPathElements: string[][] = []
+    for (const u of inputs) {
+      if (u.amount.gt(new BN(0))) {
+        await this.waitForNoteIndexed(inTreeKey, u.index)
+        inputPathElements.push((await fetchMerkleProof(inTreeKey, u.index)).pathElements)
+      } else {
+        inputPathElements.push(dummyPath)
+      }
+    }
+
+    const splMint = new PublicKey(isSolMixerMint(fromMint) ? outMint : fromMint)
+    const { globalConfig } = deriveSwapAccounts(this.programId!, splMint)
+    const route = await fetchJupiterRoute({
+      inputMint: jupiterMint(fromMint),
+      outputMint: jupiterMint(outMint),
+      amount: amountIn.toString(),
+      userPublicKey: globalConfig.toBase58(),
+      slippageBps: args.slippageBps,
+    })
+    const minOut = new BN(route.minOut)
+    if (minOut.lten(0)) throw new Error("jupiter quote returned no output")
+
+    const change = new Utxo({
+      wasm,
+      amount: changeAmt.toString(),
+      keypair: utxoKeypair,
+      index: inTree.nextLeafIndex,
+      mintAddress: fromMint,
+    })
+    const dummyChange = new Utxo({
+      wasm,
+      amount: "0",
+      keypair: utxoKeypair,
+      index: inTree.nextLeafIndex + 1,
+      mintAddress: fromMint,
+    })
+    const dest0 = new Utxo({
+      wasm,
+      amount: minOut.toString(),
+      keypair: utxoKeypair,
+      index: outTree.nextLeafIndex,
+      mintAddress: outMint,
+    })
+    const dest1 = new Utxo({
+      wasm,
+      amount: "0",
+      keypair: utxoKeypair,
+      index: outTree.nextLeafIndex + 1,
+      mintAddress: outMint,
+    })
+    const dummyOutIn = [
+      new Utxo({ wasm, keypair: utxoKeypair, mintAddress: outMint }),
+      new Utxo({ wasm, keypair: utxoKeypair, mintAddress: outMint }),
+    ]
+
+    const encIn1 = await this.enc!.encryptUtxo(change)
+    const encIn2 = await this.enc!.encryptUtxo(dummyChange)
+    const encOut1 = await this.enc!.encryptUtxo(dest0)
+    const encOut2 = await this.enc!.encryptUtxo(dest1)
+
+    const extIn = amountIn.neg()
+    const outComm = [
+      Uint8Array.from(parseToBytesArray([dest0.getCommitment()])[0]!),
+      Uint8Array.from(parseToBytesArray([dest1.getCommitment()])[0]!),
+    ]
+    const inHash = getSwapInExtDataHash({
+      extAmountIn: extIn,
+      encryptedOutput1: encIn1,
+      encryptedOutput2: encIn2,
+      inMint: fromMint,
+      outMint,
+      minAmountOut: minOut,
+      outCommitments: outComm,
+    })
+    const outHash = getSwapOutExtDataHash({
+      extAmountOut: minOut,
+      encryptedOutput1: encOut1,
+      encryptedOutput2: encOut2,
+      outMint,
+    })
+
+    const publicAmountIn = extIn.add(FIELD_SIZE).mod(FIELD_SIZE)
+    const proofIn = await this.proveSwapLeg({
+      root: inTree.root,
+      inputNullifier: await Promise.all(inputs.map((n) => n.getNullifier())),
+      outputCommitment: [change.getCommitment(), dummyChange.getCommitment()],
+      publicAmount: publicAmountIn.toString(),
+      extDataHash: inHash,
+      inAmount: inputs.map((n) => n.amount.toString(10)),
+      inPrivateKey: inputs.map((n) => n.keypair.privkey),
+      inBlinding: inputs.map((n) => n.blinding.toString(10)),
+      inPathIndices: inputs.map((n) => n.index),
+      inPathElements: inputPathElements,
+      outAmount: [change.amount.toString(10), dummyChange.amount.toString(10)],
+      outBlinding: [change.blinding.toString(10), dummyChange.blinding.toString(10)],
+      outPubkey: [change.keypair.pubkey, dummyChange.keypair.pubkey],
+      mintAddress: getMintAddressField(fromMint),
+    })
+    const proofOut = await this.proveSwapLeg({
+      root: outTree.root,
+      inputNullifier: await Promise.all(dummyOutIn.map((n) => n.getNullifier())),
+      outputCommitment: [dest0.getCommitment(), dest1.getCommitment()],
+      publicAmount: minOut.toString(),
+      extDataHash: outHash,
+      inAmount: ["0", "0"],
+      inPrivateKey: dummyOutIn.map((n) => n.keypair.privkey),
+      inBlinding: dummyOutIn.map((n) => n.blinding.toString(10)),
+      inPathIndices: [0, 0],
+      inPathElements: [dummyPath, dummyPath],
+      outAmount: [dest0.amount.toString(10), dest1.amount.toString(10)],
+      outBlinding: [dest0.blinding.toString(10), dest1.blinding.toString(10)],
+      outPubkey: [dest0.keypair.pubkey, dest1.keypair.pubkey],
+      mintAddress: getMintAddressField(outMint),
+    })
+
+    const signature = await relaySwap({
+      proofIn,
+      proofOut,
+      extAmountIn: extIn.toString(),
+      extAmountOut: minOut.toString(),
+      encryptedOutputIn1: encIn1,
+      encryptedOutputIn2: encIn2,
+      encryptedOutputOut1: encOut1,
+      encryptedOutputOut2: encOut2,
+      fromMint,
+      outMint,
+      routeData: route.routeData,
+      routeAccounts: route.routeAccounts,
+    })
+
+    for (const n of inputNotes) markNoteSpent(this.publicKey, n.id, signature)
+    if (changeAmt.gt(new BN(0))) {
+      saveNote(this.publicKey, {
+        id: newNoteId(),
+        amount: change.amount.toString(),
+        blinding: change.blinding.toString(),
+        index: inTree.nextLeafIndex,
+        mintAddress: fromMint,
+        spent: false,
+        createdAt: Date.now(),
+        depositTx: signature,
+      })
+    }
+    saveNote(this.publicKey, {
+      id: newNoteId(),
+      amount: dest0.amount.toString(),
+      blinding: dest0.blinding.toString(),
+      index: outTree.nextLeafIndex,
+      mintAddress: outMint,
+      spent: false,
+      createdAt: Date.now(),
+      depositTx: signature,
+    })
+    await this.persistNotes().catch(() => {})
+    await this.waitForLeaves(outTreeKey, outTree.nextLeafIndex + 1)
+
+    return {
+      signature,
+      amountIn: amountIn.toString(),
+      minAmountOut: minOut.toString(),
+      fromMint,
+      outMint,
+      nullifiers: proofIn.nullifiers,
+    }
+  }
+
+  private async proveSwapLeg(
+    circuitInput: Record<string, unknown>,
+  ): Promise<{
+    proofA: number[]
+    proofB: number[]
+    proofC: number[]
+    root: number[]
+    publicAmount: number[]
+    extDataHash: number[]
+    inputNullifiers: number[][]
+    outputCommitments: number[][]
+    nullifiers: string[]
+  }> {
+    const { proof, publicSignals, proofA, proofB, proofC } = await prove(circuitInput)
+    const parsed = proofA?.length
+      ? { proofA, proofB: proofB!, proofC: proofC! }
+      : parseProofToBytesArray(proof)
+    const pub = parseToBytesArray(publicSignals)
+    return {
+      proofA: parsed.proofA,
+      proofB: parsed.proofB,
+      proofC: parsed.proofC,
+      root: pub[0]!,
+      publicAmount: pub[1]!,
+      extDataHash: pub[2]!,
+      inputNullifiers: [pub[3]!, pub[4]!],
+      outputCommitments: [pub[5]!, pub[6]!],
+      nullifiers: [pub[3]!, pub[4]!].map((b) => bytesToHex(b)),
+    }
   }
 
   /** Poll until the indexer can serve a Merkle proof for `leafIndex` (mirror caught up). */

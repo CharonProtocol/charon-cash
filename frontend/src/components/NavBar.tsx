@@ -92,7 +92,7 @@ export function NavBar({ currentRoute, onNavigate }: NavBarProps) {
                 PRIVACY<span className="accent-text">CASH</span>
               </h1>
               <p className="text-[11px] leading-none text-muted-foreground">
-                Solana ZK · relayer withdraws
+                Solana ZK · private swaps
               </p>
             </div>
           </button>

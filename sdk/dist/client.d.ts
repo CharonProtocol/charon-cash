@@ -23,6 +23,14 @@ export interface SyncResult {
     added: number;
     spent: number;
 }
+export interface SwapResult {
+    signature: string;
+    amountIn: string;
+    minAmountOut: string;
+    fromMint: string;
+    outMint: string;
+    nullifiers: string[];
+}
 export declare class PrivacyCashClient {
     private signer;
     private wasm?;
@@ -55,7 +63,7 @@ export declare class PrivacyCashClient {
     importNotesJson(json: string, replace?: boolean): Promise<number>;
     /** Clear all notes — wipes the in-memory cache and the encrypted backend blob. */
     clearAllNotes(): Promise<void>;
-    /** Unlock + rescan + persist. Powers the UI "Load notes" action. */
+    /** Unlock + rescan SOL and supported SPL trees + persist. Powers the UI "Load notes" action. */
     refreshNotes(): Promise<SyncResult>;
     /**
      * Scan encrypted outputs from the backend, decrypt ours, upsert notes,
@@ -105,6 +113,30 @@ export declare class PrivacyCashClient {
     sendPrivateSPL(mint: PublicKey | string, amountRaw: number | string, recipient: PublicKey | string, opts?: {
         relay?: boolean;
     }): Promise<WithdrawResult>;
+    /**
+     * Jupiter quote for a private SOL↔SPL swap. Does not unlock notes.
+     * `fromMint` / `outMint` are mixer mints (`WRAPPED_SOL_MINT` or an SPL mint).
+     */
+    quotePrivateSwap(args: {
+        fromMint: PublicKey | string;
+        outMint: PublicKey | string;
+        amountIn: number | string;
+        slippageBps?: number;
+    }): Promise<{
+        minOut: string;
+        outAmount: string;
+    }>;
+    /**
+     * Atomic private swap: spend shielded notes, Jupiter CPI, reshield the output.
+     * Relayer signs the v1 packet (Phantom cannot). Wallet only signs the unlock message.
+     */
+    swapPrivate(args: {
+        fromMint: PublicKey | string;
+        outMint: PublicKey | string;
+        amountIn: number | string;
+        slippageBps?: number;
+    }): Promise<SwapResult>;
+    private proveSwapLeg;
     /** Poll until the indexer can serve a Merkle proof for `leafIndex` (mirror caught up). */
     private waitForNoteIndexed;
     private withdrawInternal;

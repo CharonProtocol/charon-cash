@@ -5,7 +5,7 @@ export { buildTransactTransaction, buildTransactIxData, buildTransactSplTransact
 export { compileV1Transaction, signWireTransaction, v1SignedSize, V1_MAX_SIZE, V1_PREFIX, } from "./tx-v1";
 export { ensureAlt, fetchAlt, splAltAddresses, envAltAddress, cachedAltAddress, cacheAltAddress, } from "./alt";
 export { LocalMirror, readSolTreeState, readTreeState, readGlobalFees } from "./local-provider";
-export { fetchRelayerInfo, fetchBlockhash, fetchAltAccount, fetchTreeState, fetchMerkleProof, fetchUtxoRange, checkEncryptedOutput, waitForLeafIndex, waitForEncryptedOutput, isNullifierSpent, submitTransaction, relayWithdraw, relaySwap, fieldToHex32, setBackendUrl, getBackendUrl, solTreeKey, splTreeKey, } from "./merkle";
+export { fetchRelayerInfo, fetchBlockhash, fetchAltAccount, fetchTreeState, fetchMerkleProof, fetchUtxoRange, checkEncryptedOutput, waitForLeafIndex, waitForEncryptedOutput, isNullifierSpent, submitTransaction, relayWithdraw, relaySwap, fetchJupiterRoute, fieldToHex32, setBackendUrl, getBackendUrl, solTreeKey, splTreeKey, } from "./merkle";
 export { loadNotes, unspentNotes, saveNote, upsertNote, markNoteSpent, totalBalance, exportNotes, importNotes, clearNotes, newNoteId, getSyncOffset, setSyncOffset, resetSyncOffset, } from "./notes";
 export { encryptNotesBlob, decryptNotesBlob, pushEncryptedNotes, pullEncryptedNotes, } from "./notestore";
 export { setOperatorPassword, getOperatorPassword, verifyOperator, operatorInitialize, operatorInitializeSpl, operatorUpdateConfig, operatorUpdateDepositLimit, operatorUpdateDepositLimitSpl, OperatorError, } from "./admin";

@@ -6,20 +6,20 @@ use crate::{
 };
 use bytemuck::try_from_bytes;
 use pinocchio::{
-    cpi::{Seed, Signer},
     error::ProgramError,
     sysvars::{rent::Rent, Sysvar},
-    AccountView, Address, ProgramResult,
+    AccountView, ProgramResult,
 };
 use pinocchio_log::log;
-use pinocchio_system::instructions::{Assign, Transfer};
-use pinocchio_token::{instructions::SyncNative, state::TokenAccount};
+use pinocchio_token::state::TokenAccount;
 
-/// Debit the SOL vault and wrap into the pool wSOL ATA.
+/// Debit the SOL vault into the pool wSOL ATA (Transact-style `set_lamports`).
 ///
-/// Surfpool v1 drops `set_lamports` updates, so this instruction temporarily
-/// makes the vault a zero-data System account, System-Transfers into wSOL,
-/// then restores the vault PDA.
+/// Do not CPI Token (`SyncNative`) in this instruction. Pinocchio lamport
+/// writes are not visible to a CPI's TransactionContext snapshot; Token
+/// then copies the stale lamports back and the instruction is
+/// `UnbalancedInstruction`. A later instruction (Token `SyncNative`, then
+/// Swap) runs after this commit so Jupiter sees the token amount.
 ///
 /// Accounts:
 /// 0 sol_vault, 1 pool_wsol, 2 wsol_mint, 3 signer,
@@ -33,6 +33,9 @@ pub fn process_wrap_sol(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
     verify_signer(signer)?;
     verify_program_id(system_program, &pinocchio_system::ID)?;
     verify_program_id(token_program, &pinocchio_token::ID)?;
+    if !sol_vault.is_writable() || !pool_wsol.is_writable() {
+        return Err(ProgramError::InvalidAccountData);
+    }
     if wsol_mint.address().as_array() != &WSOL_MINT {
         return Err(PrivacyCashError::InvalidMintAddress.into());
     }
@@ -49,8 +52,7 @@ pub fn process_wrap_sol(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
         return Err(PrivacyCashError::InvalidSwapAmount.into());
     }
 
-    let mut saved = [0u8; TreeTokenAccount::LEN];
-    let vault_bump = {
+    {
         let token_data = sol_vault.try_borrow()?;
         let token = try_from_bytes::<TreeTokenAccount>(&token_data[..TreeTokenAccount::LEN])
             .map_err(|_| ProgramError::InvalidAccountData)?;
@@ -59,9 +61,7 @@ pub fn process_wrap_sol(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
             &[TREE_TOKEN_ACCOUNT_SEED, &[token.bump]],
             &crate::ID,
         )?;
-        saved.copy_from_slice(&token_data[..TreeTokenAccount::LEN]);
-        token.bump
-    };
+    }
 
     let rent_exempt_minimum = Rent::get()?.try_minimum_balance(TreeTokenAccount::LEN)?;
     let required = amount
@@ -78,46 +78,16 @@ pub fn process_wrap_sol(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
         }
     }
 
-    {
-        let mut token_data = sol_vault.try_borrow_mut()?;
-        token_data[..TreeTokenAccount::LEN].fill(0);
-    }
-    sol_vault.resize(0)?;
-    unsafe {
-        sol_vault.assign(&pinocchio_system::ID);
-    }
-    log!("wrap_sol assigned");
-
-    let vault_bump_seed = [vault_bump];
-    let vault_seeds = [
-        Seed::from(TREE_TOKEN_ACCOUNT_SEED),
-        Seed::from(&vault_bump_seed),
-    ];
-    let vault_signer = [Signer::from(&vault_seeds)];
-    Transfer {
-        from: sol_vault,
-        to: pool_wsol,
-        lamports: amount,
-    }
-    .invoke_signed(&vault_signer)?;
-    log!("wrap_sol transferred");
-
-    let program_id = Address::from(crate::ID);
-    Assign {
-        account: sol_vault,
-        owner: &program_id,
-    }
-    .invoke_signed(&vault_signer)?;
-    sol_vault.resize(TreeTokenAccount::LEN)?;
-    {
-        let mut token_data = sol_vault.try_borrow_mut()?;
-        token_data[..TreeTokenAccount::LEN].copy_from_slice(&saved);
-    }
-
-    SyncNative {
-        native_token: pool_wsol,
-    }
-    .invoke()?;
+    let vault_after = sol_vault
+        .lamports()
+        .checked_sub(amount)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    let wsol_after = pool_wsol
+        .lamports()
+        .checked_add(amount)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    sol_vault.set_lamports(vault_after);
+    pool_wsol.set_lamports(wsol_after);
     log!("wrap_sol done");
 
     Ok(())

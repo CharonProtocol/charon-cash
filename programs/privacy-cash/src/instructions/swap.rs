@@ -27,7 +27,7 @@ use pinocchio::{
 use pinocchio_associated_token_account::instructions::CreateIdempotent;
 use pinocchio_log::log;
 use pinocchio_token::{
-    instructions::CloseAccount,
+    instructions::{CloseAccount, SyncNative},
     state::TokenAccount,
 };
 
@@ -313,7 +313,13 @@ pub fn process_swap(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
 
     match dir {
         SwapDir::SolToSpl => {
-            // SOL is wrapped in a prior WrapSol instruction in this transaction.
+            // WrapSol already committed extra lamports onto this ATA. SyncNative
+            // here (next instruction) can see them; doing it inside WrapSol
+            // after set_lamports is UnbalancedInstruction.
+            SyncNative {
+                native_token: pool_wsol_account,
+            }
+            .invoke()?;
             let wsol_before = token_amount(pool_wsol_account)?;
             if wsol_before < amount_in {
                 return Err(PrivacyCashError::InsufficientFundsForWithdrawal.into());

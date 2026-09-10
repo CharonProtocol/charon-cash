@@ -104,6 +104,23 @@ export declare function relaySwap(req: {
         isWritable: boolean;
     }[];
 }): Promise<string>;
+export interface JupiterRoute {
+    minOut: string;
+    outAmount: string;
+    routeData: Uint8Array;
+    routeAccounts: {
+        pubkey: string;
+        isWritable: boolean;
+    }[];
+}
+/** Quote + swap-instructions via the backend shim (avoids browser CORS to Jupiter). */
+export declare function fetchJupiterRoute(req: {
+    inputMint: string;
+    outputMint: string;
+    amount: string | number;
+    userPublicKey: string;
+    slippageBps?: number;
+}): Promise<JupiterRoute>;
 export declare function bytesToHex(bytes: ArrayLike<number>): string;
 /** Poseidon / Fr decimal string → 32-byte big-endian hex (no 0x). */
 export declare function fieldToHex32(dec: string): string;

@@ -245,6 +245,57 @@ export async function relaySwap(req: {
   return json.signature as string
 }
 
+export interface JupiterRoute {
+  minOut: string
+  outAmount: string
+  routeData: Uint8Array
+  routeAccounts: { pubkey: string; isWritable: boolean }[]
+}
+
+/** Quote + swap-instructions via the backend shim (avoids browser CORS to Jupiter). */
+export async function fetchJupiterRoute(req: {
+  inputMint: string
+  outputMint: string
+  amount: string | number
+  userPublicKey: string
+  slippageBps?: number
+}): Promise<JupiterRoute> {
+  const res = await fetch(getBackendUrl() + "/api/jupiter/route", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      inputMint: req.inputMint,
+      outputMint: req.outputMint,
+      amount: String(req.amount),
+      userPublicKey: req.userPublicKey,
+      slippageBps: req.slippageBps ?? 100,
+    }),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message ?? `HTTP ${res.status}`)
+  const data = json.data ?? json
+  const hex = String(data.route_data ?? data.routeData ?? "").replace(/^0x/i, "")
+  if (!hex || hex.length % 2 !== 0) throw new Error("jupiter route returned no instruction data")
+  const routeData = new Uint8Array(hex.length / 2)
+  for (let i = 0; i < routeData.length; i++) {
+    routeData[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16)
+  }
+  const accounts = (data.route_accounts ?? data.routeAccounts ?? []) as {
+    pubkey: string
+    isWritable?: boolean
+    is_writable?: boolean
+  }[]
+  return {
+    minOut: String(data.minOut ?? data.min_out ?? data.otherAmountThreshold ?? ""),
+    outAmount: String(data.outAmount ?? data.out_amount ?? ""),
+    routeData,
+    routeAccounts: accounts.map((a) => ({
+      pubkey: a.pubkey,
+      isWritable: !!(a.isWritable ?? a.is_writable),
+    })),
+  }
+}
+
 export function bytesToHex(bytes: ArrayLike<number>): string {
   let out = "0x"
   for (let i = 0; i < bytes.length; i++)
