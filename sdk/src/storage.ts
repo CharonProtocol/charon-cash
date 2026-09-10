@@ -12,9 +12,9 @@ import { openDB, type IDBPDatabase } from "idb";
 
 const CURRENTDBVERSION = 1;
 
-export type StoredNoteSchema = {
+export type StoredUtxoSchema = {
   id?: number;
-  encryptedNote: Uint8Array;
+  encryptedUtxo: Uint8Array;
   walletPubkey: string;
 };
 export type IndexWalletSchema = {
@@ -27,10 +27,8 @@ const Indexes = {
   walletPubkeyAndID: ["walletPubkey", "id"],
 };
 
-const NOTES_STORE = "SILENTPAY_NOTES";
-const INDEX_STORE = "SILENT_PAY_NOTE_INDEX_PER_WALLET";
-
-const SilentPayLastFetchedIndex = "SILENT_FETCHED_NOTE_INDEX";
+const UTXO_STORE = "SILENTPAY_UTXOS";
+const INDEX_STORE = "SILENT_PAY_UTXO_INDEX_PER_WALLET";
 
 export class StorageService {
   private db: IDBPDatabase;
@@ -43,18 +41,18 @@ export class StorageService {
     const db = await openDB("SilentPay", CURRENTDBVERSION, {
       upgrade(db) {
         // schema for this is
-        // StoredNoteSchema = {
+        // StoredUtxoSchema = {
         //         id?: number;
         //         encryptedNote: Uint8Array;
         //         walletPubkey: string;
         //   };
-        const noteStore = db.createObjectStore(NOTES_STORE, {
+        const utxoStore = db.createObjectStore(UTXO_STORE, {
           keyPath: "id",
           autoIncrement: true,
         });
 
         Object.entries(Indexes).forEach(([key, value]) => {
-          noteStore.createIndex(key, value);
+          utxoStore.createIndex(key, value);
         });
 
         // per wallet index
@@ -77,13 +75,13 @@ export class StorageService {
    * @param walletPubkey : wallet whose note this belongs to
    * @param note
    */
-  async saveNote(walletPubkey: string, note: Uint8Array) {
-    const StoredNoteSchema: StoredNoteSchema = {
-      encryptedNote: note,
+  async saveUtxo(walletPubkey: string, utxoBytes: Uint8Array) {
+    const StoredUtxoSchema: StoredUtxoSchema = {
+      encryptedUtxo: utxoBytes,
       walletPubkey: walletPubkey,
     };
 
-    await this.db.add(NOTES_STORE, StoredNoteSchema);
+    await this.db.add(UTXO_STORE, StoredUtxoSchema);
   }
 
   /**
@@ -91,11 +89,11 @@ export class StorageService {
    * @param walletPubkey
    * @param note
    */
-  async saveNoteBatch(walletPubkey: string, notes: Uint8Array[]) {
-    const tx = this.db.transaction(NOTES_STORE, "readwrite");
-    for (let note of notes) {
-      const storedNote: StoredNoteSchema = {
-        encryptedNote: note,
+  async saveUtxoBatch(walletPubkey: string, utxos: Uint8Array[]) {
+    const tx = this.db.transaction(UTXO_STORE, "readwrite");
+    for (let utxo of utxos) {
+      const storedNote: StoredUtxoSchema = {
+        encryptedUtxo: utxo,
         walletPubkey,
       };
 
@@ -108,33 +106,33 @@ export class StorageService {
   /**
    *
    * @param walletPubkey
-   * @returns [`StoredNoteSchema = {
+   * @returns [`StoredUtxoSchema = {
                     id: number;
-                    encryptedNote: Uint8Array;
+                    encryptedUtxos: Uint8Array;
                     walletPubkey: string;
         };`]
    */
-  async loadNotes(walletPubkey: string): Promise<StoredNoteSchema[]> {
-    const notes = await this.db.getAllFromIndex(
-      NOTES_STORE,
+  async loadUtxoBatch(walletPubkey: string): Promise<StoredUtxoSchema[]> {
+    const utxos = await this.db.getAllFromIndex(
+      UTXO_STORE,
       "users",
       walletPubkey,
     );
-    return notes;
+    return utxos;
   }
 
   /**
    *
    * @param walletPubkey
-   * @param fromId : notes with id greater than this
-   * @returns array of notes
+   * @param fromId : utxos with id greater than this
+   * @returns array of utxo
    */
-  async loadNotesFrom(
+  async loadUtxosFrom(
     walletPubkey: string,
     fromId: number,
-  ): Promise<StoredNoteSchema[]> {
+  ): Promise<StoredUtxoSchema[]> {
     return this.db.getAllFromIndex(
-      NOTES_STORE,
+      UTXO_STORE,
       "walletPubkeyAndID",
       IDBKeyRange.bound(
         [walletPubkey, fromId],
@@ -145,28 +143,28 @@ export class StorageService {
     );
   }
 
-  async loadPairOfNotes(id1: number, id2: number): Promise<StoredNoteSchema[]> {
-    const tx = this.db.transaction(NOTES_STORE, "readonly");
-    const noteStore = tx.objectStore(NOTES_STORE);
-    const firstNote = await noteStore.get(IDBKeyRange.only(id1));
-    const secondNote = await noteStore.get(IDBKeyRange.only(id2));
+  async loadPairOfUtxo(id1: number, id2: number): Promise<StoredUtxoSchema[]> {
+    const tx = this.db.transaction(UTXO_STORE, "readonly");
+    const utxoStore = tx.objectStore(UTXO_STORE);
+    const firstUtxo = await utxoStore.get(IDBKeyRange.only(id1));
+    const secondUtxo = await utxoStore.get(IDBKeyRange.only(id2));
 
     await tx.commit();
 
-    return [firstNote, secondNote];
+    return [firstUtxo, secondUtxo];
   }
 
-  async loadSingleNote(id1: number): Promise<StoredNoteSchema> {
-    const tx = this.db.transaction(NOTES_STORE, "readonly");
-    const noteStore = tx.objectStore(NOTES_STORE);
-    const firstNote = await noteStore.get(IDBKeyRange.only(id1));
+  async loadUtxo(id1: number): Promise<StoredUtxoSchema> {
+    const tx = this.db.transaction(UTXO_STORE, "readonly");
+    const utxoStore = tx.objectStore(UTXO_STORE);
+    const firstUtxo = await utxoStore.get(IDBKeyRange.only(id1));
 
     await tx.commit();
 
-    return firstNote;
+    return firstUtxo;
   }
 
-  async getNextNodeToFetchIndex(
+  async getNextUtxoToFetchIndex(
     walletPubkey: string,
   ): Promise<IndexWalletSchema> {
     const tx = await this.db.get(INDEX_STORE, walletPubkey);
@@ -175,7 +173,7 @@ export class StorageService {
     return { walletPubkey: walletPubkey, index: tx ? tx.index : 1 };
   }
 
-  async updateNextNodeToFetchIndex(walletPubkey: string, newIndex: number) {
+  async updateNextUtxoToFetchIndex(walletPubkey: string, newIndex: number) {
     const tx = await this.db.put(INDEX_STORE, {
       walletPubkey: walletPubkey,
       index: newIndex,

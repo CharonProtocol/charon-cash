@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 
 import { describe, beforeAll, test, expect } from "bun:test";
-import { StorageService, StoredNoteSchema } from "../../src/storage";
+import { StorageService, StoredUtxoSchema } from "../../src/storage";
 import { randomBytes } from "@noble/ciphers/utils.js";
 import bs from "bs58";
 const localStorageMock = {
@@ -47,7 +47,7 @@ describe("Storage Service ", () => {
 
   test("Insertion for Alice's wallet is successfull, Single Note , BatchNotes", async () => {
     let newNote = randomBytes(32);
-    await storage.saveNote(alice, newNote);
+    await storage.saveUtxo(alice, newNote);
 
     let batchOfNotes: Uint8Array[] = [];
 
@@ -55,14 +55,14 @@ describe("Storage Service ", () => {
       batchOfNotes.push(randomBytes(32));
     }
 
-    await storage.saveNoteBatch(alice, batchOfNotes);
-    const notes = await storage.loadNotes(alice);
+    await storage.saveUtxoBatch(alice, batchOfNotes);
+    const notes = await storage.loadUtxoBatch(alice);
 
     expect(notes).toHaveLength(11);
   });
   test("Insertion for Bob's wallet is successfull, Single Note , BatchNotes", async () => {
     let newNote = randomBytes(32);
-    await storage.saveNote(bob, newNote);
+    await storage.saveUtxo(bob, newNote);
 
     let batchOfNotes: Uint8Array[] = [];
 
@@ -70,14 +70,14 @@ describe("Storage Service ", () => {
       batchOfNotes.push(randomBytes(32));
     }
 
-    await storage.saveNoteBatch(bob, batchOfNotes);
-    const notes = await storage.loadNotes(bob);
+    await storage.saveUtxoBatch(bob, batchOfNotes);
+    const notes = await storage.loadUtxoBatch(bob);
 
     expect(notes).toHaveLength(11);
   });
   test("Insertion for Charlie's wallet is successfull, Single Note , BatchNotes", async () => {
     let newNote = randomBytes(32);
-    await storage.saveNote(charlie, newNote);
+    await storage.saveUtxo(charlie, newNote);
 
     let batchOfNotes: Uint8Array[] = [];
 
@@ -85,14 +85,14 @@ describe("Storage Service ", () => {
       batchOfNotes.push(randomBytes(32));
     }
 
-    await storage.saveNoteBatch(charlie, batchOfNotes);
-    const notes = await storage.loadNotes(charlie);
+    await storage.saveUtxoBatch(charlie, batchOfNotes);
+    const notes = await storage.loadUtxoBatch(charlie);
 
     expect(notes).toHaveLength(11);
   });
 
   test("Alice is only able to retreive notes belonging to them", async () => {
-    let notes: StoredNoteSchema[] = await storage.loadNotes(alice);
+    let notes: StoredUtxoSchema[] = await storage.loadUtxoBatch(alice);
 
     expect(notes).toHaveLength(11);
 
@@ -101,7 +101,7 @@ describe("Storage Service ", () => {
     }
   });
   test("Bob is only able to retreive notes belonging to them", async () => {
-    let notes: StoredNoteSchema[] = await storage.loadNotes(bob);
+    let notes: StoredUtxoSchema[] = await storage.loadUtxoBatch(bob);
 
     expect(notes).toHaveLength(11);
 
@@ -110,7 +110,7 @@ describe("Storage Service ", () => {
     }
   });
   test("Charlie is only able to retreive notes belonging to them", async () => {
-    let notes: StoredNoteSchema[] = await storage.loadNotes(charlie);
+    let notes: StoredUtxoSchema[] = await storage.loadUtxoBatch(charlie);
 
     expect(notes).toHaveLength(11);
 
@@ -120,7 +120,7 @@ describe("Storage Service ", () => {
   });
 
   test("User can load notes from id 5 & above ", async () => {
-    let notes: StoredNoteSchema[] = await storage.loadNotesFrom(alice, 5);
+    let notes: StoredUtxoSchema[] = await storage.loadUtxosFrom(alice, 5);
 
     expect(notes).toHaveLength(6);
 
@@ -132,7 +132,7 @@ describe("Storage Service ", () => {
   });
   test("User can load notes pair of notes ", async () => {
     // 12 belong to
-    let notes: StoredNoteSchema[] = await storage.loadPairOfNotes(12, 13);
+    let notes: StoredUtxoSchema[] = await storage.loadPairOfUtxo(12, 13);
 
     expect(notes).toHaveLength(2);
 
@@ -144,23 +144,23 @@ describe("Storage Service ", () => {
   });
   test("User can load notes pair of notes ", async () => {
     // 12 belong to
-    let note: StoredNoteSchema = await storage.loadSingleNote(23);
+    let note: StoredUtxoSchema = await storage.loadUtxo(23);
 
     expect(note.walletPubkey).toBe(charlie);
     expect(note.id).toBe(23);
   });
 
   test("User can load note index", async () => {
-    let index = await storage.getNextNodeToFetchIndex(alice);
+    let index = await storage.getNextUtxoToFetchIndex(alice);
 
-    expect(index.index).toBe(0);
+    expect(Number(index.index)).toBe(1);
     expect(index.walletPubkey).toBe(alice);
   });
   test("User can save note", async () => {
-    let save = await storage.updateNextNodeToFetchIndex(alice, 0);
-    let index = await storage.getNextNodeToFetchIndex(alice);
+    let save = await storage.updateNextUtxoToFetchIndex(alice, 0);
+    let index = await storage.getNextUtxoToFetchIndex(alice);
 
-    expect(index.index).toBe(0);
+    expect(Number(index.index)).toBe(0);
     expect(index.walletPubkey).toBe(alice);
   });
 });
