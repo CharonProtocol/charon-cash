@@ -3,7 +3,7 @@
 // account + global config, commitments/nullifiers by scanning the program's tx
 // history. Also signs setup/config ixs (initialize, initialize-spl, update-*).
 // Serves the same routes the client SDK + admin cards call. Run: bun scripts/backend-shim.mjs
-import { readFileSync } from "node:fs"
+import { readFileSync, existsSync } from "node:fs"
 import path from "node:path"
 import { homedir } from "node:os"
 
@@ -20,12 +20,18 @@ import { WasmFactory } from "@lightprotocol/hasher.rs"
 import {
   LocalMirror, readGlobalFees, readTreeState, deriveAccounts,
   MERKLE_TREE_DEPTH, buildTransactIxData, buildTransactSplInstruction,
+  buildSwapTransaction, signWireTransaction,
 } from "privacy-cash-sdk"
 
 const PROGRAM = new PublicKey(process.env.PROGRAM_ID ?? "5GcqZ4aZ3xF87wQF5pFmHHYAk73Hcww1r8414KdeUJ9P")
 const RPC = process.env.SOLANA_RPC_URL ?? "http://localhost:8899"
 const PORT = Number(process.env.PORT ?? 8080)
 const idJson = process.env.ID_JSON ?? path.join(homedir(), ".config/solana/id.json")
+const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..")
+const PROVE_URL = process.env.PROVE_URL ?? null
+const releaseBin = path.join(repoRoot, "crates/privacy-cash-prover/target/release/privacy-cash-prover")
+const debugBin = path.join(repoRoot, "crates/privacy-cash-prover/target/debug/privacy-cash-prover")
+const PROVER_BIN = process.env.PROVER_BIN ?? (existsSync(releaseBin) ? releaseBin : debugBin)
 
 // Address Lookup Table — required to compress the SPL transact's many accounts
 // into a v0 message (without it compileToV0Message overruns on SPL withdraw).
@@ -68,9 +74,34 @@ const noteBlobs = new Map()
 // tx with "Failed to fetch accounts from remote". Retry on that (and 429/timeout).
 async function sendRawWithRetry(serialized, opts, attempts = 7) {
   let lastErr
+  const bytes = Buffer.from(serialized)
   for (let i = 0; i < attempts; i++) {
     try {
-      return await conn.sendRawTransaction(serialized, opts)
+      // v1 packets exceed 1232; send via JSON-RPC base64 so web3.js cannot
+      // reject them as legacy/v0 wire format.
+      if (bytes[0] === 0x81 || bytes.length > 1232) {
+        const res = await fetch(RPC, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "sendTransaction",
+            params: [
+              bytes.toString("base64"),
+              {
+                encoding: "base64",
+                skipPreflight: opts?.skipPreflight ?? true,
+                maxRetries: opts?.maxRetries ?? 5,
+              },
+            ],
+          }),
+        })
+        const json = await res.json()
+        if (json.error) throw new Error(json.error.message ?? JSON.stringify(json.error))
+        return json.result
+      }
+      return await conn.sendRawTransaction(bytes, opts)
     } catch (e) {
       lastErr = e
       const msg = String(e?.message ?? e)
@@ -154,7 +185,7 @@ async function rescan() {
   const perTree = new Map() // treeKey -> commitment decimals[]
 
   for (const s of ordered) {
-    const t = await conn.getTransaction(s.signature, { maxSupportedTransactionVersion: 0 })
+    const t = await conn.getTransaction(s.signature, { maxSupportedTransactionVersion: 1 })
     if (!t) continue
     const msg = t.transaction.message
     const meta = t.meta
@@ -168,14 +199,48 @@ async function rescan() {
         // legacy: may not have programIdIndex resolution — check data disc only
       }
       const raw = typeof ix.data === "string" ? Buffer.from(ix.data, "base64") : Buffer.from(ix.data)
-      if (raw.length < 497) continue
+      if (raw.length < 369) continue
       const disc = raw[0]
-      if (disc !== 2 && disc !== 3) continue
-      // args after 1-byte disc
+      if (disc !== 2 && disc !== 3 && disc !== 7) continue
       const args = raw.subarray(1)
-      const c0 = be(args.subarray(416, 448)).toString()
-      const c1 = be(args.subarray(448, 480)).toString()
-      let offset = 480 + 16 // proof + ExtDataMinified
+      if (disc === 7) {
+        if (args.length < 724) continue
+        const mintIdx = ix.accountKeyIndexes?.[14] ?? ix.accounts?.[14]
+        const mintPk = mintIdx != null ? allKeys[mintIdx] : null
+        const splKey = mintPk ? mintPk.toBase58() : "spl-unknown"
+        const inTreeIdx = ix.accountKeyIndexes?.[0] ?? ix.accounts?.[0]
+        const inTreePk = inTreeIdx != null ? allKeys[inTreeIdx] : null
+        const [splTree] = mintPk
+          ? PublicKey.findProgramAddressSync([Buffer.from("merkle_tree"), mintPk.toBytes()], PROGRAM)
+          : [null]
+        const inKey = inTreePk && splTree && inTreePk.equals?.(splTree) ? splKey : "sol"
+        const outKey = inKey === "sol" ? splKey : "sol"
+        let encOffset = 704 + 16 + 4
+        const readLenPref = () => {
+          const len = args.readUInt32LE(encOffset); encOffset += 4
+          const slice = args.subarray(encOffset, encOffset + len); encOffset += len
+          return slice
+        }
+        let encIn1, encIn2, encOut1, encOut2
+        try {
+          encIn1 = readLenPref(); encIn2 = readLenPref(); encOut1 = readLenPref(); encOut2 = readLenPref()
+        } catch { continue }
+        const pushPair = (treeKey, c0, c1, e0, e1, n0, n1) => {
+          const base = perTree.get(treeKey)?.length ?? 0
+          perTree.set(treeKey, [...(perTree.get(treeKey) ?? []), be(args.subarray(c0, c0 + 32)).toString(), be(args.subarray(c1, c1 + 32)).toString()])
+          newUtxos.push({ treeKey, leafIndex: base, commitment: Buffer.from(args.subarray(c0, c0 + 32)).toString("hex"), encryptedHex: Buffer.from(e0).toString("hex"), signature: s.signature, slot: s.slot })
+          newUtxos.push({ treeKey, leafIndex: base + 1, commitment: Buffer.from(args.subarray(c1, c1 + 32)).toString("hex"), encryptedHex: Buffer.from(e1).toString("hex"), signature: s.signature, slot: s.slot })
+          newNulls.add(Buffer.from(args.subarray(n0, n0 + 32)).toString("hex"))
+          newNulls.add(Buffer.from(args.subarray(n1, n1 + 32)).toString("hex"))
+        }
+        pushPair(inKey, 288, 320, encIn1, encIn2, 224, 256)
+        pushPair(outKey, 640, 672, encOut1, encOut2, 576, 608)
+        continue
+      }
+      // Transact / TransactSpl: compressed proof 352
+      const c0 = be(args.subarray(288, 320)).toString()
+      const c1 = be(args.subarray(320, 352)).toString()
+      let offset = 352 + 16 // proof + ExtDataMinified
       const readLenPref = () => {
         const len = args.readUInt32LE(offset); offset += 4
         const slice = args.subarray(offset, offset + len); offset += len
@@ -202,7 +267,7 @@ async function rescan() {
       newUtxos.push({
         treeKey,
         leafIndex: base,
-        commitment: Buffer.from(args.subarray(416, 448)).toString("hex"),
+        commitment: Buffer.from(args.subarray(288, 320)).toString("hex"),
         encryptedHex: Buffer.from(enc1).toString("hex"),
         signature: s.signature,
         slot: s.slot,
@@ -210,13 +275,13 @@ async function rescan() {
       newUtxos.push({
         treeKey,
         leafIndex: base + 1,
-        commitment: Buffer.from(args.subarray(448, 480)).toString("hex"),
+        commitment: Buffer.from(args.subarray(320, 352)).toString("hex"),
         encryptedHex: Buffer.from(enc2).toString("hex"),
         signature: s.signature,
         slot: s.slot,
       })
-      newNulls.add(Buffer.from(args.subarray(352, 384)).toString("hex"))
-      newNulls.add(Buffer.from(args.subarray(384, 416)).toString("hex"))
+      newNulls.add(Buffer.from(args.subarray(224, 256)).toString("hex"))
+      newNulls.add(Buffer.from(args.subarray(256, 288)).toString("hex"))
     }
   }
 
@@ -404,6 +469,13 @@ Bun.serve({
         let body = {}
         try { const text = await req.text(); if (text.trim()) body = JSON.parse(text) } catch { }
 
+        if (p === "/api/prove") {
+          const proof = await hostedProve(body)
+          return json({ success: true, data: proof })
+        }
+        if (p === "/api/relayer/swap") {
+          return json(await relaySwap(body))
+        }
         // Deposit path: client wallet-signed VersionedTransaction hex → broadcast
         if (p === "/api/relayer/submit") {
           const hex = String(body.transaction || "").replace(/^0x/i, "")
@@ -644,4 +716,129 @@ async function sendIxMany(ixs, altAccount = null) {
   try { await conn.confirmTransaction(sig, "confirmed") } catch { }
   const slot = await conn.getSlot("confirmed")
   return { signature: sig, slot, status: "confirmed" }
+}
+
+function proofFromBody(p) {
+  return {
+    proofA: [...hexToBuf(p.proof_a ?? p.proofA)],
+    proofB: [...hexToBuf(p.proof_b ?? p.proofB)],
+    proofC: [...hexToBuf(p.proof_c ?? p.proofC)],
+    root: [...hexToBuf(p.root)],
+    publicAmount: [...hexToBuf(p.public_amount ?? p.publicAmount)],
+    extDataHash: [...hexToBuf(p.ext_data_hash ?? p.extDataHash)],
+    inputNullifiers: [
+      [...hexToBuf(p.input_nullifiers?.[0] ?? p.inputNullifiers[0])],
+      [...hexToBuf(p.input_nullifiers?.[1] ?? p.inputNullifiers[1])],
+    ],
+    outputCommitments: [
+      [...hexToBuf(p.output_commitments?.[0] ?? p.outputCommitments[0])],
+      [...hexToBuf(p.output_commitments?.[1] ?? p.outputCommitments[1])],
+    ],
+  }
+}
+
+async function hostedProve(circuitInput) {
+  if (PROVE_URL) {
+    const res = await fetch(PROVE_URL.replace(/\/$/, "") + "/api/prove", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(circuitInput),
+    })
+    const json = await res.json()
+    if (!res.ok) throw new Error(json.error?.message ?? "prove proxy failed")
+    return json.data ?? json
+  }
+  const started = Date.now()
+  const result = await proveViaServe(circuitInput)
+  console.log(`prove latency_ms=${Date.now() - started}`)
+  return result
+}
+
+let serveProc = null
+let stdoutReader = null
+let serveStdoutBuf = ""
+let proveLock = Promise.resolve()
+
+async function proveViaServe(circuitInput) {
+  const run = () => proveViaServeLocked(circuitInput)
+  const p = proveLock.then(run, run)
+  proveLock = p.catch(() => {})
+  return p
+}
+
+async function ensureServe() {
+  if (serveProc && serveProc.exitCode === null) return
+  if (!existsSync(PROVER_BIN)) {
+    throw new Error(`prover binary missing at ${PROVER_BIN}; cargo build --release --manifest-path crates/privacy-cash-prover/Cargo.toml`)
+  }
+  serveStdoutBuf = ""
+  serveProc = Bun.spawn([PROVER_BIN, "serve"], {
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+    env: {
+      ...process.env,
+      CIRCUIT_BASE: process.env.CIRCUIT_BASE ?? path.join(repoRoot, "programs/privacy-cash/artifacts/circuits/transaction2"),
+    },
+  })
+  stdoutReader = serveProc.stdout.getReader()
+  ;(async () => {
+    try {
+      const err = await new Response(serveProc.stderr).text()
+      if (err.trim()) console.log(err.trim())
+    } catch { /* process ended */ }
+  })()
+}
+
+async function readServeLine() {
+  while (!serveStdoutBuf.includes("\n")) {
+    const { done, value } = await stdoutReader.read()
+    if (done || !value) throw new Error("prover serve stdout closed")
+    serveStdoutBuf += new TextDecoder().decode(value)
+  }
+  const i = serveStdoutBuf.indexOf("\n")
+  const line = serveStdoutBuf.slice(0, i)
+  serveStdoutBuf = serveStdoutBuf.slice(i + 1)
+  return line
+}
+
+async function proveViaServeLocked(circuitInput) {
+  await ensureServe()
+  serveProc.stdin.write(JSON.stringify(circuitInput) + "\n")
+  const line = await readServeLine()
+  return JSON.parse(line)
+}
+
+async function relaySwap(body) {
+  const BN = (await import("bn.js")).default
+  const fromMint = body.from_mint ?? body.fromMint
+  const outMint = new PublicKey(body.out_mint ?? body.outMint)
+  const { blockhash } = await conn.getLatestBlockhash()
+  const { bytes } = buildSwapTransaction({
+    programId: PROGRAM,
+    signer: payer.publicKey,
+    proofIn: proofFromBody(body.proof_in ?? body.proofIn),
+    proofOut: proofFromBody(body.proof_out ?? body.proofOut),
+    extAmountIn: new BN(String(body.ext_amount_in ?? body.extAmountIn)),
+    extAmountOut: new BN(String(body.ext_amount_out ?? body.extAmountOut)),
+    encryptedOutputIn1: hexToBuf(body.encrypted_output_in1 ?? body.encryptedOutputIn1),
+    encryptedOutputIn2: hexToBuf(body.encrypted_output_in2 ?? body.encryptedOutputIn2),
+    encryptedOutputOut1: hexToBuf(body.encrypted_output_out1 ?? body.encryptedOutputOut1),
+    encryptedOutputOut2: hexToBuf(body.encrypted_output_out2 ?? body.encryptedOutputOut2),
+    fromMint,
+    outMint,
+    routeData: hexToBuf(body.route_data ?? body.routeData),
+    routeAccounts: (body.route_accounts ?? body.routeAccounts ?? []).map((a) => ({
+      pubkey: new PublicKey(a.pubkey),
+      isWritable: !!a.isWritable,
+    })),
+    blockhash,
+    computeUnitLimit: 1_400_000,
+  })
+  const signed = signWireTransaction(bytes, [payer.secretKey])
+  if (signed.length > 4096) throw new Error(`v1 swap packet ${signed.length} > 4096`)
+  const sig = await sendRawWithRetry(Buffer.from(signed), { skipPreflight: true, maxRetries: 5 })
+  try { await conn.confirmTransaction(sig, "confirmed") } catch { }
+  const slot = await conn.getSlot("confirmed")
+  return { signature: sig, slot, status: "confirmed", size: signed.length }
 }

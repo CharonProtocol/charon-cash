@@ -24,6 +24,16 @@ pub const ALLOWED_TOKENS: &[[u8; 32]] = &[
 
 pub const SOL_ADDRESS: [u8; 32] = pubkey!("11111111111111111111111111111112");
 
+/// Jupiter v6 aggregator. Swap remaining accounts are a CPI into this program.
+pub const JUPITER_PROGRAM_ID: [u8; 32] = pubkey!("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4");
+
+/// Native mint used when wrapping/unwrapping SOL for Jupiter.
+pub const WSOL_MINT: [u8; 32] = pubkey!("So11111111111111111111111111111111111111112");
+
+/// Domain-separated SHA-256 prefixes for the two swap Groth16 legs.
+pub const SWAP_IN_DOMAIN: &[u8] = b"privacy_cash:swap_in:v1";
+pub const SWAP_OUT_DOMAIN: &[u8] = b"privacy_cash:swap_out:v1";
+
 // For the Global Config update mask
 pub const UPDATE_DEPOSIT_FEE: u8 = 1 << 0;
 pub const UPDATE_WITHDRAWAL_FEE: u8 = 1 << 1;

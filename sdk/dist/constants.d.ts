@@ -7,6 +7,12 @@ export declare const WRAPPED_SOL_MINT = "11111111111111111111111111111112";
 export declare const SIGN_MESSAGE = "Privacy Money account sign in";
 export declare const DISC_TRANSACT = 2;
 export declare const DISC_TRANSACT_SPL = 3;
+export declare const DISC_SWAP = 7;
+export declare const DISC_WRAP_SOL = 8;
+export declare const SWAP_IX_DISCRIMINATOR: Buffer<ArrayBuffer>;
+export declare const WRAP_SOL_IX_DISCRIMINATOR: Buffer<ArrayBuffer>;
+export declare const JUPITER_PROGRAM_ID: PublicKey;
+export declare const NATIVE_MINT: PublicKey;
 export declare const SEED: {
     readonly TREE_ACCOUNT: "merkle_tree";
     readonly TREE_TOKEN: "tree_token";

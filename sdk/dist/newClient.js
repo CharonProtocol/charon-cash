@@ -1,0 +1,74 @@
+import { Connection } from "@solana/web3.js";
+import { EncryptionService } from "./encrypt";
+import { StorageService } from "./storage";
+import { Utxo } from "./model/utxo";
+import { WasmFactory } from "@lightprotocol/hasher.rs";
+export const SIGN_MESSAGE = "Privacy Money account sign in";
+class SilentPay {
+    connection;
+    publicKey;
+    encryptionService;
+    signer;
+    storageService;
+    isRuning = false;
+    lightwasm;
+    decryptedNotes;
+    constructor({ connection, publicKey, signer, storageService, encryptionService, isRuning, decryptedNotes, lightwasm, }) {
+        this.publicKey = publicKey;
+        this.signer = signer;
+        this.storageService = storageService;
+        this.encryptionService = encryptionService;
+        this.isRuning = isRuning;
+        this.decryptedNotes = decryptedNotes;
+        this.connection = connection;
+        this.lightwasm = lightwasm;
+    }
+    static async generateClient({ RPC_url, owner, API_URL, }) {
+        const isRegistered = await fetch(`${API_URL}/api/registration/check/${owner.publicKey.toString()}`);
+        if (!isRegistered.ok) {
+            throw new Error("Failed to verify registration");
+        }
+        const masterSeed = await owner.signMessage(new TextEncoder().encode(SIGN_MESSAGE));
+        const encryptionService = await EncryptionService.startEncryptionService(masterSeed);
+        const registrationResponse = await isRegistered.json();
+        if (!registrationResponse.data) {
+            const viewingKey = encryptionService.getViewingKey();
+            const data = {
+                wallet_pubkey: owner.publicKey.toString(),
+                viewing_pubkey: viewingKey,
+            };
+            let register = await fetch(`${API_URL}/api/registration/register`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(data),
+            });
+            if (!register.ok) {
+                throw new Error(`HTTP error! Status: ${register.status}`);
+            }
+        }
+        const lightwasm = await WasmFactory.getInstance();
+        const storageService = await StorageService.start();
+        // fetch all the notes from local storage and keep them in memory
+        // TODO : Optimize this step by adding spent field while storing
+        let storedNotes = await storageService.fetchNotes(owner.publicKey.toString());
+        let decryptedNotes = await Promise.all(storedNotes.map(async ({ encryptedNote, id, walletPubkey, }) => {
+            return {
+                id: id,
+                decryptedNote: Utxo.deserialize(await encryptionService.decrypt(encryptedNote), lightwasm),
+            };
+        }));
+        let connection = new Connection(RPC_url);
+        return new SilentPay({
+            connection,
+            publicKey: owner.publicKey,
+            signer: owner,
+            storageService,
+            encryptionService,
+            isRuning: true,
+            decryptedNotes,
+            lightwasm,
+        });
+    }
+}

@@ -11,7 +11,7 @@ import {
   Utxo,
   getExtDataHash,
 } from "../src/crypto"
-import { prove, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers } from "../src/prover"
+import { proveSnarkjs as prove, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers } from "../src/prover"
 import { LocalMirror } from "../src/local-provider"
 
 const FIELD = BigInt(FIELD_SIZE.toString())
@@ -120,9 +120,9 @@ describe("client-sdk crypto + proof", () => {
     expect(publicSignals.length).toBe(7)
 
     const parsed = parseProofToBytesArray(proof)
-    expect(parsed.proofA.length).toBe(64)
-    expect(parsed.proofB.length).toBe(128)
-    expect(parsed.proofC.length).toBe(64)
+    expect(parsed.proofA.length).toBe(32)
+    expect(parsed.proofB.length).toBe(64)
+    expect(parsed.proofC.length).toBe(32)
 
     const pub = parseToBytesArray(publicSignals)
     // root, publicAmount, extDataHash, nullifier0, nullifier1, commitment0, commitment1

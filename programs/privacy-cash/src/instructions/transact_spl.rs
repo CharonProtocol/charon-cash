@@ -30,6 +30,7 @@ use pinocchio_token::{instructions::Transfer as TokenTransfer, state::TokenAccou
 ///
 /// Reentrant attacks are not possible, because nullifier creation is checked
 /// (via `init`) before any transfer occurs.
+#[inline(never)]
 pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     let [tree_account, nullifier0, nullifier1, nullifier2, nullifier3, global_config, signer, mint, signer_token_account, _recipient, recipient_token_account, tree_ata, fee_recipient_ata, token_program, associated_token_program, system_program] =
         accounts
@@ -46,7 +47,7 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
     )?;
 
     let args = TransactArgs::try_from_bytes(data)?;
-    let proof = args.proof;
+    let proof = *args.proof;
     let ext_data_minified = args.ext_data_minified;
     let encrypted_output1 = args.encrypted_output1;
     let encrypted_output2 = args.encrypted_output2;
@@ -82,54 +83,41 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
     verify_cross_nullifier(nullifier2)?;
     verify_cross_nullifier(nullifier3)?;
 
-    init_nullifier_account(
-        signer,
-        nullifier0,
-        NULLIFIER0_SEED,
-        &proof.input_nullifiers[0],
-        nullifier_bump0,
-    )?;
-    init_nullifier_account(
-        signer,
-        nullifier1,
-        NULLIFIER1_SEED,
-        &proof.input_nullifiers[1],
-        nullifier_bump1,
-    )?;
-
-    let mint_address = mint.address().as_array();
-    let recipient_key = recipient_token_account.address().as_array();
-    let fee_recipient_key = fee_recipient_ata.address().as_array();
+    let mint_address = *mint.address().as_array();
+    let recipient_key = *recipient_token_account.address().as_array();
+    let fee_recipient_key = *fee_recipient_ata.address().as_array();
     let ext_amount = ext_data_minified.ext_amount;
     let fee = ext_data_minified.fee;
 
-    let mut tree_data = tree_account.try_borrow_mut()?;
-    let mut tree =
-        bytemuck::try_from_bytes_mut::<MerkleTreeAccount>(&mut tree_data[..MerkleTreeAccount::LEN])
-            .map_err(|e| PrivacyCashError::InvalidMerkleTreeAccount)?;
+    let max_deposit_amount = {
+        let tree_data = tree_account.try_borrow()?;
+        let tree = try_from_bytes::<MerkleTreeAccount>(&tree_data[..MerkleTreeAccount::LEN])
+            .map_err(|_| PrivacyCashError::InvalidMerkleTreeAccount)?;
 
-    if !ALLOW_ALL_SPL_TOKENS && !ALLOWED_TOKENS.contains(&mint_address) {
-        return Err(PrivacyCashError::InvalidMintAddress.into());
-    }
+        if !ALLOW_ALL_SPL_TOKENS && !ALLOWED_TOKENS.contains(&mint_address) {
+            return Err(PrivacyCashError::InvalidMintAddress.into());
+        }
 
-    verify_pda(
-        tree_account,
-        &[TREE_ACCOUNT_SEED, mint_address, &[tree.bump]],
-        &crate::ID,
-    )?;
+        verify_pda(
+            tree_account,
+            &[TREE_ACCOUNT_SEED, &mint_address, &[tree.bump]],
+            &crate::ID,
+        )?;
 
-    if !MerkleTree::is_known_root(tree, proof.root) {
-        return Err(PrivacyCashError::UnknownRoot.into());
-    }
+        if !MerkleTree::is_known_root(tree, proof.root) {
+            return Err(PrivacyCashError::UnknownRoot.into());
+        }
+        tree.max_deposit_amount
+    };
 
     let calculated_ext_data_hash = calculate_complete_ext_data_hash(
-        recipient_key,
+        &recipient_key,
         ext_amount,
         encrypted_output1,
         encrypted_output2,
         fee,
-        fee_recipient_key,
-        mint_address,
+        &fee_recipient_key,
+        &mint_address,
     )?;
 
     if !ext_data_hash_matches(calculated_ext_data_hash, proof.ext_data_hash) {
@@ -148,9 +136,24 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
         global.fee_error_margin,
     )?;
 
-    if !verify_proof(proof, &VERIFYING_KEY) {
+    if !verify_proof(&proof, &VERIFYING_KEY) {
         return Err(PrivacyCashError::InvalidProof.into());
     }
+
+    init_nullifier_account(
+        signer,
+        nullifier0,
+        NULLIFIER0_SEED,
+        &proof.input_nullifiers[0],
+        nullifier_bump0,
+    )?;
+    init_nullifier_account(
+        signer,
+        nullifier1,
+        NULLIFIER1_SEED,
+        &proof.input_nullifiers[1],
+        nullifier_bump1,
+    )?;
 
     // PDA signer seeds for the tree's ATA (authority == global_config PDA).
     let global_bump = [global.bump];
@@ -159,7 +162,7 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
     if ext_amount > 0 {
         let deposit_amount = ext_amount as u64;
 
-        if deposit_amount > tree.max_deposit_amount {
+        if deposit_amount > max_deposit_amount {
             return Err(PrivacyCashError::DepositLimitExceeded.into());
         }
 
@@ -208,8 +211,15 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
         .invoke_signed(&[Signer::from(&global_seeds)])?;
     }
 
-    MerkleTree::append::<Poseidon>(proof.output_commitments[0], &mut tree)?;
-    MerkleTree::append::<Poseidon>(proof.output_commitments[1], &mut tree)?;
+    {
+        let mut tree_data = tree_account.try_borrow_mut()?;
+        let tree = bytemuck::try_from_bytes_mut::<MerkleTreeAccount>(
+            &mut tree_data[..MerkleTreeAccount::LEN],
+        )
+        .map_err(|_| PrivacyCashError::InvalidMerkleTreeAccount)?;
+        MerkleTree::append::<Poseidon>(proof.output_commitments[0], tree)?;
+        MerkleTree::append::<Poseidon>(proof.output_commitments[1], tree)?;
+    }
 
     Ok(())
 }

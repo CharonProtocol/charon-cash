@@ -61,7 +61,7 @@ use wasmer::sys::global;
 
 use crate::common::utxo::default_mint_address;
 
-const PROGRAM_ID: &str = "HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV";
+const PROGRAM_ID: &str = "Dz8MTy797RkN55JhgLCuKQ3sWDs4YHBipEoThADFFf58";
 const DEFAULT_ZERO: [u8; 32] = ZERO_BYTES[0]; // The default value of elements for initializing a tree
 
 pub fn generate_random_nullifier() -> [u8; 32] {
@@ -120,9 +120,9 @@ pub fn bn_to_bytes(value: u128) -> [u8; 32] {
 // Helper to turn the DepositProofToSubmit struct into the Proof struct we use in next 2 functions
 pub fn format_proof(proof: DepositProofToSubmit) -> Proof {
     Proof {
-        proof_a: proof.proof_a.try_into().expect("proof_a must be 64 bytes"),
-        proof_b: proof.proof_b.try_into().expect("proof_b must be 128 bytes"),
-        proof_c: proof.proof_c.try_into().expect("proof_c must be 64 bytes"),
+        proof_a: proof.proof_a.try_into().expect("proof_a must be 32 bytes"),
+        proof_b: proof.proof_b.try_into().expect("proof_b must be 64 bytes"),
+        proof_c: proof.proof_c.try_into().expect("proof_c must be 32 bytes"),
 
         root: proof.root,
         public_amount: proof.public_amount,
@@ -4832,9 +4832,9 @@ fn spl_transaction_fails_for_wrong_data_hash() {
         panic!("BigInt value is too large to fit in 32 bytes");
     }
     let deposit_proof_to_submit = Proof {
-        proof_a: [1u8; 64],
-        proof_b: [1u8; 128],
-        proof_c: [1u8; 64],
+        proof_a: [1u8; 32],
+        proof_b: [1u8; 64],
+        proof_c: [1u8; 32],
         root: deposit_root,
         public_amount: public_amount,
         ext_data_hash: deposit_ext_data_hash,
@@ -4993,9 +4993,9 @@ fn spl_transaction_fails_for_invalid_root() {
     let invalid_root = [123u8; 32];
 
     let deposit_proof_to_submit = Proof {
-        proof_a: [1u8; 64],
-        proof_b: [1u8; 128],
-        proof_c: [1u8; 64],
+        proof_a: [1u8; 32],
+        proof_b: [1u8; 64],
+        proof_c: [1u8; 32],
         root: invalid_root,
         public_amount: public_amount,
         ext_data_hash: deposit_ext_data_hash,
@@ -5156,9 +5156,9 @@ fn spl_transaction_fails_for_zero_root() {
     let invalid_root = [0u8; 32];
 
     let deposit_proof_to_submit = Proof {
-        proof_a: [1u8; 64],
-        proof_b: [1u8; 128],
-        proof_c: [1u8; 64],
+        proof_a: [1u8; 32],
+        proof_b: [1u8; 64],
+        proof_c: [1u8; 32],
         root: invalid_root,
         public_amount: public_amount,
         ext_data_hash: deposit_ext_data_hash,
@@ -5324,9 +5324,9 @@ fn spl_transaction_fails_for_modified_mint() {
         .expect("Different Mint Could Not Be Created");
 
     let deposit_proof_to_submit = Proof {
-        proof_a: [1u8; 64],
-        proof_b: [1u8; 128],
-        proof_c: [1u8; 64],
+        proof_a: [1u8; 32],
+        proof_b: [1u8; 64],
+        proof_c: [1u8; 32],
         root: invalid_root,
         public_amount: public_amount,
         ext_data_hash: deposit_ext_data_hash,

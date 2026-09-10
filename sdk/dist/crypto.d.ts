@@ -58,6 +58,23 @@ export declare function getExtDataHash(ext: {
     feeRecipient: PublicKey | string;
     mintAddress: PublicKey | string;
 }): Uint8Array;
+export declare const SWAP_IN_DOMAIN: Buffer<ArrayBuffer>;
+export declare const SWAP_OUT_DOMAIN: Buffer<ArrayBuffer>;
+export declare function getSwapInExtDataHash(args: {
+    extAmountIn: BN | number | string;
+    encryptedOutput1: Uint8Array;
+    encryptedOutput2: Uint8Array;
+    inMint: PublicKey | string;
+    outMint: PublicKey | string;
+    minAmountOut: BN | number | string;
+    outCommitments: [Uint8Array, Uint8Array] | Uint8Array[];
+}): Uint8Array;
+export declare function getSwapOutExtDataHash(args: {
+    extAmountOut: BN | number | string;
+    encryptedOutput1: Uint8Array;
+    encryptedOutput2: Uint8Array;
+    outMint: PublicKey | string;
+}): Uint8Array;
 /**
  * Browser-native EncryptionService (Web Crypto AES-256-GCM).
  * Mirrors privacy-cash-sdk's V2 format:

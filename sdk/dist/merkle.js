@@ -100,6 +100,43 @@ export async function relayWithdraw(req) {
     }
     return payload.signature;
 }
+/** Shim-signed atomic v1 swap. Does not use Phantom. */
+export async function relaySwap(req) {
+    const pack = (p) => ({
+        proof_a: bytesToHex(p.proofA),
+        proof_b: bytesToHex(p.proofB),
+        proof_c: bytesToHex(p.proofC),
+        root: bytesToHex(p.root),
+        public_amount: bytesToHex(p.publicAmount),
+        ext_data_hash: bytesToHex(p.extDataHash),
+        input_nullifiers: p.inputNullifiers.map((n) => bytesToHex(n)),
+        output_commitments: p.outputCommitments.map((n) => bytesToHex(n)),
+    });
+    const res = await fetch(getBackendUrl() + "/api/relayer/swap", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+            proof_in: pack(req.proofIn),
+            proof_out: pack(req.proofOut),
+            ext_amount_in: req.extAmountIn,
+            ext_amount_out: req.extAmountOut,
+            encrypted_output_in1: bytesToHex(req.encryptedOutputIn1),
+            encrypted_output_in2: bytesToHex(req.encryptedOutputIn2),
+            encrypted_output_out1: bytesToHex(req.encryptedOutputOut1),
+            encrypted_output_out2: bytesToHex(req.encryptedOutputOut2),
+            from_mint: req.fromMint,
+            out_mint: req.outMint,
+            route_data: bytesToHex(req.routeData),
+            route_accounts: req.routeAccounts,
+        }),
+    });
+    const json = await res.json();
+    if (!res.ok)
+        throw new Error(json.error?.message ?? `HTTP ${res.status}`);
+    if (!json.signature)
+        throw new Error("relayer swap returned no signature");
+    return json.signature;
+}
 export function bytesToHex(bytes) {
     let out = "0x";
     for (let i = 0; i < bytes.length; i++)

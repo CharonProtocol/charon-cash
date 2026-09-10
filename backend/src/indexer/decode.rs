@@ -8,7 +8,7 @@ use crate::indexer::EncryptedNote;
 use super::types::{DecodedTransact, TransactKind};
 
 /// On-chain `Proof` pod size.
-pub const PROOF_SIZE: usize = 480;
+pub const PROOF_SIZE: usize = 352;
 pub const EXT_DATA_MINIFIED_SIZE: usize = 16;
 pub const FIXED_TRANSACT_ARGS_SIZE: usize = PROOF_SIZE + EXT_DATA_MINIFIED_SIZE;
 
@@ -52,12 +52,12 @@ fn parse_transact_body(kind: TransactKind, data: &[u8]) -> Result<DecodedTransac
         return Err(DecodeError::TooShort);
     }
 
-    // proof_a(64) | proof_b(128) | proof_c(64) | root | public_amount |
+    // proof_a(32) | proof_b(64) | proof_c(32) | root | public_amount |
     // ext_data_hash | nullifier0 | nullifier1 | commitment0 | commitment1
     let mut offset = 0usize;
-    let _proof_a = read_bytes(data, &mut offset, 64)?;
-    let _proof_b = read_bytes(data, &mut offset, 128)?;
-    let _proof_c = read_bytes(data, &mut offset, 64)?;
+    let _proof_a = read_bytes(data, &mut offset, 32)?;
+    let _proof_b = read_bytes(data, &mut offset, 64)?;
+    let _proof_c = read_bytes(data, &mut offset, 32)?;
     let root = read_array_32(data, &mut offset)?;
     let public_amount = read_array_32(data, &mut offset)?;
     let ext_data_hash = read_array_32(data, &mut offset)?;
@@ -118,6 +118,58 @@ fn parse_transact_body(kind: TransactKind, data: &[u8]) -> Result<DecodedTransac
         encrypted_note1,
         encrypted_note2,
     })
+}
+
+/// Swap disc 7: two compressed proofs, then amounts, bumps, four encs, route.
+pub const SWAP: u8 = 7;
+
+pub fn decode_swap_commitments(data: &[u8]) -> Result<[[u8; 32]; 4], DecodeError> {
+    let (disc, body) = data.split_first().ok_or(DecodeError::TooShort)?;
+    if *disc != SWAP {
+        return Err(DecodeError::UnknownDiscriminator);
+    }
+    if body.len() < PROOF_SIZE * 2 {
+        return Err(DecodeError::TooShort);
+    }
+    let mut offset = 0usize;
+    let skip_proof_prefix = 32 + 64 + 32 + 32 + 32 + 32; // a b c root public hash
+    offset += skip_proof_prefix;
+    let _in_n0 = read_array_32(body, &mut offset)?;
+    let _in_n1 = read_array_32(body, &mut offset)?;
+    let in_c0 = read_array_32(body, &mut offset)?;
+    let in_c1 = read_array_32(body, &mut offset)?;
+    offset = PROOF_SIZE + skip_proof_prefix;
+    let _out_n0 = read_array_32(body, &mut offset)?;
+    let _out_n1 = read_array_32(body, &mut offset)?;
+    let out_c0 = read_array_32(body, &mut offset)?;
+    let out_c1 = read_array_32(body, &mut offset)?;
+    Ok([in_c0, in_c1, out_c0, out_c1])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compressed_proof_size_is_352() {
+        assert_eq!(PROOF_SIZE, 352);
+        assert_eq!(FIXED_TRANSACT_ARGS_SIZE, 368);
+    }
+
+    #[test]
+    fn decode_swap_commitment_offsets() {
+        let mut data = vec![SWAP];
+        data.resize(1 + PROOF_SIZE * 2, 0);
+        data[1 + 288] = 1;
+        data[1 + 320] = 2;
+        data[1 + 640] = 3;
+        data[1 + 672] = 4;
+        let [c0, c1, c2, c3] = decode_swap_commitments(&data).unwrap();
+        assert_eq!(c0[0], 1);
+        assert_eq!(c1[0], 2);
+        assert_eq!(c2[0], 3);
+        assert_eq!(c3[0], 4);
+    }
 }
 
 fn read_bytes<'a>(data: &'a [u8], offset: &mut usize, len: usize) -> Result<&'a [u8], DecodeError> {

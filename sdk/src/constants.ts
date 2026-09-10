@@ -14,6 +14,17 @@ export const SIGN_MESSAGE = "Privacy Money account sign in"
 
 export const DISC_TRANSACT = 2
 export const DISC_TRANSACT_SPL = 3
+export const DISC_SWAP = 7
+export const DISC_WRAP_SOL = 8
+export const SWAP_IX_DISCRIMINATOR = Buffer.from([DISC_SWAP])
+export const WRAP_SOL_IX_DISCRIMINATOR = Buffer.from([DISC_WRAP_SOL])
+
+export const JUPITER_PROGRAM_ID = new PublicKey(
+  "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
+)
+export const NATIVE_MINT = new PublicKey(
+  "So11111111111111111111111111111111111111112",
+)
 
 export const SEED = {
   TREE_ACCOUNT: "merkle_tree",

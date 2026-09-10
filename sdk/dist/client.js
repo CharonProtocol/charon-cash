@@ -627,15 +627,17 @@ export class PrivacyCashClient {
             outPubkey: args.outputs.map((x) => x.keypair.pubkey),
             mintAddress: getMintAddressField(args.mintAddress),
         };
-        const { proof, publicSignals } = await prove(circuitInput);
-        const proofBytes = parseProofToBytesArray(proof);
+        const { proof, publicSignals, proofA, proofB, proofC } = await prove(circuitInput);
+        const parsed = proofA?.length
+            ? { proofA, proofB: proofB, proofC: proofC }
+            : parseProofToBytesArray(proof);
         const pub = parseToBytesArray(publicSignals);
         const nullifierHexes = [pub[3], pub[4]].map((b) => bytesToHex(b));
         const signature = await relayWithdraw({
             kind: args.isSpl ? "spl" : "sol",
-            proofA: proofBytes.proofA,
-            proofB: proofBytes.proofB,
-            proofC: proofBytes.proofC,
+            proofA: parsed.proofA,
+            proofB: parsed.proofB,
+            proofC: parsed.proofC,
             root: pub[0],
             publicAmount: pub[1],
             extDataHash: pub[2],
@@ -688,13 +690,15 @@ export class PrivacyCashClient {
             outPubkey: args.outputs.map((x) => x.keypair.pubkey),
             mintAddress: getMintAddressField(args.mintAddress),
         };
-        const { proof, publicSignals } = await prove(circuitInput);
-        const proofBytes = parseProofToBytesArray(proof);
+        const { proof, publicSignals, proofA, proofB, proofC } = await prove(circuitInput);
+        const parsedProof = proofA?.length
+            ? { proofA, proofB: proofB, proofC: proofC }
+            : parseProofToBytesArray(proof);
         const pub = parseToBytesArray(publicSignals);
         const proofSubmit = {
-            proofA: proofBytes.proofA,
-            proofB: proofBytes.proofB,
-            proofC: proofBytes.proofC,
+            proofA: parsedProof.proofA,
+            proofB: parsedProof.proofB,
+            proofC: parsedProof.proofC,
             root: pub[0],
             publicAmount: pub[1],
             extDataHash: pub[2],

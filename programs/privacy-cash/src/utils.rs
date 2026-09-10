@@ -1,14 +1,10 @@
 use crate::error::PrivacyCashError;
-use crate::groth16::{Groth16Verifier, Groth16Verifyingkey};
+use crate::groth16::{
+    decompress_g1, decompress_g2, negate_g1, Groth16Verifier, Groth16Verifyingkey, FR_MODULUS_BE,
+};
 use crate::state::Proof;
-use ark_bn254::Fr;
-use ark_ff::PrimeField;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
-use core::ops::Neg;
 use light_hasher::{Hasher, Sha256};
 use pinocchio::error::ProgramError;
-
-type G1 = ark_bn254::g1::G1Affine;
 
 pub const VERIFYING_KEY: Groth16Verifyingkey = Groth16Verifyingkey {
     nr_pubinputs: 7,
@@ -166,8 +162,102 @@ pub fn calculate_complete_ext_data_hash(
     Sha256::hash(&data).map_err(|_| ProgramError::InvalidInstructionData)
 }
 
+/// In-leg swap hash: dest mint, min-out, and both out-leg commitments.
+pub fn calculate_swap_in_ext_data_hash(
+    ext_amount_in: i64,
+    encrypted_output1: &[u8],
+    encrypted_output2: &[u8],
+    in_mint: &[u8; 32],
+    out_mint: &[u8; 32],
+    ext_amount_out: i64,
+    out_commitments: &[[u8; 32]; 2],
+) -> Result<[u8; 32], ProgramError> {
+    let mut data = Vec::new();
+    data.extend_from_slice(crate::constants::SWAP_IN_DOMAIN);
+    data.extend_from_slice(&ext_amount_in.to_le_bytes());
+    data.extend_from_slice(&(encrypted_output1.len() as u32).to_le_bytes());
+    data.extend_from_slice(encrypted_output1);
+    data.extend_from_slice(&(encrypted_output2.len() as u32).to_le_bytes());
+    data.extend_from_slice(encrypted_output2);
+    data.extend_from_slice(in_mint);
+    data.extend_from_slice(out_mint);
+    data.extend_from_slice(&ext_amount_out.to_le_bytes());
+    data.extend_from_slice(&out_commitments[0]);
+    data.extend_from_slice(&out_commitments[1]);
+    Sha256::hash(&data).map_err(|_| ProgramError::InvalidInstructionData)
+}
+
+/// Out-leg swap hash. Deliberately does not mention the in-leg (no cycle).
+pub fn calculate_swap_out_ext_data_hash(
+    ext_amount_out: i64,
+    encrypted_output1: &[u8],
+    encrypted_output2: &[u8],
+    out_mint: &[u8; 32],
+) -> Result<[u8; 32], ProgramError> {
+    let mut data = Vec::new();
+    data.extend_from_slice(crate::constants::SWAP_OUT_DOMAIN);
+    data.extend_from_slice(&ext_amount_out.to_le_bytes());
+    data.extend_from_slice(&(encrypted_output1.len() as u32).to_le_bytes());
+    data.extend_from_slice(encrypted_output1);
+    data.extend_from_slice(&(encrypted_output2.len() as u32).to_le_bytes());
+    data.extend_from_slice(encrypted_output2);
+    data.extend_from_slice(out_mint);
+    Sha256::hash(&data).map_err(|_| ProgramError::InvalidInstructionData)
+}
+
 pub fn ext_data_hash_matches(calculated: [u8; 32], proof_hash: [u8; 32]) -> bool {
-    Fr::from_le_bytes_mod_order(&calculated) == Fr::from_be_bytes_mod_order(&proof_hash)
+    // SHA256 is interpreted little-endian in the circuit; the proof stores the
+    // field element big-endian. Do the reduction with integer subtract so we
+    // never rely on `num-bigint` on SBF (it disagrees with the host `% r`).
+    fr_reduce_be(&swab32(&calculated)) == fr_reduce_be(&proof_hash)
+}
+
+fn swab32(bytes: &[u8; 32]) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    for i in 0..32 {
+        out[i] = bytes[31 - i];
+    }
+    out
+}
+
+fn cmp_be(a: &[u8; 32], b: &[u8; 32]) -> core::cmp::Ordering {
+    for i in 0..32 {
+        if a[i] != b[i] {
+            return a[i].cmp(&b[i]);
+        }
+    }
+    core::cmp::Ordering::Equal
+}
+
+fn sub_be(a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    let mut borrow = 0u16;
+    for i in (0..32).rev() {
+        let av = a[i] as u16;
+        let bv = b[i] as u16 + borrow;
+        if av >= bv {
+            out[i] = (av - bv) as u8;
+            borrow = 0;
+        } else {
+            out[i] = (av + 256 - bv) as u8;
+            borrow = 1;
+        }
+    }
+    out
+}
+
+fn fr_reduce_be(bytes: &[u8; 32]) -> [u8; 32] {
+    let mut x = *bytes;
+    while cmp_be(&x, &FR_MODULUS_BE) != core::cmp::Ordering::Less {
+        x = sub_be(&x, &FR_MODULUS_BE);
+    }
+    x
+}
+
+fn u64_to_be32(n: u64) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    out[24..].copy_from_slice(&n.to_be_bytes());
+    out
 }
 
 pub fn check_public_amount(ext_amount: i64, fee: u64, public_amount_bytes: [u8; 32]) -> bool {
@@ -175,31 +265,28 @@ pub fn check_public_amount(ext_amount: i64, fee: u64, public_amount_bytes: [u8; 
         return false;
     }
 
-    let fee_fr = Fr::from(fee);
-    let ext_amount_fr = if ext_amount >= 0 {
-        Fr::from(ext_amount as u64)
+    let expected = if ext_amount >= 0 {
+        let ext_n = ext_amount as u64;
+        if ext_n <= fee {
+            return false;
+        }
+        u64_to_be32(ext_n - fee)
     } else {
-        let abs_ext_amount = match ext_amount.checked_neg() {
-            Some(val) => val,
+        let abs_ext = match ext_amount.checked_neg() {
+            Some(val) => val as u64,
             None => return false,
         };
-        Fr::from(abs_ext_amount as u64)
+        let sum = match abs_ext.checked_add(fee) {
+            Some(v) => v,
+            None => return false,
+        };
+        sub_be(&FR_MODULUS_BE, &u64_to_be32(sum))
     };
 
-    if ext_amount >= 0 && ext_amount_fr <= fee_fr {
-        return false;
-    }
-
-    let result_public_amount = if ext_amount >= 0 {
-        ext_amount_fr - fee_fr
-    } else {
-        -(ext_amount_fr + fee_fr)
-    };
-
-    let provided_amount = Fr::from_be_bytes_mod_order(&public_amount_bytes);
-    result_public_amount == provided_amount
+    fr_reduce_be(&public_amount_bytes) == expected
 }
 
+#[inline(never)]
 pub fn verify_proof(proof: &Proof, verifying_key: &Groth16Verifyingkey) -> bool {
     let mut public_inputs_vec: [[u8; 32]; 7] = [[0u8; 32]; 7];
 
@@ -211,44 +298,25 @@ pub fn verify_proof(proof: &Proof, verifying_key: &Groth16Verifyingkey) -> bool 
     public_inputs_vec[5] = proof.output_commitments[0];
     public_inputs_vec[6] = proof.output_commitments[1];
 
-    // First deserialize PROOF_A into a G1 point (validates it is on-curve),
-    // then negate it, as required by the pairing equation.
-    let g1_point = match G1::deserialize_with_mode(
-        &*[&change_endianness(&proof.proof_a[0..64]), &[0u8][..]].concat(),
-        Compress::No,
-        Validate::Yes,
-    ) {
-        Ok(point) => point,
+    let proof_a_uncomp = match decompress_g1(&proof.proof_a) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    let proof_b_uncomp = match decompress_g2(&proof.proof_b) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    let proof_c_uncomp = match decompress_g1(&proof.proof_c) {
+        Ok(p) => p,
         Err(_) => return false,
     };
 
-    let mut proof_a_neg = [0u8; 65];
-    if g1_point
-        .neg()
-        .x
-        .serialize_with_mode(&mut proof_a_neg[..32], Compress::No)
-        .is_err()
-    {
-        return false;
-    }
-    if g1_point
-        .neg()
-        .y
-        .serialize_with_mode(&mut proof_a_neg[32..], Compress::No)
-        .is_err()
-    {
-        return false;
-    }
-
-    let proof_a: [u8; 64] = match change_endianness(&proof_a_neg[..64]).try_into() {
-        Ok(array) => array,
-        Err(_) => return false,
-    };
+    let proof_a = negate_g1(&proof_a_uncomp);
 
     let mut verifier = match Groth16Verifier::new(
         &proof_a,
-        &proof.proof_b,
-        &proof.proof_c,
+        &proof_b_uncomp,
+        &proof_c_uncomp,
         &public_inputs_vec,
         verifying_key,
     ) {
@@ -259,27 +327,28 @@ pub fn verify_proof(proof: &Proof, verifying_key: &Groth16Verifyingkey) -> bool 
     verifier.verify().unwrap_or(false)
 }
 
-pub fn change_endianness(bytes: &[u8]) -> Vec<u8> {
-    let mut vec = Vec::new();
-    for b in bytes.chunks(32) {
-        for byte in b.iter().rev() {
-            vec.push(*byte);
-        }
-    }
-    vec
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use bytemuck::Zeroable;
+    use num_bigint::BigUint;
+
+    fn fr_from_le_mod(bytes: &[u8; 32]) -> BigUint {
+        let r = BigUint::from_bytes_be(&FR_MODULUS_BE);
+        BigUint::from_bytes_le(bytes) % r
+    }
+
+    #[test]
+    fn test_proof_size_is_352() {
+        assert_eq!(crate::state::transact::PROOF_SIZE, 352);
+    }
 
     #[test]
     fn test_verify_proof_rejects_garbage() {
         // proof_a of all zeros is not a valid on-curve G1 point, so
         // verification must fail before reaching the pairing.
         let mut proof = Proof::zeroed();
-        proof.proof_a = [7u8; 64];
+        proof.proof_a = [7u8; 32];
         assert!(!verify_proof(&proof, &VERIFYING_KEY));
     }
 
@@ -289,5 +358,54 @@ mod tests {
         // pairing check must still reject it.
         let proof = Proof::zeroed();
         assert!(!verify_proof(&proof, &VERIFYING_KEY));
+    }
+
+    #[test]
+    fn test_ext_data_hash_matches_le_be() {
+        let calculated = {
+            let mut c = [0u8; 32];
+            c[0] = 7;
+            c[15] = 9;
+            c[31] = 3;
+            c
+        };
+        let left = fr_from_le_mod(&calculated);
+        let be = {
+            let bytes = left.to_bytes_be();
+            let mut out = [0u8; 32];
+            out[32 - bytes.len()..].copy_from_slice(&bytes);
+            out
+        };
+        assert!(ext_data_hash_matches(calculated, be));
+        assert!(!ext_data_hash_matches(calculated, calculated));
+    }
+
+    #[test]
+    fn test_swap_hashes_are_domain_separated() {
+        let c0 = [1u8; 32];
+        let c1 = [2u8; 32];
+        let in_hash = calculate_swap_in_ext_data_hash(
+            -1_000,
+            b"in1",
+            b"in2",
+            &[3u8; 32],
+            &[4u8; 32],
+            900,
+            &[c0, c1],
+        )
+        .unwrap();
+        let out_hash = calculate_swap_out_ext_data_hash(900, b"out1", b"out2", &[4u8; 32]).unwrap();
+        assert_ne!(in_hash, out_hash);
+        let in_hash2 = calculate_swap_in_ext_data_hash(
+            -1_000,
+            b"in1",
+            b"in2",
+            &[3u8; 32],
+            &[4u8; 32],
+            900,
+            &[c1, c0],
+        )
+        .unwrap();
+        assert_ne!(in_hash, in_hash2);
     }
 }

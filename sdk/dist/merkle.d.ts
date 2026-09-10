@@ -68,6 +68,42 @@ export declare function relayWithdraw(req: {
     /** SPL: wallet that owns the recipient ATA. */
     recipientOwner?: string;
 }): Promise<string>;
+/** Shim-signed atomic v1 swap. Does not use Phantom. */
+export declare function relaySwap(req: {
+    proofIn: {
+        proofA: number[];
+        proofB: number[];
+        proofC: number[];
+        root: number[];
+        publicAmount: number[];
+        extDataHash: number[];
+        inputNullifiers: number[][];
+        outputCommitments: number[][];
+    };
+    proofOut: {
+        proofA: number[];
+        proofB: number[];
+        proofC: number[];
+        root: number[];
+        publicAmount: number[];
+        extDataHash: number[];
+        inputNullifiers: number[][];
+        outputCommitments: number[][];
+    };
+    extAmountIn: number | string;
+    extAmountOut: number | string;
+    encryptedOutputIn1: Uint8Array;
+    encryptedOutputIn2: Uint8Array;
+    encryptedOutputOut1: Uint8Array;
+    encryptedOutputOut2: Uint8Array;
+    fromMint: string;
+    outMint: string;
+    routeData: Uint8Array;
+    routeAccounts: {
+        pubkey: string;
+        isWritable: boolean;
+    }[];
+}): Promise<string>;
 export declare function bytesToHex(bytes: ArrayLike<number>): string;
 /** Poseidon / Fr decimal string → 32-byte big-endian hex (no 0x). */
 export declare function fieldToHex32(dec: string): string;

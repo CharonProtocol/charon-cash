@@ -36,7 +36,7 @@ use spl_token::state::{Mint, Account as SplTokenAccount, AccountState};
 use solana_program_pack::Pack;
 use solana_sdk::program_option::COption;
 
-const PROGRAM_ID: &str = "HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV";
+const PROGRAM_ID: &str = "Dz8MTy797RkN55JhgLCuKQ3sWDs4YHBipEoThADFFf58";
 
 pub fn create_ext_data_minified(ext_data: &ExtData) -> ExtDataMinified {
     ExtDataMinified { ext_amount: ext_data.ext_amount, fee: ext_data.fee }
@@ -44,9 +44,9 @@ pub fn create_ext_data_minified(ext_data: &ExtData) -> ExtDataMinified {
 
 pub fn format_proof(proof: DepositProofToSubmit) -> Proof {
     Proof {
-        proof_a: proof.proof_a.try_into().expect("proof_a must be 64 bytes"),
-        proof_b: proof.proof_b.try_into().expect("proof_b must be 128 bytes"),
-        proof_c: proof.proof_c.try_into().expect("proof_c must be 64 bytes"),
+        proof_a: proof.proof_a.try_into().expect("proof_a must be 32 bytes"),
+        proof_b: proof.proof_b.try_into().expect("proof_b must be 64 bytes"),
+        proof_c: proof.proof_c.try_into().expect("proof_c must be 32 bytes"),
         root: proof.root,
         public_amount: proof.public_amount,
         ext_data_hash: proof.ext_data_hash,
@@ -304,7 +304,11 @@ fn setup() -> BenchContext {
     let program_id = Pubkey::from_str_const(PROGRAM_ID);
 
     std::env::set_var("RUST_LOG", "off");
-    let mut mollusk = Mollusk::new(&program_id, "target/deploy/privacy_cash");
+    std::env::set_var(
+        "SBF_OUT_DIR",
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/deploy"),
+    );
+    let mut mollusk = Mollusk::new(&program_id, "privacy_cash");
 
     let authority = Keypair::new();
     let funding_account = Keypair::new();
@@ -521,9 +525,42 @@ fn run_and_report(mollusk: &Mollusk, entries: Vec<Entry>) {
             ],
         };
 
-        let result = mollusk.process_and_validate_instruction(&entry.instruction, &entry.accounts, &checks);
+        let result = if entry.name.starts_with("transact") {
+            let r = mollusk.process_instruction(&entry.instruction, &entry.accounts);
+            println!(
+                "DIAG {} program_result={:?} cu={} raw={:?}",
+                entry.name, r.program_result, r.compute_units_consumed, r.raw_result
+            );
+            if !r.program_result.is_ok() {
+                panic!(
+                    "{} failed: {:?} cu={}",
+                    entry.name, r.program_result, r.compute_units_consumed
+                );
+            }
+            r
+        } else {
+            mollusk.process_and_validate_instruction(&entry.instruction, &entry.accounts, &checks)
+        };
         let pinocchio_cu = result.compute_units_consumed;
         let anchor_cu = entry.anchor_cu;
+
+        if entry.name == "transact_deposit_first" {
+            assert!(
+                pinocchio_cu < 250_000,
+                "CU gate: compressed transact {} CU exceeds 250k — abort Swap, use 3-tx",
+                pinocchio_cu
+            );
+            let swap_est = pinocchio_cu.saturating_mul(2).saturating_add(400_000);
+            assert!(
+                swap_est < 1_200_000,
+                "CU gate: estimated swap {} CU exceeds 1.2M headroom under 1.4M",
+                swap_est
+            );
+            println!(
+                "CU gate transact_deposit_first={} estimated_swap={}",
+                pinocchio_cu, swap_est
+            );
+        }
 
         let improvement = if anchor_cu > 0 {
             let saved = anchor_cu as i64 - pinocchio_cu as i64;
@@ -955,7 +992,6 @@ fn bench_all() {
     run_and_report(&ctx.mollusk, vec![
         scenario_initialize(&ctx),
         scenario_update_global_config(&ctx, None, Some(50), None, "update_global_config_one_field", 3659),
-        // scenario_update_global_config(&ctx, Some(10), Some(60), Some(300), "update_global_config_all_fields", 0), Find anchor CU count for this
         scenario_update_deposit_limit(&ctx),
         scenario_update_deposit_limit_for_spl(&ctx),
         scenario_initialize_tree_account_for_spl_token(&ctx),

@@ -2,6 +2,7 @@ mod health;
 mod indexer_status;
 mod merkle;
 mod notes;
+mod prove;
 mod register;
 
 use axum::middleware::from_fn_with_state;
@@ -46,5 +47,6 @@ pub fn router(state: AppState) -> Router {
             get(register::get_viewing_key),
         )
         .route("/api/notes/send_notes/{index}", get(notes::send_notes))
+        .route("/api/prove", post(prove::prove))
         .with_state(state)
 }

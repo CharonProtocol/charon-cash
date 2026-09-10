@@ -54,7 +54,7 @@ use std::{
     str::FromStr,
 };
 
-const PROGRAM_ID: &str = "HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV";
+const PROGRAM_ID: &str = "Dz8MTy797RkN55JhgLCuKQ3sWDs4YHBipEoThADFFf58";
 
 pub fn generate_random_nullifier() -> [u8; 32] {
     let mut nullifier = [0u8; 32];
@@ -112,9 +112,9 @@ pub fn bn_to_bytes(value: u128) -> [u8; 32] {
 // Helper to turn the DepositProofToSubmit struct into the Proof struct we use in next 2 functions
 pub fn format_proof(proof: DepositProofToSubmit) -> Proof {
     Proof {
-        proof_a: proof.proof_a.try_into().expect("proof_a must be 64 bytes"),
-        proof_b: proof.proof_b.try_into().expect("proof_b must be 128 bytes"),
-        proof_c: proof.proof_c.try_into().expect("proof_c must be 64 bytes"),
+        proof_a: proof.proof_a.try_into().expect("proof_a must be 32 bytes"),
+        proof_b: proof.proof_b.try_into().expect("proof_b must be 64 bytes"),
+        proof_c: proof.proof_c.try_into().expect("proof_c must be 32 bytes"),
 
         root: proof.root,
         public_amount: proof.public_amount,
@@ -5603,9 +5603,9 @@ fn fails_transact_instruction_for_invalid_mint_address() {
     };
 
     let proof = Proof {
-        proof_a: [1u8; 64],
-        proof_b: [2u8; 128],
-        proof_c: [3u8; 64],
+        proof_a: [1u8; 32],
+        proof_b: [2u8; 64],
+        proof_c: [3u8; 32],
         root: ZERO_BYTES[DEFAULT_HEIGHT],
         input_nullifiers: [generate_random_nullifier(), generate_random_nullifier()],
         output_commitments: [[3u8; 32], [4u8; 32]],

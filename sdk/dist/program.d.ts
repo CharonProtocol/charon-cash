@@ -68,4 +68,50 @@ export declare function buildTransactSplTransaction(params: BuildTxParams & SplT
     transaction: VersionedTransaction;
     accounts: TransactAccounts;
 }>;
+export interface SwapAccounts {
+    solTreeAccount: PublicKey;
+    treeTokenAccount: PublicKey;
+    globalConfig: PublicKey;
+    outTreeAccount: PublicKey;
+    poolWsolAccount: PublicKey;
+    poolSplAccount: PublicKey;
+}
+export declare function deriveSwapAccounts(programId: PublicKey, splMint: PublicKey): SwapAccounts;
+export interface SwapIxParams {
+    programId: PublicKey;
+    signer: PublicKey;
+    proofIn: ProofBytes;
+    proofOut: ProofBytes;
+    extAmountIn: BN | number | string;
+    extAmountOut: BN | number | string;
+    encryptedOutputIn1: Uint8Array;
+    encryptedOutputIn2: Uint8Array;
+    encryptedOutputOut1: Uint8Array;
+    encryptedOutputOut2: Uint8Array;
+    outMint: PublicKey;
+    fromMint?: PublicKey | string;
+    routeData: Buffer | Uint8Array;
+    routeAccounts: {
+        pubkey: PublicKey;
+        isSigner?: boolean;
+        isWritable: boolean;
+    }[];
+}
+export declare function buildSwapIxData(params: SwapIxParams, jupiterAccountIndices?: number[]): Buffer;
+export declare function buildSwapInstruction(params: SwapIxParams): {
+    ix: TransactionInstruction;
+};
+export declare function buildSwapTransaction(params: SwapIxParams & {
+    blockhash: string;
+    feePayer?: PublicKey;
+    computeUnitLimit?: number;
+}): {
+    bytes: Uint8Array;
+    ix: TransactionInstruction;
+};
+export declare function buildWrapSolInstruction(params: {
+    programId: PublicKey;
+    signer: PublicKey;
+    amount: BN | number | string;
+}): TransactionInstruction;
 //# sourceMappingURL=program.d.ts.map

@@ -2,11 +2,28 @@
 // Ported 1:1 from the Anchor program (`privacy-cash-orignal/.../groth16.rs`).
 // We don't need checked math on public inputs, because the passed in public
 // input length is fixed at 7.
-use ark_ff::PrimeField;
-use num_bigint::BigUint;
+//
+// Compressed (A,B,C) are expanded with `sol_alt_bn128_compression` (SBF syscall),
+// never arkworks CanonicalDeserialize and never a software Fq sqrt — both of
+// those blow transact past the 1.4M CU cap. Pairing/mul/add stay on solana_bn254.
+use solana_bn254::compression::prelude::{
+    alt_bn128_g1_decompress_be, alt_bn128_g2_decompress_be,
+};
 use solana_bn254::prelude::{
     alt_bn128_g1_addition_be, alt_bn128_g1_multiplication_be, alt_bn128_pairing_be,
 };
+
+/// BN254 scalar field r, big-endian.
+pub const FR_MODULUS_BE: [u8; 32] = [
+    0x30, 0x64, 0x4e, 0x72, 0xe1, 0x31, 0xa0, 0x29, 0xb8, 0x50, 0x45, 0xb6, 0x81, 0x81, 0x58, 0x5d,
+    0x28, 0x33, 0xe8, 0x48, 0x79, 0xb9, 0x70, 0x91, 0x43, 0xe1, 0xf5, 0x93, 0xf0, 0x00, 0x00, 0x01,
+];
+
+/// BN254 base field p (Fq), big-endian. Used to negate G1 Y.
+pub const FQ_MODULUS_BE: [u8; 32] = [
+    0x30, 0x64, 0x4e, 0x72, 0xe1, 0x31, 0xa0, 0x29, 0xb8, 0x50, 0x45, 0xb6, 0x81, 0x81, 0x58, 0x5d,
+    0x97, 0x81, 0x6a, 0x91, 0x68, 0x71, 0xca, 0x8d, 0x3c, 0x20, 0x8c, 0x16, 0xd8, 0x7c, 0xfd, 0x47,
+];
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Groth16Error {
@@ -17,6 +34,8 @@ pub enum Groth16Error {
     PreparingInputsG1MulFailed,
     PreparingInputsG1AdditionFailed,
     ProofVerificationFailed,
+    G1DecompressionFailed,
+    G2DecompressionFailed,
 }
 
 #[derive(PartialEq, Eq, Debug)]
@@ -134,6 +153,55 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
 }
 
 pub fn is_less_than_bn254_field_size_be(bytes: &[u8; 32]) -> bool {
-    let bigint = BigUint::from_bytes_be(bytes);
-    bigint < ark_bn254::Fr::MODULUS.into()
+    for i in 0..32 {
+        if bytes[i] != FR_MODULUS_BE[i] {
+            return bytes[i] < FR_MODULUS_BE[i];
+        }
+    }
+    false
+}
+
+/// Snarkjs/ark compressed G1 (32 BE) → uncompressed 64 BE via the bn254 syscall.
+#[inline(never)]
+pub fn decompress_g1(compressed: &[u8; 32]) -> Result<[u8; 64], Groth16Error> {
+    alt_bn128_g1_decompress_be(compressed).map_err(|_| Groth16Error::G1DecompressionFailed)
+}
+
+/// Snarkjs/ark compressed G2 (64 BE) → uncompressed 128 BE via the bn254 syscall.
+/// G2 BE is `convert_endianness::<64, 64>` of ark LE compressed (full 64-byte reverse).
+#[inline(never)]
+pub fn decompress_g2(compressed: &[u8; 64]) -> Result<[u8; 128], Groth16Error> {
+    alt_bn128_g2_decompress_be(compressed).map_err(|_| Groth16Error::G2DecompressionFailed)
+}
+
+/// Groth16 wants −A. Negate uncompressed G1 as (x, p − y) with integer subtract.
+pub fn negate_g1(point: &[u8; 64]) -> [u8; 64] {
+    let mut out = *point;
+    let y = {
+        let mut y = [0u8; 32];
+        y.copy_from_slice(&point[32..]);
+        y
+    };
+    if y.iter().all(|&b| b == 0) {
+        return out;
+    }
+    out[32..].copy_from_slice(&sub_be_32(&FQ_MODULUS_BE, &y));
+    out
+}
+
+fn sub_be_32(a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    let mut borrow = 0u16;
+    for i in (0..32).rev() {
+        let av = a[i] as u16;
+        let bv = b[i] as u16 + borrow;
+        if av >= bv {
+            out[i] = (av - bv) as u8;
+            borrow = 0;
+        } else {
+            out[i] = (av + 256 - bv) as u8;
+            borrow = 1;
+        }
+    }
+    out
 }

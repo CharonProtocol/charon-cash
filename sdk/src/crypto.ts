@@ -135,6 +135,52 @@ export function getExtDataHash(ext: {
   return Buffer.from(sha256(data).slice(2), "hex")
 }
 
+export const SWAP_IN_DOMAIN = Buffer.from("privacy_cash:swap_in:v1")
+export const SWAP_OUT_DOMAIN = Buffer.from("privacy_cash:swap_out:v1")
+
+export function getSwapInExtDataHash(args: {
+  extAmountIn: BN | number | string
+  encryptedOutput1: Uint8Array
+  encryptedOutput2: Uint8Array
+  inMint: PublicKey | string
+  outMint: PublicKey | string
+  minAmountOut: BN | number | string
+  outCommitments: [Uint8Array, Uint8Array] | Uint8Array[]
+}): Uint8Array {
+  const data = Buffer.concat([
+    SWAP_IN_DOMAIN,
+    new BN(args.extAmountIn.toString()).toTwos(64).toArrayLike(Buffer, "le", 8),
+    toU32LE(args.encryptedOutput1.length),
+    Buffer.from(args.encryptedOutput1),
+    toU32LE(args.encryptedOutput2.length),
+    Buffer.from(args.encryptedOutput2),
+    toPubkeyBytes(args.inMint),
+    toPubkeyBytes(args.outMint),
+    new BN(args.minAmountOut.toString()).toTwos(64).toArrayLike(Buffer, "le", 8),
+    Buffer.from(args.outCommitments[0]!),
+    Buffer.from(args.outCommitments[1]!),
+  ])
+  return Buffer.from(sha256(data).slice(2), "hex")
+}
+
+export function getSwapOutExtDataHash(args: {
+  extAmountOut: BN | number | string
+  encryptedOutput1: Uint8Array
+  encryptedOutput2: Uint8Array
+  outMint: PublicKey | string
+}): Uint8Array {
+  const data = Buffer.concat([
+    SWAP_OUT_DOMAIN,
+    new BN(args.extAmountOut.toString()).toTwos(64).toArrayLike(Buffer, "le", 8),
+    toU32LE(args.encryptedOutput1.length),
+    Buffer.from(args.encryptedOutput1),
+    toU32LE(args.encryptedOutput2.length),
+    Buffer.from(args.encryptedOutput2),
+    toPubkeyBytes(args.outMint),
+  ])
+  return Buffer.from(sha256(data).slice(2), "hex")
+}
+
 function toU32LE(n: number): Buffer {
   const b = Buffer.alloc(4)
   b.writeUInt32LE(n >>> 0, 0)

@@ -1,17 +1,18 @@
 export { PrivacyCashClient } from "./client";
 export type { Signer, DepositResult, WithdrawResult, SyncResult, } from "./client";
-export { EncryptionService, Keypair, Utxo, getExtDataHash, getMintAddressField, } from "./crypto";
-export { prove, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers, } from "./prover";
-export { buildTransactTransaction, buildTransactIxData, buildTransactSplTransaction, buildTransactSplInstruction, deriveAccounts, deriveSplTreeAccount, } from "./program";
-export type { ProofBytes, TransactAccounts } from "./program";
+export { EncryptionService, Keypair, Utxo, getExtDataHash, getMintAddressField, getSwapInExtDataHash, getSwapOutExtDataHash, } from "./crypto";
+export { prove, proveSnarkjs, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers, } from "./prover";
+export { buildTransactTransaction, buildTransactIxData, buildTransactSplTransaction, buildTransactSplInstruction, buildSwapInstruction, buildSwapIxData, buildSwapTransaction, buildWrapSolInstruction, deriveAccounts, deriveSplTreeAccount, deriveSwapAccounts, } from "./program";
+export type { ProofBytes, TransactAccounts, SwapAccounts, SwapIxParams } from "./program";
+export { compileV1Transaction, signWireTransaction, v1SignedSize, V1_MAX_SIZE, V1_PREFIX, } from "./tx-v1";
 export { ensureAlt, fetchAlt, splAltAddresses, envAltAddress, cachedAltAddress, cacheAltAddress, } from "./alt";
 export type { AltSigner } from "./alt";
 export { LocalMirror, readSolTreeState, readTreeState, readGlobalFees } from "./local-provider";
-export { fetchRelayerInfo, fetchBlockhash, fetchAltAccount, fetchTreeState, fetchMerkleProof, fetchUtxoRange, checkEncryptedOutput, waitForLeafIndex, waitForEncryptedOutput, isNullifierSpent, submitTransaction, relayWithdraw, fieldToHex32, setBackendUrl, getBackendUrl, solTreeKey, splTreeKey, } from "./merkle";
+export { fetchRelayerInfo, fetchBlockhash, fetchAltAccount, fetchTreeState, fetchMerkleProof, fetchUtxoRange, checkEncryptedOutput, waitForLeafIndex, waitForEncryptedOutput, isNullifierSpent, submitTransaction, relayWithdraw, relaySwap, fieldToHex32, setBackendUrl, getBackendUrl, solTreeKey, splTreeKey, } from "./merkle";
 export type { RelayerInfo, BlockhashInfo, TreeState, MerkleProof, IndexedUtxo, UtxoRangePage, UtxoCheckResult, } from "./merkle";
 export { loadNotes, unspentNotes, saveNote, upsertNote, markNoteSpent, totalBalance, exportNotes, importNotes, clearNotes, newNoteId, getSyncOffset, setSyncOffset, resetSyncOffset, } from "./notes";
 export type { Note } from "./notes";
 export { encryptNotesBlob, decryptNotesBlob, pushEncryptedNotes, pullEncryptedNotes, } from "./notestore";
 export { setOperatorPassword, getOperatorPassword, verifyOperator, operatorInitialize, operatorInitializeSpl, operatorUpdateConfig, operatorUpdateDepositLimit, operatorUpdateDepositLimitSpl, OperatorError, type OperatorResponse, } from "./admin";
-export { FIELD_SIZE, MERKLE_TREE_DEPTH, SIGN_MESSAGE, SOL_TREE_KEY, WRAPPED_SOL_MINT, } from "./constants";
+export { FIELD_SIZE, MERKLE_TREE_DEPTH, SIGN_MESSAGE, SOL_TREE_KEY, WRAPPED_SOL_MINT, JUPITER_PROGRAM_ID, NATIVE_MINT, DISC_SWAP, DISC_WRAP_SOL, } from "./constants";
 //# sourceMappingURL=index.d.ts.map

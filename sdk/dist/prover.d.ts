@@ -5,17 +5,31 @@ export interface Proof {
     protocol: string;
     curve: string;
 }
+export interface HostedProof {
+    proofA: number[];
+    proofB: number[];
+    proofC: number[];
+    publicSignals: string[];
+}
 /** Inject pre-loaded circuit buffers (used by tests / non-browser runners). */
 export declare function setCircuitBuffers(wasm: Uint8Array, zkey: Uint8Array): void;
 /**
- * Generate a groth16 proof in-browser. wasm/zkey are fetched once as
- * ArrayBuffers and reused. Mirrors privacy-cash-sdk prove() (single-thread).
+ * Generate a groth16 proof via POST /api/prove (ark-groth16).
+ * Returns compressed 32/64/32 bytes. Does not log the witness.
  */
 export declare function prove(input: Record<string, unknown>): Promise<{
     proof: Proof;
     publicSignals: string[];
+    proofA: number[];
+    proofB: number[];
+    proofC: number[];
 }>;
-/** Parse a groth16 proof into the byte layout the Pinocchio Proof struct expects. */
+/** In-process snarkjs prove (tests / leftover path). */
+export declare function proveSnarkjs(input: Record<string, unknown>): Promise<{
+    proof: Proof;
+    publicSignals: string[];
+}>;
+/** Parse a groth16 proof into the compressed byte layout the Pinocchio Proof struct expects. */
 export declare function parseProofToBytesArray(proof: Proof): {
     proofA: number[];
     proofB: number[];

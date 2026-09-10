@@ -1,13 +1,13 @@
 use anyhow::{anyhow, Result};
 use ark_bn254::Fr;
-use ark_bn254::{Bn254, Fq, Fq2, G1Affine, G2Affine};
+use ark_bn254::{Bn254, Fq, G1Affine, G2Affine};
 use ark_circom::circom::CircomReduction;
 use ark_circom::{read_zkey, WitnessCalculator};
 use ark_ff::{BigInteger, PrimeField};
 use ark_groth16::{prepare_verifying_key, Groth16, Proof};
+use ark_serialize::CanonicalSerialize;
 use ark_std::{rand::thread_rng, UniformRand};
 use num_bigint::{BigInt, BigUint, Sign};
-use once_cell::sync::Lazy;
 use solana_sdk::bs58;
 use std::str::FromStr;
 use std::{fs::File, path::Path};
@@ -15,15 +15,6 @@ use wasmer::Store;
 
 use crate::common::constants::FIELD_SIZE_DECIMAL;
 use crate::common::utils::get_mint_address_field;
-
-/// BN254 base field modulus used for sign-bit logic, matching the TS implementation.
-static FIELD_SIZE: Lazy<BigUint> = Lazy::new(|| {
-    BigUint::parse_bytes(
-        b"21888242871839275222246405745257275088548364400416034343698204186575808495617",
-        10,
-    )
-    .expect("valid BN254 modulus")
-});
 
 #[derive(Debug, Clone)]
 pub struct ProofInput {
@@ -147,9 +138,9 @@ pub fn prove(input: &ProofInput, key_base_path: &Path) -> Result<DepositProofArt
 /// Convert the proof + public inputs into the exact submit shape used by your TS code.
 pub fn deposit_artifacts_to_submit(
     artifacts: &DepositProofArtifacts,
-    compressed: bool,
+    _compressed: bool,
 ) -> Result<DepositProofToSubmit> {
-    let proof_bytes = proof_to_bytes(&artifacts.proof, compressed);
+    let proof_bytes = proof_to_bytes(&artifacts.proof, true);
     let public_inputs_bytes = public_inputs_to_bytes(&artifacts.public_inputs);
 
     if public_inputs_bytes.len() < 7 {
@@ -172,12 +163,12 @@ pub fn deposit_artifacts_to_submit(
     })
 }
 
-/// Mirrors your TS `parseProofToBytesArray()` behavior.
-pub fn proof_to_bytes(proof: &Proof<Bn254>, compressed: bool) -> ProofBytes {
+/// Always emit ark-compressed BE points (32/64/32). `compressed` is ignored.
+pub fn proof_to_bytes(proof: &Proof<Bn254>, _compressed: bool) -> ProofBytes {
     ProofBytes {
-        proof_a: serialize_g1(&proof.a, compressed, true), // TS proofA uses inverted sign handling
-        proof_b: serialize_g2(&proof.b, compressed),
-        proof_c: serialize_g1(&proof.c, compressed, false), // TS proofC uses natural sign handling
+        proof_a: serialize_g1(&proof.a, true, false),
+        proof_b: serialize_g2(&proof.b, true),
+        proof_c: serialize_g1(&proof.c, true, false),
     }
 }
 
@@ -338,79 +329,45 @@ fn prime_field_to_be_bytes_32<F: PrimeField>(x: &F) -> [u8; 32] {
     out
 }
 
-fn fq_to_biguint(x: &Fq) -> BigUint {
-    BigUint::from_bytes_le(&x.into_bigint().to_bytes_le())
-}
-
-fn y_is_positive_g1(y: &Fq) -> bool {
-    let midpoint = &*FIELD_SIZE / 2u32;
-    fq_to_biguint(y) <= midpoint
-}
-
-fn y_is_positive_g2(y: &Fq2) -> bool {
-    // This matches the TS logic for proofB:
-    // first compare the first 32-byte limb, then the second.
-    let midpoint = &*FIELD_SIZE / 2u32;
-
-    let y0 = fq_to_biguint(&y.c0);
-    let y1 = fq_to_biguint(&y.c1);
-
-    if y0 < midpoint {
-        true
-    } else if y0 > midpoint {
-        false
-    } else {
-        y1 < midpoint
-    }
-}
-
-fn add_bitmask_to_first_byte(bytes: &mut [u8], y_is_positive: bool) {
-    if !y_is_positive {
-        bytes[0] |= 1 << 7;
-    }
-}
-
-/// G1 serialization matching TS:
-/// - uncompressed: x_be || y_be
-/// - compressed: x_be with sign bit, where `invert_sign` controls the proofA special case
-fn serialize_g1(p: &G1Affine, compressed: bool, invert_sign: bool) -> Vec<u8> {
-    let mut x = fq_to_be_bytes_32(&p.x);
-
+/// G1 serialization matching the on-chain bn254 decompress syscall:
+/// compressed = ark CanonicalSerialize compressed, each 32-byte limb endian-swapped to BE.
+fn serialize_g1(p: &G1Affine, compressed: bool, _invert_sign: bool) -> Vec<u8> {
     if compressed {
-        let y_is_positive = y_is_positive_g1(&p.y);
-        let effective_positive = if invert_sign {
-            !y_is_positive
-        } else {
-            y_is_positive
-        };
-
-        add_bitmask_to_first_byte(&mut x, effective_positive);
-        return x.to_vec();
+        let mut le = Vec::with_capacity(32);
+        p.serialize_compressed(&mut le).expect("g1 compressed");
+        return swap_limbs_32(&le);
     }
 
+    let x = fq_to_be_bytes_32(&p.x);
     let y = fq_to_be_bytes_32(&p.y);
     [x.as_slice(), y.as_slice()].concat()
 }
 
-/// G2 serialization matching TS:
-/// - uncompressed: x.c0_be || x.c1_be || y.c0_be || y.c1_be
-/// - compressed: x.c0_be || x.c1_be with sign bit on the first byte
+/// G2 compressed BE is ark LE compressed with a full 64-byte reverse
+/// (`solana_bn254::convert_endianness::<64, 64>`), not per-32-byte limb swap.
 fn serialize_g2(p: &G2Affine, compressed: bool) -> Vec<u8> {
+    if compressed {
+        let mut le = Vec::with_capacity(64);
+        p.serialize_compressed(&mut le).expect("g2 compressed");
+        return le.iter().rev().copied().collect();
+    }
+
     let x0 = fq_to_be_bytes_32(&p.x.c0);
     let x1 = fq_to_be_bytes_32(&p.x.c1);
     let y0 = fq_to_be_bytes_32(&p.y.c0);
     let y1 = fq_to_be_bytes_32(&p.y.c1);
 
-    let mut out = Vec::with_capacity(if compressed { 64 } else { 128 });
+    let mut out = Vec::with_capacity(128);
     out.extend_from_slice(&x1);
     out.extend_from_slice(&x0);
-
-    if compressed {
-        add_bitmask_to_first_byte(&mut out, y_is_positive_g2(&p.y));
-        return out;
-    }
-
     out.extend_from_slice(&y1);
     out.extend_from_slice(&y0);
     out
+}
+
+fn swap_limbs_32(bytes: &[u8]) -> Vec<u8> {
+    bytes
+        .chunks_exact(32)
+        .flat_map(|chunk| chunk.iter().rev().copied())
+        .collect()
 }

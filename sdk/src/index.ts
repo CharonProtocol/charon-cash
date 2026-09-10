@@ -11,9 +11,12 @@ export {
   Utxo,
   getExtDataHash,
   getMintAddressField,
+  getSwapInExtDataHash,
+  getSwapOutExtDataHash,
 } from "./crypto"
 export {
   prove,
+  proveSnarkjs,
   parseProofToBytesArray,
   parseToBytesArray,
   setCircuitBuffers,
@@ -23,10 +26,22 @@ export {
   buildTransactIxData,
   buildTransactSplTransaction,
   buildTransactSplInstruction,
+  buildSwapInstruction,
+  buildSwapIxData,
+  buildSwapTransaction,
+  buildWrapSolInstruction,
   deriveAccounts,
   deriveSplTreeAccount,
+  deriveSwapAccounts,
 } from "./program"
-export type { ProofBytes, TransactAccounts } from "./program"
+export type { ProofBytes, TransactAccounts, SwapAccounts, SwapIxParams } from "./program"
+export {
+  compileV1Transaction,
+  signWireTransaction,
+  v1SignedSize,
+  V1_MAX_SIZE,
+  V1_PREFIX,
+} from "./tx-v1"
 export {
   ensureAlt,
   fetchAlt,
@@ -50,6 +65,7 @@ export {
   isNullifierSpent,
   submitTransaction,
   relayWithdraw,
+  relaySwap,
   fieldToHex32,
   setBackendUrl,
   getBackendUrl,
@@ -105,4 +121,8 @@ export {
   SIGN_MESSAGE,
   SOL_TREE_KEY,
   WRAPPED_SOL_MINT,
+  JUPITER_PROGRAM_ID,
+  NATIVE_MINT,
+  DISC_SWAP,
+  DISC_WRAP_SOL,
 } from "./constants"
