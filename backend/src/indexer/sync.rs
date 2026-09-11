@@ -19,7 +19,7 @@ use yellowstone_grpc_proto::solana::storage::confirmed_block::Message;
 
 use crate::config::Config;
 use crate::db::Db;
-use crate::merkle::MerkleManager;
+use crate::merkle::{sol_address, MerkleManager};
 
 use super::decode::decode_transact_ix;
 use super::types::{IndexedTransact, TransactKind, SOL_TREE_KEY};
@@ -85,7 +85,7 @@ impl Indexer {
         let filter = SubscribeRequestFilterTransactions {
             vote: Some(false),
             failed: Some(false),
-            account_include: vec![self.config.program_id.to_string()],
+            account_include: vec![],
             account_exclude: vec![],
             account_required: vec![],
             signature: None,
@@ -95,7 +95,7 @@ impl Indexer {
         subscribe_tx
             .send(SubscribeRequest {
                 transactions: HashMap::from([("privacy_cash".to_string(), filter)]),
-                commitment: Some(CommitmentLevel::Finalized as i32),
+                commitment: Some(CommitmentLevel::Processed as i32),
                 ..Default::default()
             })
             .await
@@ -145,7 +145,7 @@ impl Indexer {
 
         match self.build_indexed(slot, &signature, tx_info).await? {
             Some(mut indexed) => {
-                self.db.fill_commitment_and_insert_note(&indexed).await?;
+                self.db.fill_commitment_and_insert_utxos(&indexed).await?;
                 let mut lock = self.merkle_manager.write().await;
                 let token_merkle_tree = lock.get_or_create_pool(&indexed.tree_key);
                 let output_commitment1 = std::mem::take(&mut indexed.decoded.output_commitments[0]);
@@ -220,7 +220,7 @@ impl Indexer {
         };
 
         let tree_key = match decoded.kind {
-            TransactKind::Sol => SOL_TREE_KEY.to_string(),
+            TransactKind::Sol => sol_address(),
             // TransactSpl account layout: mint is index 7.
             TransactKind::Spl => accounts
                 .get(7)

@@ -2,9 +2,10 @@ use axum::{
     body::Body,
     extract::{Path, State},
     response::Response,
-    Json,
+    routing::{get, post},
+    Extension, Json, Router,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tower_http::request_id::RequestId;
 
@@ -13,8 +14,17 @@ use crate::{
     response::{ApiError, ApiResponse},
     state::AppState,
 };
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .route("/api/registration/{wallet_pubkey}", get(check))
+        .route("/api/registration/", post(register))
+        .route(
+            "/api/registration/viewing_key/{wallet_pubkey}",
+            get(viewing_key),
+        )
+}
 
-pub async fn check_registered(
+async fn check(
     State(state): State<AppState>,
     Path(path): Path<String>,
     Extension(req_id): Extension<RequestId>,
@@ -24,40 +34,44 @@ pub async fn check_registered(
         Err(e) => return ApiResponse::error(e.into(), req_id),
     };
 
-    if n {
+    if is_registered {
         ApiResponse::success(true, req_id)
     } else {
         ApiResponse::success(false, req_id)
     }
 }
 
-struct AddUser {
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistrationInfo {
     wallet_pubkey: String,
-    viewing_pubkey: Vec<u8>,
+    viewingkey: Vec<u8>,
 }
-pub async fn add_user(
+async fn register(
     State(state): State<AppState>,
-    Json(payload): Json<AddUser>,
     Extension(req_id): Extension<RequestId>,
+    Json(payload): Json<RegistrationInfo>,
 ) -> ApiResponse<String> {
-    match state
+    let result = match state
         .db
-        .add_user(payload.wallet_pubkey, payload.viewing_pubkey)
+        .add_user(payload.wallet_pubkey, payload.viewingkey)
         .await
     {
         Ok(n) => n,
-        Err(e) => return ApiResponse::error(e.into(), req_id),
+        Err(e) => {
+            return ApiResponse::error(e.into(), req_id);
+        }
     };
 
     ApiResponse::success("User successfully added to the network".to_owned(), req_id)
 }
 
-pub async fn get_viewing_key(
+async fn viewing_key(
     State(state): State<AppState>,
-    Path(recipient_pubkey): Path<String>,
+    Path(wallet_pubkey): Path<String>,
     Extension(req_id): Extension<RequestId>,
 ) -> ApiResponse<Vec<u8>> {
-    let key = match state.db.get_viewing_key(recipient_pubkey).await {
+    let key = match state.db.get_viewing_key(wallet_pubkey).await {
         Ok(n) => n,
         Err(e) => return ApiResponse::error(e.into(), req_id),
     };

@@ -2,8 +2,10 @@ use axum::{
     body::Body,
     extract::{Path, State},
     response::Response,
-    Json,
+    routing::{get, post},
+    Extension, Json, Router,
 };
+
 use serde_json::{json, Value};
 use tower_http::request_id::RequestId;
 
@@ -13,14 +15,18 @@ use crate::{
     state::AppState,
 };
 
-type Note = (Vec<u8>);
+pub fn routes() -> Router<AppState> {
+    Router::new().route("/api/utxos/{next_node_to_fetch}", get(utxos))
+}
 
-pub async fn send_notes(
+type Utxo = Vec<u8>;
+
+async fn utxos(
     State(state): State<AppState>,
-    Path(index): Path<u64>,
+    Path(next_node_to_fetch): Path<u64>,
     Extension(req_id): Extension<RequestId>,
-) -> ApiResponse<Vec<Note>> {
-    let notes: Vec<Note> = match state.db.fetch_notes(index, 1000).await {
+) -> ApiResponse<Vec<Utxo>> {
+    let notes: Vec<Utxo> = match state.db.fetch_utxos(next_node_to_fetch, 1000).await {
         Ok(n) => n,
         Err(e) => return ApiResponse::error(e.into(), req_id),
     };

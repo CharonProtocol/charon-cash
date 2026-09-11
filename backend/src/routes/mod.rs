@@ -1,8 +1,8 @@
-mod health;
-mod indexer_status;
-mod merkle;
-mod notes;
-mod register;
+pub mod health;
+pub mod indexer;
+pub mod merkle;
+pub mod register;
+pub mod utxos;
 
 use axum::middleware::from_fn_with_state;
 use axum::routing::{get, post, put};
@@ -28,23 +28,11 @@ pub fn router(state: AppState) -> Router {
     //     .layer(from_fn_with_state(state.clone(), admin::guard));
 
     Router::new()
-        .route("/health", get(health::health))
+        .merge(health::routes())
         // .route("/indexer/status", get(indexer_status::indexer_status))
-        .route("/indexer/status", get(indexer_status::indexer_status))
-        .route("/api/merkle/{tree_key}", get(merkle::tree_state))
-        .route(
-            "/api/merkle/{tree_key}/proof/{leaf_index1},{leaf_index2}",
-            get(merkle::proof),
-        )
-        .route(
-            "/api/registration/check/{wallet_pubkey}",
-            get(register::check_registered),
-        )
-        .route("/api/registration/reigster/", post(register::add_user))
-        .route(
-            "/api/registration/get_viewing_key/{recipient_pubkey}",
-            post(register::get_viewing_key),
-        )
-        .route("/api/notes/send_notes/", get(notes::send_notes))
+        .merge(indexer::routes())
+        .merge(merkle::routes())
+        .merge(utxos::routes())
+        .merge(register::routes())
         .with_state(state)
 }

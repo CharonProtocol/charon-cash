@@ -9,10 +9,9 @@ pub type Pool = MerkleTree<PoseidonHasher, RocksDbStoreV2, 26>;
 
 /// Manages one Merkle tree per token mint uses `RocksDB` for storage.
 pub struct MerkleManager {
-    // Mapping between mint_address and pool_id (mint_address --- pool_id)
-    mint_to_pool_id: HashMap<String, u32>,
-    // Mapping between the pool_id and corresponding merkle tree (pool_id --- MerkleTree)
-    pools_by_id: HashMap<u32, Pool>,
+    // Mapping between mint_address and Pool (mint_address --- Pool)
+    pool_by_mint: HashMap<String, Pool>,
+
     // This connection is stored so as to not make multiple connection to same db
     db: Arc<DBWithThreadMode<SingleThreaded>>,
 }
@@ -36,17 +35,11 @@ impl MerkleManager {
         let sol_merkle_tree: MerkleTree<PoseidonHasher, RocksDbStoreV2, 26> =
             MerkleTree::new(PoseidonHasher, sol_store);
 
-        let mut mint_to_pool_id: HashMap<String, u32> = HashMap::new();
-        let mut pools_by_id: HashMap<u32, Pool> = HashMap::new();
+        let mut pool_by_mint: HashMap<String, Pool> = HashMap::new();
 
-        mint_to_pool_id.insert(sol_address(), 1);
-        pools_by_id.insert(1, sol_merkle_tree);
+        pool_by_mint.insert(sol_address(), sol_merkle_tree);
 
-        Ok(Self {
-            mint_to_pool_id,
-            pools_by_id,
-            db,
-        })
+        Ok(Self { pool_by_mint, db })
     }
 
     /// Retrieve the `Pool` based on mint_address
@@ -56,15 +49,13 @@ impl MerkleManager {
     ///
     /// For Indexer refer to `get_or_create_pool`
     pub fn get_pool(&self, mint_address: &String) -> Option<&Pool> {
-        let pool_id = self.mint_to_pool_id.get(mint_address);
+        let pool = self.pool_by_mint.get(mint_address);
 
-        if pool_id.is_none() {
+        if pool.is_none() {
             return None;
         }
 
-        let pool_id = pool_id.unwrap();
-
-        self.pools_by_id.get(pool_id)
+        pool
     }
 
     /// Retrieve the `Pool` for a mint, creating it if it doesn't exist yet.
@@ -74,29 +65,86 @@ impl MerkleManager {
     ///
     /// For proof generation / route handlers, use `get_pool` instead.
     pub fn get_or_create_pool(&mut self, mint_address: &String) -> &mut Pool {
-        let pool_id = self.mint_to_pool_id.get(mint_address);
+        let pool_id = self.pool_by_mint.get(mint_address);
 
         if pool_id.is_none() {
             // create new pool
-            let new_pool_id = self.pools_by_id.len() as u32 + 1;
+            let new_pool_id = self.pool_by_mint.len() as u32 + 1;
 
             let new_token_store = RocksDbStoreV2::new_with_db(self.db.clone(), new_pool_id);
             let new_token_merkle_tree: MerkleTree<PoseidonHasher, RocksDbStoreV2, 26> =
                 MerkleTree::new(PoseidonHasher, new_token_store);
 
-            self.mint_to_pool_id
-                .insert(mint_address.clone(), new_pool_id);
-            self.pools_by_id.insert(new_pool_id, new_token_merkle_tree);
+            self.pool_by_mint
+                .insert(mint_address.clone(), new_token_merkle_tree);
 
-            return self.pools_by_id.get_mut(&new_pool_id).unwrap();
+            return self.pool_by_mint.get_mut(mint_address).unwrap();
         }
 
-        let pool_id = pool_id.unwrap();
-
-        self.pools_by_id.get_mut(pool_id).unwrap()
+        self.pool_by_mint.get_mut(mint_address).unwrap()
     }
 }
 
 pub fn sol_address() -> String {
-    bs58::encode("11111111111111111111111111111112").into_string()
+    "11111111111111111111111111111112".to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use anyhow::Error;
+    use ark_ff::UniformRand;
+    use futures::future::ok;
+    use rs_merkle_tree::Node;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn successfull_insertion_and_retreival_of_nodes_for_single_pool() -> Result<(), Error> {
+        let mut merkle_manager = MerkleManager::new().await?;
+
+        let pool = merkle_manager.get_or_create_pool(&sol_address());
+
+        let random_nodes = [Node::random(); 100];
+
+        pool.add_leaves(&random_nodes);
+
+        assert_eq!(pool.num_leaves(), 100);
+        Ok(())
+    }
+    #[tokio::test]
+    async fn multiple_pools_successfully_initialized_and_working() -> Result<(), Error> {
+        let mut merkle_manager = MerkleManager::new().await?;
+
+        let pool1 = "POOL1".to_owned();
+        let pool2 = "POOL2".to_owned();
+        let pool3 = "POOL3".to_owned();
+
+        let random_nodes = [Node::random(); 100];
+
+        let mut pool1_root = Node::ZERO;
+        {
+            let pool1_ref = merkle_manager.get_or_create_pool(&pool1);
+            pool1_ref.add_leaves(&random_nodes);
+            assert_eq!(pool1_ref.num_leaves(), 100);
+            pool1_root = pool1_ref.root()?;
+        }
+
+        {
+            let pool2_ref = merkle_manager.get_or_create_pool(&pool2);
+            pool2_ref.add_leaves(&random_nodes);
+            assert_eq!(pool2_ref.num_leaves(), 100);
+            let pool2_root = pool2_ref.root()?;
+            assert_eq!(pool1_root, pool2_root);
+        }
+
+        {
+            let pool3_ref = merkle_manager.get_or_create_pool(&pool3);
+            pool3_ref.add_leaves(&random_nodes);
+            assert_eq!(pool3_ref.num_leaves(), 100);
+            let pool3_root = pool3_ref.root()?;
+            assert_eq!(pool1_root, pool3_root);
+        }
+
+        Ok(())
+    }
 }

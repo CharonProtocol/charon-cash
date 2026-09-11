@@ -19,7 +19,7 @@ pub struct Config {
 impl Config {
     pub fn from_env() -> Result<Self> {
         let program_id = std::env::var("PROGRAM_ID")
-            .unwrap_or_else(|_| "HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV".to_string());
+            .unwrap_or_else(|_| "6MyU66azgzrp6eioGxmKrGZSxv7FB9nb1oXSrd1Qkwmn".to_string());
 
         let yellowstone_x_token = std::env::var("YELLOWSTONE_X_TOKEN")
             .ok()

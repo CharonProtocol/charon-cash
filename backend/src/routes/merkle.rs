@@ -1,19 +1,36 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::Json;
+use axum::{
+    routing::{get, post},
+    Extension, Json, Router,
+};
 use rs_merkle_tree::tree::MerkleProof;
 use rs_merkle_tree::Node;
 use serde::ser::SerializeStruct;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tower_http::request_id::RequestId;
 
 use crate::error::AppError;
 use crate::response::{ApiError, ApiResponse};
-use crate::state::{AppState, TreeState};
+use crate::state::AppState;
 
-pub async fn tree_state(
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .route("/api/pools/{pool_id}/merkle", get(state))
+        .route("/api/pools/{pool_id}/proof", get(proof))
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TreeState {
+    pub pool_id: String,
+    pub next_leaf_index: String,
+    pub current_root: Vec<u8>,
+}
+
+async fn state(
     State(state): State<AppState>,
-    Path(tree_key): Path<String>,
+    Path(pool_id): Path<String>,
     Extension(req_id): Extension<RequestId>,
 ) -> ApiResponse<TreeState> {
     tracing::info!("Accessing merkle manager for proof generation");
@@ -21,7 +38,7 @@ pub async fn tree_state(
     let lock = state.merkle_manager.read().await;
     tracing::info!("Accessed merkle manager.");
 
-    let token_pool_exists = lock.get_pool(&tree_key);
+    let token_pool_exists = lock.get_pool(&pool_id);
 
     if token_pool_exists.is_none() {
         tracing::info!("Pool for the specified token does not exists.");
@@ -59,68 +76,105 @@ pub async fn tree_state(
     };
 
     let tree_state = TreeState {
-        next_leaf_index: num_leaves,
-        current_root: root,
-        tree_key,
+        next_leaf_index: num_leaves.to_string(),
+        current_root: root.as_ref().to_vec(),
+        pool_id: pool_id,
     };
 
     ApiResponse::success(tree_state, req_id)
 }
 
-pub async fn proof(
+#[derive(Deserialize)]
+pub struct Leaves {
+    leaf1: u64,
+    leaf2: u64,
+}
+
+async fn proof(
     State(state): State<AppState>,
-    Path((tree_key, leaf_index1, leaf_index2)): Path<(String, u64, u64)>,
+    Path(pool_id): Path<String>,
+    Query(leaves): Query<Leaves>,
     Extension(req_id): Extension<RequestId>,
-) -> ApiResponse<MerkleProofPair> {
+) -> ApiResponse<ApiMerkleProof> {
     tracing::info!("Accessing merkle manager for proof generation");
 
-    if leaf_index1 == 0 && leaf_index2 == 0 {
-        tracing::info!("Both leaf indices are 0, nothing to prove.");
+    let lock = state.merkle_manager.read().await;
+    tracing::info!("Accessed merkle manager.");
+
+    let token_pool_exists = lock.get_pool(&pool_id);
+
+    if token_pool_exists.is_none() {
+        tracing::info!("Pool for the specified token does not exists.");
 
         return ApiResponse::error(
             ApiError::new(
-                crate::response::ApiErrorCode::PoolError,
-                "At least one of leaf_index1 or leaf_index2 must be non-zero.",
+                crate::response::ApiErrorCode::PoolDoesNotExists,
+                "Pool for the specified token does not exists.",
             ),
             req_id,
         );
     }
 
-    let lock = state.merkle_manager.read().await;
-    tracing::info!("Accessed merkle manager.");
+    let token_pool = token_pool_exists.unwrap();
+    tracing::info!("Pool retreived successfully.");
 
-    let token_pool = match lock.get_pool(&tree_key) {
-        Some(pool) => pool,
-        None => {
-            tracing::info!("Pool for the specified token does not exists.");
+    let num_leaves = token_pool.num_leaves();
+    let root = match token_pool.root() {
+        Ok(r) => {
+            tracing::info!("Merkle root fetched successfully");
+
+            r
+        }
+        Err(e) => {
+            tracing::error!("Token pool could not be fetched");
 
             return ApiResponse::error(
                 ApiError::new(
-                    crate::response::ApiErrorCode::PoolDoesNotExists,
-                    "Pool for the specified token does not exists.",
+                    crate::response::ApiErrorCode::PoolError,
+                    "Internal Error Occured",
                 ),
                 req_id,
             );
         }
     };
-    tracing::info!("Pool retreived successfully.");
 
-    let get_proof = |index: u64,
-                     fallback_root: Option<Node>|
-     -> Result<MerkleProof<26>, ApiResponse<MerkleProofPair>> {
+    if leaves.leaf1 == 0 && leaves.leaf2 == 0 {
+        let merkle_proof = ApiMerkleProof {
+            root: root.as_ref().to_vec(),
+            next_index: num_leaves.to_string(),
+            proofs: [
+                MerklePath {
+                    proof: vec![Node::ZERO.as_ref().to_vec(); 26],
+                    leaf: Node::ZERO.as_ref().to_vec(),
+                    index: "0".to_owned(),
+                },
+                MerklePath {
+                    proof: vec![Node::ZERO.as_ref().to_vec(); 26],
+                    leaf: Node::ZERO.as_ref().to_vec(),
+                    index: "0".to_owned(),
+                },
+            ],
+        };
+
+        return ApiResponse::success(merkle_proof, req_id);
+    }
+
+    let get_proof = |index: u64| -> Result<MerklePath, ApiResponse<ApiMerkleProof>> {
         if index == 0 {
-            Ok(MerkleProof {
-                proof: [Node([0u8; 32]); 26],
-                leaf: Node([0u8; 32]),
-                index,
-                // Use the other proof's root if we have one yet, else zero.
-                root: fallback_root.unwrap_or(Node([0u8; 32])),
+            Ok(MerklePath {
+                proof: vec![Node::ZERO.as_ref().to_vec(); 26],
+                leaf: Node::ZERO.as_ref().to_vec(),
+                index: "0".to_owned(),
             })
         } else {
             match token_pool.proof(index) {
                 Ok(r) => {
                     tracing::info!("Merkle Proof generated successfully");
-                    Ok(r)
+                    Ok(MerklePath {
+                        proof: r.proof.iter().map(|n| n.as_ref().to_vec()).collect(),
+                        leaf: r.leaf.as_ref().to_vec(),
+                        index: r.index.to_string(),
+                    })
                 }
                 Err(_e) => {
                     tracing::info!("Merkle Proof for the given index could not be generated");
@@ -129,63 +183,56 @@ pub async fn proof(
                             crate::response::ApiErrorCode::PoolError,
                             "Could not generate proof for the given key and index",
                         ),
-                        req_id,
+                        req_id.clone(),
                     ))
                 }
             }
         }
     };
 
-    let (proof1, proof2) = if leaf_index1 != 0 {
-        let proof1 = match get_proof(leaf_index1, None) {
+    let (proof1, proof2) = if leaves.leaf1 != 0 {
+        let proof1 = match get_proof(leaves.leaf1) {
             Ok(p) => p,
             Err(e) => return e,
         };
-        let proof2 = match get_proof(leaf_index2, Some(proof1.root.clone())) {
+        let proof2 = match get_proof(leaves.leaf2) {
             Ok(p) => p,
             Err(e) => return e,
         };
         (proof1, proof2)
     } else {
-        let proof2 = match get_proof(leaf_index2, None) {
+        let proof2 = match get_proof(leaves.leaf2) {
             Ok(p) => p,
             Err(e) => return e,
         };
-        let proof1 = match get_proof(leaf_index1, Some(proof2.root.clone())) {
+        let proof1 = match get_proof(leaves.leaf1) {
             Ok(p) => p,
             Err(e) => return e,
         };
         (proof1, proof2)
     };
 
-    ApiResponse::success(MerkleProofPair { proof1, proof2 }, req_id)
+    ApiResponse::success(
+        ApiMerkleProof {
+            root: root.as_ref().to_vec(),
+            next_index: num_leaves.to_string(),
+            proofs: [proof1, proof2],
+        },
+        req_id,
+    )
 }
 
 #[derive(Serialize, Debug)]
-struct MerkleProofPair {
-    proof1: MerkleProof<26>,
-    proof2: MerkleProof<26>,
+#[serde(rename_all = "camelCase")]
+pub struct ApiMerkleProof {
+    pub root: Vec<u8>,
+    pub next_index: String,
+    pub proofs: [MerklePath; 2],
 }
 
-impl<const DEPTH: usize> Serialize for MerkleProof<DEPTH> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut s = serializer.serialize_struct("MerkleProof", 4)?;
-        s.serialize_field("proof", &self.proof)?;
-        s.serialize_field("leaf", &self.leaf)?;
-        s.serialize_field("index", &self.index)?;
-        s.serialize_field("root", &self.root)?;
-        s.end()
-    }
-}
-
-impl Serialize for Node {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_bytes(self.as_ref())
-    }
+#[derive(Serialize, Debug)]
+pub struct MerklePath {
+    pub proof: Vec<Vec<u8>>,
+    pub leaf: Vec<u8>,
+    pub index: String,
 }

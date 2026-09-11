@@ -3,8 +3,6 @@
 use sqlx::Decode;
 use thiserror::Error;
 
-use crate::indexer::EncryptedNote;
-
 use super::types::{DecodedTransact, TransactKind};
 
 /// On-chain `Proof` pod size.

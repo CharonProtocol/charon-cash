@@ -14,11 +14,3 @@ pub struct AppState {
     pub config: Config,
     pub merkle_manager: Arc<RwLock<MerkleManager>>,
 }
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TreeState {
-    pub tree_key: String,
-    pub next_leaf_index: u64,
-    pub current_root: Node,
-}

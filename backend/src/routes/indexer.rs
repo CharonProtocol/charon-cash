@@ -1,5 +1,8 @@
 use axum::extract::State;
-use axum::{Extension, Json};
+use axum::{
+    routing::{get, post},
+    Extension, Json, Router,
+};
 use serde::Serialize;
 use serde_json::{json, Value};
 use tower_http::request_id::RequestId;
@@ -9,7 +12,11 @@ use crate::indexer::SOL_TREE_KEY;
 use crate::response::ApiResponse;
 use crate::state::AppState;
 
-pub async fn indexer_status(
+pub fn routes() -> Router<AppState> {
+    Router::new().route("/indexer/status", get(status))
+}
+
+async fn status(
     State(state): State<AppState>,
     Extension(req_id): Extension<RequestId>,
 ) -> ApiResponse<IndexerStatus> {
@@ -17,7 +24,7 @@ pub async fn indexer_status(
     let (last_signature, last_slot) = match state.db.get_cursor().await {
         Ok(cursor) => cursor,
         Err(e) => {
-            tracing::error!("Fetch indexer failed ", e.to_string());
+            tracing::error!("Fetch indexer failed {}", e.to_string());
             return ApiResponse::error(e.into(), req_id);
         }
     };
@@ -33,7 +40,7 @@ pub async fn indexer_status(
 }
 
 #[derive(Serialize)]
-struct IndexerStatus {
+pub struct IndexerStatus {
     pub last_signature: String,
     pub last_slot: u64,
 }

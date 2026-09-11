@@ -13,6 +13,7 @@ use tracing::span;
 use crate::response::ApiErrorCode::PoolError;
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RequestMeta {
     pub request_id: String,
     pub timestamp: String,
@@ -68,6 +69,9 @@ impl<T: Serialize> IntoResponse for ApiResponse<T> {
             ApiResponse::Success { .. } => StatusCode::OK,
             ApiResponse::Error { error, .. } => get_status_code_for_error(&error.code),
         };
+
+        println!("Returning status: {}", status);
+
         (status, Json(self)).into_response()
     }
 }
