@@ -6,8 +6,8 @@
 -- registered_at - represents the merkle_index when user registered for efficieny
 CREATE TABLE IF NOT EXISTS users (
    wallet_pubkey       TEXT PRIMARY KEY,
-    viewing_pubkey      BYTEA NOT NULL UNIQUE,
-    registered_at TIMESTAMPTZ NOT NULL
+    viewing_key      BYTEA NOT NULL UNIQUE,
+registered_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- This table will be filled by indexer.
@@ -26,13 +26,13 @@ CREATE TABLE IF NOT EXISTS commitments (
 
 
 -- This table will be filled by indexer.
--- id : is added for tracking notes on client side
--- ciphertext : encrypted notes version(8 bytes) + ephemeral_pubkey (32 bytes)
+-- id : is added for tracking utxos on client side
+-- ciphertext : encrypted utxos version(8 bytes) + ephemeral_pubkey (32 bytes)
 -- + nonce (12 bytes, for AES-GCM)
 -- + ciphertext (variable length)
 -- + authTag (16 bytes)
 -- updated_at : time at the insertion
-CREATE TABLE IF NOT EXISTS notes (
+CREATE TABLE IF NOT EXISTS utxos (
     id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     ciphertext       BYTEA NOT NULL,
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()

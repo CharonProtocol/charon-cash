@@ -23,7 +23,7 @@ impl Db {
         sqlx::migrate!("./migrations")
             .run(&db.pool)
             .await
-            .expect("run postgres migrations")?;
+            .expect("run postgres migrations");
         db
     }
 
@@ -34,7 +34,7 @@ impl Db {
     }
 
     pub async fn get_cursor(&self) -> Result<(Option<String>, u64), DbError> {
-        let row: (Option<String>, u64) =
+        let row: (Option<String>, i64) =
             sqlx::query_as("SELECT last_signature, last_slot FROM indexer_cursor WHERE id = 1")
                 .fetch_one(&self.pool)
                 .await?;
@@ -62,24 +62,23 @@ impl Db {
     pub async fn add_user(
         &self,
         wallet_pubkey: String,
-        viewing_pubkey: Vec<u8>,
+        viewing_key: Vec<u8>,
     ) -> Result<(), DbError> {
-        let query =
-            sqlx::query("INSERT INTO users (wallet_pubkey, viewing_pubkey) VALUES ($1, $2)")
-                .bind(wallet_pubkey)
-                .bind(viewing_pubkey)
-                .execute(&self.pool)
-                .await?;
+        let query = sqlx::query("INSERT INTO users (wallet_pubkey, viewing_key) VALUES ($1, $2)")
+            .bind(wallet_pubkey)
+            .bind(viewing_key)
+            .execute(&self.pool)
+            .await?;
 
         Ok(())
     }
 
     pub async fn get_viewing_key(&self, wallet_pubkey: String) -> Result<Vec<u8>, DbError> {
-        let query = sqlx::query("SELECT viewing_pubkey FROM users WHERE wallet_pubkey = $1")
+        let query = sqlx::query("SELECT viewing_key FROM users WHERE wallet_pubkey = $1")
             .bind(wallet_pubkey)
             .fetch_one(&self.pool)
             .await?;
-        let ret = query.try_get("viewing_pubkey")?;
+        let ret = query.try_get("viewing_key")?;
         Ok(ret)
     }
 
@@ -89,7 +88,7 @@ impl Db {
             .fetch_one(&self.pool)
             .await?;
 
-        Ok(query.is_empty())
+        Ok(!query.is_empty())
     }
 
     pub async fn next_index(&self, tree_key: &str) -> Result<u32, DbError> {
@@ -137,28 +136,25 @@ impl Db {
         Ok(ret)
     }
 
-    /// Fetch notes.
+    /// Fetch utxos.
     ///
     /// # Args
-    ///     * `start_from` : index after which notes are required
-    ///     * `limit` : number of notes to fetch
+    ///     * `start_from` : index after which utxos are required
+    ///     * `limit` : number of utxos to fetch
     /// # Returns
     ///     Vector of (ephemeral_pubkey, ciphertext).
     ///
-    /// this will be mostly used for client's note lookups.
-    pub async fn fetch_notes(
-        &self,
-        start_from: u64,
-        limit: u16,
-    ) -> Result<Vec<(Vec<u8>)>, DbError> {
-        let rows =
-            sqlx::query::<sqlx::Postgres>("SELECT ciphertext FROM notes WHERE id > $1 LIMIT $2")
-                .bind(start_from as i64)
-                .bind(limit as i32)
-                .fetch_all(&self.pool)
-                .await?;
+    /// this will be mostly used for client's utxos lookups.
+    pub async fn fetch_utxos(&self, start_from: u64, limit: u16) -> Result<Vec<Vec<u8>>, DbError> {
+        let rows = sqlx::query::<sqlx::Postgres>(
+            "SELECT ciphertext FROM utxos WHERE id >= $1 ORDER BY id ASC LIMIT $2",
+        )
+        .bind(start_from as i64)
+        .bind(limit as i32)
+        .fetch_all(&self.pool)
+        .await?;
 
-        let mut ret: Vec<(Vec<u8>)> = Vec::new();
+        let mut ret: Vec<Vec<u8>> = Vec::new();
         for row in rows {
             let ciphertext = row.try_get::<Vec<u8>, _>("ciphertext")?;
 
@@ -172,7 +168,7 @@ impl Db {
         commitments and notes will be inserted in a single transaction
         so as to ensure that network's state remain consistent.
     */
-    pub async fn fill_commitment_and_insert_note(
+    pub async fn fill_commitment_and_insert_utxos(
         &self,
         tx: &IndexedTransact,
     ) -> Result<(), DbError> {
@@ -194,19 +190,21 @@ impl Db {
         .await?;
 
         let commitment_rows = sqlx::query::<sqlx::Postgres>(
-            "INSERT INTO commitments (tree_key,commitment) VALUES ($1,$2),($3,$4);",
+            "INSERT INTO commitments (leaf_index,tree_key,commitment) VALUES ($1,$2,$3),($4,$5,$6)",
         )
+        .bind(tx.curr_index as i64)
         .bind(tx.tree_key.as_str())
         .bind(&tx.decoded.output_commitments[0])
+        .bind((tx.curr_index + 1) as i64)
         .bind(tx.tree_key.as_str())
         .bind(&tx.decoded.output_commitments[1])
         .execute(&mut *conn)
         .await?;
 
         let note_rows =
-            sqlx::query::<sqlx::Postgres>("INSERT INTO notes ciphertext VALUES ($1),($2);")
-                .bind(tx.decoded.encrypted_note1)
-                .bind(tx.decoded.encrypted_note2)
+            sqlx::query::<sqlx::Postgres>("INSERT INTO utxos (ciphertext) VALUES ($1),($2)")
+                .bind(tx.decoded.encrypted_note1.as_slice())
+                .bind(tx.decoded.encrypted_note2.as_slice())
                 .execute(&mut *conn)
                 .await?;
 
