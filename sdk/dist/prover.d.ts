@@ -1,3 +1,36 @@
+import BN from "bn.js";
+import { SilentPayError } from "./error";
+export declare class ProofGenError extends SilentPayError {
+    constructor(message: string, options?: {
+        cause: unknown;
+    });
+}
+export type CircuitParams = {
+    root: string;
+    inputNullifier: string[];
+    outputCommitment: string[];
+    publicAmount: string;
+    extDataHash: Uint8Array<ArrayBufferLike>;
+    inAmount: string[];
+    inPrivateKey: BN[];
+    inBlinding: string[];
+    inPathIndices: number[];
+    inPathElements: string[][];
+    outAmount: string[];
+    outBlinding: string[];
+    outPubkey: BN[];
+    mintAddress: string;
+};
+export interface ProofBytes {
+    proofA: number[];
+    proofB: number[];
+    proofC: number[];
+    root: number[];
+    publicAmount: number[];
+    extDataHash: number[];
+    inputNullifiers: number[][];
+    outputCommitments: number[][];
+}
 export interface Proof {
     pi_a: string[];
     pi_b: string[][];

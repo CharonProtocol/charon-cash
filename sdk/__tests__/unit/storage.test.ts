@@ -156,11 +156,24 @@ describe("Storage Service ", () => {
     expect(Number(index.index)).toBe(1);
     expect(index.walletPubkey).toBe(alice);
   });
-  test("User can save note", async () => {
+  test("User can update note index", async () => {
     let save = await storage.updateNextUtxoToFetchIndex(alice, 0);
     let index = await storage.getNextUtxoToFetchIndex(alice);
 
     expect(Number(index.index)).toBe(0);
     expect(index.walletPubkey).toBe(alice);
+  });
+  test("User can successfully delete note", async () => {
+    let utxos = await storage.loadUtxoBatch(alice);
+
+    let numberOfUtxos = utxos.length;
+
+    let utxoToBeDeleted = utxos[0];
+
+    storage.removeUtxo(utxoToBeDeleted.id!);
+
+    let utxosAfterDeletion = await storage.loadUtxoBatch(alice);
+
+    expect(utxosAfterDeletion.length).toBe(numberOfUtxos - 1);
   });
 });

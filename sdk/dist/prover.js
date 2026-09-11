@@ -1,6 +1,16 @@
 import { groth16 } from "snarkjs";
 import { utils } from "ffjavascript";
 import { CIRCUIT } from "./constants";
+import { SilentPayError, SilentPayErrorCode } from "./error";
+export class ProofGenError extends SilentPayError {
+    constructor(message, options) {
+        super(message, SilentPayErrorCode.PROOF_GENERATION_ERROR, {
+            cause: options?.cause,
+        });
+        this.name = "ProofGenerationError";
+        Object.setPrototypeOf(this, ProofGenError.prototype);
+    }
+}
 let wasmBuf = null;
 let zkeyBuf = null;
 /** Inject pre-loaded circuit buffers (used by tests / non-browser runners). */
@@ -20,8 +30,13 @@ async function loadCircuit() {
  * ArrayBuffers and reused. Mirrors privacy-cash-sdk prove() (single-thread).
  */
 export async function prove(input) {
-    const { wasm, zkey } = await loadCircuit();
-    return groth16.fullProve(utils.stringifyBigInts(input), wasm, zkey, undefined, { singleThread: true }, { singleThread: true });
+    try {
+        const { wasm, zkey } = await loadCircuit();
+        return groth16.fullProve(utils.stringifyBigInts(input), wasm, zkey, undefined, { singleThread: true }, { singleThread: true });
+    }
+    catch (error) {
+        throw new ProofGenError("Unable to generate Proof", { cause: error });
+    }
 }
 /** Parse a groth16 proof into the byte layout the Pinocchio Proof struct expects. */
 export function parseProofToBytesArray(proof) {

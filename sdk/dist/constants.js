@@ -5,16 +5,12 @@ export const MERKLE_TREE_DEPTH = 26;
 export const SOL_MINT = new PublicKey("11111111111111111111111111111111");
 export const WRAPPED_SOL_MINT = "11111111111111111111111111111112";
 export const SIGN_MESSAGE = "Privacy Money account sign in";
-export const TRANSACT_IX_DISCRIMINATOR = Buffer.from([
-    217, 149, 130, 143, 221, 52, 252, 119,
-]);
-export const TRANSACT_SPL_IX_DISCRIMINATOR = Buffer.from([
-    154, 66, 244, 204, 78, 225, 163, 151,
-]);
-export const PROGRAM_ID = new PublicKey("11111111111111111111111111111112");
-export const ALT_ADDRESS = new PublicKey("11111111111111111111111111111112");
+export const DISC_TRANSACT = 2;
+export const DISC_TRANSACT_SPL = 3;
+export const PROGRAM_ID = new PublicKey("6MyU66azgzrp6eioGxmKrGZSxv7FB9nb1oXSrd1Qkwmn");
+export const ALT_ADDRESS = new PublicKey("HcQvCnjvG4DEGswPT9K73KvkodePhov1m1UtZBEjjb1V");
 export const FEE_RECIPIENT = new PublicKey("5kHwyJA15XjiHYxUTGif8NoH25h1dTxjqhscTnf4V1Ua");
-export const SOL_TREE_ACCOUNT = new PublicKey("9FAfzUefuymRifcKspFqLgY4yRnRMw2bwUdheAkDVvj9");
+export const API_URL = "http://127.0.0.1:8080";
 export const SEED = {
     TREE_ACCOUNT: "merkle_tree",
     TREE_TOKEN: "tree_token",
@@ -26,8 +22,8 @@ export const SOL_TREE_KEY = "sol";
 export const DEPOSIT_FEE_RATE = 0;
 export const WITHDRAW_FEE_RATE = 25;
 export const CIRCUIT = {
-    WASM_URL: "/circuit/transaction2.wasm",
-    ZKEY_URL: "/circuit/transaction2.zkey",
+    WASM_URL: new URL("./circuits/transaction2.wasm", import.meta.url).href,
+    ZKEY_URL: new URL("./circuits/transaction2.zkey", import.meta.url).href,
 };
 function getEnv() {
     try {

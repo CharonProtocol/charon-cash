@@ -1,54 +1,95 @@
-import { fetchNotes } from "../api";
+import { WasmFactory } from "@lightprotocol/hasher.rs";
+import { API } from "../api";
 import { EncryptionService } from "../encrypt";
+import { Utxo } from "../model/utxo";
 import { StorageService } from "../storage";
+import { Connection } from "@solana/web3.js";
+import { connect } from "http2";
+import { deriveNullifiers, poseidonStringToBytes32 } from "../utils";
 
-const POLL_TIME = 10 * 1000;
+const POLL_TIME = 20 * 1000;
+let isRunning = false;
+const SYNC_MESSAGE = "SYNC_UTXOS";
 
 self.addEventListener("message", async (event) => {
   if (event.data.type !== "start") {
     return;
   }
 
-  const { walletPubkey, masterSeed } = event.data;
+  if (isRunning) {
+    return;
+  }
 
-  await startWorker(walletPubkey, masterSeed);
+  isRunning = true;
+  const { walletPubkey, masterSeed, rpcUrl } = event.data;
+
+  await startWorker(walletPubkey, masterSeed, rpcUrl);
 });
 
-async function startWorker(walletPubkey: string, masterSeed: Uint8Array) {
+async function startWorker(
+  walletPubkey: string,
+  masterSeed: Uint8Array,
+  rpcUrl: string,
+) {
   const encryptionService =
     await EncryptionService.startEncryptionService(masterSeed);
 
   const storageService = await StorageService.start();
+  const connection = new Connection(rpcUrl);
 
-  let lastFetchedNoteIndex = await storageService.getLastFetchedNote();
+  const lightWasm = await WasmFactory.getInstance();
+
+  let nextNoteIndex = Number(
+    (await storageService.getNextUtxoToFetchIndex(walletPubkey)).index,
+  );
 
   while (true) {
-    const encryptedNotes = await fetchNotes(lastFetchedNoteIndex);
+    try {
+      const encryptedNotes = await API.fetchNotes(nextNoteIndex);
 
-    let newNotesAdded = false;
+      let newNotes: Uint8Array[] = [];
 
-    for (const encryptedNote of encryptedNotes) {
-      try {
-        const decryptedNote = await encryptionService.decrypt(encryptedNote);
+      for (const encryptedNote of encryptedNotes) {
+        try {
+          const decryptedNote = await encryptionService.decrypt(encryptedNote);
 
-        await storageService.saveNote(walletPubkey, decryptedNote);
+          // if note can be decrypted it belongs to this user , store it
+          const utxo = Utxo.deserialize(decryptedNote, lightWasm);
 
-        newNotesAdded = true;
-      } catch {
-        continue;
+          // No need to store utxo with amount zero
+          if (!utxo.amount.isZero()) {
+            const [nullifer0, nullifer1] = deriveNullifiers(
+              poseidonStringToBytes32(utxo.getNullifier()),
+            )!;
+
+            // is the note used previously
+            const nullifer0Exists = await connection.getAccountInfo(nullifer0);
+            const nullifer1Exists = await connection.getAccountInfo(nullifer1);
+
+            if (!nullifer0Exists && !nullifer1Exists) {
+              newNotes.push(encryptedNote);
+            }
+          }
+        } catch {
+          // not ours
+        }
+        nextNoteIndex++;
       }
 
-      lastFetchedNoteIndex++;
+      if (newNotes.length > 0) {
+        await storageService.saveUtxoBatch(walletPubkey, newNotes);
+        self.postMessage({
+          type: SYNC_MESSAGE,
+        });
+      }
+
+      await storageService.updateNextUtxoToFetchIndex(
+        walletPubkey,
+        nextNoteIndex,
+      );
+    } catch (error) {
+      console.log("Worker Sync Failed", error);
     }
-
-    if (newNotesAdded) {
-      self.postMessage({
-        type: "syncNotes",
-      });
-    }
-
-    storageService.updateLastFetchedNote(lastFetchedNoteIndex);
-
     await new Promise((resolve) => setTimeout(resolve, POLL_TIME));
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "privacy-cash-sdk",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "description": "Browser-native client SDK for the Privacy Cash Solana protocol (deposit/withdraw SOL & SPL tokens, ZK proofs, commitment notes).",
   "type": "module",
   "main": "./dist/index.js",
@@ -18,10 +18,10 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && cp -r circuits dist/circuits",
     "prepublishOnly": "bun run build && bun test",
     "test": "bun test",
-    "setup": "node scripts/setup.mjs"
+    "setup": "node scripts/"
   },
   "keywords": [
     "solana",

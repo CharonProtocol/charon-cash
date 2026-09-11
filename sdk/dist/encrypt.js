@@ -14,6 +14,122 @@ import { x25519 as webX25519 } from "@noble/curves/webcrypto.js";
 import * as webCryptoHash from "@noble/hashes/webcrypto.js";
 import * as webCryptoCipher from "@noble/ciphers/webcrypto.js";
 import { randomBytes } from "@noble/ciphers/utils.js";
+import { SilentPayError, SilentPayErrorCode } from "./error";
+export class EncryptionError extends SilentPayError {
+    constructor(message, options) {
+        super(message, SilentPayErrorCode.ENCRYPTION_ERROR, {
+            cause: options?.cause,
+        });
+        this.name = "EncryptionError";
+        Object.setPrototypeOf(this, EncryptionError.prototype);
+    }
+}
+/**
+ * Encryption/Decryption of Notes
+ */
+export class EncryptionService {
+    static ENCRYPTION_VERSION_V1 = Uint8Array.from([
+        0, 0, 0, 0, 0, 0, 0, 1,
+    ]);
+    // This represents the wallet's X25519 CipherKeypair
+    CipherKeypair;
+    constructor(CipherKeypair) {
+        this.CipherKeypair = CipherKeypair;
+    }
+    static async startEncryptionService(masterSeed) {
+        try {
+            const CipherKeypair = await generateX25519CipherKeypair(masterSeed);
+            return new EncryptionService(CipherKeypair);
+        }
+        catch (error) {
+            throw new EncryptionError("Failed to generate cipher keypair", {
+                cause: error,
+            });
+        }
+    }
+    getViewingKey() {
+        return this.CipherKeypair.publicKey;
+    }
+    /**
+     * Encrypts UTXO bytes for network.
+     *
+     * @param data - raw UTXO bytes to encrypt.
+     * @returns The encrypted output buffer structured as:
+     * `[version (8B) | ephemeral_pubkey (32B) | iv/nonce (12B) | ciphertext + authTag (16B)]`
+     */
+    async encrypt(data, targetViewingKey) {
+        try {
+            // Note's ephemeral CipherKeypair used for sharedSecret/Encryption
+            // After encryption secret key will be discarded making the target only one that can
+            // decrypt the note .
+            const noteEphemeralCipherKeypair = await generateX25519CipherKeypair();
+            const sharedSecret = await generateSharedSecret(noteEphemeralCipherKeypair, targetViewingKey);
+            const encryptionKey = await this.generateEncryptionDecryptionKey(sharedSecret);
+            // compression should happen before encryption
+            const cs = new CompressionStream("gzip");
+            const compressedPromise = new Response(cs.readable).arrayBuffer();
+            const writer = cs.writable.getWriter();
+            await writer.write(data);
+            await writer.close();
+            const compressedData = new Uint8Array(await compressedPromise);
+            const ciphertext = await aes_encrypt(compressedData, encryptionKey);
+            // EncryptionService.ENCRYPTION_VERSION_V1.length + noteEphemeralCipherKeypair.publicKey.length +ciphertext.length;
+            const encryptedOutputLength = 8 + 32 + ciphertext.length;
+            const encryptedOutput = new Uint8Array(encryptedOutputLength);
+            encryptedOutput.set(EncryptionService.ENCRYPTION_VERSION_V1);
+            encryptedOutput.set(noteEphemeralCipherKeypair.publicKey, 8);
+            encryptedOutput.set(ciphertext, 40);
+            return encryptedOutput;
+        }
+        catch (error) {
+            throw new EncryptionError("Failed to perform encryption", {
+                cause: error,
+            });
+        }
+    }
+    /**
+     * Decrypts the UTXO bytes received from the network.
+     *
+     * @param data - encrypted output stored on the network
+     * `[version (8B) | ephemeral_pubkey (32B) | iv/nonce (32B) | ciphertext + authTag (16B)]`
+     * @returns The decrypted output: `raw UTXO bytes`
+     */
+    async decrypt(encryptedOutput) {
+        try {
+            const version = encryptedOutput.slice(0, 8);
+            const ephemeralPubkey = encryptedOutput.slice(8, 40);
+            const sharedSecret = await generateSharedSecret(this.CipherKeypair, ephemeralPubkey);
+            const decryptionKey = await this.generateEncryptionDecryptionKey(sharedSecret);
+            const ciphertext = encryptedOutput.slice(40);
+            const deciphertext = await aes_decrypt(Buffer.from(ciphertext), decryptionKey);
+            // decompression should happen after decryption
+            const cs = new DecompressionStream("gzip");
+            const decompressedPromise = new Response(cs.readable).arrayBuffer();
+            const writer = cs.writable.getWriter();
+            await writer.write(deciphertext);
+            await writer.close();
+            const decompressedData = new Uint8Array(await decompressedPromise);
+            return decompressedData;
+        }
+        catch (error) {
+            throw new EncryptionError("Failed to perform decryption", {
+                cause: error,
+            });
+        }
+    }
+    async generateEncryptionDecryptionKey(sharedSecret) {
+        try {
+            const textEncoder = new TextEncoder();
+            const salt = textEncoder.encode("SILENTPAYENCRYPT");
+            const info = textEncoder.encode("sharedsecret-to-gcmkey");
+            const key = await webCryptoHash.hkdf(webCryptoHash.sha256, sharedSecret, salt, info, 16);
+            return key;
+        }
+        catch (error) {
+            throw new EncryptionError("Failed to generate encryption/decryption key", { cause: error });
+        }
+    }
+}
 export async function generateX25519CipherKeypair(seed) {
     if (seed) {
         const ikm = typeof seed === "string" ? new TextEncoder().encode(seed) : seed;
@@ -61,70 +177,4 @@ export async function aes_decrypt(data, decryptionKey) {
     const decipher = webCryptoCipher.gcm(decryptionKey, iv);
     const decrypted_data = await decipher.decrypt(ciphertext);
     return decrypted_data;
-}
-/**
- * Encryption/Decryption of Notes
- */
-export class EncryptionService {
-    static ENCRYPTION_VERSION_V1 = Uint8Array.from([
-        0, 0, 0, 0, 0, 0, 0, 1,
-    ]);
-    // This represents the wallet's X25519 CipherKeypair
-    CipherKeypair;
-    constructor(CipherKeypair) {
-        this.CipherKeypair = CipherKeypair;
-    }
-    static async startEncryptionService(masterSeed) {
-        const CipherKeypair = await generateX25519CipherKeypair(masterSeed);
-        return new EncryptionService(CipherKeypair);
-    }
-    getViewingKey() {
-        return this.CipherKeypair.publicKey;
-    }
-    /**
-     * Encrypts UTXO bytes for network.
-     *
-     * @param data - raw UTXO bytes to encrypt.
-     * @returns The encrypted output buffer structured as:
-     * `[version (8B) | ephemeral_pubkey (32B) | iv/nonce (12B) | ciphertext + authTag (16B)]`
-     */
-    async encrypt(data, targetViewingKey) {
-        // Note's ephemeral CipherKeypair used for sharedSecret/Encryption
-        // After encryption secret key will be discarded making the target only one that can
-        // decrypt the note .
-        const noteEphemeralCipherKeypair = await generateX25519CipherKeypair();
-        const sharedSecret = await generateSharedSecret(noteEphemeralCipherKeypair, targetViewingKey);
-        const encryptionKey = await this.generateEncryptionDecryptionKey(sharedSecret);
-        const ciphertext = await aes_encrypt(data, encryptionKey);
-        // EncryptionService.ENCRYPTION_VERSION_V1.length + noteEphemeralCipherKeypair.publicKey.length +ciphertext.length;
-        const encryptedOutputLength = 8 + 32 + ciphertext.length;
-        const encryptedOutput = new Uint8Array(encryptedOutputLength);
-        encryptedOutput.set(EncryptionService.ENCRYPTION_VERSION_V1);
-        encryptedOutput.set(noteEphemeralCipherKeypair.publicKey, 8);
-        encryptedOutput.set(ciphertext, 40);
-        return encryptedOutput;
-    }
-    /**
-     * Decrypts the UTXO bytes received from the network.
-     *
-     * @param data - encrypted output stored on the network
-     * `[version (8B) | ephemeral_pubkey (32B) | iv/nonce (32B) | ciphertext + authTag (16B)]`
-     * @returns The decrypted output: `raw UTXO bytes`
-     */
-    async decrypt(encryptedOutput) {
-        const version = encryptedOutput.slice(0, 8);
-        const ephemeralPubkey = encryptedOutput.slice(8, 40);
-        const sharedSecret = await generateSharedSecret(this.CipherKeypair, ephemeralPubkey);
-        const decryptionKey = await this.generateEncryptionDecryptionKey(sharedSecret);
-        const ciphertext = encryptedOutput.slice(40);
-        const deciphertext = await aes_decrypt(ciphertext, decryptionKey);
-        return deciphertext;
-    }
-    async generateEncryptionDecryptionKey(sharedSecret) {
-        const textEncoder = new TextEncoder();
-        const salt = textEncoder.encode("SILENTPAYENCRYPT");
-        const info = textEncoder.encode("sharedsecret-to-gcmkey");
-        const key = await webCryptoHash.hkdf(webCryptoHash.sha256, sharedSecret, salt, info, 16);
-        return key;
-    }
 }

@@ -33,9 +33,14 @@ export declare class SilentPay {
         owner: Signer;
         API_URL: string;
     }): Promise<SilentPay>;
-    sendSol(amountInLamports: number, mintAddress: string, recipientKey: string): Promise<void>;
-    withdrawSol(amountInLamports: number, mintAddress: string): Promise<void>;
+    sendSol(amountInLamports: number, mintAddress: string, recipientKey: string): Promise<{
+        signature: string;
+    }>;
+    withdrawSol(amountInLamports: number, mintAddress: string): Promise<{
+        signature: string;
+    }>;
     syncNotes(): Promise<void>;
+    stopClient(): Promise<void>;
 }
 export {};
 //# sourceMappingURL=newClient.d.ts.map

@@ -1,2 +1,2 @@
 export { prove, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers, } from "./prover";
-export { SilentPay } from "./newClient";
+export { SilentPay } from "./client";

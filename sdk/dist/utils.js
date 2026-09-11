@@ -1,6 +1,6 @@
 import { PublicKey } from "@solana/web3.js";
 import BN from "bn.js";
-import { SEED, TRANSACT_IX_DISCRIMINATOR, TRANSACT_SPL_IX_DISCRIMINATOR, } from "./constants";
+import { PROGRAM_ID, SEED, DISC_TRANSACT, DISC_TRANSACT_SPL, } from "./constants";
 import { sha256 } from "ethers/crypto";
 // Adjust endian ('le' | 'be') to match how Node bytes were produced on the Rust side.
 export function bytesToBN(bytes) {
@@ -38,19 +38,42 @@ export function deriveAccounts(programId, nullifierHash0, nullifierHash1) {
         bump1,
     };
 }
-export function serializeProofAndExtData(proof, extData, isSpl = false) {
+export function deriveNullifiers(nullifierHash) {
+    if (nullifierHash.length !== 32) {
+        console.error("BAD SEED LENGTH:", nullifierHash.length, Array.from(nullifierHash));
+        return;
+    }
+    try {
+        const [nullifier0, bump0] = PublicKey.findProgramAddressSync([Buffer.from(SEED.NULLIFIER0), Buffer.from(nullifierHash)], PROGRAM_ID);
+        const [nullifier1, bump1] = PublicKey.findProgramAddressSync([Buffer.from(SEED.NULLIFIER1), Buffer.from(nullifierHash)], PROGRAM_ID);
+        return [nullifier0, nullifier1];
+    }
+    catch (error) {
+        console.log("Web Worker Error ,", error);
+    }
+}
+export function poseidonStringToBytes32(hashStr) {
+    const big = BigInt(hashStr);
+    const hex = big.toString(16).padStart(64, "0"); // 32 bytes = 64 hex chars
+    const bytes = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) {
+        bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    }
+    return bytes;
+}
+export function serializeProofAndExtData(proof, extData, isSpl = false, bump0, bump1) {
     // Create the ExtDataMinified object for the program call (only extAmount and fee)
     const extDataMinified = {
         extAmount: extData.extAmount,
         fee: extData.fee,
     };
     // Use the appropriate discriminator based on whether this is SPL or native SOL
-    const discriminator = isSpl
-        ? TRANSACT_SPL_IX_DISCRIMINATOR
-        : TRANSACT_IX_DISCRIMINATOR;
+    const discriminator = isSpl ? [DISC_TRANSACT_SPL] : [DISC_TRANSACT];
+    const nullifierHash0 = Uint8Array.from(proof.inputNullifiers[0]);
+    const nullifierHash1 = Uint8Array.from(proof.inputNullifiers[1]);
     // Use the same serialization approach as deposit script
     const instructionData = Buffer.concat([
-        discriminator,
+        Buffer.from(discriminator),
         // Serialize proof
         Buffer.from(proof.proofA),
         Buffer.from(proof.proofB),
@@ -63,21 +86,16 @@ export function serializeProofAndExtData(proof, extData, isSpl = false) {
         Buffer.from(proof.outputCommitments[0]),
         Buffer.from(proof.outputCommitments[1]),
         // Serialize ExtDataMinified (only extAmount and fee)
-        Buffer.from(new BN(extDataMinified.extAmount).toTwos(64).toArray("le", 8)),
-        Buffer.from(new BN(extDataMinified.fee).toArray("le", 8)),
+        new BN(extData.extAmount).toTwos(64).toArrayLike(Buffer, "le", 8),
+        new BN(extData.fee).toArrayLike(Buffer, "le", 8),
         // Serialize encrypted outputs as separate parameters
-        Buffer.from(new BN(extData.encryptedOutput1.length).toArray("le", 4)),
-        extData.encryptedOutput1,
-        Buffer.from(new BN(extData.encryptedOutput2.length).toArray("le", 4)),
-        extData.encryptedOutput2,
+        toU32LE(extData.encryptedOutput1.length),
+        Buffer.from(extData.encryptedOutput1),
+        toU32LE(extData.encryptedOutput2.length),
+        Buffer.from(extData.encryptedOutput2),
+        Buffer.from([bump0, bump1]),
     ]);
     return instructionData;
-}
-export function buildMerkleCircuitInputs(pair) {
-    const inPathElements = [pair.proof1, pair.proof2].map((mp) => mp.proof.map((node) => bytesToBN(node).toString()));
-    const inPathIndices = [pair.proof1.index, pair.proof2.index];
-    const root = bytesToBN(pair.proof1.root).toString();
-    return { inPathElements, inPathIndices, root };
 }
 export function getExtDataHash(ext) {
     const recipient = toPubkeyBytes(ext.recipient);

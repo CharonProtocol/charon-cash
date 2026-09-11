@@ -5,4 +5,4 @@ export {
   setCircuitBuffers,
 } from "./prover";
 
-export { SilentPay } from "./newClient";
+export { SilentPay } from "./client";

@@ -1,18 +1,13 @@
+import { SilentPayError } from "./error";
 interface CipherKeypair {
     publicKey: Uint8Array;
     secretKey: Uint8Array;
 }
-export declare function generateX25519CipherKeypair(seed?: Uint8Array | string): Promise<CipherKeypair>;
-export declare function generateSharedSecret(client: CipherKeypair, pubKey: Uint8Array): Promise<Uint8Array<ArrayBufferLike> & Uint8Array<ArrayBuffer>>;
-/**
- *
- * @param data
- * @param shared_secret
- *
- * @returns prepends nonce/iv (12 bytes) + ciphertext + authtag (16 bytes)
- */
-export declare function aes_encrypt(data: Uint8Array, encryptionKey: Uint8Array): Promise<Uint8Array<ArrayBuffer>>;
-export declare function aes_decrypt(data: Uint8Array, decryptionKey: Uint8Array): Promise<Uint8Array<ArrayBufferLike> & Uint8Array<ArrayBuffer>>;
+export declare class EncryptionError extends SilentPayError {
+    constructor(message: string, options?: {
+        cause: unknown;
+    });
+}
 /**
  * Encryption/Decryption of Notes
  */
@@ -37,8 +32,19 @@ export declare class EncryptionService {
      * `[version (8B) | ephemeral_pubkey (32B) | iv/nonce (32B) | ciphertext + authTag (16B)]`
      * @returns The decrypted output: `raw UTXO bytes`
      */
-    decrypt(encryptedOutput: Uint8Array): Promise<Uint8Array<ArrayBufferLike> & Uint8Array<ArrayBuffer>>;
+    decrypt(encryptedOutput: Uint8Array): Promise<Uint8Array<ArrayBuffer>>;
     generateEncryptionDecryptionKey(sharedSecret: Uint8Array): Promise<Uint8Array<ArrayBufferLike> & Uint8Array<ArrayBuffer>>;
 }
+export declare function generateX25519CipherKeypair(seed?: Uint8Array | string): Promise<CipherKeypair>;
+export declare function generateSharedSecret(client: CipherKeypair, pubKey: Uint8Array): Promise<Uint8Array<ArrayBufferLike> & Uint8Array<ArrayBuffer>>;
+/**
+ *
+ * @param data
+ * @param shared_secret
+ *
+ * @returns prepends nonce/iv (12 bytes) + ciphertext + authtag (16 bytes)
+ */
+export declare function aes_encrypt(data: Uint8Array, encryptionKey: Uint8Array): Promise<Uint8Array<ArrayBuffer>>;
+export declare function aes_decrypt(data: Uint8Array, decryptionKey: Uint8Array): Promise<Uint8Array<ArrayBufferLike> & Uint8Array<ArrayBuffer>>;
 export {};
 //# sourceMappingURL=encrypt.d.ts.map
