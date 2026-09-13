@@ -1,39 +1,184 @@
-name: Formal Verification
+name: Correctness CI
 
+# No path or branch filters: every change produces the required status check.
 on:
   push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'formal_verification/**'
   pull_request:
-    paths:
-      - 'src/**'
-      - 'formal_verification/**'
+  merge_group:
+    types: [checks_requested]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push must not cancel verification of an older revision.
+concurrency:
+  group: correctness-${{ github.event_name }}-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+  CARGO_BUILD_JOBS: '2'
+  RUST_BACKTRACE: '1'
+  # Keep Wasmer's opt-level=1 profile, but reduce runner disk usage.
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
 
 jobs:
-  verify:
-    runs-on: ubuntu-latest
+  workflow-lint:
+    name: Workflow lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Lean
-        uses: leanprover/lean4-action@v1
-
-      - name: Cache lake packages
-        uses: actions/cache@v4
         with:
-          path: formal_verification/.lake
-          key: lake-${{ hashFiles('formal_verification/lean-toolchain', 'formal_verification/lakefile.lean') }}
+          persist-credentials: false
+      - name: Validate GitHub Actions and embedded shell
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 -color
+      - name: Validate CI helper scripts
+        run: |
+          bash -n .github/scripts/install-qedgen.sh
+          bash -n .github/scripts/check-circuits.sh
+          python3 -B -m unittest discover -s .github/scripts -p 'test_*.py'
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+  circuits:
+    name: Circuit and key integrity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install circom 2.2.3
+        run: |
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/iden3/circom/releases/download/v2.2.3/circom-linux-amd64 \
+            --output "$RUNNER_TEMP/circom"
+          printf '%s  %s\n' \
+            85342c7ff332d948df7c0c50ecf201e6129349aef550ce873f3c811b79fe53a3 \
+            "$RUNNER_TEMP/circom" | sha256sum --check --strict
+          chmod +x "$RUNNER_TEMP/circom"
+      - name: Check sources, compiled circuit, proving key and on-chain key agree
+        env:
+          CIRCOM: ${{ runner.temp }}/circom
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: bash .github/scripts/check-circuits.sh
 
-      - name: Install qedgen
-        run: cargo install --path crates/qedgen
+  model:
+    name: Specification and model
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.89.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: programs
+          cache-targets: false
+      - name: Install QEDGen 2.49.0
+        run: bash .github/scripts/install-qedgen.sh
+      - name: Validate the spec and generated-model drift
+        run: |
+          python3 .github/scripts/check-spec.py
+          qedgen reconcile --spec privacy_cash.qedspec --code programs/ --proofs formal_verification/
+      - name: Run generated unit and property tests
+        run: cargo test --locked --manifest-path programs/Cargo.toml --all-targets
 
-      - name: Build proofs
-        run: cd formal_verification && lake build
+  program:
+    name: Program correctness
+    needs: [workflow-lint, model, circuits]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.89.0
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Never restore a previously compiled .so or test binary.
+          cache-targets: false
+      - name: Install Agave 3.1.8
+        run: |
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/anza-xyz/agave/releases/download/v3.1.8/solana-release-x86_64-unknown-linux-gnu.tar.bz2 \
+            --output "$RUNNER_TEMP/agave.tar.bz2"
+          tar -xjf "$RUNNER_TEMP/agave.tar.bz2" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/solana-release/bin" >> "$GITHUB_PATH"
+      - name: Build the deployed program from this revision
+        run: |
+          cargo build-sbf --tools-version v1.52 -- --locked
+          test -s target/deploy/privacy_cash.so
+      - name: Clippy correctness lints
+        # Existing style warnings remain visible; correctness lints are errors.
+        run: cargo clippy --locked --lib -- -D clippy::correctness
+      - name: Run native, real-proof integration and Mollusk tests
+        # Tests embed the .so at compile time. Build SBF first and run serially
+        # because the integration harness shares a global ALT cache.
+        run: |
+          set -o pipefail
+          cargo test --locked --all-targets -- --test-threads=1 --nocapture 2>&1 | tee test-results.log
+          cargo test --locked --doc
+      - name: Prepare tested artifact and provenance
+        run: |
+          mkdir -p dist
+          cp target/deploy/privacy_cash.so dist/
+          cp Cargo.lock dist/
+          git rev-parse HEAD > dist/commit.txt
+          rustc --version > dist/toolchain.txt
+          cargo build-sbf --version >> dist/toolchain.txt
+          sha256sum artifacts/circuits/transaction2.wasm artifacts/circuits/transaction2.zkey \
+            artifacts/circuits/verifyingkey2.json > dist/circuit-checksums.txt
+          cd dist
+          sha256sum privacy_cash.so Cargo.lock commit.txt toolchain.txt circuit-checksums.txt > SHA256SUMS
+      - name: Deliver tested SBF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: privacy-cash-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve test output, including compute-unit measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ github.sha }}
+          path: test-results.log
+          if-no-files-found: ignore
+          retention-days: 14
 
-      - name: Check spec coverage
-        run: qedgen check --spec program.qedspec
+  correctness:
+    name: Correctness gate
+    if: always()
+    needs: [workflow-lint, model, circuits, program]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every prerequisite to succeed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          results = json.loads(os.environ["RESULTS"])
+          failures = {name: job["result"] for name, job in results.items() if job["result"] != "success"}
+          if failures:
+              print(f"Correctness checks did not all pass: {failures}")
+              sys.exit(1)
+          print("All correctness checks passed.")
+          PY

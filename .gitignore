@@ -1,6 +1,8 @@
 /target
 
 Cargo.lock
+# CI builds the deployed program and prover against reviewed dependency versions.
+!/Cargo.lock
 .DS_Store
 
 # Frontend
