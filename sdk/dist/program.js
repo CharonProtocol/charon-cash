@@ -87,6 +87,13 @@ export async function buildTransactTransaction(params) {
     if (tx.serialize().length > 1232) {
         tx = tryCompile([limitIx, transactIx]);
     }
+    // Last resort: drop both compute-budget ixs. Chains that budget a tx by the
+    // summed default cost of its instructions (measured on surfpool) give a lone
+    // unknown-program instruction 200k CU — enough for the standard transact
+    // (~158k CU measured), and shedding two ix headers saves ~40 bytes.
+    if (tx.serialize().length > 1232) {
+        tx = tryCompile([transactIx]);
+    }
     if (tx.serialize().length > 1232) {
         throw new Error(`transaction too large (${tx.serialize().length} > 1232); an Address Lookup Table is required`);
     }
