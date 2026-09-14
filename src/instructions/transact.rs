@@ -1,15 +1,15 @@
 use crate::{
     constants::{
-        GLOBAL_CONFIG_SEED, NULLIFIER0_SEED, NULLIFIER1_SEED, SOL_ADDRESS, TREE_ACCOUNT_SEED,
-        TREE_TOKEN_ACCOUNT_SEED,
+        GLOBAL_CONFIG_ADDRESS, NULLIFIER0_SEED, NULLIFIER1_SEED, SOL_ADDRESS,
+        TREE_ACCOUNT_ADDRESS, TREE_TOKEN_ACCOUNT_ADDRESS,
     },
     error::PrivacyCashError,
     helper::{
-        init_nullifier_account, verify_cross_nullifier, verify_initialized, verify_pda,
+        init_nullifier_account, verify_address, verify_cross_nullifier, verify_initialized,
         verify_program_id, verify_signer,
     },
     merkle_tree::MerkleTree,
-    state::{GlobalConfig, MerkleTreeAccount, TransactArgs, TreeTokenAccount},
+    state::{GlobalConfig, MerkleTreeAccount, TransactArgs},
     utils::{
         calculate_complete_ext_data_hash, check_public_amount, ext_data_hash_matches, validate_fee,
         verify_proof, VERIFYING_KEY,
@@ -46,31 +46,23 @@ pub fn process_transact(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
     verify_initialized(tree_token_account)?;
     verify_initialized(global_config)?;
 
-    {
-        let token_data = tree_token_account.try_borrow()?;
-        let token = try_from_bytes::<TreeTokenAccount>(&token_data[..TreeTokenAccount::LEN])
-            .map_err(|_| ProgramError::InvalidAccountData)?;
-        verify_pda(
-            tree_token_account,
-            &[TREE_TOKEN_ACCOUNT_SEED, &[token.bump]],
-            &crate::ID,
-        )?;
-    }
+    verify_address(tree_account, &TREE_ACCOUNT_ADDRESS)?;
+    verify_address(tree_token_account, &TREE_TOKEN_ACCOUNT_ADDRESS)?;
+    verify_address(global_config, &GLOBAL_CONFIG_ADDRESS)?;
 
     let global = {
         let global_data = global_config.try_borrow()?;
         let global = try_from_bytes::<GlobalConfig>(&global_data[..GlobalConfig::LEN])
             .map_err(|_| ProgramError::InvalidAccountData)?;
-        verify_pda(
-            global_config,
-            &[GLOBAL_CONFIG_SEED, &[global.bump]],
-            &crate::ID,
-        )?;
         *global
     };
 
     verify_cross_nullifier(nullifier2)?;
     verify_cross_nullifier(nullifier3)?;
+
+    // Read once and reused by both nullifier claims and the rent-exempt floor
+    // checks below.
+    let rent = Rent::get()?;
 
     init_nullifier_account(
         signer,
@@ -78,6 +70,7 @@ pub fn process_transact(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
         NULLIFIER0_SEED,
         &proof.input_nullifiers[0],
         nullifier_bump0,
+        &rent,
     )?;
     init_nullifier_account(
         signer,
@@ -85,6 +78,7 @@ pub fn process_transact(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
         NULLIFIER1_SEED,
         &proof.input_nullifiers[1],
         nullifier_bump1,
+        &rent,
     )?;
 
     let recipient_key = recipient.address().as_array();
@@ -96,8 +90,6 @@ pub fn process_transact(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
     let tree =
         bytemuck::try_from_bytes_mut::<MerkleTreeAccount>(&mut tree_data[..MerkleTreeAccount::LEN])
             .map_err(|_| ProgramError::InvalidAccountData)?;
-
-    verify_pda(tree_account, &[TREE_ACCOUNT_SEED, &[tree.bump]], &crate::ID)?;
 
     if !MerkleTree::is_known_root(tree, proof.root) {
         return Err(PrivacyCashError::UnknownRoot.into());
@@ -133,7 +125,6 @@ pub fn process_transact(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
         return Err(PrivacyCashError::InvalidProof.into());
     }
 
-    let rent = Rent::get()?;
     let rent_exempt_minimum = rent.try_minimum_balance(tree_token_account.data_len())?;
 
     if ext_amount > 0 {
@@ -200,8 +191,11 @@ pub fn process_transact(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
         fee_recipient_account.set_lamports(new_fee_recipient_balance);
     }
 
-    MerkleTree::append::<Poseidon>(proof.output_commitments[0], tree)?;
-    MerkleTree::append::<Poseidon>(proof.output_commitments[1], tree)?;
+    MerkleTree::append_pair::<Poseidon>(
+        proof.output_commitments[0],
+        proof.output_commitments[1],
+        tree,
+    )?;
 
     Ok(())
 }

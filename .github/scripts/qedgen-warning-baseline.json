@@ -1,0 +1,23 @@
+[
+  {
+    "severity": "warning",
+    "priority": 1,
+    "rule": "missing_guard_from_takes",
+    "subject": "initialize",
+    "message": "handler 'initialize' takes U64 params but has no guard — no input validation"
+  },
+  {
+    "severity": "warning",
+    "priority": 1,
+    "rule": "missing_guard_from_takes",
+    "subject": "initialize_tree_account_for_spl_token",
+    "message": "handler 'initialize_tree_account_for_spl_token' takes U64 params but has no guard — no input validation"
+  },
+  {
+    "severity": "warning",
+    "priority": 2,
+    "rule": "missing_cpi_for_token_context",
+    "subject": "transact_spl",
+    "message": "handler 'transact_spl' has token_program in accounts but no `transfers` block"
+  }
+]

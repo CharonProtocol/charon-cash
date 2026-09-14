@@ -113,6 +113,78 @@ cargo test --test bench           # compute-unit benchmarks
 
 Tests generate real Groth16 proofs, so the first run is slow. They load `artifacts/circuits/transaction2.wasm` and `transaction2.zkey`; do not regenerate those without reading `TRUSTED_SETUP.MD`.
 
+### CI and delivery
+
+[Correctness CI](.github/workflows/verify.yml) runs on every push, pull request,
+merge-queue candidate, and manual dispatch, with no branch or path filters. It
+checks the revision selected by the event (the proposed merge for pull requests).
+A push containing several commits checks its tip; local, unpushed commits do not
+trigger GitHub Actions.
+
+The required checks are:
+
+- Workflow syntax and embedded shell validation with actionlint.
+- QEDGen spec validation and drift detection against the generated model and
+  proof files, followed by all generated unit and property tests. Three existing
+  model warnings are explicitly recorded in
+  [the warning baseline](.github/scripts/qedgen-warning-baseline.json): missing
+  initialization guards and the absent SPL transfer declaration. New warnings,
+  changed warning details, all errors, and tool failures fail CI. Existing
+  warnings stay visible; remove baseline entries as the model is improved.
+- Circuit integrity: every file in `circuits/` and `artifacts/circuits/` must match
+  the pinned [`SHA256SUMS`](artifacts/circuits/SHA256SUMS); `transaction2.circom` is
+  recompiled with circom 2.2.3 and circomlib 2.0.5 and must reproduce the committed
+  `.r1cs` and `.sym` byte for byte; the verifying key exported from
+  `transaction2.zkey` must equal `verifyingkey2.json`; and `VERIFYING_KEY` in
+  `src/utils.rs` must encode that same key. Changing any circuit artifact therefore
+  requires a reviewed `SHA256SUMS` update. The witness `.wasm` is not reproducible
+  with circom 2.2.3, so it is pinned by hash and exercised by the real-proof tests.
+  The trusted-setup contributions are not re-verified in CI (the Hermez
+  `powersOfTau28_hez_final_18.ptau` is no longer hosted at its original URL); run the
+  `snarkjs zkey verify` command in `artifacts/circuits/TRUSTED_SETUP.MD` manually.
+- A fresh SBF build of `src/`, Clippy correctness lints, all native tests, SOL/SPL
+  integration tests with real Groth16 proofs, Mollusk benchmark assertions, and
+  doctests. Integration tests run serially because their ALT cache is shared.
+
+CI pins Rust 1.89.0, Agave 3.1.8, platform-tools v1.52 and QEDGen 2.49.0, and uses
+the committed lockfiles with `--locked`. Dependency upgrades must include the
+appropriate lockfile change. Download caches exclude compiled targets so a stale
+program cannot be embedded in the integration tests. Clippy style warnings are
+reported; existing formatting differences are not a correctness gate.
+
+After the checks pass, the run delivers `privacy-cash-<sha>` as a downloadable
+artifact containing `privacy_cash.so`, the dependency lockfile, checked-out commit,
+toolchain versions, circuit artifact hashes and `SHA256SUMS`. Verify the package
+with `sha256sum --check SHA256SUMS` inside the extracted directory. Test logs,
+including compute-unit measurements, are retained separately. The workflow does
+not deploy to a Solana cluster or need a signing key.
+
+To enforce this before merges, configure a GitHub branch ruleset on each protected
+branch: require pull requests, require the **Correctness gate** status check,
+require the branch to be up to date (or use a merge queue), and restrict bypasses
+and direct pushes. Select the status check after the first workflow run. The gate
+fails if any prerequisite fails, is cancelled, or is skipped. Workflow files alone
+cannot enforce repository settings; these settings must be enabled on GitHub.
+
+These checks preserve behavior covered by the existing assertions; they do not
+prove all possible future changes correct. Add regression tests for new behavior.
+Mollusk checks execution results and reports CUs, but currently has no CU regression
+threshold. QEDGen reconciliation covers `programs/`, not equivalence to `src/`.
+Kani currently fails to compile its generated invariant harnesses, and the Lean
+spec contains admitted proofs and has no checked-in Lake project. Neither backend
+is counted as passing CI verification. Repair and validate those backends before
+adding them as mandatory jobs; do not hide failures with `continue-on-error`.
+
+To reproduce the program checks locally with the pinned toolchain installed:
+
+```bash
+cargo build-sbf --tools-version v1.52 -- --locked
+cargo clippy --locked --lib -- -D clippy::correctness
+cargo test --locked --all-targets -- --test-threads=1 --nocapture
+cargo test --locked --doc
+cargo test --locked --manifest-path programs/Cargo.toml --all-targets
+```
+
 ### Layout
 
 ```
@@ -168,6 +240,10 @@ qedgen verify --spec privacy_cash.qedspec --proptest
 grep -n 'sorry' formal_verification/*.lean
 ```
 
-Current status: `check` clean, `reconcile` in sync, `verify --scaffold` and `--proptest` pass, 19 generated tests pass, 12 of 13 Lean theorems proved (1 `sorry`). `verify --kani` currently fails to compile four invariant harnesses, so no Kani harness executes.
+Current status: `check` reports no errors and three warnings (exit 1), `reconcile`
+is in sync, and all 27 generated unit/property tests pass. Kani fails to compile
+the generated invariant harnesses, so no Kani harness executes. `Spec.lean`
+contains two `sorry` admissions; no Lake project is checked in to build the Lean
+proofs. CI records these limits rather than claiming complete formal verification.
 
 Never hand-edit anything under `programs/` or `formal_verification/` — the next `codegen` run overwrites it. Fix the spec.

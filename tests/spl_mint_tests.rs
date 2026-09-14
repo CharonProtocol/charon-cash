@@ -754,10 +754,19 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
         .send_transaction(versioned_tx)
         .expect_err("expected non-USDC SPL deposit to fail, but the transaction succeeded");
 
+    // The rejection does not come from the mint allowlist. `ALLOW_ALL_SPL_TOKENS`
+    // is `true` in src/constants.rs, which makes the `InvalidMintAddress` gate in
+    // `transact_spl` compile-time dead, so no mint is refused on that basis.
+    //
+    // What still binds a deposit to its mint is the per-mint tree PDA, derived
+    // from ["merkle_tree", mint]. This transaction passes the native-SOL tree
+    // account (seeds ["merkle_tree"]) instead, so `verify_pda` cannot re-derive
+    // it from this mint and returns `InvalidAccountData`. That is the property
+    // under test: an SPL deposit cannot be routed through another tree's account.
     let logs = err.meta.logs.join("\n");
     assert!(
-        logs.contains("0x1") || logs.contains("InvalidMintAddress"),
-        "unexpected error: {logs}"
+        logs.contains("invalid account data"),
+        "expected the per-mint tree PDA check to reject this tree account: {logs}"
     );
 
     assert_eq!(

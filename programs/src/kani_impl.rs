@@ -526,6 +526,214 @@ fn verify_initialize_tree_account_for_spl_token_impl() {
     );
 }
 
+/// Impl-targeted harness for `transact`. Kani's automatic
+/// overflow / underflow / UB checks run on every path through the
+/// real handler. `#[kani::unwind(34)]` bounds Pinocchio's 32-byte
+/// pubkey/account comparisons plus generated valid-path loops.
+/// Proof profile notes:
+/// - source account order: tree_account, nullifier0, nullifier1, nullifier2, nullifier3, tree_token_account, global_config, recipient, fee_recipient_account, signer, system_program
+/// - ABI/dispatcher tag: 2
+/// - PDA derivations: none inferred
+/// - token owner/mint projections: none inferred
+#[kani::proof]
+#[kani::unwind(34)]
+fn verify_transact_impl() {
+    let program_id: [u8; 32] = [42u8; 32];
+    let authority_key: [u8; 32] = [7u8; 32];
+    let ext_amount: i64 = kani::any(); // spec type: I64
+    let fee: u64 = kani::any(); // spec type: U64
+    kani::assume((fee as u64) <= u64::MAX as u64);
+
+    let mut tree_account = build_minimal_account([1u8; 32], false, true);
+    let mut nullifier0 = build_minimal_account([2u8; 32], false, true);
+    let mut nullifier1 = build_minimal_account([3u8; 32], false, true);
+    let mut nullifier2 = build_minimal_account([4u8; 32], false, true);
+    let mut nullifier3 = build_minimal_account([5u8; 32], false, true);
+    let mut tree_token_account = build_minimal_account([6u8; 32], false, true);
+    let mut global_config = build_minimal_account([7u8; 32], false, false);
+    let mut recipient = build_minimal_account([8u8; 32], false, true);
+    let mut fee_recipient_account = build_minimal_account([9u8; 32], false, true);
+    let mut signer = build_minimal_account(authority_key, true, true);
+    let mut system_program = build_minimal_account([11u8; 32], false, false);
+
+    let accounts: [ManuallyDrop<AccountInfo>; 11] = unsafe {
+        [
+            ManuallyDrop::new(account_info_from_stack(&mut tree_account)),
+            ManuallyDrop::new(account_info_from_stack(&mut nullifier0)),
+            ManuallyDrop::new(account_info_from_stack(&mut nullifier1)),
+            ManuallyDrop::new(account_info_from_stack(&mut nullifier2)),
+            ManuallyDrop::new(account_info_from_stack(&mut nullifier3)),
+            ManuallyDrop::new(account_info_from_stack(&mut tree_token_account)),
+            ManuallyDrop::new(account_info_from_stack(&mut global_config)),
+            ManuallyDrop::new(account_info_from_stack(&mut recipient)),
+            ManuallyDrop::new(account_info_from_stack(&mut fee_recipient_account)),
+            ManuallyDrop::new(account_info_from_stack(&mut signer)),
+            ManuallyDrop::new(account_info_from_stack(&mut system_program)),
+        ]
+    };
+    let accounts_slice: &[AccountInfo] =
+        unsafe { core::slice::from_raw_parts(&accounts as *const _ as *const AccountInfo, 11) };
+
+    let instruction_tag: u8 = 2u8;
+    let mut instruction_data = [0u8; 17];
+    instruction_data[0] = instruction_tag;
+    let generated_instruction_data_1_bytes = (ext_amount as i64).to_le_bytes();
+    instruction_data[1] = generated_instruction_data_1_bytes[0];
+    instruction_data[2] = generated_instruction_data_1_bytes[1];
+    instruction_data[3] = generated_instruction_data_1_bytes[2];
+    instruction_data[4] = generated_instruction_data_1_bytes[3];
+    instruction_data[5] = generated_instruction_data_1_bytes[4];
+    instruction_data[6] = generated_instruction_data_1_bytes[5];
+    instruction_data[7] = generated_instruction_data_1_bytes[6];
+    instruction_data[8] = generated_instruction_data_1_bytes[7];
+    let generated_instruction_data_9_bytes = (fee as u64).to_le_bytes();
+    instruction_data[9] = generated_instruction_data_9_bytes[0];
+    instruction_data[10] = generated_instruction_data_9_bytes[1];
+    instruction_data[11] = generated_instruction_data_9_bytes[2];
+    instruction_data[12] = generated_instruction_data_9_bytes[3];
+    instruction_data[13] = generated_instruction_data_9_bytes[4];
+    instruction_data[14] = generated_instruction_data_9_bytes[5];
+    instruction_data[15] = generated_instruction_data_9_bytes[6];
+    instruction_data[16] = generated_instruction_data_9_bytes[7];
+
+    // Call the user's real dispatcher. Kani's automatic checks
+    // (overflow / underflow / pointer UB) verify this path.
+    let _result = crate::process_instruction(&program_id, accounts_slice, &instruction_data);
+    kani::cover!(
+        _result.is_ok(),
+        "impl success path reachable under generated profile"
+    );
+    assert!(
+        _result.is_ok(),
+        "generated valid ABI/profile witness should reach success"
+    );
+}
+
+/// Impl-targeted harness for `transact_spl`. Kani's automatic
+/// overflow / underflow / UB checks run on every path through the
+/// real handler. `#[kani::unwind(34)]` bounds Pinocchio's 32-byte
+/// pubkey/account comparisons plus generated valid-path loops.
+/// Proof profile notes:
+/// - source account order: tree_account, nullifier0, nullifier1, nullifier2, nullifier3, global_config, signer, mint, signer_token_account, recipient, recipient_token_account, tree_ata, fee_recipient_ata, token_program, associated_token_program, system_program
+/// - ABI/dispatcher tag: 3
+/// - PDA derivations: none inferred
+/// - token owner/mint projections: none inferred
+#[kani::proof]
+#[kani::unwind(34)]
+fn verify_transact_spl_impl() {
+    let program_id: [u8; 32] = [42u8; 32];
+    let authority_key: [u8; 32] = [7u8; 32];
+    let signer_token_account_amount: u64 = kani::any();
+    let recipient_token_account_amount: u64 = kani::any();
+    let tree_ata_amount: u64 = kani::any();
+    let fee_recipient_ata_amount: u64 = kani::any();
+    let ext_amount: i64 = kani::any(); // spec type: I64
+    let fee: u64 = kani::any(); // spec type: U64
+    kani::assume((fee as u64) <= u64::MAX as u64);
+
+    let mut tree_account = build_minimal_account([1u8; 32], false, true);
+    let mut nullifier0 = build_minimal_account([2u8; 32], false, true);
+    let mut nullifier1 = build_minimal_account([3u8; 32], false, true);
+    let mut nullifier2 = build_minimal_account([4u8; 32], false, true);
+    let mut nullifier3 = build_minimal_account([5u8; 32], false, true);
+    let mut global_config = build_minimal_account([6u8; 32], false, false);
+    let mut signer = build_minimal_account(authority_key, true, true);
+    let mut mint = build_minimal_account([8u8; 32], false, false);
+    let mut signer_token_account = build_token_account(
+        [9u8; 32],
+        true,
+        false,
+        [0u8; 32],
+        [9u8; 32],
+        (signer_token_account_amount as u64),
+    );
+    let mut recipient = build_minimal_account([10u8; 32], false, false);
+    let mut recipient_token_account = build_token_account(
+        [11u8; 32],
+        true,
+        false,
+        [0u8; 32],
+        [9u8; 32],
+        (recipient_token_account_amount as u64),
+    );
+    let mut tree_ata = build_token_account(
+        [12u8; 32],
+        true,
+        false,
+        [0u8; 32],
+        [9u8; 32],
+        (tree_ata_amount as u64),
+    );
+    let mut fee_recipient_ata = build_token_account(
+        [13u8; 32],
+        true,
+        false,
+        [0u8; 32],
+        [9u8; 32],
+        (fee_recipient_ata_amount as u64),
+    );
+    let mut token_program = build_minimal_account([14u8; 32], false, false);
+    let mut associated_token_program = build_minimal_account([15u8; 32], false, false);
+    let mut system_program = build_minimal_account([16u8; 32], false, false);
+
+    let accounts: [ManuallyDrop<AccountInfo>; 16] = unsafe {
+        [
+            ManuallyDrop::new(account_info_from_stack(&mut tree_account)),
+            ManuallyDrop::new(account_info_from_stack(&mut nullifier0)),
+            ManuallyDrop::new(account_info_from_stack(&mut nullifier1)),
+            ManuallyDrop::new(account_info_from_stack(&mut nullifier2)),
+            ManuallyDrop::new(account_info_from_stack(&mut nullifier3)),
+            ManuallyDrop::new(account_info_from_stack(&mut global_config)),
+            ManuallyDrop::new(account_info_from_stack(&mut signer)),
+            ManuallyDrop::new(account_info_from_stack(&mut mint)),
+            ManuallyDrop::new(account_info_from_stack(&mut signer_token_account)),
+            ManuallyDrop::new(account_info_from_stack(&mut recipient)),
+            ManuallyDrop::new(account_info_from_stack(&mut recipient_token_account)),
+            ManuallyDrop::new(account_info_from_stack(&mut tree_ata)),
+            ManuallyDrop::new(account_info_from_stack(&mut fee_recipient_ata)),
+            ManuallyDrop::new(account_info_from_stack(&mut token_program)),
+            ManuallyDrop::new(account_info_from_stack(&mut associated_token_program)),
+            ManuallyDrop::new(account_info_from_stack(&mut system_program)),
+        ]
+    };
+    let accounts_slice: &[AccountInfo] =
+        unsafe { core::slice::from_raw_parts(&accounts as *const _ as *const AccountInfo, 16) };
+
+    let instruction_tag: u8 = 3u8;
+    let mut instruction_data = [0u8; 17];
+    instruction_data[0] = instruction_tag;
+    let generated_instruction_data_1_bytes = (ext_amount as i64).to_le_bytes();
+    instruction_data[1] = generated_instruction_data_1_bytes[0];
+    instruction_data[2] = generated_instruction_data_1_bytes[1];
+    instruction_data[3] = generated_instruction_data_1_bytes[2];
+    instruction_data[4] = generated_instruction_data_1_bytes[3];
+    instruction_data[5] = generated_instruction_data_1_bytes[4];
+    instruction_data[6] = generated_instruction_data_1_bytes[5];
+    instruction_data[7] = generated_instruction_data_1_bytes[6];
+    instruction_data[8] = generated_instruction_data_1_bytes[7];
+    let generated_instruction_data_9_bytes = (fee as u64).to_le_bytes();
+    instruction_data[9] = generated_instruction_data_9_bytes[0];
+    instruction_data[10] = generated_instruction_data_9_bytes[1];
+    instruction_data[11] = generated_instruction_data_9_bytes[2];
+    instruction_data[12] = generated_instruction_data_9_bytes[3];
+    instruction_data[13] = generated_instruction_data_9_bytes[4];
+    instruction_data[14] = generated_instruction_data_9_bytes[5];
+    instruction_data[15] = generated_instruction_data_9_bytes[6];
+    instruction_data[16] = generated_instruction_data_9_bytes[7];
+
+    // Call the user's real dispatcher. Kani's automatic checks
+    // (overflow / underflow / pointer UB) verify this path.
+    let _result = crate::process_instruction(&program_id, accounts_slice, &instruction_data);
+    kani::cover!(
+        _result.is_ok(),
+        "impl success path reachable under generated profile"
+    );
+    assert!(
+        _result.is_ok(),
+        "generated valid ABI/profile witness should reach success"
+    );
+}
+
 /// Impl-targeted harness for `update_deposit_limit`. Kani's automatic
 /// overflow / underflow / UB checks run on every path through the
 /// real handler. `#[kani::unwind(34)]` bounds Pinocchio's 32-byte
