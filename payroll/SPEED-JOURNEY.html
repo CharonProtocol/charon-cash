@@ -1,0 +1,413 @@
+<meta charset="utf-8">
+<title>210 Paycheques in 13 Seconds</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Schibsted+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+  :root {
+    --ground: #0C0E12;
+    --panel: #15171F;
+    --panel2: #191C26;
+    --line: #252837;
+    --ink: #E9EAF3;
+    --muted: #9AA0B9;
+    --accent: #8B85F0;
+    --accent-soft: rgba(139, 133, 240, 0.13);
+    --ok: #4CC38A;
+    --bad: #E5484D;
+    --bad-soft: rgba(229, 72, 77, 0.12);
+    --ok-soft: rgba(76, 195, 138, 0.12);
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --ground: #F7F7FA;
+      --panel: #FFFFFF;
+      --panel2: #F0F0F6;
+      --line: #DCDCE8;
+      --ink: #1A1C26;
+      --muted: #5C6072;
+      --accent: #5D55CE;
+      --accent-soft: rgba(93, 85, 206, 0.10);
+      --ok: #1F9D61;
+      --bad: #C53038;
+      --bad-soft: rgba(197, 48, 56, 0.09);
+      --ok-soft: rgba(31, 157, 97, 0.10);
+    }
+  }
+  :root[data-theme="light"] {
+    --ground: #F7F7FA;
+    --panel: #FFFFFF;
+    --panel2: #F0F0F6;
+    --line: #DCDCE8;
+    --ink: #1A1C26;
+    --muted: #5C6072;
+    --accent: #5D55CE;
+    --accent-soft: rgba(93, 85, 206, 0.10);
+    --ok: #1F9D61;
+    --bad: #C53038;
+    --bad-soft: rgba(197, 48, 56, 0.09);
+    --ok-soft: rgba(31, 157, 97, 0.10);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Schibsted Grotesk", "Avenir Next", system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.65;
+  }
+  .page { max-width: 760px; margin: 0 auto; padding: 56px 24px 80px; }
+
+  .eyebrow {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 14px;
+  }
+  h1 {
+    font-family: "Instrument Serif", Georgia, serif;
+    font-weight: 400;
+    font-size: clamp(40px, 7vw, 58px);
+    line-height: 1.04;
+    margin: 0 0 18px;
+    text-wrap: balance;
+  }
+  h1 em { font-style: italic; color: var(--accent); }
+  .lede { color: var(--muted); font-size: 17.5px; max-width: 62ch; margin: 0 0 34px; }
+  .lede strong { color: var(--ink); font-weight: 500; }
+
+  .fromto {
+    display: flex; flex-wrap: wrap; align-items: baseline;
+    gap: 12px 22px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    padding: 18px 0;
+    margin-bottom: 52px;
+    font-variant-numeric: tabular-nums;
+  }
+  .fromto .n { font-size: 30px; font-weight: 700; }
+  .fromto .t { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .fromto .arrow { font-size: 24px; color: var(--accent); align-self: center; }
+
+  h2 {
+    font-family: "Instrument Serif", Georgia, serif;
+    font-weight: 400;
+    font-size: 31px;
+    line-height: 1.15;
+    margin: 0 0 6px;
+    text-wrap: balance;
+  }
+  section { margin-bottom: 64px; }
+  section > p { max-width: 66ch; }
+
+  /* numbered change log - the content is a true sequence */
+  .steps { list-style: none; margin: 0; padding: 0; }
+  .step {
+    position: relative;
+    padding: 0 0 40px 58px;
+    border-left: 1px solid var(--line);
+    margin-left: 17px;
+  }
+  .step:last-child { border-left-color: transparent; padding-bottom: 4px; }
+  .step::before {
+    content: attr(data-n);
+    position: absolute; left: -18px; top: -2px;
+    width: 35px; height: 35px;
+    border-radius: 50%;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    color: var(--accent);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 14px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .step h3 { font-size: 19px; font-weight: 700; margin: 6px 0 8px; }
+  .step p { margin: 0 0 12px; color: var(--ink); max-width: 64ch; }
+  .step .fact {
+    display: grid;
+    grid-template-columns: 92px 1fr;
+    gap: 4px 14px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+    max-width: 640px;
+    font-size: 14.5px;
+  }
+  .fact dt {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted);
+    padding-top: 3px;
+  }
+  .fact dd { margin: 0; }
+  .fact .num {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent); font-weight: 700;
+  }
+  .step p .num { font-family: "JetBrains Mono", ui-monospace, monospace; font-weight: 500; font-size: 0.93em; }
+
+  /* CU chart */
+  .chart { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 22px 22px 16px; max-width: 680px; }
+  .chart h3 { margin: 0 0 2px; font-size: 16px; font-weight: 700; }
+  .chart .sub { color: var(--muted); font-size: 13.5px; margin: 0 0 18px; }
+  .row { display: grid; grid-template-columns: 128px 1fr 76px; gap: 10px; align-items: center; margin-bottom: 12px; }
+  .row .lbl { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; color: var(--muted); text-align: right; }
+  .row .lbl b { color: var(--ink); font-weight: 500; }
+  .track { position: relative; height: 22px; background: var(--panel2); border-radius: 4px; }
+  .bar { position: absolute; inset: 3px auto 3px 0; border-radius: 3px; min-width: 4px; }
+  .bar.fit { background: var(--accent); }
+  .bar.est { background: repeating-linear-gradient(45deg, var(--accent), var(--accent) 5px, transparent 5px, transparent 9px); border: 1px solid var(--accent); }
+  .bar.over { background: var(--bad); }
+  .ceiling { position: absolute; top: -5px; bottom: -5px; left: 80%; width: 2px; background: var(--ok); }
+  .row.mid .ceiling span {
+    position: absolute; top: -24px; left: 50%; transform: translateX(-50%);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10.5px; color: var(--ok); white-space: nowrap; letter-spacing: 0.05em;
+  }
+  .row .val { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .chart .axis { position: relative; height: 14px; margin: 6px 0 0 138px; width: calc(100% - 214px); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10.5px; color: var(--muted); }
+  .chart .axis span { position: absolute; transform: translateX(-50%); }
+  .chart .axis span:first-child { transform: none; }
+  .chart .note { color: var(--muted); font-size: 13px; margin: 16px 0 0; }
+
+  /* journey table */
+  .tablewrap { overflow-x: auto; max-width: 680px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  th {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); font-weight: 500;
+    border-bottom: 1px solid var(--ink);
+  }
+  td.n { font-family: "JetBrains Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--accent-soft); }
+  td .chip {
+    display: inline-block;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
+    padding: 2px 8px; border-radius: 999px;
+  }
+  .chip.ok { color: var(--ok); background: var(--ok-soft); }
+  .chip.bad { color: var(--bad); background: var(--bad-soft); }
+  .tblnote { color: var(--muted); font-size: 13.5px; margin-top: 12px; max-width: 64ch; }
+
+  footer {
+    border-top: 1px solid var(--line);
+    margin-top: 72px; padding-top: 20px;
+    color: var(--muted); font-size: 13px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    line-height: 1.8;
+  }
+</style>
+
+<div class="page">
+  <p class="eyebrow">Private payroll - measured journey</p>
+  <h1>Paying 210 people in <em>private</em>, in 13 seconds</h1>
+  <p class="lede">
+    Every salary in this payroll is hidden inside a <strong>zero-knowledge proof</strong>: the chain
+    checks the payment is honest without seeing who paid whom. The first version took <strong>902 seconds</strong> to pay everyone. Proving and checking those proofs
+    was too slow, so we rebuilt the pipeline piece by piece. This page lists every change,
+    what it <strong>measured</strong>, and why it worked - ending at a wall we first hit,
+    then beat.
+  </p>
+
+  <div class="fromto">
+    <div><div class="n">902s</div><div class="t">day one - relayer-built proofs</div></div>
+    <div class="arrow">&#8594;</div>
+    <div><div class="n">81.3s</div><div class="t">prover pool - client-built txs</div></div>
+    <div class="arrow">&#8594;</div>
+    <div><div class="n">30.9s</div><div class="t">batch circuit - 2 salaries/proof</div></div>
+    <div class="arrow">&#8594;</div>
+    <div><div class="n">12.7s</div><div class="t">v1 txs - 8 salaries/tx</div></div>
+  </div>
+
+  <section>
+    <h2>The seven changes</h2>
+    <p>Everything below was measured on the same machine (8&nbsp;GB laptop, 4 proof workers),
+       16 payroll pools, 210 employees, 0.005&nbsp;SOL each. No guessed numbers.</p>
+
+    <ol class="steps">
+      <li class="step" data-n="1">
+        <h3>Prove in Rust, not JavaScript</h3>
+        <p>The old prover was <span class="num">snarkjs</span> (JavaScript): about 4 seconds per proof.
+           A Rust prover (arkworks) proves the same circuit in-process, so no file hand-off, no process spawn.</p>
+        <dl class="fact">
+          <dt>Measured</dt><dd>proof time <span class="num">4.0s &#8594; 0.64s</span> per batch of 2 salaries</dd>
+          <dt>Why</dt><dd>same math, no JavaScript runtime and no disk round-trip per proof</dd>
+        </dl>
+      </li>
+
+      <li class="step" data-n="2">
+        <h3>Pack 3 payments into one transaction</h3>
+        <p>Solana's classic transaction is capped at 1,232 bytes - one payment per transaction.
+           The new <span class="num">v1</span> wire format allows 4,096 bytes, enough for
+           <strong>3 payment-instructions per transaction</strong> (105 transactions &#8594; 48).</p>
+        <dl class="fact">
+          <dt>Measured</dt><dd>pay wall <span class="num">30.9s &#8594; 21.2s</span>; 48 transactions, largest 3,206 B</dd>
+          <dt>Why</dt><dd>3&#215; fewer transactions means 3&#215; less fees, signing, and network waiting</dd>
+        </dl>
+      </li>
+
+      <li class="step" data-n="3">
+        <h3>Keep proofs fresh (the root window)</h3>
+        <p>A proof must quote the tree's <em>current</em> root, and the chain remembers only the last
+           <span class="num">100</span> roots. Fast lanes overtake each other and old proofs get rejected
+           (<span class="num">UnknownRoot</span>). Two guards: limit how many groups run at once
+           (<span class="num">8 slots</span>), and re-prove automatically if the root ages past
+           <span class="num">90</span> slots.</p>
+        <dl class="fact">
+          <dt>Measured</dt><dd><span class="num">0</span> lane failures, <span class="num">0</span> re-proofs in the 210-run</dd>
+          <dt>Why</dt><dd>the guards match the true rate: 8 slots &#215; 6 leaves &#61; 48 fresh leaves &lt; 100-root window</dd>
+        </dl>
+      </li>
+
+      <li class="step" data-n="4">
+        <h3>Put the on-chain checker on a diet</h3>
+        <p>Checking a proof on-chain (Groth16 verify) burns <em>compute units</em> (CU) - the chain's
+           CPU budget. We trimmed the verifier: fetch the rent value once per instruction instead of
+           three times, reuse fixed memory buffers instead of building new arrays, and replace a
+           heavy math library with 150 lines of purpose-built field arithmetic.</p>
+        <dl class="fact">
+          <dt>Measured</dt><dd>batch-3 payment instruction: <span class="num">184k&#8211;187k CU</span> on-chain (9 samples)</dd>
+          <dt>Why</dt><dd>every CU saved is headroom - steps 5 and 6 show why headroom decides everything</dd>
+        </dl>
+      </li>
+
+      <li class="step" data-n="5">
+        <h3>The wider circuit - works, but the chain says no</h3>
+        <p>A new circuit proves <strong>4 salaries at once</strong> (batch5, 10 public inputs). It proves
+           in <span class="num">0.68s</span> - the same as the 2-salary circuit - and the instruction
+           <strong>executes correctly on-chain</strong>: the proof verifies and 5 leaves land in the tree.
+           But it needs <span class="num">241,010 CU</span>, and a lone instruction in a transaction
+           gets only <span class="num">200,000 CU</span>. Payouts fail with <em>computational budget exceeded</em>.</p>
+        <dl class="fact">
+          <dt>Measured</dt><dd>batch5 proof <span class="num">679ms</span> p50; instruction <span class="num">241,010 CU</span> on-chain</dd>
+          <dt>Why</dt><dd>one instruction alone cannot hold <span class="num">241k</span> - but a whole transaction might; see step 6</dd>
+        </dl>
+      </li>
+
+      <li class="step" data-n="6">
+        <h3>The memo pad - 8 salaries per transaction</h3>
+        <p>Controlled probes exposed the chain's real rule: the budget is the <strong>sum of default
+           costs of the instructions inside the transaction</strong>, shared by them all - the limit we
+           request in the config is ignored. An unknown program is budgeted at <span class="num">200,000 CU</span>
+           default but can cost almost nothing to actually run. So each payout transaction now carries a
+           do-nothing <strong>SPL Memo</strong> call as ballast: two batch5 payments plus the pad budget
+           <span class="num">600,000</span> and use about <span class="num">480,000</span> - one transaction,
+           <strong>8 salaries</strong>, measured landing on-chain.</p>
+        <dl class="fact">
+          <dt>Measured</dt><dd><span class="num">[b5, b5, memo]</span> tx = <span class="num">2,896 B</span>, 8/8 paid in the smoke; then <span class="num">210/210</span> paid in <span class="num">12.7s</span>, 0 failures</dd>
+          <dt>Why</dt><dd>the pad's <em>default</em> is big, its real cost is ~0 - it widens the pool without drinking from it</dd>
+        </dl>
+      </li>
+
+      <li class="step" data-n="7">
+        <h3>The tree was hashing everything twice</h3>
+        <p>Every payment adds its commitments to the tree, and each addition walks all
+           <span class="num">26</span> levels of hashes. But two commitments land side by side -
+           the second walk recomputes and overwrites every single level the first walk just did.
+           So we now place the pair under one shared hash: <span class="num">26</span> hashes for two
+           commitments instead of <span class="num">52</span>. One guard: deposits drop single
+           commitments too, so the code also handles landing on an odd slot. Only the finished
+           root is recorded; half-built roots of a payment were never visible to anyone.</p>
+        <dl class="fact">
+          <dt>Measured</dt><dd>one payment instruction: <span class="num">239,715 &#8594; 195,497 CU</span> (18 samples, <span class="num">&#8722;18.4%</span>) - every one now fits a lone 200,000 budget</dd>
+          <dt>Why</dt><dd>the wall clock does not move - proving is the limit - but every payment got a fifth cheaper to run</dd>
+        </dl>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>The wall, measured - then packed around</h2>
+    <p>Probes on the test chain (surfpool 1.5.0 with the v1 feature) nailed the rule:
+       a transaction's budget is the <strong>sum of default per-instruction costs</strong> - an unknown
+       program counts as <span class="num">200,000 CU</span>, a System transfer as <span class="num">3,000</span> -
+       and the limit we request in the transaction config is <strong>ignored</strong>. The pool is shared
+       sequentially: batch5 as the only instruction got <span class="num">200k</span> (died), batch5 plus a
+       transfer got <span class="num">203k</span> (died), two batch5 plus a transfer got
+       <span class="num">403k</span> - the first payment succeeded at <span class="num">239,715 CU</span>,
+       the second starved.</p>
+
+    <div class="chart">
+      <h3>What fits in one payout transaction</h3>
+      <p class="sub">light bar = budget (sum of defaults) - dark bar = actually used - measured on-chain</p>
+      <div style="height:18px"></div>
+      <div class="row mid">
+        <div class="lbl"><b>batch3 &#215;3</b> - 6 salaries</div>
+        <div class="track"><div class="bar fit" style="width:69.75%"></div><div class="ceiling" style="left:75%"><span>budget = sum of defaults</span></div></div>
+        <div class="val">558k / 600k &#10003;</div>
+      </div>
+      <div class="row">
+        <div class="lbl"><b>batch5 &#215;2 &#43; transfer</b></div>
+        <div class="track"><div class="bar over" style="width:60.4%"></div><div class="ceiling" style="left:50.4%"></div></div>
+        <div class="val">483k / 403k &#10005;</div>
+      </div>
+      <div class="row">
+        <div class="lbl"><b>batch5 &#215;2 &#43; memo pad</b></div>
+        <div class="track"><div class="bar fit" style="width:60%"></div><div class="ceiling" style="left:75%"></div></div>
+        <div class="val">480k / 600k &#10003;</div>
+      </div>
+      <div class="axis"><span>0</span><span style="left:25%">200k</span><span style="left:50%">400k</span><span style="left:75%">600k</span><span style="left:100%">800k CU</span></div>
+      <p class="note">A cheap System transfer pads the budget by only its own 3k default - the transaction
+         starves at 403k. The memo call's default is a full 200k while its real cost is ~0, so
+         <strong>8 salaries per transaction</strong> fit, measured, at 2,896 bytes.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>The journey table</h2>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Config</th><th>Pay wall (210 salaries)</th><th>Payout txs</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>relayer-built proofs from the mirror - day one</td><td class="n">902 s</td><td class="n">-</td><td><span class="chip ok">works</span></td></tr>
+          <tr><td>client-built proofs + client-signed txs</td><td class="n">271 s</td><td class="n">-</td><td><span class="chip ok">works</span></td></tr>
+          <tr><td>+ lane tuning (4-way prove cap)</td><td class="n">230 s</td><td class="n">-</td><td><span class="chip ok">works</span></td></tr>
+          <tr><td>+ local merkle replica + rapidsnark</td><td class="n">126.4 s</td><td class="n">-</td><td><span class="chip ok">works</span></td></tr>
+          <tr><td>+ arkworks prover pool (4 x 1 thread)</td><td class="n">81.3 s</td><td class="n">226</td><td><span class="chip ok">works</span></td></tr>
+          <tr><td>batch3, v0 txs - 1 payment/tx</td><td class="n">30.9 s</td><td class="n">105</td><td><span class="chip ok">works</span></td></tr>
+          <tr><td>batch3, v1 txs - 3 payments/tx, 1 thread</td><td class="n">21.2 s</td><td class="n">48</td><td><span class="chip ok">works</span></td></tr>
+          <tr><td>batch3, v1 txs - 3 payments/tx, 2 threads</td><td class="n">17.7 s</td><td class="n">48</td><td><span class="chip ok">works</span></td></tr>
+          <tr class="best"><td>batch5 - 4 salaries/proof, 2 proofs + memo pad/tx (8 salaries/tx)</td><td class="n"><b>12.7 s</b></td><td class="n">32</td><td><span class="chip ok">works</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="tblnote">
+      The 12.7s run: 210/210 paid, 0 failures, 0 proof rebuilds, largest tx 2,919 of 4,096 bytes,
+      on-chain tree exactly matched our local copy at 448 leaves - and the fee halved to
+      <span class="num">6,250 lamports</span> per salary (50,000 per 8-salary transaction). The wall is
+      pure proving again - 4 proof workers on an 8&nbsp;GB laptop; more RAM would cut it further.
+      Reruns with step 7 landed 11.7-14.2s - same wall, but every payment instruction now costs
+      <span class="num">195,497 CU</span> instead of 239,715 (-18.4%, 18 chain samples).
+    </p>
+  </section>
+
+  <section>
+    <h2>What would unlock more than 8 salaries per transaction</h2>
+    <p><strong>1 - Three proofs per transaction</strong> (12 salaries): the budget arithmetic already
+       works (3 &#215; 239.7k &#43; pad &lt; 800k), but each transaction then appends 15 leaves - too many
+       concurrent transactions would rotate the tree's 100-root history out from under in-flight
+       payments. Needs a slower pipeline or a wider history window.</p>
+    <p><strong>2 - A chain that honors the requested config limit</strong> - there the pad is unnecessary;
+       one config field asks for the budget directly. On this chain, the memo pad does that job, measured.</p>
+  </section>
+
+  <footer>
+    rerun it anywhere: <span class="num">zsh payroll/rust-prover-bench/bench/run-210.sh</span><br>
+    measured 2026-09-08/09 - 8-core / 8 GB laptop - 4 arkworks provers (2 threads each)<br>
+    surfpool 1.5.0 (agave 4.1.2, txv1 feature) - 16 pools - 210 employees - 0.005 SOL each<br>
+    proof: run-batch-v1.mjs logs in /tmp/pfast-v1 - chain state verified after every run -
+    batch5 210-run: 210/210 paid, 32 txs, 0 failures, 12.7s pay wall
+  </footer>
+</div>
