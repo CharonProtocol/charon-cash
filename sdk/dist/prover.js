@@ -18,7 +18,7 @@ export function setCircuitBuffers(wasm, zkey) {
     wasmBuf = wasm;
     zkeyBuf = zkey;
 }
-async function loadCircuit() {
+export async function loadCircuit() {
     if (!wasmBuf)
         wasmBuf = new Uint8Array(await (await fetch(CIRCUIT.WASM_URL)).arrayBuffer());
     if (!zkeyBuf)
@@ -29,10 +29,9 @@ async function loadCircuit() {
  * Generate a groth16 proof in-browser. wasm/zkey are fetched once as
  * ArrayBuffers and reused. Mirrors privacy-cash-sdk prove() (single-thread).
  */
-export async function prove(input) {
+export async function prove(input, wasm, zkey) {
     try {
-        const { wasm, zkey } = await loadCircuit();
-        return groth16.fullProve(utils.stringifyBigInts(input), wasm, zkey, undefined, { singleThread: true }, { singleThread: true });
+        return groth16.fullProve(utils.stringifyBigInts(input), wasm, zkey, undefined, { singleThread: false }, { singleThread: false });
     }
     catch (error) {
         throw new ProofGenError("Unable to generate Proof", { cause: error });

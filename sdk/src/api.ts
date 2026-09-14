@@ -178,11 +178,19 @@ export type MerkleProof = {
 
 async function fetchMerkleProof(
   mintAddress: string,
-  leafIndex1: string,
-  leafIndex2: string,
+  indices: number[],
+  commitments: string[],
 ): Promise<MerkleProof> {
+  if (indices.length > 2 || commitments.length > 2) {
+    throw new ApiClientError(
+      ApiErrorCode.InvalidInput,
+      "Indices/Commitments should be of length 2",
+      400,
+    );
+  }
+
   const response = await fetch(
-    `${API_URL}/api/pools/${encodeURIComponent(mintAddress)}/proof?leaf1=${leafIndex1}&leaf2=${leafIndex2}`,
+    `${API_URL}/api/pools/${encodeURIComponent(mintAddress)}/proof?indices=${indices.join(",")}&commitments=${commitments.join(",")}`,
   );
 
   if (!response.ok) {

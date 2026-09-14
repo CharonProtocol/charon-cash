@@ -59,7 +59,7 @@ export type MerkleProof = {
     nextIndex: string;
     proofs: Uint8Array[][];
 };
-declare function fetchMerkleProof(mintAddress: string, leafIndex1: string, leafIndex2: string): Promise<MerkleProof>;
+declare function fetchMerkleProof(mintAddress: string, indices: number[], commitments: string[]): Promise<MerkleProof>;
 declare function fetchNotes(lastFetchedNoteIndex: number): Promise<Uint8Array<ArrayBufferLike>[]>;
 export declare const API: {
     fetchNotes: typeof fetchNotes;

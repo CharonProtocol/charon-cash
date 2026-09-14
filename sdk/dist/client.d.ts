@@ -24,6 +24,7 @@ export declare class SilentPay {
     private storageService;
     private isRuning?;
     private lightwasm;
+    private circuit;
     utxoByMint: Map<string, UtxoSummary>;
     lastLoadedNote: number;
     worker: Worker;

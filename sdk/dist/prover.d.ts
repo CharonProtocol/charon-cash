@@ -40,11 +40,15 @@ export interface Proof {
 }
 /** Inject pre-loaded circuit buffers (used by tests / non-browser runners). */
 export declare function setCircuitBuffers(wasm: Uint8Array, zkey: Uint8Array): void;
+export declare function loadCircuit(): Promise<{
+    wasm: Uint8Array;
+    zkey: Uint8Array;
+}>;
 /**
  * Generate a groth16 proof in-browser. wasm/zkey are fetched once as
  * ArrayBuffers and reused. Mirrors privacy-cash-sdk prove() (single-thread).
  */
-export declare function prove(input: Record<string, unknown>): Promise<{
+export declare function prove(input: Record<string, unknown>, wasm: Uint8Array, zkey: Uint8Array): Promise<{
     proof: Proof;
     publicSignals: string[];
 }>;

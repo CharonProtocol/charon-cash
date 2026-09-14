@@ -91,6 +91,10 @@ export type TransactArgs = {
   encryptionService: EncryptionService;
   signer: PublicKey;
   connection: Connection;
+  circuit: {
+    wasm: Uint8Array;
+    zkey: Uint8Array;
+  };
   signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>;
 };
 
@@ -105,6 +109,7 @@ export async function transactSol({
   signer,
   connection,
   signTransaction,
+  circuit,
 }: TransactArgs) {
   if (inputUtxos.length != 2) {
     throw new ProgramError("Invalid number of input utxos , only 2 allowed");
@@ -151,8 +156,8 @@ export async function transactSol({
 
   let { root, proofs, nextIndex } = await API.fetchMerkleProof(
     mintAddress,
-    inputUtxos[0].index.toString(),
-    inputUtxos[1].index.toString(),
+    [inputUtxos[0].index, inputUtxos[1].index],
+    inputUtxos.map((u) => u.getCommitment()),
   );
 
   let outputUtxos = [
@@ -217,7 +222,7 @@ export async function transactSol({
     mintAddress: getMintAddressField(new PublicKey(mintAddress)),
   };
 
-  const circuitOutput = await prove(circuitInput);
+  const circuitOutput = await prove(circuitInput, circuit.wasm, circuit.zkey);
   const proofBytes = parseProofToBytesArray(circuitOutput.proof);
   const inputBytes = parseToBytesArray(circuitOutput.publicSignals);
   const proofToSubmit: ProofBytes = {
@@ -356,6 +361,7 @@ export async function transactSpl({
   signer,
   connection,
   signTransaction,
+  circuit,
 }: TransactArgs) {
   if (inputUtxos.length != 2) {
     throw new ProgramError("Invalid number of input utxos , only 2 allowed");
@@ -407,8 +413,8 @@ export async function transactSpl({
 
   let { root, proofs, nextIndex } = await API.fetchMerkleProof(
     mintAddress,
-    inputUtxos[0].index.toString(),
-    inputUtxos[1].index.toString(),
+    [inputUtxos[0].index, inputUtxos[1].index],
+    inputUtxos.map((u) => u.getCommitment()),
   );
 
   let outputUtxos = [
@@ -473,7 +479,7 @@ export async function transactSpl({
     mintAddress: getMintAddressField(new PublicKey(mintAddress)),
   };
 
-  const circuitOutput = await prove(circuitInput);
+  const circuitOutput = await prove(circuitInput, circuit.wasm, circuit.zkey);
   const proofBytes = parseProofToBytesArray(circuitOutput.proof);
   const inputBytes = parseToBytesArray(circuitOutput.publicSignals);
   const proofToSubmit: ProofBytes = {

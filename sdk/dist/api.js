@@ -91,8 +91,11 @@ async function fetchTreeState(mintAddress) {
     };
     return treeState;
 }
-async function fetchMerkleProof(mintAddress, leafIndex1, leafIndex2) {
-    const response = await fetch(`${API_URL}/api/pools/${encodeURIComponent(mintAddress)}/proof?leaf1=${leafIndex1}&leaf2=${leafIndex2}`);
+async function fetchMerkleProof(mintAddress, indices, commitments) {
+    if (indices.length > 2 || commitments.length > 2) {
+        throw new ApiClientError(ApiErrorCode.InvalidInput, "Indices/Commitments should be of length 2", 400);
+    }
+    const response = await fetch(`${API_URL}/api/pools/${encodeURIComponent(mintAddress)}/proof?indices=${indices.join(",")}&commitments=${commitments.join(",")}`);
     if (!response.ok) {
         throw await err(response, "Failed to get leaf proof");
     }

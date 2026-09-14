@@ -8,6 +8,7 @@ import { DEPOSIT_FEE_RATE, WITHDRAW_FEE_RATE, WRAPPED_SOL_MINT, } from "./consta
 import { API } from "./api";
 import { transactSol } from "./program";
 import { SilentPayError, SilentPayErrorCode } from "./error";
+import { loadCircuit } from "./prover";
 export const SIGN_MESSAGE = "Privacy Money account sign in";
 export class SilentPay {
     connection;
@@ -17,11 +18,12 @@ export class SilentPay {
     storageService;
     isRuning = false;
     lightwasm;
+    circuit;
     utxoByMint;
     lastLoadedNote; // NOTE: this represents last loaded note in memory not from DB => initially it will be zero
     worker;
     SYNC_MESSAGE = "SYNC_UTXOS";
-    constructor({ connection, publicKey, signer, storageService, encryptionService, isRuning, lightwasm, utxoByMint, lastLoadedNote, worker, }) {
+    constructor({ connection, publicKey, signer, storageService, encryptionService, isRuning, lightwasm, utxoByMint, lastLoadedNote, worker, circuit, }) {
         this.publicKey = publicKey;
         this.signer = signer;
         this.storageService = storageService;
@@ -32,6 +34,7 @@ export class SilentPay {
         this.utxoByMint = utxoByMint;
         this.lastLoadedNote = lastLoadedNote;
         this.worker = worker;
+        this.circuit = circuit;
         worker.addEventListener("message", (event) => {
             if (event.data.type === this.SYNC_MESSAGE) {
                 this.syncUtxos();
@@ -95,6 +98,7 @@ export class SilentPay {
         }
         let connection = new Connection(rpcUrl);
         let worker = createSilentPayWorker(owner.publicKey.toString(), masterSeed, rpcUrl);
+        let { zkey, wasm } = await loadCircuit();
         return new SilentPay({
             connection,
             publicKey: owner.publicKey,
@@ -106,6 +110,7 @@ export class SilentPay {
             utxoByMint,
             lastLoadedNote,
             worker,
+            circuit: { zkey, wasm },
         });
     }
     async sendSol(amountInLamports, recipientKey) {
@@ -127,6 +132,7 @@ export class SilentPay {
             connection: this.connection,
             lightwasm: this.lightwasm,
             signTransaction: this.signer.signTransaction,
+            circuit: this.circuit,
         });
         return { signature: txid };
     }
@@ -198,6 +204,7 @@ export class SilentPay {
             connection: this.connection,
             lightwasm: this.lightwasm,
             signTransaction: this.signer.signTransaction,
+            circuit: this.circuit,
         });
         // transaction is successful now remove the notes used from browser storage
         for (let u of requiredutxos) {

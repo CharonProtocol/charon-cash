@@ -19,7 +19,7 @@ export const PROGRAM_ID = new PublicKey(
   "6MyU66azgzrp6eioGxmKrGZSxv7FB9nb1oXSrd1Qkwmn",
 );
 export const ALT_ADDRESS = new PublicKey(
-  "HcQvCnjvG4DEGswPT9K73KvkodePhov1m1UtZBEjjb1V",
+  "DZc7vA8pBXbjPeKTsGsmhMzGMEfk8aYn4YCCXzHp9c9V",
 );
 export const FEE_RECIPIENT = new PublicKey(
   "5kHwyJA15XjiHYxUTGif8NoH25h1dTxjqhscTnf4V1Ua",

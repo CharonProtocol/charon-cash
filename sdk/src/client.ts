@@ -19,6 +19,7 @@ import { API, RegistrationInfo } from "./api";
 
 import { transactSol } from "./program";
 import { SilentPayError, SilentPayErrorCode } from "./error";
+import { loadCircuit } from "./prover";
 
 export interface Signer {
   publicKey: PublicKey;
@@ -48,6 +49,10 @@ export class SilentPay {
   private storageService: StorageService;
   private isRuning?: boolean = false;
   private lightwasm: LightWasm;
+  private circuit: {
+    wasm: Uint8Array;
+    zkey: Uint8Array;
+  };
 
   utxoByMint: Map<string, UtxoSummary>;
   lastLoadedNote: number; // NOTE: this represents last loaded note in memory not from DB => initially it will be zero
@@ -66,6 +71,7 @@ export class SilentPay {
     utxoByMint,
     lastLoadedNote,
     worker,
+    circuit,
   }: {
     connection: Connection;
     publicKey: PublicKey;
@@ -77,6 +83,10 @@ export class SilentPay {
     utxoByMint: Map<string, UtxoSummary>;
     lastLoadedNote: number;
     worker: Worker;
+    circuit: {
+      wasm: Uint8Array;
+      zkey: Uint8Array;
+    };
   }) {
     this.publicKey = publicKey;
     this.signer = signer;
@@ -88,6 +98,7 @@ export class SilentPay {
     this.utxoByMint = utxoByMint;
     this.lastLoadedNote = lastLoadedNote;
     this.worker = worker;
+    this.circuit = circuit;
 
     worker.addEventListener("message", (event) => {
       if (event.data.type === this.SYNC_MESSAGE) {
@@ -202,6 +213,8 @@ export class SilentPay {
       rpcUrl,
     );
 
+    let { zkey, wasm } = await loadCircuit();
+
     return new SilentPay({
       connection,
       publicKey: owner.publicKey,
@@ -213,6 +226,7 @@ export class SilentPay {
       utxoByMint,
       lastLoadedNote,
       worker,
+      circuit: { zkey, wasm },
     });
   }
 
@@ -240,6 +254,7 @@ export class SilentPay {
       connection: this.connection,
       lightwasm: this.lightwasm,
       signTransaction: this.signer.signTransaction,
+      circuit: this.circuit,
     });
 
     return { signature: txid };
@@ -350,6 +365,7 @@ export class SilentPay {
       connection: this.connection,
       lightwasm: this.lightwasm,
       signTransaction: this.signer.signTransaction,
+      circuit: this.circuit,
     });
 
     // transaction is successful now remove the notes used from browser storage

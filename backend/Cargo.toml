@@ -45,3 +45,4 @@ rs-merkle-tree = {git = "https://github.com/Cheapstar/rs-merkle-tree.git", featu
 rocksdb = { version = "0.24" }
 uuid = { version = "1.25.0", features = ["v4"] }
 chrono = "0.4.45"
+num-bigint = "=0.4.8"
