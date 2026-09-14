@@ -35,7 +35,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
         </Text>
 
         <Card style={{ marginBottom: 16 }}>
-          <Field label="Backend URL (relayer + indexer)" value={be} onChangeText={setBe} placeholder="https://...trycloudflare.com" mono />
+          <Field label="Backend URL (relayer + indexer)" value={be} onChangeText={setBe} placeholder="https://...workers.dev" mono />
           <Field label="Circuit base (serves /circuit/*.wasm,zkey)" value={cb} onChangeText={setCb} placeholder="https://...vercel.app" mono />
 
           <Text style={[typography.micro, { color: theme.textMuted, marginBottom: 8 }]}>Cluster</Text>

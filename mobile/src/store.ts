@@ -57,7 +57,7 @@ const DEFAULTS = {
   // in Settings to point at your own relayer / circuit host. NOTE: the quick-
   // tunnel subdomain is ephemeral -- if the app shows "Backend unreachable",
   // the tunnel rotated; update this in Settings to the current tunnel URL.
-  backendUrl: "https://satisfy-way-incentives-examination.trycloudflare.com",
+  backendUrl: "https://privacy-cash-relayer.theman-ai-1716.workers.dev",
   circuitBase: "https://privacy-cash-web.vercel.app",
   cluster: "devnet" as const,
 };
@@ -100,12 +100,11 @@ export const useApp = create<AppState>()(
       setToast: (t) => set({ toast: t }),
     }),
     {
-      // Bumped from "privacy-cash-mobile-v2" so a fresh install / upgrade drops
-      // the stale persisted backendUrl (the quick-tunnel URL rotates on
-      // restart; installs that persisted the previous tunnel URL would
-      // otherwise keep using the dead one even after an app update).
+      // Bumped from "privacy-cash-mobile-v3" so a fresh install / upgrade drops
+      // the stale persisted backendUrl (the old quick-tunnel URL is dead now
+      // that the backend lives on Cloudflare Workers).
       // Only settings are persisted, so a flush is safe.
-      name: "privacy-cash-mobile-v3",
+      name: "privacy-cash-mobile-v4",
       storage: createJSONStorage(() => AsyncStorage),
       // persist settings + the MWA wallet session (auth token) so reopening the
       // app silently reauthorizes instead of forcing the Connect screen

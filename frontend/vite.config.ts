@@ -44,6 +44,13 @@ export default defineConfig({
       'vite-plugin-node-polyfills/shims/process',
       'vite-plugin-node-polyfills/shims/global',
     ],
+    // The SDK is a workspace-linked ESM package (sdk/ -> node_modules). Vite
+    // pre-bundling it snapshots dist at first run; since the version string
+    // doesn't change on every SDK rebuild (e.g. adding transferSOL), the stale
+    // snapshot kept being served and methods went missing at runtime
+    // ("client.transferSOL is not a function"). Excluding it makes Vite serve
+    // the linked source directly, so SDK rebuilds are always picked up.
+    exclude: ['privacy-cash-sdk'],
     esbuildOptions: {
       define: { global: 'globalThis' },
     },
