@@ -10,31 +10,53 @@ the protocol. Any app (payroll, private airdrops, private payments) can do
 exactly this with the shipped SDK — no ceremony, no custom circuits, no special
 instructions.
 
-## The measured answer (2026-09-14, same 8-core / 8 GB laptop)
+## The measured answer (2026-09-14/15, same 8-core / 8 GB laptop)
 
-| | Standard circuit (this branch) | Batch5 circuits (`payroll` branch) |
+How far the standard circuit goes with every non-circuit optimization applied
+(same program: parallel lanes, append_many, root-window guards; prover pool
+tuned the way the batch runs were):
+
+| Standard-circuit configuration | Pay wall (210 salaries) | Prove p50 |
 |---|---|---|
-| Pay wall, 210 salaries | **81.0 s** (quiet machine) | **11.32 s** |
-| Employees paid | 210/210, 0 failures | 210/210, 0 failures |
+| v0 txs, 4 provers × 1 thread, machine loaded with the demo stack | 114.15 s | 1,884 ms |
+| same, quiet machine | 81.0 s *(historical 81.3 s reproduced)* | 1,346 ms |
+| + ARK_THREADS=2 (both cores to each prover) | **67.6 s** | 1,107 ms |
+
+Every run: 210/210 paid, 0 lane failures, on-chain tree == local replica
+(452 leaves), final root in the 100-root history.
+
+| | Standard circuit (this branch, tuned) | Batch5 circuits (`payroll` branch) |
+|---|---|---|
+| Pay wall, 210 salaries | **67.6 s** | **11.32 s** |
 | Payout txs | 226 (1 salary/tx) | 32 (8 salaries/tx) |
 | Salaries per proof | 1 | 4 |
-| Proof time p50 | 1,346 ms | 679 ms |
+| Proof time p50 | 1,107 ms | 679 ms |
 | Verifying keys | 1 (the protocol's own) | +2 (ceremony per batch circuit) |
 
-Chain verified after the run: on-chain tree == local replica (452 leaves),
-final root in the 100-root history.
-
-The custom circuits buy ~7x end-to-end — but they are an *optimization*,
+The custom circuits buy ~6x end-to-end — but they are an *optimization*,
 not a prerequisite. Payroll works, private and gasless, on the untouched
 protocol today.
 
-Measurement note: the first run of the day read 114 s — because the demo
-stack (vite dev server, wrangler workerd, browser) was eating the same 8
-cores. Proving is CPU-bound, so contention shows up 1:1 in the wall. With
-the loaders stopped the same run reproduces the historical 81.3 s almost
-exactly (81.0 s, prove p50 1.35 s vs 1.88 s under load). The post-81.3s
-improvements (append_many) cut CU and fees, not the wall — proving was
-already the bottleneck.
+### Why tx-packing can't push the standard circuit much further
+
+The wall is **proving**, not transactions: proveTotal ≈ 250 s across 4 provers
+≈ the 67.6 s wall itself. The standard circuit proves 1 salary per proof, so
+210 salaries need 210 proofs no matter how transactions are packed. v1 txs
+could hold 2 standard transacts (bytes cap it there), which halves fees and tx
+count but leaves the proving wall untouched. Batch5 gets its 11.3 s because
+the *circuit* proves 4 salaries per proof — 53 proofs instead of 210. That is
+precisely the 6x: it lives in the circuit, nowhere else.
+
+The remaining non-circuit lever (a Rust witness generator — the current
+witness step is JavaScript) is noted for the future; it would attack the same
+1.1 s per-proof cost without touching the circuit or its verifying key.
+
+### Measurement hygiene
+
+The first run of the day read 114 s — because the demo stack (vite dev server,
+wrangler workerd, browser) was eating the same 8 cores. Proving is CPU-bound,
+so contention shows up 1:1 in the wall. All numbers above are quiet-machine
+runs; prove p50 1.35 s → 1.10 s across the quiet runs.
 
 ## Run it
 
