@@ -1,8 +1,11 @@
 import { useCallback, useRef, useState } from "react"
 import { useWallet } from "@solana/wallet-adapter-react"
 import { toast } from "sonner"
+import { ArrowRight, Wallet } from "lucide-react"
 import { totalBalance } from "privacy-cash-sdk"
 
+import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { HistoryCard } from "@/components/HistoryCard"
 import { PlanReviewCard } from "@/components/PlanReviewCard"
 import { RunProgressCard } from "@/components/RunProgressCard"
@@ -73,8 +76,16 @@ export function EmployerApp() {
 
   return (
     <main className="mx-auto max-w-3xl space-y-4 p-6">
-      <h1 className="text-2xl font-semibold">Payroll runs</h1>
-      <WalletBar vaultSolRaw={vaultSolRaw} relayerOk={bps !== null} onOpenSettings={() => setSettingsOpen(true)} />
+      <div>
+        <p className="eyebrow">treasury console</p>
+        <h1 className="h-display -mt-2 text-2xl">Payroll runs</h1>
+      </div>
+      <WalletBar
+        vaultSolRaw={vaultSolRaw}
+        relayerOk={bps !== null}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onFunded={refreshVault}
+      />
 
       {error && <p className="text-sm text-destructive">{error}</p>}
       {storageWarn && (
@@ -84,9 +95,22 @@ export function EmployerApp() {
       )}
 
       {!publicKey ? (
-        <button className="w-full rounded-lg border p-6 text-center" onClick={openModal}>
-          Connect the treasury wallet to begin
-        </button>
+        <Card className="card-lift border-dashed">
+          <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
+            <div className="flex size-16 items-center justify-center rounded-2xl border border-primary/30 bg-primary/10 shadow-[0_0_36px_-6px] shadow-primary/50">
+              <Wallet className="size-7 text-primary" />
+            </div>
+            <div>
+              <p className="h-display text-lg">Connect the treasury wallet</p>
+              <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
+                One signature unlocks the vault — then pay everyone from this screen, gasless.
+              </p>
+            </div>
+            <Button size="lg" className="btn-glow" onClick={openModal}>
+              Connect wallet <ArrowRight className="ml-1 size-4" />
+            </Button>
+          </CardContent>
+        </Card>
       ) : busy ? (
         <p className="text-sm text-muted-foreground">Unlocking vault… (approve the signature request)</p>
       ) : (

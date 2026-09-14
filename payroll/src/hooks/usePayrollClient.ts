@@ -20,6 +20,25 @@ export function usePayrollClient() {
   const connected = !!(publicKey && signMessage && signTransaction)
 
   useEffect(() => {
+    // Relayer health is wallet-independent: fetch it on mount so the badge
+    // tells the truth before the treasury wallet is connected.
+    let cancelled = false
+    fetchRelayerInfo()
+      .then((info) => {
+        if (cancelled) return
+        setBps(info.withdrawalFeeRateBps)
+        const floor = Math.floor(Number(info.minTransferFee))
+        setMinTransferFee(Number.isFinite(floor) && floor > 0 ? floor : 0)
+      })
+      .catch(() => {
+        // badge stays "down"; the wallet effect retries after connect
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
     if (!connected || !publicKey || !signMessage || !signTransaction) return
     // Stale guard: if the wallet re-keyed while init was in flight, the
     // results below belong to a client nobody holds anymore.

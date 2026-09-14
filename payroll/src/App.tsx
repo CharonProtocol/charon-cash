@@ -39,6 +39,9 @@ export default function App() {
 
   return (
     <div className="min-h-dvh">
+      <div className="aurora" aria-hidden>
+        <div className="grid-lines" />
+      </div>
       <header className="border-b">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-3">
           <button

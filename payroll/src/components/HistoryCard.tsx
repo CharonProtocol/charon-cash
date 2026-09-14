@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { downloadRun } from "@/lib/history"
 import { shortHash } from "@/lib/format"
 import { listRuns } from "@/lib/store"
+import { explorerTxUrl } from "@/lib/explorer"
 import type { RunReceipt } from "@/lib/types"
 
 export function HistoryCard({ onResumeFailed }: { onResumeFailed: (r: RunReceipt) => void }) {
@@ -51,7 +52,7 @@ export function HistoryCard({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
                       {e.txSignature ? (
                         <a
                           className="font-mono underline"
-                          href={`https://explorer.solana.com/tx/${encodeURIComponent(e.txSignature)}?cluster=devnet`}
+                          href={explorerTxUrl(e.txSignature)}
                           target="_blank"
                           rel="noreferrer"
                         >

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { RunSnapshot } from "@/lib/engine"
 import { shortHash } from "@/lib/format"
 import type { EntryStatus, RunReceipt } from "@/lib/types"
+import { explorerTxUrl } from "@/lib/explorer"
 
 const STATUS_LABEL: Record<EntryStatus, string> = {
   queued: "queued",
@@ -51,7 +52,7 @@ function Row({ status, address, memo, sig, error, noteLeafIndex }: {
         {sig && (
           <a
             className="inline-flex items-center gap-1 font-mono text-xs underline"
-            href={`https://explorer.solana.com/tx/${encodeURIComponent(sig)}?cluster=devnet`}
+            href={explorerTxUrl(sig)}
             target="_blank"
             rel="noreferrer"
           >
@@ -86,13 +87,17 @@ export function RunProgressCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>
-          {done ? `Run ${receipt!.summary.sent}/${receipt!.summary.total} sent` : `Paying… ${sent}/${rows.length}`}
+        <CardTitle className="flex items-center justify-between">
+          <span>{done ? `Run ${receipt!.summary.sent}/${receipt!.summary.total} sent` : `Paying… ${sent}/${rows.length}`}</span>
+          <span className="stat-number text-lg text-primary">{pct}%</span>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
-          <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+          <div
+            className={`h-full transition-all duration-500 ${done && pct === 100 ? "bg-primary" : "progress-glow"}`}
+            style={{ width: `${pct}%` }}
+          />
         </div>
         <table className="w-full text-xs">
           <tbody>

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { useWallet } from "@solana/wallet-adapter-react"
 import { toast } from "sonner"
-import { Eye, EyeOff, Landmark, RefreshCw, ShieldCheck, Wallet } from "lucide-react"
+import { ArrowRight, Eye, EyeOff, Landmark, RefreshCw, ShieldCheck, Users, Wallet } from "lucide-react"
 import { publishRecipientKeys } from "privacy-cash-sdk"
 
 import { Badge } from "@/components/ui/badge"
@@ -83,9 +83,22 @@ export function EmployeeApp() {
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       {!connected ? (
-        <button className="w-full rounded-lg border p-6 text-center" onClick={openModal}>
-          Connect your wallet to see your payments
-        </button>
+        <Card className="card-lift border-dashed">
+          <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
+            <div className="flex size-16 items-center justify-center rounded-2xl border border-primary/30 bg-primary/10 shadow-[0_0_36px_-6px] shadow-primary/50">
+              <Users className="size-7 text-primary" />
+            </div>
+            <div>
+              <p className="h-display text-lg">Connect your wallet</p>
+              <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
+                See every private payment that's yours — amounts invisible to everyone else.
+              </p>
+            </div>
+            <Button size="lg" className="btn-glow" onClick={openModal}>
+              Connect wallet <ArrowRight className="ml-1 size-4" />
+            </Button>
+          </CardContent>
+        </Card>
       ) : busy ? (
         <p className="text-sm text-muted-foreground">
           {registered === false ? "Checking registry…" : "Unlocking… (approve the signature request)"}

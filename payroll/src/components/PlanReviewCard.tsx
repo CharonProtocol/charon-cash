@@ -280,7 +280,7 @@ export function PlanReviewCard({
         )}
 
         <Button
-          className="w-full"
+          className="btn-glow w-full"
           size="lg"
           disabled={!canRun}
           onClick={() => {

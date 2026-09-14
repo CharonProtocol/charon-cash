@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Optimization Playbook — 902s → 11.3s</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #0C0E12;
+    --panel: #15171F;
+    --panel2: #191C26;
+    --line: #252837;
+    --ink: #E9EAF3;
+    --muted: #9AA0B9;
+    --accent: #8B85F0;
+    --accent-soft: rgba(139, 133, 240, 0.13);
+    --ok: #4CC38A;
+    --ok-soft: rgba(76, 195, 138, 0.12);
+    --amber: #E8B45A;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: "Space Grotesk", system-ui, sans-serif;
+    font-size: 16px; line-height: 1.65;
+  }
+  .page { max-width: 860px; margin: 0 auto; padding: 56px 24px 80px; }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace; font-size: 11.5px;
+    letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin: 0 0 14px;
+  }
+  h1 {
+    font-family: "Instrument Serif", Georgia, serif; font-weight: 400;
+    font-size: clamp(40px, 7vw, 58px); line-height: 1.05; margin: 0 0 18px;
+  }
+  h1 em { font-style: italic; color: var(--accent); }
+  .lede { color: var(--muted); font-size: 17.5px; max-width: 64ch; margin: 0 0 30px; }
+  .lede strong { color: var(--ink); font-weight: 500; }
+
+  .fromto {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 22px;
+    font-family: "IBM Plex Mono", monospace;
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    padding: 16px 0; margin-bottom: 44px; font-variant-numeric: tabular-nums;
+  }
+  .fromto .n { font-size: 28px; font-weight: 700; }
+  .fromto .t { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .fromto .arrow { font-size: 22px; color: var(--accent); align-self: center; }
+
+  h2 {
+    font-family: "Instrument Serif", Georgia, serif; font-weight: 400;
+    font-size: 32px; line-height: 1.15; margin: 0 0 6px;
+  }
+  section { margin-bottom: 58px; }
+  section > p { max-width: 68ch; }
+
+  /* who-does-the-work clarity box */
+  .who {
+    background: var(--panel); border: 1px solid var(--line);
+    border-left: 3px solid var(--amber); border-radius: 0 12px 12px 0;
+    padding: 18px 22px; margin: 0 0 40px; font-size: 15px;
+  }
+  .who h3 { margin: 0 0 10px; font-size: 17px; }
+  .who ul { margin: 0; padding-left: 20px; color: var(--muted); }
+  .who li { margin: 5px 0; }
+  .who b { color: var(--ink); }
+  .who .no { color: #E5484D; }
+
+  /* optimization cards */
+  .opt {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 22px 24px 18px; margin-bottom: 18px;
+  }
+  .opt-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; }
+  .opt-num {
+    font-family: "IBM Plex Mono", monospace; font-weight: 700; font-size: 14px;
+    color: var(--accent); background: var(--accent-soft);
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    padding: 3px 11px; border-radius: 999px; white-space: nowrap;
+  }
+  .opt h3 { font-size: 20px; font-weight: 700; margin: 0; }
+  .opt-gain {
+    margin-left: auto; font-family: "IBM Plex Mono", monospace;
+    font-size: 14px; font-weight: 700; color: var(--ok); white-space: nowrap;
+  }
+  .opt dl { margin: 10px 0 0; display: grid; grid-template-columns: 108px 1fr; gap: 8px 16px; font-size: 15px; }
+  .opt dt {
+    font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); padding-top: 4px;
+  }
+  .opt dd { margin: 0; color: var(--ink); }
+  .opt dd.dim { color: var(--muted); }
+  .opt .num { font-family: "IBM Plex Mono", monospace; font-size: 0.93em; color: var(--accent); font-weight: 500; }
+  .opt .who-chip {
+    display: inline-block; margin-top: 12px;
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: 0.06em;
+    color: var(--accent); background: var(--accent-soft);
+    border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+    padding: 4px 10px; border-radius: 8px;
+  }
+  .opt.best { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); background: linear-gradient(var(--panel), var(--panel)), var(--ok-soft); }
+
+  /* ladder table */
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  th {
+    font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); font-weight: 500;
+    border-bottom: 1px solid var(--ink);
+  }
+  td.n { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--accent-soft); }
+
+  footer {
+    border-top: 1px solid var(--line); margin-top: 64px; padding-top: 20px;
+    color: var(--muted); font-size: 13px; font-family: "IBM Plex Mono", monospace; line-height: 1.8;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <p class="eyebrow">private payroll — the optimization playbook</p>
+  <h1>Nine changes between <em>902 seconds</em> and 11.3</h1>
+  <p class="lede">
+    Every salary in this payroll is hidden inside a zero-knowledge proof: the chain checks the
+    payment is honest without seeing who paid whom, how much, or to which address. Paying
+    <strong>210 people</strong> that way took <strong>902 seconds</strong> on day one. Here is every
+    optimization that brought it to <strong>11.3 seconds</strong> — what was slow, what we changed,
+    and what each change measurably bought. No guessed numbers: every figure comes from a logged run.
+  </p>
+
+  <div class="fromto">
+    <div><div class="n">902s</div><div class="t">day one</div></div>
+    <div class="arrow">→</div>
+    <div><div class="n">81.3s</div><div class="t">faster prover</div></div>
+    <div class="arrow">→</div>
+    <div><div class="n">30.9s</div><div class="t">batch proofs</div></div>
+    <div class="arrow">→</div>
+    <div><div class="n">12.7s</div><div class="t">packed txs</div></div>
+    <div class="arrow">→</div>
+    <div><div class="n">11.3s</div><div class="t">today</div></div>
+  </div>
+
+  <section>
+    <div class="who">
+      <h3>First, who builds the proofs? (read this before the list)</h3>
+      <ul>
+        <li><b>Day one (the slow design):</b> the remote backend built every single proof itself, one after another. <span class="no">That was the bottleneck — not a feature.</span></li>
+        <li><b>Change #1 moved proving to the payer:</b> the treasurer's own machine builds the proofs. The backend stopped being everyone's math department.</li>
+        <li><b>The "prover pool" (#4) also lives on the payer's machine</b> — it's our own local Rust proving server. It is not the remote backend.</li>
+        <li><b>The relayer never builds proofs.</b> It only signs &amp; submits payout transactions and pays the gas. That's why a payroll run costs the treasurer at most <b>one signature</b>.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>The nine optimizations</h2>
+    <p>Each card: what was happening → why it was slow → what we changed → what it measured. Same machine, 16 payroll pools, 210 employees, every run.</p>
+
+    <div class="opt">
+      <div class="opt-head"><span class="opt-num">#1</span><h3>Move proving off the backend</h3><span class="opt-gain">902s → 271s</span></div>
+      <dl>
+        <dt>Before</dt><dd>The relayer backend kept a mirror of the merkle tree and built every salary's ZK proof itself — all 210, one after another, on one remote machine.</dd>
+        <dt>Problem</dt><dd>One centralized machine doing everyone's heavy math, serially. No tuning could fix a bottleneck that is architectural.</dd>
+        <dt>Change</dt><dd>Proof-building moved to the <span class="num">payer's machine</span>. The backend keeps only its real job: relaying transactions.</dd>
+        <dt>Measured</dt><dd>Pay wall <span class="num">902s → 271s</span>. Same proofs, same chain — the work just moved to where it can run in parallel: the payer's CPU.</dd>
+      </dl>
+      <span class="who-chip">who does the work now → the treasurer's own machine</span>
+    </div>
+
+    <div class="opt">
+      <div class="opt-head"><span class="opt-num">#2</span><h3>Parallel proof lanes, capped</h3><span class="opt-gain">271s → 230s</span></div>
+      <dl>
+        <dt>Before</dt><dd>Proofs ran one after another on the payer's machine.</dd>
+        <dt>Problem</dt><dd>Unlimited parallelism thrashes RAM and CPU — everything slows down together.</dd>
+        <dt>Change</dt><dd>Run at most <span class="num">4 proofs</span> at once — a lane cap tuned to the machine.</dd>
+        <dt>Measured</dt><dd><span class="num">271s → 230s</span> with zero new hardware.</dd>
+      </dl>
+      <span class="who-chip">who does the work now → the treasurer's machine, 4-wide</span>
+    </div>
+
+    <div class="opt">
+      <div class="opt-head"><span class="opt-num">#3</span><h3>Local tree replica + native prover</h3><span class="opt-gain">230s → 126.4s</span></div>
+      <dl>
+        <dt>Before</dt><dd>Every proof needed fresh merkle-tree data from the backend — a network round trip per proof — and the prover was snarkjs: JavaScript, ~4 seconds per proof.</dd>
+        <dt>Change</dt><dd>Keep a <span class="num">local replica</span> of the merkle tree (proofs build instantly, no round trips) and swap snarkjs for <span class="num">rapidsnark</span>, a native C++ prover (~10× faster).</dd>
+        <dt>Measured</dt><dd><span class="num">230s → 126.4s</span>.</dd>
+      </dl>
+      <span class="who-chip">who does the work now → still the treasurer's machine, just faster</span>
+    </div>
+
+    <div class="opt">
+      <div class="opt-head"><span class="opt-num">#4</span><h3>Rust prover pool, in-process</h3><span class="opt-gain">126.4s → 81.3s</span></div>
+      <dl>
+        <dt>Before</dt><dd>Even rapidsnark was spawned as a fresh OS process for every proof — startup overhead each time.</dd>
+        <dt>Change</dt><dd>A persistent pool of <span class="num">4 Rust (arkworks) prover processes</span>, always warm, proving in-process. Note: this pool runs on the payer's own machine — it's our local prover server, not the remote backend.</dd>
+        <dt>Measured</dt><dd>Proof time <span class="num">4.0s → 0.64s</span>; pay wall <span class="num">126.4s → 81.3s</span>. Proving is now 98% of what's left — the bottleneck is finally honest.</dd>
+      </dl>
+      <span class="who-chip">who does the work now → a local Rust prover pool (payer's machine)</span>
+    </div>
+
+    <div class="opt">
+      <div class="opt-head"><span class="opt-num">#5</span><h3>batch3 circuit — 2 salaries per proof</h3><span class="opt-gain">81.3s → 30.9s</span></div>
+      <dl>
+        <dt>Before</dt><dd>One proof per salary. Proving was the wall, so the only way out was more work per proof.</dd>
+        <dt>Change</dt><dd>A new ZK circuit proving <span class="num">2 salaries + change in one proof</span>; new on-chain instruction <span class="num">TransactBatch3</span> with its own ceremony verifying key.</dd>
+        <dt>Measured</dt><dd>Proofs halved; payout txs <span class="num">226 → 105</span>; wall <span class="num">81.3s → 30.9s</span>.</dd>
+      </dl>
+      <span class="who-chip">pattern unlocked → more salaries per proof = proportionally faster payroll</span>
+    </div>
+
+    <div class="opt">
+      <div class="opt-head"><span class="opt-num">#6</span><h3>Slim the on-chain verifier</h3><span class="opt-gain">headroom (wall unchanged)</span></div>
+      <dl>
+        <dt>Before</dt><dd>Verifying a Groth16 proof on-chain burns compute units (CU) — the chain's CPU budget — and batch instructions were near the ceiling.</dd>
+        <dt>Change</dt><dd>Read the rent sysvar once per instruction instead of three times; reuse fixed stack buffers instead of allocating; replace a heavyweight math library with <span class="num">~150 lines</span> of purpose-built field arithmetic.</dd>
+        <dt>Measured</dt><dd>batch3 instruction at <span class="num">184k–187k CU</span>. This headroom is exactly what later lets #8 (batch5) exist.</dd>
+      </dl>
+      <span class="who-chip">who does the work now → the chain, more cheaply</span>
+    </div>
+
+    <div class="opt">
+      <div class="opt-head"><span class="opt-num">#7</span><h3>Bigger envelope — v1 transactions</h3><span class="opt-gain">30.9s → 17.7s</span></div>
+      <dl>
+        <dt>Before</dt><dd>Legacy Solana transactions cap at <span class="num">1,232 bytes</span> — one batch instruction fills the envelope, nothing else fits.</dd>
+        <dt>Change</dt><dd>Adopt the <span class="num">4,096-byte v1</span> wire format: 3 batch instructions per tx (6 salaries). ALTs and compute-budget instructions dropped entirely — CU became a config field. Plus 2 CPU threads per prover.</dd>
+        <dt>Measured</dt><dd>Txs <span class="num">105 → 48</span>; fees, signing and network waits all ~3× lower; wall <span class="num">30.9s → 21.2s → 17.7s</span>.</dd>
+      </dl>
+      <span class="who-chip">who does the work now → fewer transactions, same proofs</span>
+    </div>
+
+    <div class="opt best">
+      <div class="opt-head"><span class="opt-num">#8</span><h3>batch5 + the memo pad</h3><span class="opt-gain">17.7s → 12.7s · fee halved</span></div>
+      <dl>
+        <dt>Before</dt><dd>A wider circuit — <span class="num">4 salaries per proof</span> (batch5, own verifying key) — proves in the same <span class="num">679ms</span>… but the instruction needs <span class="num">241,010 CU</span> and a lone instruction only gets <span class="num">200,000</span>. Payouts die with "computational budget exceeded".</dd>
+        <dt>Discovery</dt><dd>Controlled probes exposed the chain's real rule: a transaction's budget is the <span class="num">sum of default per-instruction costs</span> — the limit we request is ignored, and an unknown program defaults to 200k no matter what it actually costs.</dd>
+        <dt>Change</dt><dd>Pack a do-nothing <span class="num">SPL Memo</span> as ballast: its default is a full 200k, its real cost ~0. <span class="num">[batch5, batch5, memo]</span> = 600k budget, ~480k used → <span class="num">8 salaries per transaction</span>. Guards added for the 100-root history window (lane caps + auto re-prove past 90 slots).</dd>
+        <dt>Measured</dt><dd><span class="num">32 txs</span>, <span class="num">210/210 paid</span>, 0 failures, 0 re-proofs, wall <span class="num">12.7s</span> — and the fee halved to <span class="num">6,250 lamports/salary</span>, because 8 salaries share one transaction's fee.</dd>
+      </dl>
+      <span class="who-chip">the wall, packed around — not broken, routed</span>
+    </div>
+
+    <div class="opt">
+      <div class="opt-head"><span class="opt-num">#9</span><h3>append_many — stop hashing everything twice</h3><span class="opt-gain">CU −18.4% · 210/210 exact</span></div>
+      <dl>
+        <dt>Before</dt><dd>Each payment appends commitments to the merkle tree, and every append walks all <span class="num">26 levels</span>. Two commitments land side by side — so the second walk recomputed every level the first just built. Double work, every payment.</dd>
+        <dt>Change</dt><dd>Pair the two commitments under one shared level-0 hash: <span class="num">26 hashes per pair instead of 52</span>. Odd landings handled; unit-tested byte-equal against the shipped append.</dd>
+        <dt>Measured</dt><dd><span class="num">239,715 → 195,497 CU</span> per payment instruction (<span class="num">−18.4%</span>, 18 chain samples). The wall clock doesn't move — proving is the limit — but every payment now fits a lone 200k budget.</dd>
+        <dt>Bonus</dt><dd><span class="num">VARIED mode</span>: 210 <i>distinct</i> salaries all land exact — every employee syncs and decrypts their own note, and the run fails unless all 210 hold exactly their own amount (<span class="num">210/210 exact, 12.56s</span>). Unequal pay costs nothing. And <span class="num">run-210.sh</span> boots the whole pipeline on any fresh machine: <span class="num">11.32s</span>.</dd>
+      </dl>
+      <span class="who-chip">same speed, fifth cheaper to run — and payroll-accurate to the lamport</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>The full ladder</h2>
+    <p>Every row cumulative on the one before it. All measured, all rerunnable.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Configuration</th><th>Pay wall (210 salaries)</th><th>Payout txs</th><th>Mechanism</th></tr></thead>
+        <tbody>
+          <tr><td>relayer-built proofs (day one)</td><td class="n">902 s</td><td class="n">226</td><td>backend built every proof from its DB mirror</td></tr>
+          <tr><td>client-built proofs + client-signed txs</td><td class="n">271 s</td><td class="n">226</td><td>proving moved to the payer's machine</td></tr>
+          <tr><td>+ lane tuning (4-way prove cap)</td><td class="n">230 s</td><td class="n">226</td><td>parallel lanes without thrashing</td></tr>
+          <tr><td>+ local merkle replica + rapidsnark</td><td class="n">126.4 s</td><td class="n">226</td><td>no round trips; native C++ prover</td></tr>
+          <tr><td>+ Rust prover pool (4 × 1 thread)</td><td class="n">81.3 s</td><td class="n">226</td><td>in-process proving, 98% prove-bound</td></tr>
+          <tr><td>batch3 — 2 salaries/proof</td><td class="n">30.9 s</td><td class="n">105</td><td>TransactBatch3, v0 txs with ALT</td></tr>
+          <tr><td>v1 txs — 3 instructions/tx, 1 thread</td><td class="n">21.2 s</td><td class="n">48</td><td>4,096-byte txs, no ALT</td></tr>
+          <tr><td>v1 txs, 2 threads per prover</td><td class="n">17.7 s</td><td class="n">48</td><td>cores given to each prover</td></tr>
+          <tr><td>batch5 + memo pad — 8 salaries/tx</td><td class="n">12.7 s</td><td class="n">32</td><td>4 salaries/proof; fee halved to 6,250/salary</td></tr>
+          <tr class="best"><td>append_many + full pipeline</td><td class="n">11.32 s</td><td class="n">32</td><td>195,497 CU/instruction; 210/210 exact</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>One-line summary (for the podium)</h2>
+    <p>
+      "We attacked three things: <strong>where</strong> proofs are built (backend → the payer's machine),
+      <strong>how fast</strong> they build (4s → 0.64s, in Rust, in a warm pool), and <strong>how much work</strong>
+      fits in one proof and one transaction (1 → 4 salaries per proof, 8 per transaction).
+      Result: a 15-minute payroll became 11 seconds — private, gasless, and accurate to the lamport."
+    </p>
+  </section>
+
+  <footer>
+    rerun it anywhere: zsh payroll/rust-prover-bench/bench/run-210.sh<br>
+    measured on an 8-core / 8 GB laptop — surfpool with v1 txs — 4 Rust provers, 2 threads each<br>
+    every number from a real run · chain state verified after every benchmark<br>
+    companions: SPEED-JOURNEY.html (charts) · BUILD-LOG.html (all 134 commits)
+  </footer>
+</div>
+</body>
+</html>
