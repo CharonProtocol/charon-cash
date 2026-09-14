@@ -14,19 +14,27 @@ instructions.
 
 | | Standard circuit (this branch) | Batch5 circuits (`payroll` branch) |
 |---|---|---|
-| Pay wall, 210 salaries | **114.15 s** | **11.32 s** |
+| Pay wall, 210 salaries | **81.0 s** (quiet machine) | **11.32 s** |
 | Employees paid | 210/210, 0 failures | 210/210, 0 failures |
 | Payout txs | 226 (1 salary/tx) | 32 (8 salaries/tx) |
 | Salaries per proof | 1 | 4 |
-| Proof time p50 | 1,884 ms | 679 ms |
+| Proof time p50 | 1,346 ms | 679 ms |
 | Verifying keys | 1 (the protocol's own) | +2 (ceremony per batch circuit) |
 
 Chain verified after the run: on-chain tree == local replica (452 leaves),
 final root in the 100-root history.
 
-So the custom circuits buy ~10x end-to-end — but they are an *optimization*,
+The custom circuits buy ~7x end-to-end — but they are an *optimization*,
 not a prerequisite. Payroll works, private and gasless, on the untouched
 protocol today.
+
+Measurement note: the first run of the day read 114 s — because the demo
+stack (vite dev server, wrangler workerd, browser) was eating the same 8
+cores. Proving is CPU-bound, so contention shows up 1:1 in the wall. With
+the loaders stopped the same run reproduces the historical 81.3 s almost
+exactly (81.0 s, prove p50 1.35 s vs 1.88 s under load). The post-81.3s
+improvements (append_many) cut CU and fees, not the wall — proving was
+already the bottleneck.
 
 ## Run it
 
