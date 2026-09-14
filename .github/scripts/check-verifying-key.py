@@ -11,7 +11,7 @@ from pathlib import Path
 import re
 import sys
 
-ROOT = Path(__file__).resolve().parents[2]
+PROGRAM = Path(__file__).resolve().parents[2] / "programs" / "privacy-cash"
 
 
 def be32(value):
@@ -69,9 +69,9 @@ def actual_key(source):
 
 
 def main():
-    vk_path = ROOT / "artifacts/circuits/verifyingkey2.json"
+    vk_path = PROGRAM / "artifacts/circuits/verifyingkey2.json"
     expected = expected_key(json.loads(vk_path.read_text()))
-    actual = actual_key((ROOT / "src/utils.rs").read_text())
+    actual = actual_key((PROGRAM / "src/utils.rs").read_text())
     mismatches = [field for field in expected if expected[field] != actual.get(field)]
     if mismatches:
         print(f"src/utils.rs VERIFYING_KEY differs from {vk_path.name}: {mismatches}")

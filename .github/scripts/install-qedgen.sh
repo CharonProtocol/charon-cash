@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Pinned to the generator used by programs/Cargo.toml and README.md.
+# Pinned to the generator used by verification/programs/Cargo.toml and README.md.
 # The checksum comes from this release's published .sha256 asset.
 install_dir="${RUNNER_TEMP:?}/qedgen-2.49.0"
 mkdir -p "$install_dir"

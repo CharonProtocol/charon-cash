@@ -304,7 +304,7 @@ fn setup() -> BenchContext {
     let program_id = Pubkey::from_str_const(PROGRAM_ID);
 
     std::env::set_var("RUST_LOG", "off");
-    let mut mollusk = Mollusk::new(&program_id, "target/deploy/privacy_cash");
+    let mut mollusk = Mollusk::new(&program_id, concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/deploy/privacy_cash"));
 
     let authority = Keypair::new();
     let funding_account = Keypair::new();

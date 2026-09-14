@@ -83,16 +83,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.89.0
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: programs
+          workspaces: verification/programs
           cache-targets: false
       - name: Install QEDGen 2.49.0
         run: bash .github/scripts/install-qedgen.sh
-      - name: Validate the spec and generated-model drift
-        run: |
-          python3 .github/scripts/check-spec.py
-          qedgen reconcile --spec privacy_cash.qedspec --code programs/ --proofs formal_verification/
+      - name: Validate the spec against the warning baseline
+        run: python3 .github/scripts/check-spec.py
+      - name: Check generated model and proofs for drift
+        # QEDGen resolves its default paths relative to the spec's directory.
+        working-directory: verification
+        run: qedgen reconcile --spec privacy_cash.qedspec --code programs/ --proofs formal_verification/
       - name: Run generated unit and property tests
-        run: cargo test --locked --manifest-path programs/Cargo.toml --all-targets
+        run: cargo test --locked --manifest-path verification/programs/Cargo.toml --all-targets
 
   program:
     name: Program correctness
@@ -119,18 +121,18 @@ jobs:
           echo "$RUNNER_TEMP/solana-release/bin" >> "$GITHUB_PATH"
       - name: Build the deployed program from this revision
         run: |
-          cargo build-sbf --tools-version v1.52 -- --locked
+          cargo build-sbf --manifest-path programs/privacy-cash/Cargo.toml --tools-version v1.52 -- --locked
           test -s target/deploy/privacy_cash.so
       - name: Clippy correctness lints
         # Existing style warnings remain visible; correctness lints are errors.
-        run: cargo clippy --locked --lib -- -D clippy::correctness
+        run: cargo clippy --locked --package privacy-cash --lib -- -D clippy::correctness
       - name: Run native, real-proof integration and Mollusk tests
         # Tests embed the .so at compile time. Build SBF first and run serially
         # because the integration harness shares a global ALT cache.
         run: |
           set -o pipefail
-          cargo test --locked --all-targets -- --test-threads=1 --nocapture 2>&1 | tee test-results.log
-          cargo test --locked --doc
+          cargo test --locked --workspace --all-targets -- --test-threads=1 --nocapture 2>&1 | tee test-results.log
+          cargo test --locked --workspace --doc
       - name: Prepare tested artifact and provenance
         run: |
           mkdir -p dist
@@ -139,8 +141,9 @@ jobs:
           git rev-parse HEAD > dist/commit.txt
           rustc --version > dist/toolchain.txt
           cargo build-sbf --version >> dist/toolchain.txt
-          sha256sum artifacts/circuits/transaction2.wasm artifacts/circuits/transaction2.zkey \
-            artifacts/circuits/verifyingkey2.json > dist/circuit-checksums.txt
+          (cd programs/privacy-cash && sha256sum artifacts/circuits/transaction2.wasm \
+            artifacts/circuits/transaction2.zkey artifacts/circuits/verifyingkey2.json) \
+            > dist/circuit-checksums.txt
           cd dist
           sha256sum privacy_cash.so Cargo.lock commit.txt toolchain.txt circuit-checksums.txt > SHA256SUMS
       - name: Deliver tested SBF artifact
