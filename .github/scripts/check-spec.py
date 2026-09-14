@@ -36,6 +36,7 @@ def validate(findings, returncode):
 def main():
     result = subprocess.run(
         ["qedgen", "check", "--spec", "privacy_cash.qedspec", "--json"],
+        cwd=Path(__file__).resolve().parents[2] / "verification",
         capture_output=True,
         text=True,
         check=False,

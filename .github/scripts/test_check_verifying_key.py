@@ -5,14 +5,14 @@ import unittest
 
 
 SCRIPT_DIR = Path(__file__).parent
-ROOT = SCRIPT_DIR.parents[1]
+PROGRAM = SCRIPT_DIR.parents[1] / "programs" / "privacy-cash"
 checker = runpy.run_path(str(SCRIPT_DIR / "check-verifying-key.py"))
 
 
 class VerifyingKeyGateTests(unittest.TestCase):
     def setUp(self):
-        self.source = (ROOT / "src/utils.rs").read_text()
-        vk = json.loads((ROOT / "artifacts/circuits/verifyingkey2.json").read_text())
+        self.source = (PROGRAM / "src/utils.rs").read_text()
+        vk = json.loads((PROGRAM / "artifacts/circuits/verifyingkey2.json").read_text())
         self.expected = checker["expected_key"](vk)
 
     def test_committed_key_matches(self):

@@ -4,7 +4,8 @@ set -euo pipefail
 # Proves the committed circuit sources, compiled circuit, proving key and the
 # key embedded in the program all describe the same Groth16 circuit.
 # Any intentional circuit change must update artifacts/circuits/SHA256SUMS.
-cd "$(git rev-parse --show-toplevel)"
+root="$(git rev-parse --show-toplevel)"
+cd "$root/programs/privacy-cash"
 circom_bin="${CIRCOM:-circom}"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -15,10 +16,8 @@ sha256sum --check --strict artifacts/circuits/SHA256SUMS
 echo "Recompiling transaction2.circom"
 test "$("$circom_bin" --version)" = 'circom compiler 2.2.3'
 # The sources include ../scripts/node_modules/circomlib relative to circuits/.
-cp -r circuits "$work/"
-npm install --prefix "$work/scripts" --no-save --ignore-scripts --no-audit --no-fund \
-  circomlib@2.0.5
-"$circom_bin" "$work/circuits/transaction2.circom" --r1cs --sym --output "$work"
+npm ci --prefix scripts --ignore-scripts --no-audit --no-fund
+"$circom_bin" circuits/transaction2.circom --r1cs --sym --output "$work"
 cmp "$work/transaction2.r1cs" artifacts/circuits/transaction2.r1cs
 cmp "$work/transaction2.sym" artifacts/circuits/transaction2.sym
 
@@ -35,4 +34,4 @@ if exported != committed:
 print("transaction2.zkey matches verifyingkey2.json.")
 PY
 
-python3 .github/scripts/check-verifying-key.py
+python3 "$root/.github/scripts/check-verifying-key.py"

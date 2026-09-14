@@ -21,7 +21,9 @@ Four mechanisms make this safe:
 - **ext_data_hash binding.** The program recomputes `keccak256(recipient, ext_amount, encrypted_output1, encrypted_output2, fee, fee_recipient, mint)` and requires it to equal the value committed inside the proof. A proof therefore cannot be replayed with a different recipient, fee, or fee recipient — it is front-run proof.
 - **Public amount check.** `public_amount` from the proof must be consistent with `ext_amount` and `fee` in field arithmetic, and the fee must fall inside the configured rate ± error margin.
 
-Only then is the Groth16 proof itself checked against the verifying key baked into `src/groth16.rs`.
+Only then is the Groth16 proof itself checked against the verifying key baked into the program (`VERIFYING_KEY` in `programs/privacy-cash/src/utils.rs`).
+
+All program paths below (`src/`, `tests/`, `circuits/`, `artifacts/`) are relative to `programs/privacy-cash/` unless stated otherwise.
 
 ---
 
@@ -96,19 +98,24 @@ Dispatch is on the first byte of instruction data (`src/lib.rs`, `src/instructio
 
 ### Build
 
+The repository root is a Cargo workspace; run these from the root.
+
 ```bash
-cargo build            # native, for tests
-cargo build-sbf        # on-chain BPF/SBF artifact — required before any test that loads the .so
+cargo build                                                    # native, for tests
+cargo build-sbf --manifest-path programs/privacy-cash/Cargo.toml  # writes target/deploy/privacy_cash.so
 ```
+
+The SBF build is required before any test: the integration tests embed
+`target/deploy/privacy_cash.so` at compile time.
 
 ### Test
 
 ```bash
-cargo test                        # everything
-cargo test --test sol_tests       # native SOL pool
-cargo test --test spl_tests       # SPL pool
-cargo test --test spl_mint_tests  # per-mint tree setup
-cargo test --test bench           # compute-unit benchmarks
+cargo test -- --test-threads=1                        # everything
+cargo test --test sol_tests -- --test-threads=1       # native SOL pool
+cargo test --test spl_tests -- --test-threads=1       # SPL pool
+cargo test --test spl_mint_tests -- --test-threads=1  # per-mint tree setup
+cargo test --test bench                               # compute-unit benchmarks
 ```
 
 Tests generate real Groth16 proofs, so the first run is slow. They load `artifacts/circuits/transaction2.wasm` and `transaction2.zkey`; do not regenerate those without reading `TRUSTED_SETUP.MD`.
@@ -132,8 +139,9 @@ The required checks are:
   changed warning details, all errors, and tool failures fail CI. Existing
   warnings stay visible; remove baseline entries as the model is improved.
 - Circuit integrity: every file in `circuits/` and `artifacts/circuits/` must match
-  the pinned [`SHA256SUMS`](artifacts/circuits/SHA256SUMS); `transaction2.circom` is
-  recompiled with circom 2.2.3 and circomlib 2.0.5 and must reproduce the committed
+  the pinned [`SHA256SUMS`](programs/privacy-cash/artifacts/circuits/SHA256SUMS);
+  `transaction2.circom` is recompiled with circom 2.2.3 and circomlib 2.0.5 (locked in
+  `scripts/package-lock.json`) and must reproduce the committed
   `.r1cs` and `.sym` byte for byte; the verifying key exported from
   `transaction2.zkey` must equal `verifyingkey2.json`; and `VERIFYING_KEY` in
   `src/utils.rs` must encode that same key. Changing any circuit artifact therefore
@@ -169,7 +177,8 @@ cannot enforce repository settings; these settings must be enabled on GitHub.
 These checks preserve behavior covered by the existing assertions; they do not
 prove all possible future changes correct. Add regression tests for new behavior.
 Mollusk checks execution results and reports CUs, but currently has no CU regression
-threshold. QEDGen reconciliation covers `programs/`, not equivalence to `src/`.
+threshold. QEDGen reconciliation covers the generated model in
+`verification/programs/`, not equivalence to the deployed program.
 Kani currently fails to compile its generated invariant harnesses, and the Lean
 spec contains admitted proofs and has no checked-in Lake project. Neither backend
 is counted as passing CI verification. Repair and validate those backends before
@@ -178,31 +187,42 @@ adding them as mandatory jobs; do not hide failures with `continue-on-error`.
 To reproduce the program checks locally with the pinned toolchain installed:
 
 ```bash
-cargo build-sbf --tools-version v1.52 -- --locked
-cargo clippy --locked --lib -- -D clippy::correctness
-cargo test --locked --all-targets -- --test-threads=1 --nocapture
-cargo test --locked --doc
-cargo test --locked --manifest-path programs/Cargo.toml --all-targets
+cargo build-sbf --manifest-path programs/privacy-cash/Cargo.toml --tools-version v1.52 -- --locked
+cargo clippy --locked --package privacy-cash --lib -- -D clippy::correctness
+cargo test --locked --workspace --all-targets -- --test-threads=1 --nocapture
+cargo test --locked --workspace --doc
+cargo test --locked --manifest-path verification/programs/Cargo.toml --all-targets
+bash .github/scripts/check-circuits.sh   # needs circom 2.2.3, node and npx
 ```
 
 ### Layout
 
 ```
-src/                      the deployed program
-  instructions/           one file per instruction
-  groth16.rs              BN254 verifier + embedded VERIFYING_KEY
-  merkle_tree.rs          Poseidon incremental tree
-  state/                  zero-copy account structs
-  constants.rs            seeds, allowlist, tree height, admin gate
-circuits/                 transaction2.circom source
-artifacts/circuits/       r1cs, wasm, zkey, verifyingkey2.json
-tests/common/             prover, off-chain tree mirror, UTXO model, ALT helpers
-privacy_cash.qedspec      formal spec
-programs/                 generated verification scaffold — NOT deployed
-formal_verification/      Lean proofs
+Cargo.toml                    workspace root (members: programs/*)
+programs/privacy-cash/        the deployed program
+  src/                        program source
+    instructions/             one file per instruction
+    groth16.rs                BN254 Groth16 verifier
+    utils.rs                  embedded VERIFYING_KEY, proof and fee checks
+    merkle_tree.rs            Poseidon incremental tree
+    state/                    zero-copy account structs
+    constants.rs              seeds, allowlist, tree height, admin gate
+  circuits/                   transaction2.circom source
+  artifacts/circuits/         r1cs, wasm, zkey, verifyingkey2.json, SHA256SUMS
+  scripts/                    pinned circomlib for compiling the circuits
+  tests/common/               prover, off-chain tree mirror, UTXO model, ALT helpers
+verification/                 QEDGen project — NOT deployed
+  privacy_cash.qedspec        formal spec
+  programs/                   generated model crate (standalone workspace)
+  formal_verification/        Lean proofs
+  fuzz/                       generated Crucible fuzz harness
+  .qed/                       obligations and audit findings
 ```
 
-`programs/` is a generated model of the program used only by the verification harnesses. It is never deployed; `src/` is the real thing.
+`verification/programs/` is a generated model of the program used only by the
+verification harnesses. It is never deployed; `programs/privacy-cash/` is the real
+thing. New on-chain programs go in `programs/<name>/` and are added to the workspace
+members in the root `Cargo.toml`.
 
 ---
 
@@ -212,17 +232,24 @@ QEDGen reads `privacy_cash.qedspec` — a precise description of who may call ea
 
 Requires `qedgen` **2.49.0** on PATH (`bash ~/.agents/skills/qedgen/install.sh`) and a git repository. Lean (`elan` + `qedgen setup`) and Kani (`cargo install --locked kani-verifier && cargo kani setup`) are optional; without them those backends warn instead of running.
 
-Run from the repository root:
+Run everything from `verification/` except `codegen`. `qedgen verify` looks for the
+model crate at `./programs/` relative to the current directory; from the repository
+root that path is the deployed program, so the harnesses would not be found.
+`qedgen codegen` refuses to run outside the repository root ("not inside a git
+repository"), but it writes its output relative to the spec, so it still lands in
+`verification/`:
 
 ```bash
+cd verification
+
 # 1. validate the spec                                   (~1s)
 qedgen check --spec privacy_cash.qedspec
 
 # 2. confirm spec, code, and proofs have not drifted     (~1s)
 qedgen reconcile --spec privacy_cash.qedspec --code programs/ --proofs formal_verification/
 
-# 3. regenerate scaffold, tests, and proofs              (~30s)
-qedgen codegen --spec privacy_cash.qedspec --target pinocchio --all --kani-impl
+# 3. regenerate scaffold, tests, and proofs — codegen must run from the root   (~30s)
+(cd .. && qedgen codegen --spec verification/privacy_cash.qedspec --target pinocchio --all --kani-impl)
 
 # 4. does the generated crate compile?                   (seconds)
 qedgen verify --spec privacy_cash.qedspec --scaffold
@@ -246,4 +273,9 @@ the generated invariant harnesses, so no Kani harness executes. `Spec.lean`
 contains two `sorry` admissions; no Lake project is checked in to build the Lean
 proofs. CI records these limits rather than claiming complete formal verification.
 
-Never hand-edit anything under `programs/` or `formal_verification/` — the next `codegen` run overwrites it. Fix the spec.
+Never hand-edit anything under `verification/programs/`, `verification/formal_verification/`
+or `verification/fuzz/` — the next `codegen` run overwrites it. Fix the spec.
+
+The fuzz harness loads the program from `../../target/deploy/privacy_cash.so`
+relative to its own crate, so build it for fuzzing with
+`cargo build-sbf --manifest-path programs/privacy-cash/Cargo.toml --sbf-out-dir verification/target/deploy`.
