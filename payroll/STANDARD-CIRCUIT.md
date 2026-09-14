@@ -20,36 +20,37 @@ tuned the way the batch runs were):
 |---|---|---|
 | v0 txs, 4 provers × 1 thread, machine loaded with the demo stack | 114.15 s | 1,884 ms |
 | same, quiet machine | 81.0 s *(historical 81.3 s reproduced)* | 1,346 ms |
-| + ARK_THREADS=2 (both cores to each prover) | **67.6 s** | 1,107 ms |
+| + ARK_THREADS=2 (both cores to each prover) | 67.6 s | 1,107 ms |
+| + v1 txs, 3 transacts/tx + memo pad (`run-standard-v1.mjs`) | **63.3 s** | — |
 
-Every run: 210/210 paid, 0 lane failures, on-chain tree == local replica
-(452 leaves), final root in the 100-root history.
+Every run: 210/210 paid, 0 lane failures, on-chain tree == local replica,
+final root in the 100-root history. The packed run's largest tx: 2,961 of
+4,096 bytes.
 
-| | Standard circuit (this branch, tuned) | Batch5 circuits (`payroll` branch) |
+| | Standard circuit (this branch, fully tuned) | Batch5 circuits (`payroll` branch) |
 |---|---|---|
-| Pay wall, 210 salaries | **67.6 s** | **11.32 s** |
-| Payout txs | 226 (1 salary/tx) | 32 (8 salaries/tx) |
+| Pay wall, 210 salaries | **63.3 s** | **11.32 s** |
+| Payout txs | 80 (3 salaries/tx) | 32 (8 salaries/tx) |
 | Salaries per proof | 1 | 4 |
-| Proof time p50 | 1,107 ms | 679 ms |
+| Proofs required | 210 (+210 deposits) | 53 (+16 deposits) |
 | Verifying keys | 1 (the protocol's own) | +2 (ceremony per batch circuit) |
 
-The custom circuits buy ~6x end-to-end — but they are an *optimization*,
+The custom circuits buy ~5.6x end-to-end — but they are an *optimization*,
 not a prerequisite. Payroll works, private and gasless, on the untouched
 protocol today.
 
-### Why tx-packing can't push the standard circuit much further
+### The experiment proves where the speed lives
 
-The wall is **proving**, not transactions: proveTotal ≈ 250 s across 4 provers
-≈ the 67.6 s wall itself. The standard circuit proves 1 salary per proof, so
-210 salaries need 210 proofs no matter how transactions are packed. v1 txs
-could hold 2 standard transacts (bytes cap it there), which halves fees and tx
-count but leaves the proving wall untouched. Batch5 gets its 11.3 s because
-the *circuit* proves 4 salaries per proof — 53 proofs instead of 210. That is
-precisely the 6x: it lives in the circuit, nowhere else.
-
-The remaining non-circuit lever (a Rust witness generator — the current
-witness step is JavaScript) is noted for the future; it would attack the same
-1.1 s per-proof cost without touching the circuit or its verifying key.
+`run-standard-v1.mjs` runs the batch5 pipeline's own machinery against the
+stock circuit: v1 wire packing, the memo-pad CU trick, root-history gates,
+the arkworks pool, 2 threads per prover. Packing 226 → 80 txs moved the wall
+only 67.6 → 63.3 s (~6%), exactly as the prove-bound model predicted: the
+wall is `210 proofs × per-proof time ÷ provers`, and the standard circuit
+fixes both terms at 1 salary per proof. Batch5's 11.3 s comes from proving
+4 salaries per proof — 53 proofs instead of 210, and deposits scale down
+210 → 16 with it. That is where the ~5.6x lives: in the circuit, nowhere
+else. The remaining non-circuit lever (a Rust witness generator replacing
+the JavaScript witness step) is noted for the future.
 
 ### Measurement hygiene
 
@@ -61,13 +62,18 @@ runs; prove p50 1.35 s → 1.10 s across the quiet runs.
 ## Run it
 
 ```bash
-zsh payroll/rust-prover-bench/bench/reset-env.sh    # fresh chain + relayer
+# v0 pipeline (1 salary/tx): 67.6s wall
+SURFPOOL_BIN=$HOME/.local/share/surfpool150/surfpool \
+SURFPOOL_FLAGS="--feature txv1hPU76QFBVeq3942jJ65e9Em2xbdbCJrzX8sM4U4" \
+  zsh payroll/rust-prover-bench/bench/reset-env.sh    # fresh chain + relayer
 cd payroll/rust-prover-bench/bench
-export PROGRAM_ID=<your local deploy>
-bun run.mjs 16 210                                  # standard circuit, 16 pools, 210 employees
+export PROGRAM_ID=<your local deploy> ARK_THREADS=2
+bun run.mjs 16 210                                    # v0, 226 txs
+bun run-standard-v1.mjs 16 210                        # v1-packed, 80 txs — 63.3s
 ```
 
-Raw run: /tmp/pfast/run-*.json (`payWallMs`, `chainVerify`).
+Raw runs: /tmp/pfast/run-*.json, /tmp/pfast-std-v1/run-*.json (`payWallMs`,
+`chainVerify`).
 
 ## The one fix this branch carries
 
