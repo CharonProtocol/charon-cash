@@ -965,3 +965,46 @@ fn bench_all() {
         scenario_transact_spl_deposit(&ctx, false),
     ]);
 }
+
+// ============================================================================
+// CU ceilings: lock in the no-arkworks-onchain savings
+//
+// The on-chain path replaces arkworks Montgomery arithmetic (proof_a
+// negation, ext-data hash compare, public amount check) with byte-level
+// field ops in src/field.rs, reads the Rent sysvar once per instruction,
+// and builds syscall inputs in stack buffers. A regression above these
+// ceilings means heavyweight field math crept back into the program.
+// Numbers measured on mollusk-svm 0.14 against target/deploy/privacy_cash.so.
+// ============================================================================
+
+// Measured A/B against the pre-port build (HEAD a16006d) on mollusk-svm 0.14:
+//   initialize        5,370 -> 5,150
+//   transact_deposit 210,019 -> 158,035
+//   transact_withdraw 208,709 -> 156,897
+const INITIALIZE_CU_CEILING: u64 = 6_000;
+const TRANSACT_DEPOSIT_CU_CEILING: u64 = 165_000;
+const TRANSACT_WITHDRAW_CU_CEILING: u64 = 165_000;
+
+#[test]
+fn cu_budget_stays_under_ceiling() {
+    let ctx = setup();
+
+    let cases: Vec<(&str, Entry, u64)> = vec![
+        ("initialize", scenario_initialize(&ctx), INITIALIZE_CU_CEILING),
+        ("transact_deposit", scenario_transact_deposit_first(&ctx), TRANSACT_DEPOSIT_CU_CEILING),
+        ("transact_withdraw", scenario_transact_withdraw(&ctx), TRANSACT_WITHDRAW_CU_CEILING),
+    ];
+
+    for (name, entry, ceiling) in &cases {
+        let result = ctx
+            .mollusk
+            .process_and_validate_instruction(&entry.instruction, &entry.accounts, &[Check::success()]);
+        let cu = result.compute_units_consumed;
+        println!("{name}: {cu} CU (ceiling {ceiling})");
+        assert!(
+            cu <= *ceiling,
+            "{name} consumed {cu} CU, above the {ceiling} CU ceiling: \
+             on-chain field arithmetic regressed"
+        );
+    }
+}

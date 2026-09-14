@@ -1,2 +1,4 @@
 dist/
 node_modules/
+# demo keypairs hold private keys — local-only, never commit
+demo/

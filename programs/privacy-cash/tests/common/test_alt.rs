@@ -1,4 +1,4 @@
-use std::sync::{Mutex, OnceLock};
+use std::cell::RefCell;
 
 use litesvm::LiteSVM;
 use solana_address_lookup_table_interface::{
@@ -11,23 +11,25 @@ use solana_message::{v0, AddressLookupTableAccount, Instruction, VersionedMessag
 use solana_signer::Signer;
 use solana_transaction::{versioned::VersionedTransaction, Transaction};
 
-static GLOBAL_TEST_ALT: OnceLock<Mutex<Option<Address>>> = OnceLock::new();
-
-fn alt_cache() -> &'static Mutex<Option<Address>> {
-    GLOBAL_TEST_ALT.get_or_init(|| Mutex::new(None))
+// Every test builds its own LiteSVM, so a process-global ALT cache can never
+// be validly reused across tests — the cached account only exists in the svm
+// that created it. Keep the cache per test thread instead.
+thread_local! {
+    static TEST_ALT: RefCell<Option<Address>> = const { RefCell::new(None) };
 }
 
 pub fn reset_global_test_alt() {
-    *alt_cache().lock().unwrap() = None;
+    TEST_ALT.with(|cache| *cache.borrow_mut() = None);
 }
 
 pub fn get_global_test_alt() -> Address {
-    alt_cache()
-        .lock()
-        .unwrap()
-        .as_ref()
-        .copied()
-        .expect("Global test ALT not created yet")
+    TEST_ALT.with(|cache| {
+        cache
+            .borrow()
+            .as_ref()
+            .copied()
+            .expect("Global test ALT not created yet")
+    })
 }
 
 /// JS equivalent:
@@ -41,14 +43,15 @@ pub fn create_global_test_alt(
     authority: &Keypair,
     addresses: &[Address],
 ) -> Address {
-    if let Some(addr) = *alt_cache().lock().unwrap() {
-        // Reuse only if this ALT exists in the current LiteSVM
+    // Reuse only if this thread's cached ALT exists in the current LiteSVM.
+    let cached = TEST_ALT.with(|cache| cache.borrow().as_ref().copied());
+    if let Some(addr) = cached {
         if svm.get_account(&addr).is_some() {
             return addr;
         }
 
-        // Stale cache from a different test / different LiteSVM
-        *alt_cache().lock().unwrap() = None;
+        // Stale cache from a different LiteSVM on this thread
+        TEST_ALT.with(|cache| *cache.borrow_mut() = None);
     }
 
     let create_once = |svm: &mut LiteSVM, slot: u64| -> Result<Address, String> {
@@ -104,14 +107,14 @@ pub fn create_global_test_alt(
     let clock: Clock = svm.get_sysvar();
     match create_once(svm, clock.slot) {
         Ok(addr) => {
-            *alt_cache().lock().unwrap() = Some(addr);
+            TEST_ALT.with(|cache| *cache.borrow_mut() = Some(addr));
             addr
         }
         Err(logs) if logs.contains("not a recent slot") => {
             let newer_clock: Clock = svm.get_sysvar();
             let addr = create_once(svm, newer_clock.slot)
                 .expect("retry with fresh slot failed to create lookup table");
-            *alt_cache().lock().unwrap() = Some(addr);
+            TEST_ALT.with(|cache| *cache.borrow_mut() = Some(addr));
             addr
         }
         Err(logs) => panic!("failed to create lookup table: {logs}"),
