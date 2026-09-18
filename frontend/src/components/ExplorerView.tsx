@@ -25,8 +25,8 @@ export function ExplorerView({ refreshKey }: { refreshKey: number }) {
           </h2>
           <p className="max-w-xl text-sm text-muted-foreground">
             Inspect Merkle roots and inclusion paths, check nullifiers (spent notes),
-            and view pool fees. Withdraws are <strong className="font-medium text-foreground">relayer-signed</strong> —
-            this page only reads indexer / relayer info.
+            and view pool fees. Only v1 swaps are <strong className="font-medium text-foreground">relayer-signed</strong> —
+            this page only reads indexer / pool info.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={refresh} className="shrink-0 self-start">

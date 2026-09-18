@@ -2,8 +2,12 @@ import type { LightWasm } from "@lightprotocol/hasher.rs"
 import { PublicKey } from "@solana/web3.js"
 import BN from "bn.js"
 import { keccak256, sha256 } from "ethers"
+import bs58 from "bs58"
 
-import { FIELD_SIZE, SIGN_MESSAGE, WRAPPED_SOL_MINT } from "./constants"
+import { FIELD_SIZE, WRAPPED_SOL_MINT } from "./constants"
+import {
+  EncryptionService as AsymEnc,
+} from "./encrypt"
 
 /**
  * Field-element keypair used inside UTXO commitments/nullifiers.
@@ -30,6 +34,22 @@ export class Keypair {
       commitment,
       merklePath,
     ])
+  }
+
+  /** Output-only keypair (recipient note). Cannot spend. */
+  static fromPubkey(pubkey: BN | string, wasm: LightWasm): Keypair {
+    const kp = new Keypair("0x1", wasm)
+    kp.privkey = new BN(0)
+    if (BN.isBN(pubkey)) {
+      kp.pubkey = pubkey.clone()
+    } else {
+      const s = pubkey.toString().trim()
+      kp.pubkey =
+        /^0x/i.test(s) || /^[0-9a-fA-F]{64}$/.test(s)
+          ? new BN(s.replace(/^0x/i, ""), 16)
+          : new BN(s)
+    }
+    return kp
   }
 }
 
@@ -208,9 +228,13 @@ export class EncryptionService {
   private encKeyV2: Uint8Array | null = null
   private utxoPrivKeyV2: string | null = null
   private cryptoKey: CryptoKey | null = null
+  private signature: Uint8Array | null = null
+  private asym: AsymEnc | null = null
 
-  /** Derive keys from an ed25519 signature of the constant SIGN_MESSAGE. */
+  /** Derive AES + UTXO spend keys from a SIWS (`signIn`) signature. */
   deriveFromSignature(signature: Uint8Array): void {
+    this.signature = signature
+    this.asym = null
     this.encKeyV2 = Buffer.from(keccak256(signature).slice(2), "hex")
     this.utxoPrivKeyV2 =
       "0x" + keccak256(this.encKeyV2).slice(2)
@@ -268,15 +292,30 @@ export class EncryptionService {
     return Buffer.from(plain)
   }
 
-  /** Encrypt a UTXO as "amount|blinding|index|mintAddress" (pipe-delimited). */
-  async encryptUtxo(utxo: Utxo): Promise<Buffer> {
-    return this.encrypt(
-      `${utxo.amount.toString()}|${utxo.blinding.toString()}|${utxo.index}|${utxo.mintAddress}`,
-    )
+  /** Encrypt a UTXO as "amount|blinding|index|mintAddress" (pipe-delimited).
+   *  Own notes use AES-GCM (V2). Notes for another user use X25519 (V1). */
+  async encryptUtxo(utxo: Utxo, recipientViewingKey?: Uint8Array): Promise<Buffer> {
+    const payload = `${utxo.amount.toString()}|${utxo.blinding.toString()}|${utxo.index}|${utxo.mintAddress}`
+    if (recipientViewingKey) {
+      const view = Uint8Array.from(recipientViewingKey)
+      if (view.length !== 32) {
+        throw new Error(`recipient viewing key must be 32 bytes, got ${view.length}`)
+      }
+      const a = await this.asymEnc()
+      return Buffer.from(await a.encrypt(new TextEncoder().encode(payload), view))
+    }
+    return this.encrypt(payload)
   }
 
   async decryptUtxo(encrypted: Uint8Array, wasm: LightWasm): Promise<Utxo> {
-    const plain = (await this.decrypt(encrypted)).toString()
+    const bytes = Uint8Array.from(encrypted)
+    let plain: string
+    if (bytes.length >= 8 && bytes[7] === 1) {
+      const a = await this.asymEnc()
+      plain = new TextDecoder().decode(await a.decrypt(bytes))
+    } else {
+      plain = (await this.decrypt(bytes)).toString()
+    }
     const [amount, blinding, index, mintAddress] = plain.split("|")
     return new Utxo({
       wasm,
@@ -287,6 +326,44 @@ export class EncryptionService {
       mintAddress,
     })
   }
+
+  async viewingPublicKey(): Promise<Uint8Array> {
+    return (await this.asymEnc()).getViewingKey()
+  }
+
+  private async asymEnc(): Promise<AsymEnc> {
+    if (!this.signature) {
+      throw new Error("EncryptionService not initialised — sign first")
+    }
+    if (!this.asym) {
+      this.asym = await AsymEnc.startEncryptionService(this.signature)
+    }
+    return this.asym
+  }
+}
+
+export const PRIVACY_ADDRESS_PREFIX = "pc1"
+
+export function encodePrivacyAddress(spendPubkey: BN, viewingKey: Uint8Array): string {
+  const spend = Buffer.from(spendPubkey.toArray("be", 32))
+  return PRIVACY_ADDRESS_PREFIX + bs58.encode(Buffer.concat([spend, Buffer.from(viewingKey)]))
+}
+
+export function parsePrivacyAddress(addr: string): { spendPubkey: BN; viewingKey: Uint8Array } {
+  const s = addr.trim()
+  if (!s.startsWith(PRIVACY_ADDRESS_PREFIX)) {
+    throw new Error("not a privacy address — paste a pc1… address from the recipient’s app")
+  }
+  const raw = Buffer.from(bs58.decode(s.slice(PRIVACY_ADDRESS_PREFIX.length)))
+  if (raw.length !== 64) throw new Error("invalid privacy address")
+  return {
+    spendPubkey: new BN([...raw.subarray(0, 32)], "be"),
+    viewingKey: new Uint8Array(raw.subarray(32)),
+  }
+}
+
+export function isPrivacyAddress(addr: string): boolean {
+  return addr.trim().startsWith(PRIVACY_ADDRESS_PREFIX)
 }
 
 export function randomBytes(n: number): Uint8Array {
@@ -300,4 +377,9 @@ function bs(u: Uint8Array): BufferSource {
   return u as unknown as BufferSource
 }
 
-export { SIGN_MESSAGE }
+export {
+  buildUnlockMessage,
+  type SiwsUnlockInput,
+  type SiwsSignInInput,
+  type SiwsSignInOutput,
+} from "./constants"

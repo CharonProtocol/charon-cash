@@ -95,12 +95,14 @@ pub fn prove(input: &ProofInput, key_base_path: &Path) -> Result<DepositProofArt
     }
     let loaded = cache.as_mut().expect("prover loaded");
 
-    // WitnessCalculator is created once via `new` (wasm path). Do not rebuild
-    // it from cached Module bytes — that produced unverifiable proofs.
+    // Fresh WitnessCalculator + Store per proof. Reusing one WC across
+    // calculate_witness calls (and rebuilding WC from a cached Module) both
+    // produced unverifiable proofs (`native groth16 verify failed`).
+    let mut store = Store::default();
+    let mut wc = WitnessCalculator::new(&mut store, &wasm_path).map_err(anyhow::Error::msg)?;
     let inputs = build_circom_inputs(input)?;
-    let witness: Vec<Fr> = loaded
-        .wc
-        .calculate_witness_element::<Fr, _>(&mut loaded.store, inputs, true)
+    let witness: Vec<Fr> = wc
+        .calculate_witness_element::<Fr, _>(&mut store, inputs, true)
         .map_err(anyhow::Error::msg)?;
 
     let mut rng = thread_rng();
@@ -491,6 +493,7 @@ fn proof_input_from_json(v: &serde_json::Value) -> Result<ProofInput> {
 }
 
 /// One JSON object per stdin line; one JSON response per stdout line.
+/// Prove failures are returned as `{"error": "..."}` so the process stays up.
 pub fn serve_stdio_loop() -> Result<()> {
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
@@ -499,9 +502,15 @@ pub fn serve_stdio_loop() -> Result<()> {
         if line.trim().is_empty() {
             continue;
         }
-        let value: serde_json::Value = serde_json::from_str(&line)?;
-        let response = prove_circuit_json(&value, &default_circuit_base())?;
-        serde_json::to_writer(&mut stdout, &response)?;
+        let reply = match serde_json::from_str::<serde_json::Value>(&line) {
+            Err(e) => serde_json::json!({ "error": format!("invalid json: {e}") }),
+            Ok(value) => match prove_circuit_json(&value, &default_circuit_base()) {
+                Ok(response) => serde_json::to_value(&response)
+                    .unwrap_or_else(|e| serde_json::json!({ "error": e.to_string() })),
+                Err(e) => serde_json::json!({ "error": format!("{e:#}") }),
+            },
+        };
+        serde_json::to_writer(&mut stdout, &reply)?;
         stdout.write_all(b"\n")?;
         stdout.flush()?;
     }

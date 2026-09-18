@@ -103,8 +103,8 @@ export function DepositSplCard({ onChanged }: { onChanged?: () => void }) {
           <Alert variant="warning">
             <AlertTitle>Wallet not connected</AlertTitle>
             <AlertDescription>
-              Connect a wallet that supports <code>signMessage</code> +{" "}
-              <code>signTransaction</code> to deposit SPL.
+              Connect a wallet that supports Sign In With Solana (<code>signIn</code>)
+              and <code>signTransaction</code> to deposit SPL.
             </AlertDescription>
           </Alert>
         )}

@@ -265,7 +265,18 @@ pub fn check_public_amount(ext_amount: i64, fee: u64, public_amount_bytes: [u8; 
         return false;
     }
 
-    let expected = if ext_amount >= 0 {
+    // Shielded transfer: no public deposit/withdraw. Circuit public_amount is
+    // `(ext - fee) mod Fr` = `-fee` (0 when fee is 0).
+    if ext_amount == 0 {
+        let expected = if fee == 0 {
+            [0u8; 32]
+        } else {
+            sub_be(&FR_MODULUS_BE, &u64_to_be32(fee))
+        };
+        return fr_reduce_be(&public_amount_bytes) == expected;
+    }
+
+    let expected = if ext_amount > 0 {
         let ext_n = ext_amount as u64;
         if ext_n <= fee {
             return false;
@@ -336,6 +347,21 @@ mod tests {
     fn fr_from_le_mod(bytes: &[u8; 32]) -> BigUint {
         let r = BigUint::from_bytes_be(&FR_MODULUS_BE);
         BigUint::from_bytes_le(bytes) % r
+    }
+
+    #[test]
+    fn test_check_public_amount_shielded_transfer() {
+        assert!(check_public_amount(0, 0, [0u8; 32]));
+        assert!(!check_public_amount(0, 0, {
+            let mut x = [0u8; 32];
+            x[31] = 1;
+            x
+        }));
+        let fee = 25u64;
+        let expected = sub_be(&FR_MODULUS_BE, &u64_to_be32(fee));
+        assert!(check_public_amount(0, fee, expected));
+        assert!(!check_public_amount(1_000, 0, [0u8; 32]));
+        assert!(check_public_amount(1_000, 0, u64_to_be32(1_000)));
     }
 
     #[test]

@@ -2,8 +2,6 @@
 // then SPL deposit+withdraw. Proves the client-sdk works for all interactions
 // against our Pinocchio program. Run:  bun scripts/e2e-surfpool.mjs
 import { readFileSync } from "node:fs"
-import path from "node:path"
-import { fileURLToPath } from "node:url"
 import { homedir } from "node:os"
 
 import {
@@ -22,17 +20,18 @@ import { WasmFactory } from "@lightprotocol/hasher.rs"
 
 import {
   EncryptionService, Keypair as UtxoKeypair, Utxo, getExtDataHash, getMintAddressField,
-  prove, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers,
+  prove, parseToBytesArray,
   buildTransactIxData, deriveAccounts,
   FIELD_SIZE, MERKLE_TREE_DEPTH, WRAPPED_SOL_MINT,
+  buildUnlockMessage,
 } from "privacy-cash-sdk"
 
 const PROGRAM = new PublicKey("6e5ioWVHAyuzfNSGAmJLfiGwKrmwr2GkqoDYWAhqvdjX")
 const RPC = process.env.RPC ?? "http://localhost:8899"
 const DEPTH = MERKLE_TREE_DEPTH
 const ROOT_HISTORY_OFF = 848, NEXT_INDEX_OFF = 8, ROOT_INDEX_OFF = 12
-const SIGN_MSG = "Privacy Money account sign in"
-const here = fileURLToPath(new URL(".", import.meta.url))
+const SIWS = { domain: "localhost", uri: "http://localhost", chainId: "localnet" }
+const unlockMsg = (pk) => buildUnlockMessage({ address: pk.toBase58(), ...SIWS })
 const be = (b) => { let r = 0n; for (const x of b) r = (r << 8n) + BigInt(x); return r }
 
 class Mirror {
@@ -62,14 +61,7 @@ class Mirror {
   }
 }
 
-let conn, wasm, payer, circuitLoaded = false
-
-async function ensureCircuit() {
-  if (circuitLoaded) return
-  const dir = path.join(here, "..", "..", "privacy-cash-sdk", "circuit2")
-  setCircuitBuffers(new Uint8Array(readFileSync(path.join(dir, "transaction2.wasm"))), new Uint8Array(readFileSync(path.join(dir, "transaction2.zkey"))))
-  circuitLoaded = true
-}
+let conn, wasm, payer
 
 async function fund(conn, kp, sol) {
   if ((await conn.getBalance(kp.publicKey)) < sol * LAMPORTS_PER_SOL) {
@@ -149,7 +141,6 @@ async function sendWithAlt(ix, signerKp) {
 
 // generic transact (SOL or SPL)
 async function transact({ signerKp, enc, extAmount, fee, inputs, outputs, inputPaths, rootBytes, treeAccount, isSpl, mint, recipient, feeRecipient, feeRecipientAta, recipientTokenAccount, signerTokenAccount }) {
-  await ensureCircuit()
   const utxoKp = new UtxoKeypair(enc.utxoPrivateKey, wasm)
   // rebind input/output Utxos to this signer's keypair if needed (handled by caller passing correct Utxos)
   const inputNullifiers = await Promise.all(inputs.map((x) => x.getNullifier()))
@@ -162,7 +153,7 @@ async function transact({ signerKp, enc, extAmount, fee, inputs, outputs, inputP
     mintAddress: isSpl ? mint : WRAPPED_SOL_MINT,
   })
   const publicAmount = extAmount.sub(fee).add(FIELD_SIZE).mod(FIELD_SIZE)
-  const { proof, publicSignals } = await prove({
+  const { publicSignals, proofA, proofB, proofC } = await prove({
     root: be(rootBytes).toString(),
     inputNullifier: inputNullifiers, outputCommitment: outputCommitments,
     publicAmount: publicAmount.toString(), extDataHash,
@@ -176,9 +167,9 @@ async function transact({ signerKp, enc, extAmount, fee, inputs, outputs, inputP
     outPubkey: outputs.map((x) => x.keypair.pubkey),
     mintAddress: getMintAddressField(isSpl ? mint : WRAPPED_SOL_MINT),
   })
-  const parsed = parseProofToBytesArray(proof); const pub = parseToBytesArray(publicSignals)
+  const pub = parseToBytesArray(publicSignals)
   const proofSubmit = {
-    proofA: parsed.proofA, proofB: parsed.proofB, proofC: parsed.proofC,
+    proofA, proofB, proofC,
     root: pub[0], publicAmount: pub[1], extDataHash: pub[2],
     inputNullifiers: [pub[3], pub[4]], outputCommitments: [pub[5], pub[6]],
   }
@@ -268,7 +259,7 @@ async function initSplTree(mint) {
 async function solFlow(kp, mirror, treeAccount, amountSol) {
   await fund(conn, kp, 0.5)
   const enc = new EncryptionService()
-  enc.deriveFromSignature(nacl.sign.detached(new TextEncoder().encode(SIGN_MSG), kp.secretKey))
+  enc.deriveFromSignature(nacl.sign.detached(new TextEncoder().encode(unlockMsg(kp.publicKey)), kp.secretKey))
   const utxoKp = new UtxoKeypair(enc.utxoPrivateKey, wasm)
   const D = Math.floor(amountSol * LAMPORTS_PER_SOL)
   const nextIdx = await readNext(treeAccount)
@@ -308,7 +299,7 @@ async function solFlow(kp, mirror, treeAccount, amountSol) {
 async function splFlow(kp, mirror, mint, treeAccount, amount) {
   await fund(conn, kp, 0.5)
   const enc = new EncryptionService()
-  enc.deriveFromSignature(nacl.sign.detached(new TextEncoder().encode(SIGN_MSG), kp.secretKey))
+  enc.deriveFromSignature(nacl.sign.detached(new TextEncoder().encode(unlockMsg(kp.publicKey)), kp.secretKey))
   const utxoKp = new UtxoKeypair(enc.utxoPrivateKey, wasm)
   const mintStr = mint.toBase58()
   // token accounts

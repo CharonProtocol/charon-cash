@@ -3,7 +3,7 @@
 // account + global config, commitments/nullifiers by scanning the program's tx
 // history. Also signs setup/config ixs (initialize, initialize-spl, update-*).
 // Serves the same routes the client SDK + admin cards call. Run: bun scripts/backend-shim.mjs
-import { readFileSync, existsSync } from "node:fs"
+import { readFileSync, existsSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { homedir } from "node:os"
 
@@ -68,6 +68,27 @@ const json = (v, status = 200) => new Response(JSON.stringify(v), {
 })
 /** @type {Map<string, { ciphertext: string, updatedAt: string }>} */
 const noteBlobs = new Map()
+/** @type {Map<string, { spend_pubkey: string, viewing_pubkey: string }>} */
+const registry = new Map()
+const REG_FILE = path.join(repoRoot, "frontend/.local-registry.json")
+try {
+  if (existsSync(REG_FILE)) {
+    const saved = JSON.parse(readFileSync(REG_FILE, "utf8"))
+    for (const [k, v] of Object.entries(saved ?? {})) {
+      if (v && typeof v === "object") registry.set(k, v)
+    }
+    if (registry.size) console.log(`loaded ${registry.size} registered viewing keys`)
+  }
+} catch (e) {
+  console.warn("registry load:", e.message)
+}
+function saveRegistry() {
+  try {
+    writeFileSync(REG_FILE, JSON.stringify(Object.fromEntries(registry), null, 2))
+  } catch (e) {
+    console.warn("registry save:", e.message)
+  }
+}
 
 // surfpool (a mainnet-forking local validator) lazy-loads referenced accounts from
 // api.mainnet-beta.solana.com on demand; if that fetch is slow/offline it rejects the
@@ -175,6 +196,62 @@ function resolveKeys(msg, meta) {
   return [...staticKeys, ...writable, ...readonly]
 }
 
+const V1_PREFIX = 0x81
+const V1_CONFIG_CU_LIMIT = 1 << 2
+const V1_CONFIG_LOADED_ACCOUNTS = 1 << 3
+
+/** SIMD-0385 v1 unsigned/signed wire → { allKeys, ixs }. Signatures may be appended. */
+function parseV1Ixs(wire) {
+  if (!wire || wire[0] !== V1_PREFIX) return null
+  let o = 1
+  o += 3 // numRequiredSignatures, numReadonlySigned, numReadonlyUnsigned
+  const configMask = wire.readUInt32LE(o)
+  o += 4
+  o += 32 // blockhash
+  const nIx = wire[o++]
+  const nAcct = wire[o++]
+  const allKeys = []
+  for (let i = 0; i < nAcct; i++) {
+    allKeys.push(new PublicKey(wire.subarray(o, o + 32)))
+    o += 32
+  }
+  if (configMask & V1_CONFIG_CU_LIMIT) o += 4
+  if (configMask & V1_CONFIG_LOADED_ACCOUNTS) o += 4
+  const headers = []
+  for (let i = 0; i < nIx; i++) {
+    const programIdIndex = wire[o++]
+    const nKeys = wire[o++]
+    const dataLen = wire.readUInt16LE(o)
+    o += 2
+    headers.push({ programIdIndex, nKeys, dataLen })
+  }
+  const ixs = []
+  for (const h of headers) {
+    const accountKeyIndexes = [...wire.subarray(o, o + h.nKeys)]
+    o += h.nKeys
+    const data = Buffer.from(wire.subarray(o, o + h.dataLen))
+    o += h.dataLen
+    ixs.push({ programIdIndex: h.programIdIndex, accountKeyIndexes, accounts: accountKeyIndexes, data })
+  }
+  return { allKeys, ixs }
+}
+
+async function fetchTxWireBase64(signature) {
+  const rpc = await fetch(RPC, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "getTransaction",
+      params: [signature, { encoding: "base64", commitment: "confirmed", maxSupportedTransactionVersion: 1 }],
+    }),
+  })
+  const j = await rpc.json()
+  const b64 = j?.result?.transaction?.[0]
+  return b64 ? Buffer.from(b64, "base64") : null
+}
+
 async function rescan() {
   const sigs = await conn.getSignaturesForAddress(PROGRAM, { limit: 1000 }, "confirmed")
   lastSlot = sigs[0]?.slot ?? lastSlot
@@ -211,8 +288,20 @@ async function rescan() {
     if (!t) continue
     const msg = t.transaction.message
     const meta = t.meta
-    const allKeys = resolveKeys(msg, meta)
-    const ixs = msg.compiledInstructions ?? msg.instructions ?? []
+    let allKeys = resolveKeys(msg, meta)
+    let ixs = msg.compiledInstructions ?? msg.instructions ?? []
+    if (t.version === 1 || t.version === "1") {
+      try {
+        const wire = await fetchTxWireBase64(s.signature)
+        const parsed = parseV1Ixs(wire)
+        if (parsed) {
+          allKeys = parsed.allKeys
+          ixs = parsed.ixs
+        }
+      } catch (e) {
+        console.error("v1 parse", s.signature.slice(0, 8), e.message)
+      }
+    }
     for (const ix of ixs) {
       const prog =
         allKeys[ix.programIdIndex] ??
@@ -335,11 +424,20 @@ async function proofFor(treeKey, idx) {
   const m = mirrors.get(treeKey)
   if (!m) return null
   try {
+    const onChain = await readTreeState(conn, PROGRAM, treeKey)
+    const mirrorRoot = m.root()
+    const leafCount = utxos.filter((u) => u.treeKey === treeKey).length
+    if (leafCount !== onChain.nextLeafIndex || mirrorRoot !== onChain.root) {
+      throw new Error(
+        `merkle indexer mismatch for ${treeKey}: indexed ${leafCount} leaves (mirror root ${mirrorRoot.slice(0, 12)}…) vs on-chain next_index=${onChain.nextLeafIndex}. Restart the shim or ./run.sh --fresh so the tree and indexer match.`,
+      )
+    }
     return {
       path_elements: m.path(idx).map(dec2hex),
       path_indices: Array.from({ length: MERKLE_TREE_DEPTH }, (_, i) => (idx >> i) & 1),
     }
-  } catch {
+  } catch (e) {
+    if (/merkle indexer mismatch/.test(e.message)) throw e
     return null
   }
 }
@@ -412,6 +510,28 @@ Bun.serve({
         const pr = await proofFor(treeKey, Number(mp[2]))
         if (!pr) return json({ error: { code: "LEAF_NOT_FOUND", message: "leaf not indexed yet" } }, 404)
         return json(pr)
+      }
+
+      const look = p.match(/^\/api\/registration\/lookup\/([^/]+)$/)
+      if (look && method === "GET") {
+        const wallet = decodeURIComponent(look[1])
+        const hit = registry.get(wallet)
+        if (!hit) return json({ error: { code: "NOT_REGISTERED", message: "recipient has not unlocked in this app yet" } }, 404)
+        return json(hit)
+      }
+
+      if (p === "/api/registration/register" && method === "POST") {
+        let body = {}
+        try { const text = await req.text(); if (text.trim()) body = JSON.parse(text) } catch { }
+        const wallet = String(body.wallet || body.wallet_pubkey || "").trim()
+        const spend = String(body.spend_pubkey || body.spendPubkey || "").trim()
+        const view = String(body.viewing_pubkey || body.viewingPubkey || "").trim()
+        if (!wallet || !spend || !view) {
+          return json({ error: { code: "INVALID", message: "wallet, spend_pubkey, viewing_pubkey required" } }, 400)
+        }
+        registry.set(wallet, { spend_pubkey: spend, viewing_pubkey: view })
+        saveRegistry()
+        return json({ ok: true })
       }
 
       if (p === "/api/utxos/range" && method === "GET") {
@@ -508,7 +628,16 @@ Bun.serve({
           const vtx = VersionedTransaction.deserialize(bytes)
           const sig = await sendRawWithRetry(vtx.serialize(), { skipPreflight: true, maxRetries: 5 })
           try { await conn.confirmTransaction(sig, "confirmed") } catch { }
-          return json({ signature: sig, slot: null, status: "submitted" })
+          let tx = null
+          try {
+            tx = await conn.getTransaction(sig, { commitment: "confirmed", maxSupportedTransactionVersion: 1 })
+          } catch { }
+          if (tx?.meta?.err) {
+            const logs = (tx.meta.logMessages ?? []).filter((l) => /failed|Error|custom program/i.test(l))
+            const hint = logs.length ? ` — ${logs[logs.length - 1]}` : ""
+            return json({ error: { code: "TX_FAILED", message: `transaction failed: ${JSON.stringify(tx.meta.err)}${hint}` } }, 400)
+          }
+          return json({ signature: sig, slot: tx?.slot ?? null, status: "confirmed" })
         }
 
         // Withdraw path: proof JSON → shim signs with local payer (relayer role)
@@ -793,6 +922,8 @@ async function proveViaServe(circuitInput) {
 
 async function ensureServe() {
   if (serveProc && serveProc.exitCode === null) return
+  serveProc = null
+  stdoutReader = null
   if (!existsSync(PROVER_BIN)) {
     throw new Error(`prover binary missing at ${PROVER_BIN}; cargo build --release --manifest-path crates/privacy-cash-prover/Cargo.toml`)
   }
@@ -818,7 +949,10 @@ async function ensureServe() {
 async function readServeLine() {
   while (!serveStdoutBuf.includes("\n")) {
     const { done, value } = await stdoutReader.read()
-    if (done || !value) throw new Error("prover serve stdout closed")
+    if (done || !value) {
+      serveProc = null
+      throw new Error("prover serve stdout closed")
+    }
     serveStdoutBuf += new TextDecoder().decode(value)
   }
   const i = serveStdoutBuf.indexOf("\n")
@@ -829,9 +963,22 @@ async function readServeLine() {
 
 async function proveViaServeLocked(circuitInput) {
   await ensureServe()
-  serveProc.stdin.write(JSON.stringify(circuitInput) + "\n")
-  const line = await readServeLine()
-  return JSON.parse(line)
+  try {
+    serveProc.stdin.write(JSON.stringify(circuitInput) + "\n")
+    const line = await readServeLine()
+    const parsed = JSON.parse(line)
+    if (parsed?.error) throw new Error(String(parsed.error))
+    return parsed
+  } catch (e) {
+    const msg = String(e?.message ?? e)
+    // Keep the process up for prove failures (JSON `error` field). Only
+    // respawn when stdin/stdout actually died.
+    if (/stdout closed|EPIPE|write after end|spawn/i.test(msg) || e instanceof SyntaxError) {
+      try { serveProc?.kill() } catch { }
+      serveProc = null
+    }
+    throw e
+  }
 }
 
 async function jupiterRoute(body) {

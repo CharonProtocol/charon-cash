@@ -21,7 +21,7 @@ export declare class EncryptionService {
     private keypair;
     private constructor();
     static startEncryptionService(masterSeed: Uint8Array | string): Promise<EncryptionService>;
-    getViewingKey(): Uint8Array<ArrayBufferLike>;
+    getViewingKey(): Uint8Array<ArrayBuffer>;
     /**
      * Encrypts UTXO bytes for network.
      *
@@ -34,11 +34,11 @@ export declare class EncryptionService {
      * Decrypts the UTXO bytes received from the network.
      *
      * @param data - encrypted output stored on the network
-     * `[version (8B) | ephemeral_pubkey (32B) | iv/nonce (32B) | ciphertext + authTag (16B)]`
+     * `[version (8B) | ephemeral_pubkey (32B) | iv/nonce (12B) | ciphertext + authTag (16B)]`
      * @returns The decrypted output: `raw UTXO bytes`
      */
     decrypt(encryptedOutput: Uint8Array): Promise<Uint8Array<ArrayBufferLike> & Uint8Array<ArrayBuffer>>;
-    generateEncryptionDecryptionKey(sharedSecret: Uint8Array): Promise<Uint8Array<ArrayBufferLike> & Uint8Array<ArrayBuffer>>;
+    generateEncryptionDecryptionKey(sharedSecret: Uint8Array): Promise<Uint8Array<ArrayBuffer>>;
 }
 export {};
 //# sourceMappingURL=encrypt.d.ts.map

@@ -9,15 +9,28 @@
  *        shared_secret = keygen.shared_secret(note_s,recv_p);
  *  4. Pass the shared_secret through hkdf function
  *        note_encryption_key = hkdf(shared_secret,salt)
+ *
+ * Pure JS (noble) — not WebCrypto. Browser `crypto` polyfills and Safari/Firefox
+ * raw X25519 import/export made decrypt fail while encrypt still produced a
+ * valid ciphertext (ECDH used the ephemeral secret, not the stored public).
  */
-import { x25519 as webX25519 } from "@noble/curves/webcrypto.js";
-import * as webCryptoHash from "@noble/hashes/webcrypto.js";
-import * as webCryptoCipher from "@noble/ciphers/webcrypto.js";
-import { randomBytes } from "@noble/ciphers/utils.js";
+import { x25519 } from "@noble/curves/ed25519.js"
+import { gcm } from "@noble/ciphers/aes.js"
+import { randomBytes } from "@noble/ciphers/utils.js"
+import { hkdf } from "@noble/hashes/hkdf.js"
+import { sha256 } from "@noble/hashes/sha2.js"
 
 interface Keypair {
-  publicKey: Uint8Array;
-  secretKey: Uint8Array;
+  publicKey: Uint8Array
+  secretKey: Uint8Array
+}
+
+function copy32(b: Uint8Array, label: string): Uint8Array {
+  const u = Uint8Array.from(b)
+  if (u.length !== 32) {
+    throw new Error(`${label}: expected 32 bytes, got ${u.length}`)
+  }
+  return u
 }
 
 export async function generateX25519Keypair(
@@ -25,34 +38,25 @@ export async function generateX25519Keypair(
 ): Promise<Keypair> {
   if (seed) {
     const ikm =
-      typeof seed === "string" ? new TextEncoder().encode(seed) : seed;
+      typeof seed === "string" ? new TextEncoder().encode(seed) : seed
 
-    const secretKey = await webCryptoHash.hkdf(
-      webCryptoHash.sha256,
-      ikm,
-      new TextEncoder().encode("SILENTPAYX25519SECRETKEY"),
-      new TextEncoder().encode("secretKey-for-x25519"),
-      32,
-    );
-    const publicKey = (await webX25519.getPublicKey(secretKey, {
-      formatPub: "raw",
-      formatSec: "raw",
-    })) as Uint8Array<ArrayBufferLike>;
-
-    return { secretKey, publicKey };
-  } else {
-    const keypair = await webX25519.keygen();
-    const pub_key = (await webX25519.utils.convertPublicKey(
-      keypair.publicKey,
-      "spki",
-      "raw",
-    )) as Uint8Array<ArrayBufferLike>;
-    const s_key = (await webX25519.utils.convertSecretKey(
-      keypair.secretKey,
-      "pkcs8",
-      "raw",
-    )) as Uint8Array<ArrayBufferLike>;
-    return { publicKey: pub_key, secretKey: s_key };
+    const secretKey = Uint8Array.from(
+      hkdf(
+        sha256,
+        ikm,
+        new TextEncoder().encode("SILENTPAYX25519SECRETKEY"),
+        new TextEncoder().encode("secretKey-for-x25519"),
+        32,
+      ),
+    )
+    // getPublicKey may clamp the scalar in place — copy first.
+    const publicKey = x25519.getPublicKey(Uint8Array.from(secretKey))
+    return { secretKey, publicKey: Uint8Array.from(publicKey) }
+  }
+  const generated = x25519.keygen()
+  return {
+    publicKey: Uint8Array.from(generated.publicKey),
+    secretKey: Uint8Array.from(generated.secretKey),
   }
 }
 
@@ -60,15 +64,10 @@ export async function generateSharedSecret(
   client: Keypair,
   pubKey: Uint8Array,
 ) {
-  const shared_secret = await webX25519.getSharedSecret(
-    client.secretKey,
-    pubKey,
-    {
-      formatPub: "raw",
-      formatSec: "raw",
-    },
-  );
-  return shared_secret;
+  return x25519.getSharedSecret(
+    copy32(client.secretKey, "x25519 secret"),
+    copy32(pubKey, "x25519 public"),
+  )
 }
 
 /**
@@ -79,30 +78,18 @@ export async function generateSharedSecret(
  * @returns prepends nonce/iv (12 bytes) + ciphertext + authtag (16 bytes)
  */
 export async function aes_encrypt(data: Uint8Array, encryptionKey: Uint8Array) {
-  const iv = randomBytes(12);
-
-  const cipher = webCryptoCipher.gcm(encryptionKey, iv);
-
-  // NOTE : webcrypto api automatically appends auth_tag( 16 bytes ) at the end
-  const ciphertext = await cipher.encrypt(data);
-
-  const ret = new Uint8Array(ciphertext.length + iv.length);
-  ret.set(iv);
-  ret.set(ciphertext, iv.length);
-
-  return ret;
+  const iv = randomBytes(12)
+  const ciphertext = gcm(encryptionKey, iv).encrypt(data)
+  const ret = new Uint8Array(ciphertext.length + iv.length)
+  ret.set(iv)
+  ret.set(ciphertext, iv.length)
+  return ret
 }
 
 export async function aes_decrypt(data: Uint8Array, decryptionKey: Uint8Array) {
-  const iv = data.slice(0, 12);
-
-  const ciphertext = data.slice(12);
-
-  const decipher = webCryptoCipher.gcm(decryptionKey, iv);
-
-  const decrypted_data = await decipher.decrypt(ciphertext);
-
-  return decrypted_data;
+  const iv = data.slice(0, 12)
+  const ciphertext = data.slice(12)
+  return gcm(decryptionKey, iv).decrypt(ciphertext)
 }
 
 /**
@@ -111,22 +98,22 @@ export async function aes_decrypt(data: Uint8Array, decryptionKey: Uint8Array) {
 export class EncryptionService {
   public static readonly ENCRYPTION_VERSION_V1 = Uint8Array.from([
     0, 0, 0, 0, 0, 0, 0, 1,
-  ]);
+  ])
 
   // This represents the wallet's X25519 keypair
-  private keypair: Keypair;
+  private keypair: Keypair
 
   private constructor(keypair: Keypair) {
-    this.keypair = keypair;
+    this.keypair = keypair
   }
 
   public static async startEncryptionService(masterSeed: Uint8Array | string) {
-    const keypair = await generateX25519Keypair(masterSeed);
-    return new EncryptionService(keypair);
+    const keypair = await generateX25519Keypair(masterSeed)
+    return new EncryptionService(keypair)
   }
 
   getViewingKey() {
-    return this.keypair.publicKey;
+    return Uint8Array.from(this.keypair.publicKey)
   }
 
   /**
@@ -137,82 +124,49 @@ export class EncryptionService {
    * `[version (8B) | ephemeral_pubkey (32B) | iv/nonce (12B) | ciphertext + authTag (16B)]`
    */
   async encrypt(data: Uint8Array, targetViewingKey: Uint8Array) {
-    // Note's ephemeral keypair used for sharedSecret/Encryption
-    // After encryption secret key will be discarded making the target only one that can
-    // decrypt the note .
-    const noteEphemeralKeypair = await generateX25519Keypair();
-
-    console.log("ephemeral public:", noteEphemeralKeypair.publicKey.toString());
-    console.log("target public:", targetViewingKey.toString());
-
+    const noteEphemeralKeypair = await generateX25519Keypair()
     const sharedSecret = await generateSharedSecret(
       noteEphemeralKeypair,
-      targetViewingKey,
-    );
-
-    console.log("encrypt shared:", sharedSecret.toString());
-
+      copy32(targetViewingKey, "recipient viewing key"),
+    )
     const encryptionKey =
-      await this.generateEncryptionDecryptionKey(sharedSecret);
+      await this.generateEncryptionDecryptionKey(sharedSecret)
+    const ciphertext = await aes_encrypt(data, encryptionKey)
 
-    const ciphertext = await aes_encrypt(data, encryptionKey);
-
-    // EncryptionService.ENCRYPTION_VERSION_V1.length + noteEphemeralKeypair.publicKey.length +ciphertext.length;
-    const encryptedOutputLength = 8 + 32 + ciphertext.length;
-    const encryptedOutput = new Uint8Array(encryptedOutputLength);
-
-    encryptedOutput.set(EncryptionService.ENCRYPTION_VERSION_V1);
-    encryptedOutput.set(noteEphemeralKeypair.publicKey, 8);
-    encryptedOutput.set(ciphertext, 40);
-
-    return encryptedOutput;
+    const encryptedOutput = new Uint8Array(8 + 32 + ciphertext.length)
+    encryptedOutput.set(EncryptionService.ENCRYPTION_VERSION_V1)
+    encryptedOutput.set(copy32(noteEphemeralKeypair.publicKey, "ephemeral pub"), 8)
+    encryptedOutput.set(ciphertext, 40)
+    return encryptedOutput
   }
 
   /**
    * Decrypts the UTXO bytes received from the network.
    *
    * @param data - encrypted output stored on the network
-   * `[version (8B) | ephemeral_pubkey (32B) | iv/nonce (32B) | ciphertext + authTag (16B)]`
+   * `[version (8B) | ephemeral_pubkey (32B) | iv/nonce (12B) | ciphertext + authTag (16B)]`
    * @returns The decrypted output: `raw UTXO bytes`
    */
   async decrypt(encryptedOutput: Uint8Array) {
-    const version = encryptedOutput.slice(0, 8);
-
-    const ephemeralPubkey = encryptedOutput.slice(8, 40);
-
-    console.log("received ephemeral public:", ephemeralPubkey.toString());
-
-    console.log("bob public:", this.keypair.publicKey.toString());
-
-    const sharedSecret = await generateSharedSecret(
-      this.keypair,
-      ephemeralPubkey,
-    );
-
-    console.log("Shared Secret ", sharedSecret.toString());
-
+    const ephemeralPubkey = copy32(
+      Uint8Array.from(encryptedOutput.slice(8, 40)),
+      "ephemeral pubkey",
+    )
+    const sharedSecret = await generateSharedSecret(this.keypair, ephemeralPubkey)
     const decryptionKey =
-      await this.generateEncryptionDecryptionKey(sharedSecret);
-
-    const ciphertext = encryptedOutput.slice(40);
-    const deciphertext = await aes_decrypt(ciphertext, decryptionKey);
-
-    return deciphertext;
+      await this.generateEncryptionDecryptionKey(sharedSecret)
+    return aes_decrypt(encryptedOutput.slice(40), decryptionKey)
   }
 
   async generateEncryptionDecryptionKey(sharedSecret: Uint8Array) {
-    const textEncoder = new TextEncoder();
-    const salt = textEncoder.encode("SILENTPAYENCRYPT");
-    const info = textEncoder.encode("sharedsecret-to-gcmkey");
-
-    const key = await webCryptoHash.hkdf(
-      webCryptoHash.sha256,
-      sharedSecret,
-      salt,
-      info,
-      16,
-    );
-
-    return key;
+    return Uint8Array.from(
+      hkdf(
+        sha256,
+        sharedSecret,
+        new TextEncoder().encode("SILENTPAYENCRYPT"),
+        new TextEncoder().encode("sharedsecret-to-gcmkey"),
+        16,
+      ),
+    )
   }
 }

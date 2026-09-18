@@ -106,78 +106,6 @@ export async function submitTransaction(
   return payload.signature
 }
 
-/** Relayer-signed withdraw: POST proof fields; backend builds + signs + submits. */
-export async function relayWithdraw(req: {
-  kind: "sol" | "spl"
-  proofA: number[]
-  proofB: number[]
-  proofC: number[]
-  root: number[]
-  publicAmount: number[]
-  extDataHash: number[]
-  inputNullifiers: number[][]
-  outputCommitments: number[][]
-  extAmount: number
-  fee: number
-  encryptedOutput1: Uint8Array
-  encryptedOutput2: Uint8Array
-  /** SOL: wallet. SPL: recipient ATA. */
-  recipient: string
-  mint?: string
-  /** SPL: wallet that owns the recipient ATA. */
-  recipientOwner?: string
-}): Promise<string> {
-  const body = {
-    kind: req.kind,
-    proof_a: bytesToHex(req.proofA),
-    proof_b: bytesToHex(req.proofB),
-    proof_c: bytesToHex(req.proofC),
-    root: bytesToHex(req.root),
-    public_amount: bytesToHex(req.publicAmount),
-    ext_data_hash: bytesToHex(req.extDataHash),
-    input_nullifiers: req.inputNullifiers.map((n) => bytesToHex(n)),
-    output_commitments: req.outputCommitments.map((n) => bytesToHex(n)),
-    ext_amount: req.extAmount,
-    fee: req.fee,
-    encrypted_output1: bytesToHex(req.encryptedOutput1),
-    encrypted_output2: bytesToHex(req.encryptedOutput2),
-    recipient: req.recipient,
-    mint: req.mint,
-    recipient_owner: req.recipientOwner,
-  }
-  const res = await fetch(getBackendUrl() + "/api/relayer", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  })
-  const text = await res.text()
-  let data: unknown = null
-  if (text) {
-    try {
-      data = JSON.parse(text)
-    } catch {
-      data = text
-    }
-  }
-  if (!res.ok) {
-    const err = (data as { error?: { message?: string } } | null)?.error
-    throw new Error(err?.message ?? `HTTP ${res.status}`)
-  }
-  const payload = data as { signature?: string; status?: string } | null
-  if (!payload?.signature) {
-    throw new Error("relayer returned no signature")
-  }
-  if (
-    payload.status &&
-    payload.status !== "confirmed" &&
-    payload.status !== "submitted" &&
-    payload.status !== "ok"
-  ) {
-    throw new Error(`relayer status: ${payload.status}`)
-  }
-  return payload.signature
-}
-
 /** Shim-signed atomic v1 swap. Does not use Phantom. */
 export async function relaySwap(req: {
   proofIn: {
@@ -501,4 +429,81 @@ export function solTreeKey(): string {
 
 export function splTreeKey(mint: string): string {
   return mint
+}
+
+/** Hex (with or without 0x, 64 nybbles) or already-decimal field element → decimal. */
+export function commitmentToDecimal(c: string): string {
+  const s = c.trim()
+  if (s.startsWith("0x") || s.startsWith("0X")) return BigInt(s).toString()
+  if (/^[0-9a-fA-F]{64}$/.test(s)) return BigInt("0x" + s).toString()
+  return s
+}
+
+/** All tree commitments in leaf-index order (decimal field elements). */
+export async function fetchTreeLeaves(treeKey: string): Promise<string[]> {
+  const byIndex = new Map<number, string>()
+  let start = 0
+  let nextIndex = 0
+  while (true) {
+    const page = await fetchUtxoRange(treeKey, start, start + 2_000)
+    nextIndex = page.nextIndex
+    for (const u of page.utxos) {
+      byIndex.set(u.leafIndex, commitmentToDecimal(u.commitment))
+    }
+    if (!page.hasMore) break
+    start = page.end
+  }
+  const leaves: string[] = []
+  for (let i = 0; i < nextIndex; i++) {
+    const c = byIndex.get(i)
+    if (c === undefined) {
+      throw new Error(`merkle indexer gap at leaf ${i} (have ${byIndex.size} of ${nextIndex})`)
+    }
+    leaves.push(c)
+  }
+  return leaves
+}
+
+export async function registerPrivacyKeys(args: {
+  wallet: string
+  spendPubkey: string
+  viewingPubkeyHex: string
+}): Promise<void> {
+  const res = await fetch(getBackendUrl() + "/api/registration/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      wallet: args.wallet,
+      spend_pubkey: args.spendPubkey,
+      viewing_pubkey: args.viewingPubkeyHex,
+    }),
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new Error(text || `register failed HTTP ${res.status}`)
+  }
+}
+
+export async function lookupPrivacyKeys(
+  wallet: string,
+): Promise<{ spendPubkey: string; viewingPubkeyHex: string } | null> {
+  const res = await fetch(
+    getBackendUrl() + `/api/registration/lookup/${encodeURIComponent(wallet)}`,
+  )
+  if (res.status === 404) return null
+  const text = await res.text()
+  let data: any = null
+  try {
+    data = text ? JSON.parse(text) : null
+  } catch {
+    data = text
+  }
+  if (!res.ok) {
+    throw new Error(data?.error?.message ?? `HTTP ${res.status}`)
+  }
+  const spend = String(data?.spend_pubkey ?? data?.spendPubkey ?? "")
+  const view = String(data?.viewing_pubkey ?? data?.viewingPubkey ?? "").replace(/^0x/i, "")
+  if (!spend || !view) return null
+  if (!/^[0-9a-fA-F]{64}$/.test(view)) return null
+  return { spendPubkey: spend, viewingPubkeyHex: view }
 }

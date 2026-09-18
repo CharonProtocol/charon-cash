@@ -3,14 +3,12 @@ use std::sync::Arc;
 use serde::Serialize;
 use tokio::sync::RwLock;
 
-use crate::config::Config;
 use crate::db::Db;
 use crate::merkle::MerkleManager;
 
 #[derive(Clone)]
 pub struct AppState {
     pub db: Db,
-    pub config: Config,
     pub merkle_manager: Arc<RwLock<MerkleManager>>,
 }
 

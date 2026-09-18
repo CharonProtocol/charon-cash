@@ -1,7 +1,6 @@
 import type { LightWasm } from "@lightprotocol/hasher.rs";
 import { PublicKey } from "@solana/web3.js";
 import BN from "bn.js";
-import { SIGN_MESSAGE } from "./constants";
 /**
  * Field-element keypair used inside UTXO commitments/nullifiers.
  * Ported 1:1 from privacy-cash-sdk/src/models/keypair.ts (browser-safe).
@@ -14,6 +13,8 @@ export declare class Keypair {
     constructor(privkeyHex: string, wasm: LightWasm);
     /** poseidon(privkey, commitment, merklePath) */
     sign(commitment: string, merklePath: string): string;
+    /** Output-only keypair (recipient note). Cannot spend. */
+    static fromPubkey(pubkey: BN | string, wasm: LightWasm): Keypair;
 }
 /** First-31-bytes / 248-bit field encoding of an SPL mint; SOL mint passes through. */
 export declare function getMintAddressField(mint: PublicKey | string): string;
@@ -86,16 +87,28 @@ export declare class EncryptionService {
     private encKeyV2;
     private utxoPrivKeyV2;
     private cryptoKey;
-    /** Derive keys from an ed25519 signature of the constant SIGN_MESSAGE. */
+    private signature;
+    private asym;
+    /** Derive AES + UTXO spend keys from a SIWS (`signIn`) signature. */
     deriveFromSignature(signature: Uint8Array): void;
     get utxoPrivateKey(): string;
     private key;
     encrypt(data: Uint8Array | string): Promise<Buffer>;
     decrypt(encrypted: Uint8Array): Promise<Buffer>;
-    /** Encrypt a UTXO as "amount|blinding|index|mintAddress" (pipe-delimited). */
-    encryptUtxo(utxo: Utxo): Promise<Buffer>;
+    /** Encrypt a UTXO as "amount|blinding|index|mintAddress" (pipe-delimited).
+     *  Own notes use AES-GCM (V2). Notes for another user use X25519 (V1). */
+    encryptUtxo(utxo: Utxo, recipientViewingKey?: Uint8Array): Promise<Buffer>;
     decryptUtxo(encrypted: Uint8Array, wasm: LightWasm): Promise<Utxo>;
+    viewingPublicKey(): Promise<Uint8Array>;
+    private asymEnc;
 }
+export declare const PRIVACY_ADDRESS_PREFIX = "pc1";
+export declare function encodePrivacyAddress(spendPubkey: BN, viewingKey: Uint8Array): string;
+export declare function parsePrivacyAddress(addr: string): {
+    spendPubkey: BN;
+    viewingKey: Uint8Array;
+};
+export declare function isPrivacyAddress(addr: string): boolean;
 export declare function randomBytes(n: number): Uint8Array;
-export { SIGN_MESSAGE };
+export { buildUnlockMessage, type SiwsUnlockInput, type SiwsSignInInput, type SiwsSignInOutput, } from "./constants";
 //# sourceMappingURL=crypto.d.ts.map

@@ -97,8 +97,8 @@ export function RelayerInfoCard({ refreshKey }: { refreshKey: number }) {
           </Button>
         </CardTitle>
         <CardDescription>
-          Program id, fee recipient, and rates. Withdraw and swap proofs are
-          relayer-signed — the browser never submits those transactions.
+          Program id, fee recipient, and rates. Only v1 swaps are relayer-signed
+          (Phantom cannot sign v1). Deposits, transfers, and withdraws are wallet-signed.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">

@@ -27,12 +27,6 @@ impl Db {
         db
     }
 
-    /// Expose pool for future modules (relayer, sqlx queries in routes).
-    #[allow(dead_code)]
-    pub fn pool(&self) -> &PgPool {
-        &self.pool
-    }
-
     pub async fn get_cursor(&self) -> Result<(Option<String>, u64), DbError> {
         let row: (Option<String>, i64) =
             sqlx::query_as("SELECT last_signature, last_slot FROM indexer_cursor WHERE id = 1")

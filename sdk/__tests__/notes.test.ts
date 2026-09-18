@@ -16,7 +16,6 @@ import {
   setSyncOffset,
   resetSyncOffset,
   newNoteId,
-  readLegacyNotes,
   type Note,
 } from "../src/notes"
 import { EncryptionService } from "../src/crypto"
@@ -132,10 +131,6 @@ describe("in-memory note store", () => {
     expect(getSyncOffset(w, "sol")).toBe(42)
     resetSyncOffset(w, "sol")
     expect(getSyncOffset(w, "sol")).toBe(0)
-  })
-
-  it("readLegacyNotes is a no-op outside the browser", () => {
-    expect(readLegacyNotes(w)).toEqual([])
   })
 })
 

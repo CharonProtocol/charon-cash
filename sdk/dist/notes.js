@@ -3,8 +3,6 @@ import { WRAPPED_SOL_MINT } from "./constants";
 const NOTES = new Map();
 /** Per-session indexer scan cursor, keyed by `${wallet}:${treeKey}`. */
 const OFFSETS = new Map();
-const NOTES_LEGACY_PREFIX = "privacy-cash:notes:";
-const OFFSET_LEGACY_PREFIX = "privacy-cash:sync-offset:";
 function wk(wallet) {
     return wallet.toBase58();
 }
@@ -77,51 +75,6 @@ export function setSyncOffset(wallet, treeKey, offset) {
 }
 export function resetSyncOffset(wallet, treeKey) {
     OFFSETS.delete(ok(wallet, treeKey));
-}
-/**
- * Read any pre-migration plaintext notes left in localStorage by older builds.
- * Returns [] outside the browser or if none exist. Used once on unlock to
- * migrate them into the encrypted backend blob, after which the legacy key is
- * purged by `purgeLegacyStorage`.
- */
-export function readLegacyNotes(wallet) {
-    if (typeof localStorage === "undefined")
-        return [];
-    try {
-        const raw = localStorage.getItem(NOTES_LEGACY_PREFIX + wk(wallet));
-        const parsed = raw ? JSON.parse(raw) : [];
-        return Array.isArray(parsed) ? parsed : [];
-    }
-    catch {
-        return [];
-    }
-}
-/**
- * Remove every legacy localStorage key for this wallet (plaintext notes + sync
- * offsets). Idempotent; safe to call on every unlock. Ensures no spending
- * secret lingers on disk after the migration to encrypted-DB-only storage.
- */
-export function purgeLegacyStorage(wallet) {
-    if (typeof localStorage === "undefined")
-        return;
-    const w = wk(wallet);
-    try {
-        localStorage.removeItem(NOTES_LEGACY_PREFIX + w);
-        const notesPrefix = NOTES_LEGACY_PREFIX + w;
-        const offsetPrefix = OFFSET_LEGACY_PREFIX + w + ":";
-        const toRemove = [];
-        for (let i = 0; i < localStorage.length; i++) {
-            const k = localStorage.key(i);
-            if (k && (k === notesPrefix || k.startsWith(offsetPrefix))) {
-                toRemove.push(k);
-            }
-        }
-        for (const k of toRemove)
-            localStorage.removeItem(k);
-    }
-    catch {
-        /* localStorage may be unavailable (private mode); nothing to purge */
-    }
 }
 export function newNoteId() {
     const b = new Uint8Array(8);

@@ -16,14 +16,8 @@ serde_json = "1"
 # Postgres via SQLx
 sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls-ring", "postgres", "migrate"] }
 
-# Solana types + relayer (signing, tx, rpc). sdk 4.0.1 is the umbrella for the 4.x family.
+# Solana types (program id / mint pubkeys). sdk 4.0.1 is the umbrella for the 4.x family.
 solana-sdk = "4.0.1"
-bincode = "1"
-
-# Merkle / field-arithmetic — must match the on-chain program exactly.
-light-hasher = "4.0.0"
-ark-bn254 = "0.5"
-ark-ff = "0.5"
 
 # Yellowstone gRPC (live tx stream — replaces RPC poll)
 yellowstone-grpc-client = "13.2.1"
@@ -43,6 +37,5 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 rs-merkle-tree = {git = "https://github.com/Cheapstar/rs-merkle-tree.git", features = ["rocksdb_store_v2"]}
 rocksdb = { version = "0.24" }
-uuid = { version = "1.25.0", features = ["v4"] }
 chrono = "0.4.45"
 privacy-cash-prover = { path = "../crates/privacy-cash-prover" }

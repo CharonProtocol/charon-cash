@@ -5,8 +5,8 @@ import { DepositCard } from "@/components/DepositCard"
 import { WithdrawCard } from "@/components/WithdrawCard"
 import { DepositSplCard } from "@/components/DepositSplCard"
 import { WithdrawSplCard } from "@/components/WithdrawSplCard"
-import { SendCard } from "@/components/SendCard"
-import { SendSplCard } from "@/components/SendSplCard"
+import { TransferCard } from "@/components/TransferCard"
+import { TransferSplCard } from "@/components/TransferSplCard"
 import { SwapCard } from "@/components/SwapCard"
 import { Button } from "@/components/ui/button"
 import { useNotesSync } from "@/hooks/useNotesSync"
@@ -29,7 +29,7 @@ export function UserAppView({ onChanged }: UserAppViewProps) {
             <ShieldCheck className="size-5 text-primary" /> Privacy Cash Portal
           </h2>
           <p className="text-xs text-muted-foreground">
-            Client-side ZK · wallet-signed deposits · relayer-signed withdraws &amp; swaps
+            Client-side ZK · wallet-signed deposits, transfers &amp; withdraws · relayer-signed v1 swaps
           </p>
         </div>
 
@@ -111,9 +111,9 @@ export function UserAppView({ onChanged }: UserAppViewProps) {
           )
         ) : activeTab === "transfer" ? (
           assetType === "SOL" ? (
-            <SendCard onChanged={onChanged} />
+            <TransferCard onChanged={onChanged} />
           ) : (
-            <SendSplCard onChanged={onChanged} />
+            <TransferSplCard onChanged={onChanged} />
           )
         ) : (
           <SwapCard onChanged={onChanged} />

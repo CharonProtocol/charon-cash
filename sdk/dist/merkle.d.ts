@@ -47,27 +47,6 @@ export interface UtxoCheckResult {
 export declare function setBackendUrl(url: string): void;
 export declare function getBackendUrl(): string;
 export declare function submitTransaction(serializedTx: Uint8Array): Promise<string>;
-/** Relayer-signed withdraw: POST proof fields; backend builds + signs + submits. */
-export declare function relayWithdraw(req: {
-    kind: "sol" | "spl";
-    proofA: number[];
-    proofB: number[];
-    proofC: number[];
-    root: number[];
-    publicAmount: number[];
-    extDataHash: number[];
-    inputNullifiers: number[][];
-    outputCommitments: number[][];
-    extAmount: number;
-    fee: number;
-    encryptedOutput1: Uint8Array;
-    encryptedOutput2: Uint8Array;
-    /** SOL: wallet. SPL: recipient ATA. */
-    recipient: string;
-    mint?: string;
-    /** SPL: wallet that owns the recipient ATA. */
-    recipientOwner?: string;
-}): Promise<string>;
 /** Shim-signed atomic v1 swap. Does not use Phantom. */
 export declare function relaySwap(req: {
     proofIn: {
@@ -148,4 +127,17 @@ export declare function waitForLeafIndex(treeKey: string, minLeafIndex: number, 
 export declare function waitForEncryptedOutput(encryptedHex: string, treeKey?: string, opts?: WaitOpts): Promise<UtxoCheckResult>;
 export declare function solTreeKey(): string;
 export declare function splTreeKey(mint: string): string;
+/** Hex (with or without 0x, 64 nybbles) or already-decimal field element → decimal. */
+export declare function commitmentToDecimal(c: string): string;
+/** All tree commitments in leaf-index order (decimal field elements). */
+export declare function fetchTreeLeaves(treeKey: string): Promise<string[]>;
+export declare function registerPrivacyKeys(args: {
+    wallet: string;
+    spendPubkey: string;
+    viewingPubkeyHex: string;
+}): Promise<void>;
+export declare function lookupPrivacyKeys(wallet: string): Promise<{
+    spendPubkey: string;
+    viewingPubkeyHex: string;
+} | null>;
 //# sourceMappingURL=merkle.d.ts.map

@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react"
-import { useWallet } from "@solana/wallet-adapter-react"
 import { toast } from "sonner"
-import { Send } from "lucide-react"
+import { Copy, Send } from "lucide-react"
 
 import { usePrivacyCash } from "@/hooks/usePrivacyCash"
 import { api } from "@/lib/api"
@@ -31,8 +30,7 @@ interface Result {
 const DEFAULT_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 
 export function TransferSplCard({ onChanged }: { onChanged?: () => void }) {
-  const { client, connected } = usePrivacyCash()
-  const { publicKey } = useWallet()
+  const { client, connected, publicKey } = usePrivacyCash()
   const [mint, setMint] = useState(DEFAULT_MINT)
   const [amount, setAmount] = useState("500000")
   const [recipient, setRecipient] = useState("")
@@ -41,6 +39,7 @@ export function TransferSplCard({ onChanged }: { onChanged?: () => void }) {
   const [status, setStatus] = useState<string | null>(null)
   const [result, setResult] = useState<Result | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [myAddr, setMyAddr] = useState<string | null>(null)
 
   useEffect(() => {
     api
@@ -56,6 +55,19 @@ export function TransferSplCard({ onChanged }: { onChanged?: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const copyMyAddress = async () => {
+    if (!client || !publicKey) return
+    try {
+      await client.unlock()
+      const addr = publicKey.toBase58()
+      setMyAddr(addr)
+      await navigator.clipboard?.writeText(addr)
+      toast.success("Solana address copied")
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
+
   const handleTransfer = async () => {
     if (!client) return
     setBusy(true)
@@ -67,11 +79,8 @@ export function TransferSplCard({ onChanged }: { onChanged?: () => void }) {
       const raw = BigInt(amount.trim() || "0")
       if (raw <= 0n) throw new Error("enter a valid raw amount")
       const to = recipient.trim()
-      if (!to) throw new Error("enter a recipient address")
-      if (publicKey && to === publicKey.toBase58()) {
-        throw new Error("recipient is your own address — use Withdraw instead")
-      }
-      setStatus("generating ZK proof + posting to relayer…")
+      if (!to) throw new Error("enter the recipient’s Solana address")
+      setStatus("generating ZK proof + wallet signature…")
       const res = await client.transferSPL(mintStr, raw.toString(), to)
       setResult({
         signature: res.signature,
@@ -84,7 +93,7 @@ export function TransferSplCard({ onChanged }: { onChanged?: () => void }) {
       setStatus(null)
       onChanged?.()
       client.backupNotes().catch(() => {})
-      toast.success("SPL transfer landed", {
+      toast.success("private SPL transfer landed", {
         description: shortHash(res.signature, 8, 6),
       })
     } catch (e) {
@@ -102,9 +111,10 @@ export function TransferSplCard({ onChanged }: { onChanged?: () => void }) {
           <Send className="size-4" /> Transfer SPL
         </CardTitle>
         <CardDescription>
-          Send private SPL balance to another address. Your deposit stays unlinked
-          (proven via ZK); the recipient's ATA is created idempotently and funded.
-          The backend relayer signs and submits (no wallet tx for the transact).
+          Spend a private SPL note and insert a note the recipient owns in that
+          mint’s pool. Paste their Solana wallet address — they must have
+          connected this app once. No relayer and no ATA payout — they withdraw
+          later.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -164,7 +174,7 @@ export function TransferSplCard({ onChanged }: { onChanged?: () => void }) {
               id="spl-xfer-recipient"
               value={recipient}
               onChange={(e) => setRecipient(e.target.value)}
-              placeholder="recipient wallet address"
+              placeholder="recipient Solana address"
               className="font-mono text-xs"
               disabled={!connected || busy}
             />
@@ -172,11 +182,25 @@ export function TransferSplCard({ onChanged }: { onChanged?: () => void }) {
         </div>
 
         <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          disabled={!connected || busy}
+          onClick={() => void copyMyAddress()}
+        >
+          <Copy className="mr-1.5 size-4" />
+          Copy my Solana address
+        </Button>
+        {myAddr && (
+          <p className="break-all font-mono text-[11px] text-muted-foreground">{myAddr}</p>
+        )}
+
+        <Button
           onClick={handleTransfer}
           disabled={!connected || busy}
           className="w-full"
         >
-          {busy ? status ?? "Working…" : "Transfer SPL"}
+          {busy ? status ?? "Working…" : "Transfer privately"}
         </Button>
 
         {result && (

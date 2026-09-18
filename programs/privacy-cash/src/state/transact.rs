@@ -8,7 +8,7 @@ pub const FIXED_TRANSACT_ARGS_SIZE: usize = PROOF_SIZE + EXT_DATA_MINIFIED_SIZE;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub struct Proof {
-    /// Compressed G1 (snarkjs / ark compressed, BE).
+    /// Compressed G1
     pub proof_a: [u8; 32],
     /// Compressed G2.
     pub proof_b: [u8; 64],

@@ -31,7 +31,6 @@ Needs Postgres + a Yellowstone gRPC endpoint.
 export DATABASE_URL="postgres://user:pass@localhost:5432/privacy_cash"
 export YELLOWSTONE_GRPC_URL="https://your-yellowstone-endpoint"
 export SOLANA_RPC_URL="http://localhost:8899"
-export RELAYER_KEYPAIR="$HOME/.config/solana/id.json"
 export PROGRAM_ID="<the deployed program id from step 2>"
 cargo +stable run -p privacy-cash-backend
 ```

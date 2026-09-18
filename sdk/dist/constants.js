@@ -4,7 +4,107 @@ export const FIELD_SIZE = new BN("2188824287183927522224640574525727508854836440
 export const MERKLE_TREE_DEPTH = 26;
 export const SOL_MINT = new PublicKey("11111111111111111111111111111111");
 export const WRAPPED_SOL_MINT = "11111111111111111111111111111112";
-export const SIGN_MESSAGE = "Privacy Money account sign in";
+/** SIWS `Version` field. Stable — not a per-session nonce. */
+export const SIWS_VERSION = "1";
+/**
+ * SIWS statement. Must not contain newlines (CAIP / Phantom SIWS).
+ * This signature is keccak'd into the shielded spend key.
+ */
+export const SIWS_STATEMENT = "Derive my SilentPay pool keys from this signature. Only approve this on the site your wallet displays.";
+/** Host only (`app.example` or `127.0.0.1:5173`), never a full URL. */
+export function normalizeSiwsDomain(domain) {
+    const d = domain.trim();
+    if (!d)
+        throw new Error("SIWS: domain required");
+    if (/^https?:\/\//i.test(d)) {
+        try {
+            return new URL(d).host;
+        }
+        catch {
+            throw new Error("SIWS: invalid domain URL");
+        }
+    }
+    return d.replace(/\/+$/, "");
+}
+/**
+ * Canonical SIWS text (`createSignInMessageText` from the Solana Wallet Standard).
+ * Phantom `signIn` constructs the same bytes and checks `domain` against the
+ * requesting page — a phishing origin cannot reuse the production message.
+ */
+export function buildUnlockMessage(input) {
+    const domain = normalizeSiwsDomain(input.domain);
+    const address = input.address.trim();
+    if (!address)
+        throw new Error("SIWS: address required");
+    const statement = (input.statement ?? SIWS_STATEMENT).trim();
+    if (statement.includes("\n")) {
+        throw new Error("SIWS: statement must not contain newlines");
+    }
+    let message = `${domain} wants you to sign in with your Solana account:\n${address}`;
+    if (statement)
+        message += `\n\n${statement}`;
+    const fields = [];
+    const uri = input.uri?.trim();
+    if (uri)
+        fields.push(`URI: ${uri.replace(/\/+$/, "")}`);
+    const version = (input.version ?? SIWS_VERSION).trim();
+    if (version)
+        fields.push(`Version: ${version}`);
+    const chainId = input.chainId?.trim();
+    if (chainId)
+        fields.push(`Chain ID: ${chainId}`);
+    if (fields.length)
+        message += `\n\n${fields.join("\n")}`;
+    return message;
+}
+export function requireStableSiws(signedMessage, expected) {
+    const signed = new TextDecoder().decode(signedMessage);
+    if (signed !== expected) {
+        throw new Error("SIWS mismatch: wallet signed a different message (nonce/issuedAt?). SilentPay needs a stable SIWS payload (no nonce) to derive your pool keys.");
+    }
+}
+export function defaultSiwsDomain() {
+    if (typeof window !== "undefined" && window.location?.host) {
+        return window.location.host;
+    }
+    return "localhost";
+}
+export function defaultSiwsUri() {
+    if (typeof window !== "undefined" && window.location?.origin) {
+        return window.location.origin.replace(/\/+$/, "");
+    }
+    return "http://localhost";
+}
+function clusterFromRpc(url) {
+    const u = url.toLowerCase();
+    if (/devnet/.test(u))
+        return "devnet";
+    if (/testnet/.test(u))
+        return "testnet";
+    if (/mainnet/.test(u))
+        return "mainnet";
+    if (/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(u))
+        return "localnet";
+    return "localnet";
+}
+/**
+ * Optional SIWS Chain ID (`mainnet` / `devnet` / `localnet`).
+ * Do not pass this to Phantom `signIn` unless it matches the wallet's
+ * selected network — custom localhost RPCs are usually `mainnet` in Phantom.
+ */
+export function inferSiwsChainId(rpcUrl) {
+    const env = getEnv();
+    if (rpcUrl)
+        return clusterFromRpc(rpcUrl);
+    const explicit = env.VITE_SOLANA_CLUSTER?.trim();
+    if (explicit) {
+        const c = explicit.toLowerCase();
+        if (c === "mainnet-beta")
+            return "mainnet";
+        return c;
+    }
+    return clusterFromRpc(env.VITE_SOLANA_RPC_URL ?? "");
+}
 export const DISC_TRANSACT = 2;
 export const DISC_TRANSACT_SPL = 3;
 export const DISC_SWAP = 7;
@@ -21,10 +121,6 @@ export const SEED = {
     NULLIFIER1: "nullifier1",
 };
 export const SOL_TREE_KEY = "sol";
-export const CIRCUIT = {
-    WASM_URL: "/circuit/transaction2.wasm",
-    ZKEY_URL: "/circuit/transaction2.zkey",
-};
 function getEnv() {
     try {
         return import.meta.env ?? {};

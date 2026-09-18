@@ -35,10 +35,33 @@ export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
   const [status, setStatus] = useState<string | null>(null)
   const [result, setResult] = useState<Result | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [privateSol, setPrivateSol] = useState<string | null>(null)
 
   useEffect(() => {
     if (publicKey && !recipient) setRecipient(publicKey.toBase58())
   }, [publicKey, recipient])
+
+  const readBalance = () => {
+    if (!client) return
+    setPrivateSol((Number(client.getPrivateBalanceSOL()) / 1e9).toFixed(6))
+  }
+
+  const handleScan = async () => {
+    if (!client) return
+    setBusy(true)
+    setErr(null)
+    setStatus("unlocking + scanning notes…")
+    try {
+      await client.refreshNotes()
+      readBalance()
+      toast.success("notes scanned")
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setStatus(null)
+      setBusy(false)
+    }
+  }
 
   const handleWithdraw = async () => {
     if (!client) return
@@ -49,7 +72,7 @@ export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
     try {
       const lamports = Math.round(Number(amount) * 1_000_000_000)
       if (!lamports || lamports <= 0) throw new Error("enter a valid amount")
-      setStatus("generating ZK proof + posting to relayer…")
+      setStatus("generating ZK proof + wallet signature…")
       const res = await client.withdrawSOL(lamports, recipient.trim())
       setResult({
         signature: res.signature,
@@ -59,6 +82,7 @@ export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
         nullifiers: res.nullifiers,
       })
       setStatus(null)
+      readBalance()
       onChanged?.()
       client.backupNotes().catch(() => {})
       toast.success("withdraw landed", {
@@ -67,6 +91,11 @@ export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
     } catch (e) {
       setStatus(null)
       setErr((e as Error).message)
+      try {
+        readBalance()
+      } catch {
+        /* client may still be locked */
+      }
     } finally {
       setBusy(false)
     }
@@ -79,9 +108,9 @@ export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
           <ArrowUpFromLine className="size-4" /> Withdraw SOL
         </CardTitle>
         <CardDescription>
-          Spend a local note: SDK fetches the Merkle path and generates the ZK
-          proof. The backend relayer signs and submits the withdraw (no wallet
-          tx signature for the transact).
+          Unshield SOL from a private note to a public address. Use the same
+          wallet that received the private transfer, then approve sign-in so
+          the note can be decrypted. Your wallet signs the withdraw.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -89,10 +118,30 @@ export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
           <Alert variant="warning">
             <AlertTitle>Wallet not connected</AlertTitle>
             <AlertDescription>
-              Connect a wallet to withdraw. You need a deposited note first.
+              Connect the wallet that received the private transfer (or that
+              deposited), then withdraw.
             </AlertDescription>
           </Alert>
         )}
+
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-secondary/50 px-3 py-2 text-xs">
+          <span className="text-muted-foreground">
+            private balance{" "}
+            <span className="font-mono text-foreground">
+              {privateSol == null ? "—" : `${privateSol} SOL`}
+            </span>
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7"
+            disabled={!connected || busy}
+            onClick={handleScan}
+          >
+            Scan notes
+          </Button>
+        </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">

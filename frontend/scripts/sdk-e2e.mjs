@@ -2,10 +2,9 @@
 // The SDK talks ONLY to the backend (shim on :8080). The Connection below is test-
 // harness funding only — PrivacyCashClient itself makes NO rpc calls.
 // Run: PROGRAM_ID=... bun scripts/sdk-e2e.mjs
-import { readFileSync } from "node:fs"
 import { Connection, Keypair, PublicKey } from "@solana/web3.js"
 import nacl from "tweetnacl"
-import { PrivacyCashClient, setBackendUrl, setCircuitBuffers } from "privacy-cash-sdk"
+import { PrivacyCashClient, setBackendUrl, buildUnlockMessage } from "privacy-cash-sdk"
 
 // Polyfill localStorage — the SDK persists notes (browser API, absent in node).
 const _ls = new Map()
@@ -21,12 +20,6 @@ const BACKEND = "http://localhost:8080"
 const PROGRAM = process.env.PROGRAM_ID ?? "5GcqZ4aZ3xF87wQF5pFmHHYAk73Hcww1r8414KdeUJ9P"
 setBackendUrl(BACKEND)
 
-// Browser fetches /circuit/...; in node we preload the proving circuit from disk.
-setCircuitBuffers(
-  new Uint8Array(readFileSync("public/circuit/transaction2.wasm")),
-  new Uint8Array(readFileSync("public/circuit/transaction2.zkey")),
-)
-
 // ---- test wallet (this Connection funds the wallet; the SDK never uses it) ----
 const fundConn = new Connection(RPC, "confirmed")
 const kp = Keypair.generate()
@@ -38,6 +31,13 @@ const signer = {
   publicKey: kp.publicKey,
   signMessage: async (msg) => nacl.sign.detached(new Uint8Array(msg), kp.secretKey),
   signTransaction: async (tx) => { tx.sign([kp]); return tx },
+  signIn: async (input) => {
+    const signedMessage = new TextEncoder().encode(buildUnlockMessage(input))
+    return {
+      signedMessage,
+      signature: nacl.sign.detached(signedMessage, kp.secretKey),
+    }
+  },
 }
 
 const client = new PrivacyCashClient(signer, new PublicKey(PROGRAM))
@@ -65,14 +65,14 @@ const bal = await waitBalance(BigInt(AMT))
 console.log("private balance (lamports):", bal.toString())
 if (bal <= 0n) throw new Error("deposit not indexed / balance 0")
 
-console.log("\n— WITHDRAW 0.5 SOL · gasless (relayer-signed, default relay=true) —")
+console.log("\n— WITHDRAW 0.5 SOL · wallet-signed —")
 const wd1 = await client.withdrawSOL(500_000_000, kp.publicKey)
-console.log("gasless withdraw:", wd1.signature, " recipient got:", wd1.recipientLamports, " fee:", wd1.feeLamports)
+console.log("withdraw:", wd1.signature, " recipient got:", wd1.recipientLamports, " fee:", wd1.feeLamports)
 
 await waitBalance(1_000_000_000n) // wait for the change note to index before the next spend
 
-console.log("\n— WITHDRAW 0.5 SOL · client-signed (relay:false → /api/relayer/submit) —")
-const wd2 = await client.withdrawSOL(500_000_000, kp.publicKey, { relay: false })
-console.log("client-signed withdraw:", wd2.signature, " recipient got:", wd2.recipientLamports, " fee:", wd2.feeLamports)
+console.log("\n— WITHDRAW 0.5 SOL again · wallet-signed —")
+const wd2 = await client.withdrawSOL(500_000_000, kp.publicKey)
+console.log("withdraw:", wd2.signature, " recipient got:", wd2.recipientLamports, " fee:", wd2.feeLamports)
 
-console.log("\n✅ PASSED: deposit + BOTH withdraw modes (gasless relayer-signed + client-signed broadcast) via the merged backend-only SDK.")
+console.log("\n✅ PASSED: deposit + wallet-signed withdraws via the backend-only SDK.")

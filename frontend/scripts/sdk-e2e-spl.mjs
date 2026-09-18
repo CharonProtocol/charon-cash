@@ -14,7 +14,7 @@ import {
 } from "@solana/spl-token"
 import nacl from "tweetnacl"
 import {
-  PrivacyCashClient, setBackendUrl, setCircuitBuffers, fetchAlt, deriveAccounts,
+  PrivacyCashClient, setBackendUrl, fetchAlt, deriveAccounts, buildUnlockMessage,
 } from "privacy-cash-sdk"
 
 const _ls = new Map()
@@ -23,7 +23,6 @@ globalThis.localStorage = { getItem:(k)=>_ls.has(k)?_ls.get(k):null, setItem:(k,
 const RPC = "http://localhost:8899"
 const BACKEND = "http://localhost:8080"
 setBackendUrl(BACKEND)
-setCircuitBuffers(new Uint8Array(readFileSync("public/circuit/transaction2.wasm")), new Uint8Array(readFileSync("public/circuit/transaction2.zkey")))
 
 const env = Object.fromEntries(readFileSync(".env","utf8").split("\n").filter(l=>l.includes("=")).map(l=>{const i=l.indexOf("=");return [l.slice(0,i).trim(),l.slice(i+1).trim()]}))
 const PROGRAM = new PublicKey(process.env.PROGRAM_ID ?? env.VITE_PROGRAM_ID)
@@ -80,7 +79,18 @@ console.log("fetchAlt via /api/relayer/alt -> addresses:", fetchedAlt?.state.add
 if (!fetchedAlt || fetchedAlt.state.addresses.length !== 11) throw new Error("fetchAlt did not return the expected 11-address ALT via the backend")
 
 // ---- SDK SPL deposit + withdraw ----
-const signer = { publicKey: kp.publicKey, signMessage: async (m) => nacl.sign.detached(new Uint8Array(m), kp.secretKey), signTransaction: async (t) => { t.sign([kp]); return t } }
+const signer = {
+  publicKey: kp.publicKey,
+  signMessage: async (m) => nacl.sign.detached(new Uint8Array(m), kp.secretKey),
+  signTransaction: async (t) => { t.sign([kp]); return t },
+  signIn: async (input) => {
+    const signedMessage = new TextEncoder().encode(buildUnlockMessage(input))
+    return {
+      signedMessage,
+      signature: nacl.sign.detached(signedMessage, kp.secretKey),
+    }
+  },
+}
 const client = new PrivacyCashClient(signer, PROGRAM)
 await client.unlock()
 

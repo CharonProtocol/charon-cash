@@ -24,6 +24,7 @@ import {
   buildTransactIxData, deriveAccounts,
   FIELD_SIZE, MERKLE_TREE_DEPTH, WRAPPED_SOL_MINT,
   setBackendUrl, relaySwap,
+  buildUnlockMessage,
 } from "privacy-cash-sdk"
 
 const here = fileURLToPath(new URL(".", import.meta.url))
@@ -31,7 +32,6 @@ const RPC = process.env.RPC ?? "http://127.0.0.1:8899"
 const BACKEND = process.env.BACKEND_URL ?? "http://127.0.0.1:8080"
 const DEPTH = MERKLE_TREE_DEPTH
 const ROOT_HISTORY_OFF = 848, NEXT_INDEX_OFF = 8, ROOT_INDEX_OFF = 12
-const SIGN_MSG = "Privacy Money account sign in"
 const USDC = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
 const FIELD = BigInt(FIELD_SIZE.toString())
 const mod = (x) => ((x % FIELD) + FIELD) % FIELD
@@ -53,6 +53,8 @@ function readDotEnv() {
 const PROGRAM = new PublicKey(
   process.env.PROGRAM_ID ?? readDotEnv().VITE_PROGRAM_ID ?? "6e5ioWVHAyuzfNSGAmJLfiGwKrmwr2GkqoDYWAhqvdjX",
 )
+const SIWS = { domain: "localhost", uri: "http://localhost", chainId: "localnet" }
+const unlockMsg = (pk) => buildUnlockMessage({ address: pk.toBase58(), ...SIWS })
 
 class Mirror {
   constructor(wasm) {
@@ -97,11 +99,6 @@ class Mirror {
 }
 
 let conn, wasm, payer
-
-async function ensureCircuit() {
-  // Hosted /api/prove only — do not load snarkjs buffers or prove() will
-  // silently fall back to an uncompressed leftover path.
-}
 
 function toProof(proofA, proofB, proofC, pub) {
   return {
@@ -459,7 +456,6 @@ async function runSwap({
 async function main() {
   conn = new Connection(RPC, "confirmed")
   wasm = await WasmFactory.getInstance()
-  await ensureCircuit()
   const idJson = process.env.ID_JSON ?? path.join(homedir(), ".config/solana/id.json")
   payer = Keypair.fromSecretKey(Buffer.from(JSON.parse(readFileSync(idJson, "utf8"))))
   console.log("payer", payer.publicKey.toBase58(), "program", PROGRAM.toBase58())
@@ -478,7 +474,7 @@ async function main() {
   }
 
   const enc = new EncryptionService()
-  enc.deriveFromSignature(nacl.sign.detached(new TextEncoder().encode(SIGN_MSG), payer.secretKey))
+  enc.deriveFromSignature(nacl.sign.detached(new TextEncoder().encode(unlockMsg(payer.publicKey)), payer.secretKey))
   const kp = new UtxoKeypair(enc.utxoPrivateKey, wasm)
   const dummyPath = new Array(DEPTH).fill("0")
   const solMirror = new Mirror(wasm)

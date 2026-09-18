@@ -1,7 +1,5 @@
-mod admin;
 mod config;
 mod db;
-mod error;
 mod indexer;
 mod merkle;
 mod response;
@@ -19,7 +17,6 @@ use config::Config;
 use db::Db;
 use indexer::spawn_indexer;
 use routes::router;
-use solana_sdk::signer::keypair::Keypair;
 use state::AppState;
 use tokio::sync::RwLock;
 use tower_http::request_id::{MakeRequestId, MakeRequestUuid, RequestId};
@@ -54,7 +51,6 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         db,
         merkle_manager: merkle_manager.clone(),
-        config: config.clone(),
     };
 
     let app = router(state)

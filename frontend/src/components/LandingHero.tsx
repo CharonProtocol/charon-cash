@@ -74,9 +74,9 @@ const FEATURES = [
   },
   {
     icon: Zap,
-    title: "Relayer-signed withdrawals",
-    body: "You prove in-browser; the backend relayer signs and submits the withdraw. The pool pays the recipient and the protocol fee — no browser RPC submit.",
-    tag: "Relayer-signed",
+    title: "Wallet-signed withdrawals",
+    body: "You prove ownership, then your wallet signs the withdraw. The pool pays the recipient and the protocol fee. The relayer is only used for v1 swaps (wallets cannot sign those yet).",
+    tag: "Wallet-signed",
   },
   {
     icon: ShieldCheck,
@@ -106,7 +106,7 @@ const STEPS = [
   {
     n: "3",
     title: "Withdraw to a fresh address",
-    body: "Prove ownership in-browser; the relayer signs and lands the withdraw. The pool pays a brand-new address with no link back to the deposit.",
+    body: "Prove ownership, then your wallet signs the withdraw. The pool pays a brand-new address with no link back to the deposit.",
   },
   {
     n: "4",
@@ -129,9 +129,9 @@ export function LandingHero({ onNavigate }: LandingHeroProps) {
           </h1>
           <p className="max-w-prose text-lg leading-relaxed text-muted-foreground">
             Deposit SOL or SPL tokens, hold a secret note, withdraw to a fresh
-            address, or swap privately without unshielding. Deposits are wallet-signed;
-            withdrawals and swaps are relayer-signed — the browser never submits
-            those transactions over a public RPC key.
+            address, or swap privately without unshielding. Deposits, transfers, and
+            withdraws are wallet-signed. Only v1 swaps are relayer-signed — Phantom
+            cannot sign those packets yet.
           </p>
           <div className="flex flex-wrap items-center gap-3 pt-1">
             <Button size="lg" onClick={() => onNavigate("app")} className="px-6">
@@ -175,8 +175,9 @@ export function LandingHero({ onNavigate }: LandingHeroProps) {
           <p className="eyebrow !mb-0">Architecture highlights</p>
           <h2 className="h-display text-3xl text-foreground">Built for privacy and speed</h2>
           <p className="max-w-xl text-sm text-muted-foreground">
-            Deposit with your wallet. Withdraw or swap with a client-side proof —
-            the relayer signs and lands the transaction. Secrets never leave the browser.
+            Deposit with your wallet. Withdraw and transfer with a client-side proof
+            plus a wallet signature. Swaps are relayer-signed because they are v1.
+            Secrets never leave the browser.
           </p>
         </div>
 

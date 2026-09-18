@@ -1,7 +1,9 @@
 import { PublicKey } from "@solana/web3.js";
 import BN from "bn.js";
 import { keccak256, sha256 } from "ethers";
-import { FIELD_SIZE, SIGN_MESSAGE, WRAPPED_SOL_MINT } from "./constants";
+import bs58 from "bs58";
+import { FIELD_SIZE, WRAPPED_SOL_MINT } from "./constants";
+import { EncryptionService as AsymEnc, } from "./encrypt";
 /**
  * Field-element keypair used inside UTXO commitments/nullifiers.
  * Ported 1:1 from privacy-cash-sdk/src/models/keypair.ts (browser-safe).
@@ -23,6 +25,22 @@ export class Keypair {
             commitment,
             merklePath,
         ]);
+    }
+    /** Output-only keypair (recipient note). Cannot spend. */
+    static fromPubkey(pubkey, wasm) {
+        const kp = new Keypair("0x1", wasm);
+        kp.privkey = new BN(0);
+        if (BN.isBN(pubkey)) {
+            kp.pubkey = pubkey.clone();
+        }
+        else {
+            const s = pubkey.toString().trim();
+            kp.pubkey =
+                /^0x/i.test(s) || /^[0-9a-fA-F]{64}$/.test(s)
+                    ? new BN(s.replace(/^0x/i, ""), 16)
+                    : new BN(s);
+        }
+        return kp;
     }
 }
 /** First-31-bytes / 248-bit field encoding of an SPL mint; SOL mint passes through. */
@@ -155,8 +173,12 @@ export class EncryptionService {
     encKeyV2 = null;
     utxoPrivKeyV2 = null;
     cryptoKey = null;
-    /** Derive keys from an ed25519 signature of the constant SIGN_MESSAGE. */
+    signature = null;
+    asym = null;
+    /** Derive AES + UTXO spend keys from a SIWS (`signIn`) signature. */
     deriveFromSignature(signature) {
+        this.signature = signature;
+        this.asym = null;
         this.encKeyV2 = Buffer.from(keccak256(signature).slice(2), "hex");
         this.utxoPrivKeyV2 =
             "0x" + keccak256(this.encKeyV2).slice(2);
@@ -197,12 +219,30 @@ export class EncryptionService {
         const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: bs(iv) }, key, bs(joined));
         return Buffer.from(plain);
     }
-    /** Encrypt a UTXO as "amount|blinding|index|mintAddress" (pipe-delimited). */
-    async encryptUtxo(utxo) {
-        return this.encrypt(`${utxo.amount.toString()}|${utxo.blinding.toString()}|${utxo.index}|${utxo.mintAddress}`);
+    /** Encrypt a UTXO as "amount|blinding|index|mintAddress" (pipe-delimited).
+     *  Own notes use AES-GCM (V2). Notes for another user use X25519 (V1). */
+    async encryptUtxo(utxo, recipientViewingKey) {
+        const payload = `${utxo.amount.toString()}|${utxo.blinding.toString()}|${utxo.index}|${utxo.mintAddress}`;
+        if (recipientViewingKey) {
+            const view = Uint8Array.from(recipientViewingKey);
+            if (view.length !== 32) {
+                throw new Error(`recipient viewing key must be 32 bytes, got ${view.length}`);
+            }
+            const a = await this.asymEnc();
+            return Buffer.from(await a.encrypt(new TextEncoder().encode(payload), view));
+        }
+        return this.encrypt(payload);
     }
     async decryptUtxo(encrypted, wasm) {
-        const plain = (await this.decrypt(encrypted)).toString();
+        const bytes = Uint8Array.from(encrypted);
+        let plain;
+        if (bytes.length >= 8 && bytes[7] === 1) {
+            const a = await this.asymEnc();
+            plain = new TextDecoder().decode(await a.decrypt(bytes));
+        }
+        else {
+            plain = (await this.decrypt(bytes)).toString();
+        }
         const [amount, blinding, index, mintAddress] = plain.split("|");
         return new Utxo({
             wasm,
@@ -213,6 +253,39 @@ export class EncryptionService {
             mintAddress,
         });
     }
+    async viewingPublicKey() {
+        return (await this.asymEnc()).getViewingKey();
+    }
+    async asymEnc() {
+        if (!this.signature) {
+            throw new Error("EncryptionService not initialised — sign first");
+        }
+        if (!this.asym) {
+            this.asym = await AsymEnc.startEncryptionService(this.signature);
+        }
+        return this.asym;
+    }
+}
+export const PRIVACY_ADDRESS_PREFIX = "pc1";
+export function encodePrivacyAddress(spendPubkey, viewingKey) {
+    const spend = Buffer.from(spendPubkey.toArray("be", 32));
+    return PRIVACY_ADDRESS_PREFIX + bs58.encode(Buffer.concat([spend, Buffer.from(viewingKey)]));
+}
+export function parsePrivacyAddress(addr) {
+    const s = addr.trim();
+    if (!s.startsWith(PRIVACY_ADDRESS_PREFIX)) {
+        throw new Error("not a privacy address — paste a pc1… address from the recipient’s app");
+    }
+    const raw = Buffer.from(bs58.decode(s.slice(PRIVACY_ADDRESS_PREFIX.length)));
+    if (raw.length !== 64)
+        throw new Error("invalid privacy address");
+    return {
+        spendPubkey: new BN([...raw.subarray(0, 32)], "be"),
+        viewingKey: new Uint8Array(raw.subarray(32)),
+    };
+}
+export function isPrivacyAddress(addr) {
+    return addr.trim().startsWith(PRIVACY_ADDRESS_PREFIX);
 }
 export function randomBytes(n) {
     const b = new Uint8Array(n);
@@ -223,4 +296,4 @@ export function randomBytes(n) {
 function bs(u) {
     return u;
 }
-export { SIGN_MESSAGE };
+export { buildUnlockMessage, } from "./constants";

@@ -75,8 +75,8 @@ export function DepositCard({ onChanged }: { onChanged?: () => void }) {
           <Alert variant="warning">
             <AlertTitle>Wallet not connected</AlertTitle>
             <AlertDescription>
-              Connect a wallet that supports <code>signMessage</code> +{" "}
-              <code>signTransaction</code> (e.g. Phantom) to deposit.
+              Connect a wallet that supports Sign In With Solana (<code>signIn</code>)
+              and <code>signTransaction</code> (e.g. Phantom) to deposit.
             </AlertDescription>
           </Alert>
         )}

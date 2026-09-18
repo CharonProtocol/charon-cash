@@ -1,10 +1,22 @@
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
+import { type SiwsSignInInput, type SiwsSignInOutput, type SiwsUnlockInput } from "./constants";
 import { type Note } from "./notes";
 export interface Signer {
     publicKey: PublicKey;
     signMessage: (message: Uint8Array) => Promise<Uint8Array>;
     signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>;
+    /**
+     * Wallet Standard SIWS. Required for `unlock()` — Phantom checks `domain`
+     * against the page. `signMessage` is not a substitute (phishing can forge the bytes).
+     */
+    signIn?: (input: SiwsSignInInput) => Promise<SiwsSignInOutput>;
 }
+/** Overrides for Node tests / scripts. In the browser, domain/uri come from `window.location`. */
+export type UnlockOpts = {
+    domain?: string;
+    uri?: string;
+    chainId?: string;
+};
 export interface DepositResult {
     signature: string;
     amountLamports: number;
@@ -22,6 +34,8 @@ export interface SyncResult {
     scanned: number;
     added: number;
     spent: number;
+    v1Seen: number;
+    v1Decrypted: number;
 }
 export interface SwapResult {
     signature: string;
@@ -39,13 +53,26 @@ export declare class PrivacyCashClient {
     private programId?;
     private info?;
     private unlocking;
-    constructor(signer: Signer, programId?: PublicKey);
+    private unlockOpts?;
+    constructor(signer: Signer, programId?: PublicKey, unlock?: UnlockOpts);
     get publicKey(): PublicKey;
     get feeRecipient(): PublicKey;
     init(): Promise<void>;
-    /** Prompt wallet to sign the constant message; derive the note keypair. */
+    /**
+     * Sign In With Solana, then derive shielded spend/view keys from that signature.
+     * Requires wallet `signIn` (Phantom binds `domain` to the real page). There is
+     * no `signMessage` fallback — that path lets a phishing site forge the SIWS text.
+     * No nonce / issuedAt — same wallet + site + cluster always yields the same key.
+     */
     unlock(): Promise<void>;
+    /** Canonical SIWS text the wallet must sign on `unlock()`. */
+    unlockMessage(): string;
+    siwsInput(): SiwsUnlockInput;
+    private signUnlock;
     isUnlocked(): boolean;
+    /** `pc1…` address: spend pubkey + X25519 viewing key. Recipients paste this to receive notes. */
+    privacyAddress(): Promise<string>;
+    private registerPrivacyKeys;
     /** Push the local note set to the backend (encrypted blob; server can't read it). */
     backupNotes(): Promise<void>;
     /** Pull + decrypt the encrypted note blob from the backend into the in-memory cache. */
@@ -71,13 +98,9 @@ export declare class PrivacyCashClient {
      */
     syncNotes(treeKey: string, fromScratch?: boolean): Promise<SyncResult>;
     depositSOL(amountLamports: number): Promise<DepositResult>;
-    withdrawSOL(grossLamports: number, recipient: PublicKey | string, opts?: {
-        relay?: boolean;
-    }): Promise<WithdrawResult>;
+    withdrawSOL(grossLamports: number, recipient: PublicKey | string): Promise<WithdrawResult>;
     depositSPL(mint: PublicKey | string, amountRaw: number | string): Promise<DepositResult>;
-    withdrawSPL(mint: PublicKey | string, grossRaw: number | string, recipient: PublicKey | string, opts?: {
-        relay?: boolean;
-    }): Promise<WithdrawResult>;
+    withdrawSPL(mint: PublicKey | string, grossRaw: number | string, recipient: PublicKey | string): Promise<WithdrawResult>;
     getPrivateBalanceSOL(): bigint;
     getPrivateBalanceSPL(mint: PublicKey | string): bigint;
     /** Poll the indexer's next_leaf_index. Never throws — deposit already settled. */
@@ -85,34 +108,24 @@ export declare class PrivacyCashClient {
     private balanceForMint;
     private feeAta;
     /**
-     * Private transfer: spend a private note to pay another address. Mechanically a
-     * withdraw to `recipient` — your deposit stays unlinked (proven via ZK), and the
-     * recipient receives public SOL at their address. Honors the same { relay } option
-     * as withdraw (default true = gasless relayer-signed).
+     * Shielded transfer: spend your notes and insert a note the recipient owns in
+     * the pool (`extAmount=0`, `fee=0`). No relayer, no public payout. They withdraw
+     * later with their own key. `recipient` is their Solana wallet (they must have
+     * unlocked this app once so we can look up their note keys).
      */
-    transferSOL(amountLamports: number, recipient: PublicKey | string, opts?: {
-        relay?: boolean;
-    }): Promise<WithdrawResult>;
+    transferSOL(amountLamports: number, recipient: string): Promise<WithdrawResult>;
     /**
-     * Private SPL transfer: spend a private SPL note to pay another address (their
-     * ATA is created idempotently). Same mechanics/privacy as transferSOL.
+     * Shielded SPL transfer: same as transferSOL — recipient gets a pool note,
+     * not tokens in an ATA.
      */
-    transferSPL(mint: PublicKey | string, amountRaw: number | string, recipient: PublicKey | string, opts?: {
-        relay?: boolean;
-    }): Promise<WithdrawResult>;
+    transferSPL(mint: PublicKey | string, amountRaw: number | string, recipient: string): Promise<WithdrawResult>;
     /**
-     * Private send to a PUBLIC address (Mode A): deposit fresh from the user, then
-     * withdraw-to-recipient gaslessly via the relayer (relay=true). The user signs +
-     * pays the deposit; the relayer signs the withdraw. Recipient gets public SOL/SPL
-     * (amount − withdrawFee) at their address; the sender's deposit is unlinkable to
-     * it via ZK. (deposit can never be gasless — the signer is who puts funds in.)
+     * Private send to a PUBLIC address: deposit from the user, then withdraw to
+     * the recipient. Both legs are wallet-signed. Recipient gets public SOL
+     * (amount − withdrawFee); the sender's deposit is unlinkable via ZK.
      */
-    sendPrivateSOL(amountLamports: number, recipient: PublicKey | string, opts?: {
-        relay?: boolean;
-    }): Promise<WithdrawResult>;
-    sendPrivateSPL(mint: PublicKey | string, amountRaw: number | string, recipient: PublicKey | string, opts?: {
-        relay?: boolean;
-    }): Promise<WithdrawResult>;
+    sendPrivateSOL(amountLamports: number, recipient: PublicKey | string): Promise<WithdrawResult>;
+    sendPrivateSPL(mint: PublicKey | string, amountRaw: number | string, recipient: PublicKey | string): Promise<WithdrawResult>;
     /**
      * Jupiter quote for a private SOL↔SPL swap. Does not unlock notes.
      * `fromMint` / `outMint` are mixer mints (`WRAPPED_SOL_MINT` or an SPL mint).
@@ -137,11 +150,20 @@ export declare class PrivacyCashClient {
         slippageBps?: number;
     }): Promise<SwapResult>;
     private proveSwapLeg;
+    /**
+     * Rebuild the Poseidon tree from indexed leaves and take paths locally.
+     * Refuses to prove until the indexer leaf count and root match on-chain
+     * (a desynced path makes Groth16 verify fail).
+     */
+    private merkleForSpend;
+    private resolveRecipientKeys;
+    private viewingKeyFromHex;
+    private rewriteSpendError;
+    /** JoinSplit with extAmount=0, fee=0: spend notes → recipient-owned pool note. */
+    private transferInternal;
     /** Poll until the indexer can serve a Merkle proof for `leafIndex` (mirror caught up). */
     private waitForNoteIndexed;
     private withdrawInternal;
-    /** Prove + POST to relayer (backend signs with RELAYER_KEYPAIR). No wallet tx. */
-    private proveAndRelay;
     private proveAndSend;
 }
 //# sourceMappingURL=client.d.ts.map

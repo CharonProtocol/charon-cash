@@ -5,6 +5,7 @@ export type {
   WithdrawResult,
   SwapResult,
   SyncResult,
+  UnlockOpts,
 } from "./client"
 export {
   EncryptionService,
@@ -14,13 +15,14 @@ export {
   getMintAddressField,
   getSwapInExtDataHash,
   getSwapOutExtDataHash,
+  encodePrivacyAddress,
+  parsePrivacyAddress,
+  isPrivacyAddress,
+  PRIVACY_ADDRESS_PREFIX,
 } from "./crypto"
 export {
   prove,
-  proveSnarkjs,
-  parseProofToBytesArray,
   parseToBytesArray,
-  setCircuitBuffers,
 } from "./prover"
 export {
   buildTransactTransaction,
@@ -60,12 +62,12 @@ export {
   fetchTreeState,
   fetchMerkleProof,
   fetchUtxoRange,
+  fetchTreeLeaves,
   checkEncryptedOutput,
   waitForLeafIndex,
   waitForEncryptedOutput,
   isNullifierSpent,
   submitTransaction,
-  relayWithdraw,
   relaySwap,
   fetchJupiterRoute,
   fieldToHex32,
@@ -73,6 +75,9 @@ export {
   getBackendUrl,
   solTreeKey,
   splTreeKey,
+  registerPrivacyKeys,
+  lookupPrivacyKeys,
+  commitmentToDecimal,
 } from "./merkle"
 export type {
   RelayerInfo,
@@ -121,7 +126,14 @@ export {
 export {
   FIELD_SIZE,
   MERKLE_TREE_DEPTH,
-  SIGN_MESSAGE,
+  buildUnlockMessage,
+  defaultSiwsDomain,
+  defaultSiwsUri,
+  inferSiwsChainId,
+  normalizeSiwsDomain,
+  requireStableSiws,
+  SIWS_STATEMENT,
+  SIWS_VERSION,
   SOL_TREE_KEY,
   WRAPPED_SOL_MINT,
   JUPITER_PROGRAM_ID,
@@ -129,3 +141,4 @@ export {
   DISC_SWAP,
   DISC_WRAP_SOL,
 } from "./constants"
+export type { SiwsUnlockInput, SiwsSignInInput, SiwsSignInOutput } from "./constants"
