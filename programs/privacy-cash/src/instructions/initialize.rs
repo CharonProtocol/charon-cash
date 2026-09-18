@@ -9,7 +9,7 @@ use crate::{
     state::{GlobalConfig, MerkleTreeAccount, TreeTokenAccount},
 };
 use bytemuck::{from_bytes_mut, Pod, Zeroable};
-use light_hasher::Poseidon;
+use crate::tree_hasher::TreeHasher as Poseidon;
 use pinocchio::{
     cpi::{Seed, Signer},
     error::ProgramError,

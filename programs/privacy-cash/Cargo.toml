@@ -79,3 +79,17 @@ itertools = "0.15.0"
 mollusk-svm = "0.14.0"
 mollusk-svm-bencher = "0.14.0"
 mollusk-svm-programs-token = "0.14.0"
+
+# Benchmark-only backend: incompatible with the committed Poseidon circuits/keys.
+[features]
+experimental-poseidon2 = ["dep:solana-poseidon2"]
+
+[dependencies.solana-poseidon2]
+git = "https://github.com/blueshift-gg/solana-poseidon2"
+rev = "fd0677b2a518434cf190ace74f01b85878f6b848"
+optional = true
+
+[build-dependencies.solana-poseidon2]
+git = "https://github.com/blueshift-gg/solana-poseidon2"
+rev = "fd0677b2a518434cf190ace74f01b85878f6b848"
+optional = true

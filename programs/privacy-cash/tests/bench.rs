@@ -304,7 +304,10 @@ fn setup() -> BenchContext {
     let program_id = Pubkey::from_str_const(PROGRAM_ID);
 
     std::env::set_var("RUST_LOG", "off");
-    let mut mollusk = Mollusk::new(&program_id, concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/deploy/privacy_cash"));
+    let program_path = std::env::var("BENCH_PROGRAM").unwrap_or_else(|_|
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/deploy/privacy_cash").into());
+    println!("BENCH_PROGRAM={program_path}");
+    let mut mollusk = Mollusk::new(&program_id, &program_path);
 
     let authority = Keypair::new();
     let funding_account = Keypair::new();
@@ -522,6 +525,26 @@ fn run_and_report(mollusk: &Mollusk, entries: Vec<Entry>) {
         };
 
         let result = mollusk.process_and_validate_instruction(&entry.instruction, &entry.accounts, &checks);
+        // Replay the same input snapshot: no proof generation or state drift in samples.
+        // Host elapsed time around instruction execution; excludes proof generation,
+        // program loading, warmup and validation. Mollusk execute_us is zero here.
+        let samples: usize = std::env::var("BENCH_SAMPLES")
+            .unwrap_or_else(|_| "30".into()).parse().expect("BENCH_SAMPLES integer");
+        assert!(samples > 0);
+        let mut times = Vec::with_capacity(samples);
+        for _ in 0..samples {
+            let start = std::time::Instant::now();
+            let sample = mollusk.process_instruction(&entry.instruction, &entry.accounts);
+            let elapsed_ns = start.elapsed().as_nanos();
+            assert_eq!(sample.program_result, result.program_result);
+            assert_eq!(sample.resulting_accounts, result.resulting_accounts);
+            assert_eq!(sample.compute_units_consumed, result.compute_units_consumed);
+            times.push(elapsed_ns);
+        }
+        times.sort_unstable();
+        println!("TIMING,{},{},{},{},{},{}", entry.name,
+            result.compute_units_consumed, samples, times[samples / 2],
+            times[(samples * 95).div_ceil(100) - 1], times[0]);
         let pinocchio_cu = result.compute_units_consumed;
         let anchor_cu = entry.anchor_cu;
 

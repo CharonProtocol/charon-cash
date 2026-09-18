@@ -1,0 +1,308 @@
+    Blocking waiting for file lock on build directory
+warning: unexpected `cfg` condition value: `solana`
+  --> programs/privacy-cash/src/lib.rs:31:1
+   |
+31 | entrypoint!(process_instructions, 16);
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: expected values for `target_os` are: `aix`, `amdhsa`, `android`, `cuda`, `cygwin`, `dragonfly`, `emscripten`, `espidf`, `freebsd`, `fuchsia`, `haiku`, `hermit`, `horizon`, `hurd`, `illumos`, `ios`, `l4re`, `linux`, `lynxos178`, `macos`, `netbsd`, `none`, `nto`, `nuttx`, `openbsd`, `psp`, `psx`, `redox`, `rtems`, `solaris`, `solid_asp3`, `teeos`, `trusty`, `tvos`, and `uefi` and 9 more
+   = note: using a cfg inside a macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `$crate::default_allocator` crate for guidance on how handle this unexpected cfg
+   = help: the macro `$crate::default_allocator` may come from an old version of the `pinocchio` crate, try updating your dependency with `cargo update -p pinocchio`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: `#[warn(unexpected_cfgs)]` on by default
+   = note: this warning originates in the macro `$crate::default_allocator` which comes from the expansion of the macro `entrypoint` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `solana`
+  --> programs/privacy-cash/src/lib.rs:31:1
+   |
+31 | entrypoint!(process_instructions, 16);
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: expected values for `target_os` are: `aix`, `amdhsa`, `android`, `cuda`, `cygwin`, `dragonfly`, `emscripten`, `espidf`, `freebsd`, `fuchsia`, `haiku`, `hermit`, `horizon`, `hurd`, `illumos`, `ios`, `l4re`, `linux`, `lynxos178`, `macos`, `netbsd`, `none`, `nto`, `nuttx`, `openbsd`, `psp`, `psx`, `redox`, `rtems`, `solaris`, `solid_asp3`, `teeos`, `trusty`, `tvos`, and `uefi` and 9 more
+   = note: using a cfg inside a macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `$crate::default_allocator` crate for guidance on how handle this unexpected cfg
+   = help: the macro `$crate::default_allocator` may come from an old version of the `pinocchio` crate, try updating your dependency with `cargo update -p pinocchio`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the macro `$crate::default_allocator` which comes from the expansion of the macro `entrypoint` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `solana`
+  --> programs/privacy-cash/src/lib.rs:31:1
+   |
+31 | entrypoint!(process_instructions, 16);
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: expected values for `target_os` are: `aix`, `amdhsa`, `android`, `cuda`, `cygwin`, `dragonfly`, `emscripten`, `espidf`, `freebsd`, `fuchsia`, `haiku`, `hermit`, `horizon`, `hurd`, `illumos`, `ios`, `l4re`, `linux`, `lynxos178`, `macos`, `netbsd`, `none`, `nto`, `nuttx`, `openbsd`, `psp`, `psx`, `redox`, `rtems`, `solaris`, `solid_asp3`, `teeos`, `trusty`, `tvos`, and `uefi` and 9 more
+   = note: using a cfg inside a macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `$crate::default_panic_handler` crate for guidance on how handle this unexpected cfg
+   = help: the macro `$crate::default_panic_handler` may come from an old version of the `pinocchio` crate, try updating your dependency with `cargo update -p pinocchio`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the macro `$crate::default_panic_handler` which comes from the expansion of the macro `entrypoint` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unused variable: `e`
+   --> programs/privacy-cash/src/instructions/transact_spl.rs:125:23
+    |
+125 |             .map_err(|e| PrivacyCashError::InvalidMerkleTreeAccount)?;
+    |                       ^ help: if this is intentional, prefix it with an underscore: `_e`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: `privacy-cash` (lib) generated 4 warnings
+   Compiling privacy-cash v0.1.0 (/home/vedansh/Desktop/PWG/privacy/act/privacy-cash/programs/privacy-cash)
+warning: unused imports: `Pod` and `Zeroable`
+ --> programs/privacy-cash/tests/common/keypair.rs:3:16
+  |
+3 | use bytemuck::{Pod, Zeroable};
+  |                ^^^  ^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused imports: `Signer` and `k256::schnorr::CryptoRngCore`
+ --> programs/privacy-cash/tests/common/keypair.rs:5:12
+  |
+5 |     core::{k256::schnorr::CryptoRngCore, rand::thread_rng},
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+6 |     signers::{LocalWallet, Signer},
+  |                            ^^^^^^
+
+warning: unused import: `FEE_ERROR_MARGIN`
+  --> programs/privacy-cash/tests/common/utils.rs:13:32
+   |
+13 | use crate::common::constants::{FEE_ERROR_MARGIN, FIELD_SIZE_DECIMAL, WITHDRAW_FEE_RATE};
+   |                                ^^^^^^^^^^^^^^^^
+
+warning: unnecessary parentheses around method argument
+   --> programs/privacy-cash/tests/common/utils.rs:103:43
+    |
+103 |     let min_fee = expected.saturating_mul((10_000 - fee_error_margin as u64)) / 10_000;
+    |                                           ^                                ^
+    |
+    = note: `#[warn(unused_parens)]` on by default
+help: remove these parentheses
+    |
+103 -     let min_fee = expected.saturating_mul((10_000 - fee_error_margin as u64)) / 10_000;
+103 +     let min_fee = expected.saturating_mul(10_000 - fee_error_margin as u64) / 10_000;
+    |
+
+warning: unused import: `num_traits::ToBytes`
+ --> programs/privacy-cash/tests/common/utxo.rs:8:5
+  |
+8 | use num_traits::ToBytes;
+  |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `BigInteger`
+ --> programs/privacy-cash/tests/common/utils.rs:6:14
+  |
+6 | use ark_ff::{BigInteger, PrimeField};
+  |              ^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> programs/privacy-cash/tests/bench.rs:880:9
+    |
+880 |     let mut spl_merkle_tree = MerkleTree::new(DEFAULT_HEIGHT, Vec::new());
+    |         ----^^^^^^^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` on by default
+
+warning: static `GLOBAL_TEST_ALT` is never used
+  --> programs/privacy-cash/tests/common/test_alt.rs:14:8
+   |
+14 | static GLOBAL_TEST_ALT: OnceLock<Mutex<Option<Address>>> = OnceLock::new();
+   |        ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+warning: function `alt_cache` is never used
+  --> programs/privacy-cash/tests/common/test_alt.rs:16:4
+   |
+16 | fn alt_cache() -> &'static Mutex<Option<Address>> {
+   |    ^^^^^^^^^
+
+warning: function `reset_global_test_alt` is never used
+  --> programs/privacy-cash/tests/common/test_alt.rs:20:8
+   |
+20 | pub fn reset_global_test_alt() {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `get_global_test_alt` is never used
+  --> programs/privacy-cash/tests/common/test_alt.rs:24:8
+   |
+24 | pub fn get_global_test_alt() -> Address {
+   |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `create_global_test_alt` is never used
+  --> programs/privacy-cash/tests/common/test_alt.rs:38:8
+   |
+38 | pub fn create_global_test_alt(
+   |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `get_test_protocol_addresses` is never used
+   --> programs/privacy-cash/tests/common/test_alt.rs:121:8
+    |
+121 | pub fn get_test_protocol_addresses(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `get_test_protocol_addresses_with_mint` is never used
+   --> programs/privacy-cash/tests/common/test_alt.rs:145:8
+    |
+145 | pub fn get_test_protocol_addresses_with_mint(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `create_versioned_tx_with_alt` is never used
+   --> programs/privacy-cash/tests/common/test_alt.rs:176:8
+    |
+176 | pub fn create_versioned_tx_with_alt(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `bn_to_bytes_be` is never used
+  --> programs/privacy-cash/tests/common/utils.rs:26:8
+   |
+26 | pub fn bn_to_bytes_be(value: &BigUint) -> [u8; 32] {
+   |        ^^^^^^^^^^^^^^
+
+warning: function `bn_to_bytes` is never used
+  --> programs/privacy-cash/tests/common/utils.rs:34:8
+   |
+34 | pub fn bn_to_bytes(bn: &BigUint) -> [u8; 32] {
+   |        ^^^^^^^^^^^
+
+warning: function `decimal_str_to_fr` is never used
+  --> programs/privacy-cash/tests/common/utils.rs:38:8
+   |
+38 | pub fn decimal_str_to_fr(decimal: &str) -> Fr {
+   |        ^^^^^^^^^^^^^^^^^
+
+warning: function `mock_encrypt` is never used
+  --> programs/privacy-cash/tests/common/utils.rs:45:8
+   |
+45 | pub fn mock_encrypt<T: Serialize>(value: &T) -> String {
+   |        ^^^^^^^^^^^^
+
+warning: function `change_endianness` is never used
+  --> programs/privacy-cash/tests/common/utils.rs:67:8
+   |
+67 | pub fn change_endianness(bytes: &[u8]) -> Vec<u8> {
+   |        ^^^^^^^^^^^^^^^^^
+
+warning: function `check_public_amount` is never used
+  --> programs/privacy-cash/tests/common/utils.rs:85:8
+   |
+85 | pub fn check_public_amount(ext_amount: i64, fee: u64, public_amount: i128) -> bool {
+   |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `validate_fee` is never used
+  --> programs/privacy-cash/tests/common/utils.rs:90:8
+   |
+90 | pub fn validate_fee(
+   |        ^^^^^^^^^^^^
+
+warning: function `ext_data_hash_matches` is never used
+   --> programs/privacy-cash/tests/common/utils.rs:110:8
+    |
+110 | pub fn ext_data_hash_matches(computed: [u8; 32], provided: [u8; 32]) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `read_json_fixture` is never used
+   --> programs/privacy-cash/tests/common/utils.rs:114:8
+    |
+114 | pub fn read_json_fixture<T: for<'de> Deserialize<'de>>(path: impl AsRef<Path>) -> T {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `verify_proof` is never used
+   --> programs/privacy-cash/tests/common/utils.rs:119:8
+    |
+119 | pub fn verify_proof(_proof_json: &serde_json::Value, _vk_json: &serde_json::Value) -> bool {
+    |        ^^^^^^^^^^^^
+
+warning: associated items `new_full`, `with_amount`, `with_blinding`, `with_keypair`, and `with_mint_address` are never used
+   --> programs/privacy-cash/tests/common/utxo.rs:56:12
+    |
+33  | impl Utxo {
+    | --------- associated items in this implementation
+...
+56  |     pub fn new_full(
+    |            ^^^^^^^^
+...
+82  |     pub fn with_amount(mut self, amount: u64) -> Self {
+    |            ^^^^^^^^^^^
+...
+87  |     pub fn with_blinding(mut self, blinding: u64) -> Self {
+    |            ^^^^^^^^^^^^^
+...
+92  |     pub fn with_keypair(mut self, keypair: Keypair) -> Self {
+    |            ^^^^^^^^^^^^
+...
+102 |     pub fn with_mint_address(mut self, mint_address: Address) -> Self {
+    |            ^^^^^^^^^^^^^^^^^
+
+warning: constant `ROOT_HISTORY_SIZE` is never used
+   --> programs/privacy-cash/tests/common/constants.rs:114:11
+    |
+114 | pub const ROOT_HISTORY_SIZE: usize = 100;
+    |           ^^^^^^^^^^^^^^^^^
+
+warning: constant `SOL_ADDRESS` is never used
+   --> programs/privacy-cash/tests/common/constants.rs:127:11
+    |
+127 | pub const SOL_ADDRESS: Address = Address::new_from_array(pinocchio_pubkey::pubkey!(
+    |           ^^^^^^^^^^^
+
+warning: function `string_to_biguint` is never used
+   --> programs/privacy-cash/tests/common/prover.rs:296:8
+    |
+296 | pub fn string_to_biguint(value: &str) -> Result<BigUint> {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `parse_bigint_vec` is never used
+   --> programs/privacy-cash/tests/common/prover.rs:313:4
+    |
+313 | fn parse_bigint_vec(values: &[String]) -> Result<Vec<BigInt>> {
+    |    ^^^^^^^^^^^^^^^^
+
+warning: function `parse_bigint` is never used
+   --> programs/privacy-cash/tests/common/prover.rs:317:4
+    |
+317 | fn parse_bigint(value: &str) -> Result<BigInt> {
+    |    ^^^^^^^^^^^^
+
+warning: `privacy-cash` (test "bench") generated 31 warnings (run `cargo fix --test "bench"` to apply 6 suggestions)
+    Finished `test` profile [optimized + debuginfo] target(s) in 55.41s
+     Running tests/bench.rs (target/debug/deps/bench-b7e3c6a5ca92e2e0)
+
+running 1 test
+BENCH_PROGRAM=/home/vedansh/Desktop/PWG/privacy/act/privacy-cash/target/poseidon2/privacy_cash
+native verify: true
+native verify: true
+native verify: true
+native verify: true
+
+scenario                                     Pinocchio CU    Anchor CU                  improvement
+----------------------------------------------------------------------------------------------------
+TIMING,initialize,4652,30,219855,232003,215892
+initialize                                           4652        29917           +25265 CUs, +84.5%
+TIMING,update_global_config_one_field,118,30,182514,204966,181082
+update_global_config_one_field                        118         3659            +3541 CUs, +96.8%
+TIMING,update_deposit_limit,128,30,183170,191664,182486
+update_deposit_limit                                  128         3461            +3333 CUs, +96.3%
+TIMING,update_deposit_limit_for_spl,305,30,183944,196028,182871
+update_deposit_limit_for_spl                          305            0                          n/a
+TIMING,initialize_tree_account_for_spl_token,2032,30,199195,220526,196159
+initialize_tree_account_for_spl_token                2032            0                          n/a
+
+thread 'bench_all' panicked at /home/vedansh/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mollusk-svm-result-0.14.0/src/check.rs:211:25:
+CHECK FAILED: program_result
+  Expected: `Success`,
+ Got: `Failure(InvalidArgument)`
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test bench_all ... FAILED
+
+failures:
+
+failures:
+    bench_all
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.18s
+
+error: test failed, to rerun pass `-p privacy-cash --test bench`

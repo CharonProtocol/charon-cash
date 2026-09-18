@@ -15,6 +15,7 @@ pub mod groth16;
 pub mod helper;
 pub mod instructions;
 pub mod merkle_tree;
+pub mod tree_hasher;
 pub mod state;
 pub mod utils;
 

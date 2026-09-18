@@ -211,7 +211,7 @@ impl MerkleTree {
 #[allow(deprecated)] // the whole point of these tests is to compare against `append`
 mod tests {
     use super::*;
-    use light_hasher::Poseidon;
+    use crate::tree_hasher::TreeHasher as Poseidon;
 
     /// Leaves must be canonical BN254 field elements; Poseidon rejects
     /// anything at or above the modulus. Small big-endian values are safe.

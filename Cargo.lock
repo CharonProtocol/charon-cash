@@ -5363,6 +5363,7 @@ dependencies = [
  "solana-keypair",
  "solana-message 3.1.0",
  "solana-native-token 3.0.0",
+ "solana-poseidon2",
  "solana-program",
  "solana-program-pack",
  "solana-rpc-client",
@@ -8104,6 +8105,15 @@ dependencies = [
  "light-poseidon 0.4.0",
  "solana-define-syscall 4.0.1",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "solana-poseidon2"
+version = "0.1.0"
+source = "git+https://github.com/blueshift-gg/solana-poseidon2?rev=fd0677b2a518434cf190ace74f01b85878f6b848#fd0677b2a518434cf190ace74f01b85878f6b848"
+dependencies = [
+ "ark-bn254 0.6.0",
+ "ark-ff 0.6.0",
 ]
 
 [[package]]

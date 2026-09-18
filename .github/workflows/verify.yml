@@ -133,6 +133,9 @@ jobs:
           set -o pipefail
           cargo test --locked --workspace --all-targets -- --test-threads=1 --nocapture 2>&1 | tee test-results.log
           cargo test --locked --workspace --doc
+      - name: Check experimental Poseidon2 tree and incompatibility assertions
+        # Native tests only: this is not a circuit-compatible deployment backend.
+        run: cargo test --locked --package privacy-cash --lib --features experimental-poseidon2
       - name: Prepare tested artifact and provenance
         run: |
           mkdir -p dist

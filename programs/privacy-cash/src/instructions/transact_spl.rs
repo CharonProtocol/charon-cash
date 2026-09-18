@@ -16,7 +16,7 @@ use crate::{
     },
 };
 use bytemuck::try_from_bytes;
-use light_hasher::Poseidon;
+use crate::tree_hasher::TreeHasher as Poseidon;
 use pinocchio::{
     account::AccountView,
     cpi::{Seed, Signer},
