@@ -1,7 +1,7 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::Extension;
 use rs_merkle_tree::Node;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tower_http::request_id::RequestId;
 
 use crate::response::{ApiError, ApiResponse};
@@ -75,6 +75,100 @@ pub async fn tree_state(
     ApiResponse::success(tree_state, req_id)
 }
 
+/// One page of bare commitments.
+#[derive(Serialize)]
+pub struct LeafRow {
+    pub leaf_index: u64,
+    /// 32-byte big-endian hex, no `0x`.
+    pub commitment: String,
+}
+
+#[derive(Serialize)]
+pub struct LeavesResponse {
+    pub tree_key: String,
+    pub from: u64,
+    pub next_leaf_index: u64,
+    pub has_more: bool,
+    /// Where the next request should start. Only meaningful when `has_more`.
+    pub next_from: u64,
+    pub leaves: Vec<LeafRow>,
+}
+
+#[derive(Deserialize)]
+pub struct LeavesQuery {
+    #[serde(default)]
+    pub from: u64,
+}
+
+const LEAVES_PAGE_SIZE: u16 = 2_000;
+
+/// Commitments from `?from=N` onward.
+///
+/// Deliberately not a per-leaf endpoint. Clients rebuild the whole tree locally so
+/// their request reveals nothing about which leaf they own; a request keyed on a leaf
+/// index would make the request itself the secret. See the note above
+/// `merkleForSpend` in `sdk/src/client.ts`.
+///
+/// Bare commitments only: the SDK discards the ciphertext and signature that
+/// `/api/utxos/range` ships per leaf, so serving them is roughly an order of
+/// magnitude of wasted bandwidth at no privacy benefit.
+pub async fn leaves(
+    State(state): State<AppState>,
+    Path(tree_key): Path<String>,
+    Query(query): Query<LeavesQuery>,
+    Extension(req_id): Extension<RequestId>,
+) -> ApiResponse<LeavesResponse> {
+    let next_leaf_index = match state.db.next_index(&tree_key).await {
+        Ok(n) => n as u64,
+        Err(e) => return ApiResponse::error(e.into(), req_id),
+    };
+
+    let rows = match state
+        .db
+        .fetch_commitments(query.from, LEAVES_PAGE_SIZE, &tree_key)
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => return ApiResponse::error(e.into(), req_id),
+    };
+
+    let leaves: Vec<LeafRow> = rows
+        .into_iter()
+        .map(|(leaf_index, commitment)| LeafRow {
+            leaf_index,
+            commitment: hex::encode(commitment),
+        })
+        .collect();
+
+    let highest_returned = leaves.last().map(|l| l.leaf_index);
+    let next_from = highest_returned.map(|i| i + 1).unwrap_or(query.from);
+    let has_more = next_from < next_leaf_index;
+
+    ApiResponse::success(
+        LeavesResponse {
+            tree_key,
+            from: query.from,
+            next_leaf_index,
+            has_more,
+            next_from,
+            leaves,
+        },
+        req_id,
+    )
+}
+
+/// Merkle proof for a single leaf.
+///
+/// **This route is a privacy leak and is gated behind `EXPOSE_MERKLE_PROOF_ROUTE`.**
+/// The backend already knows from public deposit transactions which leaf belongs to
+/// which wallet, so a proof request for a specific leaf followed by a withdrawal
+/// seconds later deanonymizes it completely — and because change outputs create new
+/// leaves whose proofs would also be requested, the backend could chain notes into a
+/// linked list and follow a balance indefinitely. Nothing cryptographic is broken;
+/// the request simply *is* the secret.
+///
+/// Kept for local development and debugging only. On a production backend its only
+/// users are a misconfigured client and a curious operator.
 pub async fn proof(
     State(state): State<AppState>,
     Path((tree_key, leaf_index)): Path<(String, u64)>,

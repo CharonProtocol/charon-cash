@@ -488,8 +488,7 @@ fn append_commitments(tree_account: &AccountView, commitments: &[[u8; 32]; 2]) -
         bytemuck::try_from_bytes_mut::<MerkleTreeAccount>(&mut tree_data[..MerkleTreeAccount::LEN])
             .map_err(|_| PrivacyCashError::InvalidMerkleTreeAccount)?;
 
-    MerkleTree::append::<Poseidon>(commitments[0], tree)?;
-    MerkleTree::append::<Poseidon>(commitments[1], tree)?;
+    MerkleTree::append_pair::<Poseidon>(commitments, tree)?;
 
     Ok(())
 }

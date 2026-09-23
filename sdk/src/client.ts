@@ -43,10 +43,9 @@ import { LocalMirror } from "./local-provider"
 import {
   bytesToHex,
   fetchJupiterRoute,
-  fetchMerkleProof,
   fetchRelayerInfo,
   fetchBlockhash,
-  fetchTreeLeaves,
+  fetchTreeLeavesFrom,
   fetchTreeState,
   fetchUtxoRange,
   fieldToHex32,
@@ -55,9 +54,22 @@ import {
   registerPrivacyKeys,
   submitTransaction,
   relaySwap,
+  relayTransact,
   waitForLeafIndex,
   type RelayerInfo,
 } from "./merkle"
+import {
+  clearCachedLeaves,
+  loadCachedLeaves,
+  saveCachedLeaves,
+} from "./mirror-cache"
+import {
+  canRelay,
+  minEconomicWithdrawal,
+  transferFee,
+  transferRecipient,
+  withdrawalFee,
+} from "./relay-policy"
 import {
   clearNotes,
   exportNotes,
@@ -162,6 +174,28 @@ function toPubkey(value: PublicKey | string): PublicKey {
   return value instanceof PublicKey ? value : new PublicKey(value)
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+export interface ClientOptions {
+  /**
+   * Sign withdrawals and transfers with the user's own wallet instead of handing
+   * the proof to the relayer.
+   *
+   * This is the escape hatch, and it is off by default because it costs the privacy
+   * the pool exists to provide: a self-signed withdrawal puts the wallet on-chain as
+   * fee payer beside the recipient and the amount, which links deposit to withdrawal
+   * without breaking any cryptography.
+   *
+   * It exists because the alternative is worse. A relayer that is down, censoring, or
+   * gone takes the funds with it if there is no other path, and the honest answer to
+   * "can I always get my money out" has to be yes. So: use the relayer normally,
+   * fall back to this when you must, and know what you are trading.
+   */
+  selfRelay?: boolean
+}
+
 export class PrivacyCashClient {
   private signer: Signer
   private wasm?: LightWasm
@@ -171,11 +205,31 @@ export class PrivacyCashClient {
   private info?: RelayerInfo
   private unlocking: Promise<void> | null = null
   private unlockOpts?: UnlockOpts
+  private selfRelay: boolean
 
-  constructor(signer: Signer, programId?: PublicKey, unlock?: UnlockOpts) {
+  constructor(
+    signer: Signer,
+    programId?: PublicKey,
+    unlock?: UnlockOpts,
+    options?: ClientOptions,
+  ) {
     this.signer = signer
     this.programId = programId ?? envProgramId() ?? undefined
     this.unlockOpts = unlock
+    this.selfRelay = options?.selfRelay ?? false
+  }
+
+  /**
+   * Switch withdrawals and transfers between the relayer and the user's own wallet.
+   * See `ClientOptions.selfRelay` — enabling this trades privacy for a guarantee of
+   * access.
+   */
+  setSelfRelay(enabled: boolean): void {
+    this.selfRelay = enabled
+  }
+
+  isSelfRelay(): boolean {
+    return this.selfRelay
   }
 
   get publicKey(): PublicKey {
@@ -184,6 +238,61 @@ export class PrivacyCashClient {
 
   get feeRecipient(): PublicKey {
     return new PublicKey(this.info!.feeRecipient)
+  }
+
+  /**
+   * Minimum fee the relayer will accept, published by `/api/relayer/info` rather
+   * than hardcoded so it cannot drift from what the relayer enforces. Almost all of
+   * it is the unrecoverable rent for the two nullifier accounts a transact creates.
+   */
+  private relayFeeFloor(): BN {
+    return new BN(this.info?.minTransactFeeLamports ?? 0)
+  }
+
+  /**
+   * Whether a relayed spend is possible for this asset. See `relay-policy.ts`;
+   * notably a caller must never silently fall back to wallet signing, because that
+   * deanonymizes the user without telling them.
+   */
+  canRelay(isSpl: boolean): boolean {
+    return canRelay({
+      selfRelay: this.selfRelay,
+      isSpl,
+      splRelayAvailable: this.info?.splRelayAvailable !== false,
+    })
+  }
+
+  /**
+   * Smallest withdrawal worth making, in lamports. Below this the relayer's
+   * unrecoverable nullifier rent exceeds the amount withdrawn. Surface this in the
+   * UI so users meet it by choice rather than by error message.
+   */
+  minWithdrawalLamports(isSpl = false): number {
+    return minEconomicWithdrawal({
+      withdrawalFeeRateBps: this.info?.withdrawalFeeRateBps ?? 0,
+      minRelayFeeLamports: this.relayFeeFloor(),
+      relay: this.canRelay(isSpl),
+    }).toNumber()
+  }
+
+  /** What a withdrawal of `grossLamports` actually pays the recipient after fees. */
+  quoteWithdraw(grossLamports: number, isSpl = false): {
+    feeLamports: number
+    recipientLamports: number
+    minLamports: number
+  } {
+    const gross = new BN(grossLamports)
+    const fee = withdrawalFee({
+      grossLamports: gross,
+      withdrawalFeeRateBps: this.info?.withdrawalFeeRateBps ?? 0,
+      minRelayFeeLamports: this.relayFeeFloor(),
+      relay: this.canRelay(isSpl),
+    })
+    return {
+      feeLamports: fee.toNumber(),
+      recipientLamports: gross.sub(fee).toNumber(),
+      minLamports: this.minWithdrawalLamports(isSpl),
+    }
   }
 
   async init(): Promise<void> {
@@ -339,7 +448,7 @@ export class PrivacyCashClient {
   async importNotesJson(json: string, replace = false): Promise<number> {
     await this.unlock()
     const n = importNotes(this.publicKey, json, replace)
-    await this.persistNotes().catch(() => {})
+    await this.persistNotes().catch(() => { })
     return n
   }
 
@@ -347,7 +456,7 @@ export class PrivacyCashClient {
   async clearAllNotes(): Promise<void> {
     await this.unlock()
     clearNotes(this.publicKey)
-    await this.persistNotes().catch(() => {})
+    await this.persistNotes().catch(() => { })
   }
 
   /** Unlock + rescan SOL and supported SPL trees + persist. Powers the UI "Load notes" action. */
@@ -381,7 +490,7 @@ export class PrivacyCashClient {
         })),
       )
     }
-    await this.persistNotes().catch(() => {})
+    await this.persistNotes().catch(() => { })
     return acc
   }
 
@@ -516,7 +625,7 @@ export class PrivacyCashClient {
       createdAt: Date.now(),
       depositTx: signature,
     })
-    await this.persistNotes().catch(() => {})
+    await this.persistNotes().catch(() => { })
 
     await this.waitForLeaves(treeKey, nextLeafIndex + 1)
 
@@ -618,7 +727,7 @@ export class PrivacyCashClient {
       createdAt: Date.now(),
       depositTx: signature,
     })
-    await this.persistNotes().catch(() => {})
+    await this.persistNotes().catch(() => { })
 
     await this.waitForLeaves(treeKey, nextLeafIndex + 1)
 
@@ -690,9 +799,14 @@ export class PrivacyCashClient {
 
   /**
    * Shielded transfer: spend your notes and insert a note the recipient owns in
-   * the pool (`extAmount=0`, `fee=0`). No relayer, no public payout. They withdraw
-   * later with their own key. `recipient` is their Solana wallet (they must have
-   * unlocked this app once so we can look up their note keys).
+   * the pool (`extAmount=0`). Nothing leaves the pool, so there is no public payout —
+   * they withdraw later with their own key. Relayed by default, because a
+   * wallet-signed transfer publishes the sender for a transaction whose whole point
+   * is to hide them; the relayer's fee comes out of the sender's change, so the
+   * recipient always receives exactly `amount`.
+   *
+   * `recipient` is their Solana wallet (they must have unlocked this app once so we
+   * can look up their note keys).
    */
   async transferSOL(
     amountLamports: number,
@@ -863,14 +977,14 @@ export class PrivacyCashClient {
       realInputs.length === 2
         ? realInputs
         : [
-            realInputs[0],
-            new Utxo({
-              wasm,
-              keypair: utxoKeypair,
-              amount: "0",
-              mintAddress: fromMint,
-            }),
-          ]
+          realInputs[0],
+          new Utxo({
+            wasm,
+            keypair: utxoKeypair,
+            amount: "0",
+            mintAddress: fromMint,
+          }),
+        ]
 
     const totalInput = inputs.reduce((s, x) => s.add(x.amount), new BN(0))
     if (amountIn.gt(totalInput)) {
@@ -1027,7 +1141,7 @@ export class PrivacyCashClient {
       createdAt: Date.now(),
       depositTx: signature,
     })
-    await this.persistNotes().catch(() => {})
+    await this.persistNotes().catch(() => { })
     await this.waitForLeaves(outTreeKey, outTree.nextLeafIndex + 1)
 
     return {
@@ -1069,10 +1183,8 @@ export class PrivacyCashClient {
   }
 
   /**
-   * Rebuild the Poseidon tree from indexed leaves and take paths locally.
-   * Refuses to prove until the indexer leaf count and root match on-chain
-   * (a desynced path makes Groth16 verify fail).
-   */
+   * Rebuild the Poseidon tree from every indexed leaf and take paths locally.
+   **/
   private async merkleForSpend(
     treeKey: string,
     inputs: Utxo[],
@@ -1084,30 +1196,65 @@ export class PrivacyCashClient {
     const dummyPath = new Array(MERKLE_TREE_DEPTH).fill("0")
     const deadline = Date.now() + 45_000
     let lastErr = "merkle indexer not ready"
+
+    let leaves = await loadCachedLeaves(treeKey).catch(() => [] as string[])
+    let mirror = LocalMirror.fromLeaves(this.wasm!, leaves)
+    let persistedCount = leaves.length
+
     while (Date.now() < deadline) {
       try {
         const onChain = await fetchTreeState(treeKey)
-        const leaves = await fetchTreeLeaves(treeKey)
-        if (leaves.length !== onChain.nextLeafIndex) {
-          lastErr = `merkle indexer mismatch for ${treeKey}: indexed ${leaves.length} leaves vs on-chain next_index=${onChain.nextLeafIndex}`
-          await new Promise((r) => setTimeout(r, 800))
+
+        if (leaves.length > onChain.nextLeafIndex) {
+          // The cache holds more leaves than the tree has, so it belongs to a
+          // different tree — a reset localnet, say. Nothing to salvage.
+          lastErr = `cached merkle mirror for ${treeKey} has ${leaves.length} leaves but the tree is at ${onChain.nextLeafIndex}; discarding it`
+          await clearCachedLeaves(treeKey).catch(() => { })
+          leaves = []
+          mirror = LocalMirror.fromLeaves(this.wasm!, leaves)
+          persistedCount = 0
           continue
         }
-        const mirror = LocalMirror.fromLeaves(this.wasm!, leaves)
+
+        if (leaves.length < onChain.nextLeafIndex) {
+          const delta = await fetchTreeLeavesFrom(treeKey, leaves.length)
+          for (const leaf of delta.leaves) {
+            mirror.insert(leaf)
+            leaves.push(leaf)
+          }
+          if (leaves.length < onChain.nextLeafIndex) {
+            lastErr = `merkle indexer is behind for ${treeKey}: indexed ${leaves.length} leaves vs on-chain next_index=${onChain.nextLeafIndex}`
+            await sleep(800)
+            continue
+          }
+        }
+
         if (mirror.root() !== onChain.root) {
-          lastErr = `merkle root mismatch for ${treeKey}: indexer vs on-chain. Wait for the shim to rescan, or ./run.sh --fresh.`
-          await new Promise((r) => setTimeout(r, 800))
+          // Same leaf count but a different root means the cached leaves are wrong,
+          // not merely stale, so topping up cannot fix it. Rebuild from scratch.
+          lastErr = `merkle root mismatch for ${treeKey}: rebuilt ${leaves.length} leaves do not hash to the root the indexer reports; rebuilding`
+          await clearCachedLeaves(treeKey).catch(() => { })
+          leaves = []
+          mirror = LocalMirror.fromLeaves(this.wasm!, leaves)
+          persistedCount = 0
+          await sleep(800)
           continue
         }
+
+        if (leaves.length > persistedCount) {
+          await saveCachedLeaves(treeKey, leaves, persistedCount).catch(() => { })
+          persistedCount = leaves.length
+        }
+
         const inputPathElements: string[][] = []
         for (const u of inputs) {
           if (u.amount.gt(new BN(0))) {
             if (u.index < 0 || u.index >= leaves.length) {
-              lastErr = `note leaf index ${u.index} is not in the tree yet`
-              throw new Error(lastErr)
+              throw new Error(`note leaf index ${u.index} is not in the tree yet`)
             }
             inputPathElements.push(mirror.path(u.index))
           } else {
+            // Zero-value inputs are dummies; the circuit skips their membership check.
             inputPathElements.push(dummyPath)
           }
         }
@@ -1118,7 +1265,7 @@ export class PrivacyCashClient {
         }
       } catch (e) {
         lastErr = (e as Error).message
-        await new Promise((r) => setTimeout(r, 800))
+        await sleep(800)
       }
     }
     throw new Error(lastErr)
@@ -1191,19 +1338,31 @@ export class PrivacyCashClient {
     const keys = await this.resolveRecipientKeys(args.recipient)
     const destKp = Keypair.fromPubkey(keys.spendPubkey, wasm)
 
+    const relay = this.canRelay(args.isSpl)
+    if (!relay && !this.selfRelay) {
+      throw new Error(
+        "this relayer cannot sign SPL transfers (it has no Address Lookup Table configured). " +
+        "Enable selfRelay to transfer with your own wallet, understanding that it publishes " +
+        "your wallet on-chain.",
+      )
+    }
+    const fee = transferFee({ minRelayFeeLamports: this.relayFeeFloor(), relay })
+    const needed = sendAmt.add(fee)
+
     const sorted = unspentNotes(this.publicKey)
       .filter((n) => n.mintAddress === args.mintAddress)
       .sort((a, b) => Number(b.amount) - Number(a.amount))
     if (sorted.length === 0) throw new Error("no spendable notes")
 
-    let inputNotes = sorted.filter((n) => BigInt(n.amount) >= BigInt(sendAmt.toString()))
+    let inputNotes = sorted.filter((n) => BigInt(n.amount) >= BigInt(needed.toString()))
     if (inputNotes.length === 0) {
       const a = sorted[0]
-      const need = BigInt(sendAmt.toString()) - BigInt(a.amount)
+      const need = BigInt(needed.toString()) - BigInt(a.amount)
       const b = sorted.slice(1).find((n) => BigInt(n.amount) >= need)
-      if (!b && BigInt(a.amount) < BigInt(sendAmt.toString())) {
+      if (!b && BigInt(a.amount) < BigInt(needed.toString())) {
         throw new Error(
-          `insufficient private balance: have ${a.amount}, need ${sendAmt.toString()}`,
+          `insufficient private balance: have ${a.amount}, need ${needed.toString()}` +
+          (fee.isZero() ? "" : ` (including a ${fee.toString()} lamport relayer fee)`),
         )
       }
       inputNotes = b ? [a, b] : [a]
@@ -1226,22 +1385,23 @@ export class PrivacyCashClient {
       realInputs.length === 2
         ? realInputs
         : [
-            realInputs[0],
-            new Utxo({
-              wasm,
-              keypair: utxoKeypair,
-              amount: "0",
-              mintAddress: args.mintAddress,
-            }),
-          ]
+          realInputs[0],
+          new Utxo({
+            wasm,
+            keypair: utxoKeypair,
+            amount: "0",
+            mintAddress: args.mintAddress,
+          }),
+        ]
 
     const totalInput = inputs.reduce((s, x) => s.add(x.amount), new BN(0))
-    if (sendAmt.gt(totalInput)) {
+    if (needed.gt(totalInput)) {
       throw new Error(
-        `insufficient private balance: have ${totalInput.toString()}, need ${sendAmt.toString()}`,
+        `insufficient private balance: have ${totalInput.toString()}, need ${needed.toString()}` +
+        (fee.isZero() ? "" : ` (including a ${fee.toString()} lamport relayer fee)`),
       )
     }
-    const change = totalInput.sub(sendAmt)
+    const change = totalInput.sub(needed)
     const { root, nextLeafIndex, inputPathElements } = await this.merkleForSpend(
       args.treeKey,
       inputs,
@@ -1268,16 +1428,24 @@ export class PrivacyCashClient {
     const enc2 = await this.enc!.encryptUtxo(outputs[1])
 
     const extAmount = new BN(0)
-    const fee = new BN(0)
+
+    // A transfer moves nothing out of the pool, so this account is never touched —
+    // but it is still published, and it used to be the sender's own wallet. See
+    // `transferRecipient` in `relay-policy.ts`.
+    const neutralRecipient = transferRecipient({
+      relay,
+      wallet: this.publicKey,
+      feeRecipient: this.feeRecipient,
+    })
 
     let splExtras:
       | {
-          mint: PublicKey
-          signerTokenAccount: PublicKey
-          recipientTokenAccount: PublicKey
-          feeRecipientAta: PublicKey
-          preIxs?: TransactionInstruction[]
-        }
+        mint: PublicKey
+        signerTokenAccount: PublicKey
+        recipientTokenAccount: PublicKey
+        feeRecipientAta: PublicKey
+        preIxs?: TransactionInstruction[]
+      }
       | undefined
     let feeRecipientForHash: PublicKey = this.feeRecipient
     if (args.isSpl && args.mint) {
@@ -1288,26 +1456,31 @@ export class PrivacyCashClient {
       splExtras = {
         mint,
         signerTokenAccount: signerAta,
-        recipientTokenAccount: signerAta,
+        // Same reasoning as `neutralRecipient`: hashed and passed, but never
+        // transferred to, so it must not be the sender's own token account.
+        recipientTokenAccount: relay ? feeAta : signerAta,
         feeRecipientAta: feeAta,
-        preIxs: [
-          createAssociatedTokenAccountIdempotentInstruction(
-            this.publicKey,
-            signerAta,
-            this.publicKey,
-            mint,
-          ),
-          createAssociatedTokenAccountIdempotentInstruction(
-            this.publicKey,
-            feeAta,
-            this.feeRecipient,
-            mint,
-          ),
-        ],
+        preIxs: relay
+          ? undefined
+          : [
+            createAssociatedTokenAccountIdempotentInstruction(
+              this.publicKey,
+              signerAta,
+              this.publicKey,
+              mint,
+            ),
+            createAssociatedTokenAccountIdempotentInstruction(
+              this.publicKey,
+              feeAta,
+              this.feeRecipient,
+              mint,
+            ),
+          ],
       }
     }
 
     const { signature, nullifiers } = await this.proveAndSend({
+      relay,
       root,
       inputs,
       outputs,
@@ -1317,7 +1490,7 @@ export class PrivacyCashClient {
       inputPathIndices: inputs.map((u) => u.index),
       extAmount,
       fee,
-      recipient: this.publicKey,
+      recipient: neutralRecipient,
       feeRecipientForHash,
       mintAddress: args.mintAddress,
       isSpl: args.isSpl,
@@ -1326,7 +1499,7 @@ export class PrivacyCashClient {
 
     for (const n of inputNotes) markNoteSpent(this.publicKey, n.id, signature)
     if (change.gt(new BN(0))) {
-      await waitForLeafIndex(args.treeKey, nextLeafIndex + 1).catch(() => {})
+      await waitForLeafIndex(args.treeKey, nextLeafIndex + 1).catch(() => { })
       saveNote(this.publicKey, {
         id: newNoteId(),
         amount: outputs[1].amount.toString(),
@@ -1338,27 +1511,40 @@ export class PrivacyCashClient {
         depositTx: signature,
       })
     }
-    await this.persistNotes().catch(() => {})
+    await this.persistNotes().catch(() => { })
 
     return {
       signature,
       recipientLamports: sendAmt.toNumber(),
-      feeLamports: 0,
+      feeLamports: fee.toNumber(),
       changeLamports: change.toString(),
       nullifiers,
     }
   }
 
-  /** Poll until the indexer can serve a Merkle proof for `leafIndex` (mirror caught up). */
-  private async waitForNoteIndexed(treeKey: string, leafIndex: number, timeoutMs = 30_000): Promise<void> {
+  /**
+   * Poll until the indexer has caught up past `leafIndex`.
+   *
+   * Uses the tree's leaf count rather than asking for that leaf's Merkle proof.
+   * The proof request would answer the same question, but it would also tell the
+   * backend which leaf the caller is about to spend, which is exactly the leak
+   * `merkleForSpend` goes to the trouble of avoiding. A leaf count is the same
+   * request for everyone.
+   */
+  private async waitForNoteIndexed(
+    treeKey: string,
+    leafIndex: number,
+    timeoutMs = 30_000,
+  ): Promise<void> {
     const deadline = Date.now() + timeoutMs
     while (Date.now() < deadline) {
       try {
-        await fetchMerkleProof(treeKey, leafIndex)
-        return
+        const { nextLeafIndex } = await fetchTreeState(treeKey)
+        if (nextLeafIndex > leafIndex) return
       } catch {
-        await new Promise((r) => setTimeout(r, 1000))
+        /* indexer briefly down; the deadline is the backstop */
       }
+      await sleep(1000)
     }
   }
 
@@ -1427,8 +1613,30 @@ export class PrivacyCashClient {
         `insufficient private balance: have ${totalInput.toString()}, need ${gross.toString()}`,
       )
     }
-    const fee = new BN(Math.ceil((gross.toNumber() * feeBps) / 10000))
+    const relay = this.canRelay(args.isSpl)
+    if (!relay && !this.selfRelay) {
+      throw new Error(
+        "this relayer cannot sign SPL withdrawals (it has no Address Lookup Table configured). " +
+        "Enable selfRelay to withdraw with your own wallet, understanding that it publishes " +
+        "your wallet beside the recipient and amount.",
+      )
+    }
+    const fee = withdrawalFee({
+      grossLamports: gross,
+      withdrawalFeeRateBps: feeBps,
+      minRelayFeeLamports: this.relayFeeFloor(),
+      relay,
+    })
     const recipientGets = gross.sub(fee)
+    if (recipientGets.lten(0)) {
+      throw new Error(
+        `withdrawing ${gross.toString()} would not cover the ${fee.toString()} lamport fee. ` +
+        `Relaying pays about ${this.relayFeeFloor().toString()} lamports of unrecoverable ` +
+        `nullifier rent per spend, so the minimum worth withdrawing is ` +
+        `${this.minWithdrawalLamports(args.isSpl)} (fewer, larger withdrawals are also better ` +
+        `for privacy).`,
+      )
+    }
     const extAmount = recipientGets.neg()
     const change = totalInput.sub(gross)
 
@@ -1479,13 +1687,18 @@ export class PrivacyCashClient {
         signerTokenAccount: signerAta,
         recipientTokenAccount: recipientAta,
         feeRecipientAta: feeAta,
-        preIxs: [
-          createAssociatedTokenAccountIdempotentInstruction(this.publicKey, recipientAta, args.recipient, mint),
-          createAssociatedTokenAccountIdempotentInstruction(this.publicKey, feeAta, this.feeRecipient, mint),
-        ],
+        // Only for the self-relay path. When the relayer signs it creates these
+        // itself, because it is the fee payer and the wallet is deliberately absent.
+        preIxs: relay
+          ? undefined
+          : [
+            createAssociatedTokenAccountIdempotentInstruction(this.publicKey, recipientAta, args.recipient, mint),
+            createAssociatedTokenAccountIdempotentInstruction(this.publicKey, feeAta, this.feeRecipient, mint),
+          ],
       }
     }
     const { signature, nullifiers } = await this.proveAndSend({
+      relay,
       root,
       inputs,
       outputs,
@@ -1516,7 +1729,7 @@ export class PrivacyCashClient {
         depositTx: signature,
       })
     }
-    await this.persistNotes().catch(() => {})
+    await this.persistNotes().catch(() => { })
 
     return {
       signature,
@@ -1547,6 +1760,13 @@ export class PrivacyCashClient {
     recipientTokenAccount?: PublicKey
     feeRecipientAta?: PublicKey
     preIxs?: TransactionInstruction[]
+    /**
+     * Hand the proof to the relayer instead of signing with the wallet. Set for
+     * withdrawals and transfers, never for deposits: a deposit's lamports come from
+     * the signer, so relaying one would spend the relayer's money, and a deposit is
+     * publicly attributable anyway.
+     */
+    relay?: boolean
   }): Promise<{ signature: string; nullifiers: string[] }> {
     const inputNullifiers = await Promise.all(
       args.inputs.map((x) => x.getNullifier()),
@@ -1607,6 +1827,27 @@ export class PrivacyCashClient {
     }
 
     const nullifierHexes = [pub[3], pub[4]].map((b) => bytesToHex(b))
+
+    if (args.relay) {
+      // The relayer compiles and signs, so the wallet never appears in the
+      // transaction. It cannot alter any of this: every field below is hashed into
+      // `extDataHash`, which the program verifies as a Groth16 public input.
+      const { signature } = await relayTransact({
+        proof: proofSubmit,
+        extAmount: args.extAmount.toString(),
+        fee: args.fee.toString(),
+        encryptedOutput1: args.encryptedOutput1,
+        encryptedOutput2: args.encryptedOutput2,
+        recipient: args.recipient.toBase58(),
+        feeRecipient: hashFeeRecipient.toBase58(),
+        mint: args.mintAddress,
+        isSpl: args.isSpl,
+        ...(args.isSpl
+          ? { recipientTokenAccount: args.recipientTokenAccount!.toBase58() }
+          : {}),
+      })
+      return { signature, nullifiers: nullifierHexes }
+    }
 
     const { blockhash } = await fetchBlockhash()
     let transaction: VersionedTransaction

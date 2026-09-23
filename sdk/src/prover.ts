@@ -1,5 +1,4 @@
 import { utils } from "ffjavascript"
-
 import { getBackendUrl } from "./merkle"
 
 export interface HostedProof {

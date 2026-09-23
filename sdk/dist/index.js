@@ -5,7 +5,13 @@ export { buildTransactTransaction, buildTransactIxData, buildTransactSplTransact
 export { compileV1Transaction, signWireTransaction, v1SignedSize, V1_MAX_SIZE, V1_PREFIX, } from "./tx-v1";
 export { ensureAlt, fetchAlt, splAltAddresses, envAltAddress, cachedAltAddress, cacheAltAddress, } from "./alt";
 export { LocalMirror, readSolTreeState, readTreeState, readGlobalFees } from "./local-provider";
-export { fetchRelayerInfo, fetchBlockhash, fetchAltAccount, fetchTreeState, fetchMerkleProof, fetchUtxoRange, fetchTreeLeaves, checkEncryptedOutput, waitForLeafIndex, waitForEncryptedOutput, isNullifierSpent, submitTransaction, relaySwap, fetchJupiterRoute, fieldToHex32, setBackendUrl, getBackendUrl, solTreeKey, splTreeKey, registerPrivacyKeys, lookupPrivacyKeys, commitmentToDecimal, } from "./merkle";
+export { canRelay, minEconomicWithdrawal, transferFee, transferRecipient, withdrawalFee, } from "./relay-policy";
+export { loadCachedLeaves, saveCachedLeaves, clearCachedLeaves, mirrorCacheAvailable, } from "./mirror-cache";
+export { fetchRelayerInfo, fetchBlockhash, fetchAltAccount, fetchTreeState, fetchUtxoRange, 
+// Whole-tree fetch only. There is deliberately no per-leaf proof helper here: see
+// the note above `merkleForSpend` in `client.ts` for why asking the backend for one
+// leaf's proof is the one thing that undoes the pool's anonymity.
+fetchTreeLeaves, fetchTreeLeavesFrom, waitForLeafIndex, isNullifierSpent, submitTransaction, relaySwap, relayTransact, fetchJupiterRoute, fieldToHex32, setBackendUrl, getBackendUrl, setRelayerUrl, getRelayerUrl, solTreeKey, splTreeKey, registerPrivacyKeys, lookupPrivacyKeys, commitmentToDecimal, } from "./merkle";
 export { loadNotes, unspentNotes, saveNote, upsertNote, markNoteSpent, totalBalance, exportNotes, importNotes, clearNotes, newNoteId, getSyncOffset, setSyncOffset, resetSyncOffset, } from "./notes";
 export { encryptNotesBlob, decryptNotesBlob, pushEncryptedNotes, pullEncryptedNotes, } from "./notestore";
 export { setOperatorPassword, getOperatorPassword, verifyOperator, operatorInitialize, operatorInitializeSpl, operatorUpdateConfig, operatorUpdateDepositLimit, operatorUpdateDepositLimitSpl, OperatorError, } from "./admin";

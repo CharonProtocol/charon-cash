@@ -133,6 +133,19 @@ export function backendUrl() {
     const env = getEnv();
     return (env.VITE_BACKEND_URL ?? "http://localhost:8080").replace(/\/$/, "");
 }
+/**
+ * Origin serving `/api/relayer/*`.
+ *
+ * The relayer is a separate service from the indexer in production — it holds a hot
+ * signing key and has its own rate limits and failure modes, so it should not share
+ * a process with the thing serving public Merkle data. In dev both are the same shim,
+ * so this falls back to the backend URL and needs no configuration.
+ */
+export function relayerUrl() {
+    const env = getEnv();
+    const url = env.VITE_RELAYER_URL;
+    return url ? url.replace(/\/$/, "") : backendUrl();
+}
 export function envProgramId() {
     const env = getEnv();
     const v = env.VITE_PROGRAM_ID;

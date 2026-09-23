@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useWallet } from "@solana/wallet-adapter-react"
 import { toast } from "sonner"
 import { ArrowUpFromLine } from "lucide-react"
 
 import { usePrivacyCash } from "@/hooks/usePrivacyCash"
-import { lamportsToSol, shortHash } from "@/lib/format"
+import { lamportsToSol, shortHash, solToLamports } from "@/lib/format"
 import {
   Card,
   CardContent,
@@ -26,6 +26,10 @@ interface Result {
   nullifiers?: string[]
 }
 
+function formatSol(lamports: number): string {
+  return lamportsToSol(lamports).toFixed(6)
+}
+
 export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
   const { client, connected } = usePrivacyCash()
   const { publicKey } = useWallet()
@@ -36,10 +40,50 @@ export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
   const [result, setResult] = useState<Result | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [privateSol, setPrivateSol] = useState<string | null>(null)
+  const [ready, setReady] = useState(false)
+  const [selfRelay, setSelfRelay] = useState(false)
 
   useEffect(() => {
     if (publicKey && !recipient) setRecipient(publicKey.toBase58())
   }, [publicKey, recipient])
+
+  useEffect(() => {
+    if (!client) {
+      setReady(false)
+      return
+    }
+    let cancelled = false
+    client
+      .init()
+      .then(() => {
+        if (!cancelled) setReady(true)
+      })
+      .catch(() => {
+        if (!cancelled) setReady(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [client])
+
+  useEffect(() => {
+    client?.setSelfRelay(selfRelay)
+  }, [client, selfRelay])
+
+  const lamports = useMemo(() => {
+    const n = Number(amount)
+    if (!Number.isFinite(n) || n <= 0) return 0
+    return solToLamports(n)
+  }, [amount])
+
+  const quote = useMemo(() => {
+    if (!client || !ready || lamports <= 0) return null
+    return client.quoteWithdraw(lamports)
+  }, [client, ready, lamports, selfRelay])
+
+  const belowMin = quote != null && lamports < quote.minLamports
+  const canSubmit =
+    connected && !busy && lamports > 0 && !!recipient.trim() && !belowMin
 
   const readBalance = () => {
     if (!client) return
@@ -64,15 +108,17 @@ export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
   }
 
   const handleWithdraw = async () => {
-    if (!client) return
+    if (!client || !canSubmit) return
     setBusy(true)
     setErr(null)
     setResult(null)
     setStatus("unlocking (approve the wallet signature)…")
     try {
-      const lamports = Math.round(Number(amount) * 1_000_000_000)
-      if (!lamports || lamports <= 0) throw new Error("enter a valid amount")
-      setStatus("generating ZK proof + wallet signature…")
+      setStatus(
+        selfRelay
+          ? "generating ZK proof + wallet signature…"
+          : "generating ZK proof, then the relayer signs…",
+      )
       const res = await client.withdrawSOL(lamports, recipient.trim())
       setResult({
         signature: res.signature,
@@ -110,7 +156,7 @@ export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
         <CardDescription>
           Unshield SOL from a private note to a public address. Use the same
           wallet that received the private transfer, then approve sign-in so
-          the note can be decrypted. Your wallet signs the withdraw.
+          the note can be decrypted.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -165,9 +211,41 @@ export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
           </div>
         </div>
 
+        {quote && (
+          <div className="space-y-1 rounded-lg border border-border bg-secondary/50 px-3 py-2 text-xs">
+            <div className="flex justify-between text-muted-foreground">
+              <span>fee</span>
+              <span className="font-mono text-foreground">
+                {formatSol(quote.feeLamports)} SOL
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">you receive</span>
+              <span className="font-mono font-medium text-foreground">
+                {belowMin ? "—" : `${formatSol(quote.recipientLamports)} SOL`}
+              </span>
+            </div>
+            {belowMin && (
+              <p className="pt-1 text-destructive">
+                minimum {formatSol(quote.minLamports)} SOL
+              </p>
+            )}
+          </div>
+        )}
+
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={selfRelay}
+            onChange={(e) => setSelfRelay(e.target.checked)}
+            disabled={!connected || busy}
+          />
+          Sign with your own wallet
+        </label>
+
         <Button
           onClick={handleWithdraw}
-          disabled={!connected || busy}
+          disabled={!canSubmit}
           className="w-full"
         >
           {busy ? status ?? "Working…" : "Withdraw SOL"}

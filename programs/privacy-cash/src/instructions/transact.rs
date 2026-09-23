@@ -207,8 +207,7 @@ pub fn process_transact(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
             &mut tree_data[..MerkleTreeAccount::LEN],
         )
         .map_err(|_| ProgramError::InvalidAccountData)?;
-        MerkleTree::append::<Poseidon>(proof.output_commitments[0], tree)?;
-        MerkleTree::append::<Poseidon>(proof.output_commitments[1], tree)?;
+        MerkleTree::append_pair::<Poseidon>(&proof.output_commitments, tree)?;
     }
 
     Ok(())

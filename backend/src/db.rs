@@ -104,6 +104,9 @@ impl Db {
     ///     Vector of (leaf_index, commitment).
     ///
     /// Shall be used for building merkle tree on backend
+    ///
+    /// Ordered by `leaf_index`: callers insert these into a Merkle tree in sequence,
+    /// and an out-of-order page would produce a root that matches nothing on-chain.
     pub async fn fetch_commitments(
         &self,
         leaf_index: u64,
@@ -111,7 +114,10 @@ impl Db {
         tree_key: &String,
     ) -> Result<Vec<(u64, Vec<u8>)>, DbError> {
         let rows = sqlx::query::<sqlx::Postgres>(
-            "SELECT * FROM commitments WHERE tree_key = $1 AND leaf_index >= $2 LIMIT $3",
+            "SELECT leaf_index, commitment FROM commitments
+             WHERE tree_key = $1 AND leaf_index >= $2
+             ORDER BY leaf_index ASC
+             LIMIT $3",
         )
         .bind(tree_key)
         .bind(leaf_index as i64)
@@ -188,12 +194,18 @@ impl Db {
         .execute(&mut *conn)
         .await?;
 
+        // `leaf_index` has to be written explicitly: it is `NOT NULL` with no
+        // default, and clients rebuild the tree by index, so the pair a transaction
+        // appends must land at `curr_index` and `curr_index + 1` exactly.
         let commitment_rows = sqlx::query::<sqlx::Postgres>(
-            "INSERT INTO commitments (tree_key,commitment) VALUES ($1,$2),($3,$4);",
+            "INSERT INTO commitments (tree_key,leaf_index,commitment) VALUES ($1,$2,$3),($4,$5,$6)
+             ON CONFLICT (tree_key, leaf_index) DO NOTHING;",
         )
         .bind(tx.tree_key.as_str())
+        .bind(tx.curr_index as i64)
         .bind(&tx.decoded.output_commitments[0])
         .bind(tx.tree_key.as_str())
+        .bind(tx.curr_index as i64 + 1)
         .bind(&tx.decoded.output_commitments[1])
         .execute(&mut *conn)
         .await?;

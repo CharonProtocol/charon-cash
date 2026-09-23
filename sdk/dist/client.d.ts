@@ -45,6 +45,23 @@ export interface SwapResult {
     outMint: string;
     nullifiers: string[];
 }
+export interface ClientOptions {
+    /**
+     * Sign withdrawals and transfers with the user's own wallet instead of handing
+     * the proof to the relayer.
+     *
+     * This is the escape hatch, and it is off by default because it costs the privacy
+     * the pool exists to provide: a self-signed withdrawal puts the wallet on-chain as
+     * fee payer beside the recipient and the amount, which links deposit to withdrawal
+     * without breaking any cryptography.
+     *
+     * It exists because the alternative is worse. A relayer that is down, censoring, or
+     * gone takes the funds with it if there is no other path, and the honest answer to
+     * "can I always get my money out" has to be yes. So: use the relayer normally,
+     * fall back to this when you must, and know what you are trading.
+     */
+    selfRelay?: boolean;
+}
 export declare class PrivacyCashClient {
     private signer;
     private wasm?;
@@ -54,9 +71,41 @@ export declare class PrivacyCashClient {
     private info?;
     private unlocking;
     private unlockOpts?;
-    constructor(signer: Signer, programId?: PublicKey, unlock?: UnlockOpts);
+    private selfRelay;
+    constructor(signer: Signer, programId?: PublicKey, unlock?: UnlockOpts, options?: ClientOptions);
+    /**
+     * Switch withdrawals and transfers between the relayer and the user's own wallet.
+     * See `ClientOptions.selfRelay` — enabling this trades privacy for a guarantee of
+     * access.
+     */
+    setSelfRelay(enabled: boolean): void;
+    isSelfRelay(): boolean;
     get publicKey(): PublicKey;
     get feeRecipient(): PublicKey;
+    /**
+     * Minimum fee the relayer will accept, published by `/api/relayer/info` rather
+     * than hardcoded so it cannot drift from what the relayer enforces. Almost all of
+     * it is the unrecoverable rent for the two nullifier accounts a transact creates.
+     */
+    private relayFeeFloor;
+    /**
+     * Whether a relayed spend is possible for this asset. See `relay-policy.ts`;
+     * notably a caller must never silently fall back to wallet signing, because that
+     * deanonymizes the user without telling them.
+     */
+    canRelay(isSpl: boolean): boolean;
+    /**
+     * Smallest withdrawal worth making, in lamports. Below this the relayer's
+     * unrecoverable nullifier rent exceeds the amount withdrawn. Surface this in the
+     * UI so users meet it by choice rather than by error message.
+     */
+    minWithdrawalLamports(isSpl?: boolean): number;
+    /** What a withdrawal of `grossLamports` actually pays the recipient after fees. */
+    quoteWithdraw(grossLamports: number, isSpl?: boolean): {
+        feeLamports: number;
+        recipientLamports: number;
+        minLamports: number;
+    };
     init(): Promise<void>;
     /**
      * Sign In With Solana, then derive shielded spend/view keys from that signature.
@@ -109,9 +158,14 @@ export declare class PrivacyCashClient {
     private feeAta;
     /**
      * Shielded transfer: spend your notes and insert a note the recipient owns in
-     * the pool (`extAmount=0`, `fee=0`). No relayer, no public payout. They withdraw
-     * later with their own key. `recipient` is their Solana wallet (they must have
-     * unlocked this app once so we can look up their note keys).
+     * the pool (`extAmount=0`). Nothing leaves the pool, so there is no public payout —
+     * they withdraw later with their own key. Relayed by default, because a
+     * wallet-signed transfer publishes the sender for a transaction whose whole point
+     * is to hide them; the relayer's fee comes out of the sender's change, so the
+     * recipient always receives exactly `amount`.
+     *
+     * `recipient` is their Solana wallet (they must have unlocked this app once so we
+     * can look up their note keys).
      */
     transferSOL(amountLamports: number, recipient: string): Promise<WithdrawResult>;
     /**
@@ -151,17 +205,23 @@ export declare class PrivacyCashClient {
     }): Promise<SwapResult>;
     private proveSwapLeg;
     /**
-     * Rebuild the Poseidon tree from indexed leaves and take paths locally.
-     * Refuses to prove until the indexer leaf count and root match on-chain
-     * (a desynced path makes Groth16 verify fail).
-     */
+     * Rebuild the Poseidon tree from every indexed leaf and take paths locally.
+     **/
     private merkleForSpend;
     private resolveRecipientKeys;
     private viewingKeyFromHex;
     private rewriteSpendError;
     /** JoinSplit with extAmount=0, fee=0: spend notes → recipient-owned pool note. */
     private transferInternal;
-    /** Poll until the indexer can serve a Merkle proof for `leafIndex` (mirror caught up). */
+    /**
+     * Poll until the indexer has caught up past `leafIndex`.
+     *
+     * Uses the tree's leaf count rather than asking for that leaf's Merkle proof.
+     * The proof request would answer the same question, but it would also tell the
+     * backend which leaf the caller is about to spend, which is exactly the leak
+     * `merkleForSpend` goes to the trouble of avoiding. A leaf count is the same
+     * request for everyone.
+     */
     private waitForNoteIndexed;
     private withdrawInternal;
     private proveAndSend;

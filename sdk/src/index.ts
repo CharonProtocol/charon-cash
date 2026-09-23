@@ -6,6 +6,7 @@ export type {
   SwapResult,
   SyncResult,
   UnlockOpts,
+  ClientOptions,
 } from "./client"
 export {
   EncryptionService,
@@ -56,23 +57,41 @@ export {
 export type { AltSigner } from "./alt"
 export { LocalMirror, readSolTreeState, readTreeState, readGlobalFees } from "./local-provider"
 export {
+  canRelay,
+  minEconomicWithdrawal,
+  transferFee,
+  transferRecipient,
+  withdrawalFee,
+} from "./relay-policy"
+export type { RelayCapability } from "./relay-policy"
+export {
+  loadCachedLeaves,
+  saveCachedLeaves,
+  clearCachedLeaves,
+  mirrorCacheAvailable,
+} from "./mirror-cache"
+export {
   fetchRelayerInfo,
   fetchBlockhash,
   fetchAltAccount,
   fetchTreeState,
-  fetchMerkleProof,
   fetchUtxoRange,
+  // Whole-tree fetch only. There is deliberately no per-leaf proof helper here: see
+  // the note above `merkleForSpend` in `client.ts` for why asking the backend for one
+  // leaf's proof is the one thing that undoes the pool's anonymity.
   fetchTreeLeaves,
-  checkEncryptedOutput,
+  fetchTreeLeavesFrom,
   waitForLeafIndex,
-  waitForEncryptedOutput,
   isNullifierSpent,
   submitTransaction,
   relaySwap,
+  relayTransact,
   fetchJupiterRoute,
   fieldToHex32,
   setBackendUrl,
   getBackendUrl,
+  setRelayerUrl,
+  getRelayerUrl,
   solTreeKey,
   splTreeKey,
   registerPrivacyKeys,
@@ -83,11 +102,12 @@ export type {
   RelayerInfo,
   BlockhashInfo,
   TreeState,
-  MerkleProof,
   IndexedUtxo,
   UtxoRangePage,
-  UtxoCheckResult,
   JupiterRoute,
+  RelayProofPayload,
+  RelayTransactRequest,
+  RelayTransactResult,
 } from "./merkle"
 export {
   loadNotes,

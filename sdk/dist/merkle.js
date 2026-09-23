@@ -1,14 +1,30 @@
-import { SOL_TREE_KEY, backendUrl } from "./constants";
+import { SOL_TREE_KEY, backendUrl, relayerUrl } from "./constants";
 // Backend URL override set by the host app via setBackendUrl(). When empty,
 // getBackendUrl() falls back to the zero-config default in constants.backendUrl()
 // (VITE_BACKEND_URL, or http://localhost:8080 if that is unset), so the SDK runs
 // with no environment configuration at all.
 let BACKEND_URL = "";
+let RELAYER_URL = "";
 export function setBackendUrl(url) {
     BACKEND_URL = url.replace(/\/$/, "");
 }
 export function getBackendUrl() {
     return BACKEND_URL || backendUrl();
+}
+/** Point `/api/relayer/*` at a separate origin. Defaults to the backend URL. */
+export function setRelayerUrl(url) {
+    RELAYER_URL = url.replace(/\/$/, "");
+}
+export function getRelayerUrl() {
+    return RELAYER_URL || relayerUrl();
+}
+/**
+ * Relayer paths go to the relayer, everything else to the indexer. Routing by path
+ * rather than making callers pick keeps the split in one place, so a deployment that
+ * runs them separately does not need every call site updated.
+ */
+function originFor(path) {
+    return path.startsWith("/api/relayer/") ? getRelayerUrl() : getBackendUrl();
 }
 function u8ToHex(bytes) {
     let out = "";
@@ -18,7 +34,7 @@ function u8ToHex(bytes) {
     return out;
 }
 export async function submitTransaction(serializedTx) {
-    const res = await fetch(getBackendUrl() + "/api/relayer/submit", {
+    const res = await fetch(getRelayerUrl() + "/api/relayer/submit", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ transaction: u8ToHex(serializedTx) }),
@@ -61,7 +77,7 @@ export async function relaySwap(req) {
         input_nullifiers: p.inputNullifiers.map((n) => bytesToHex(n)),
         output_commitments: p.outputCommitments.map((n) => bytesToHex(n)),
     });
-    const res = await fetch(getBackendUrl() + "/api/relayer/swap", {
+    const res = await fetch(getRelayerUrl() + "/api/relayer/swap", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -137,8 +153,21 @@ export function fieldToHex32(dec) {
         hex = "0" + hex;
     return hex.padStart(64, "0");
 }
+/**
+ * The Rust backend wraps successes as `{ success, data, meta }` while the relayer
+ * and the dev shim return payloads flat. Unwrap one envelope so callers below only
+ * ever see the payload.
+ */
+function unwrap(data) {
+    if (data && typeof data === "object") {
+        const record = data;
+        if ("success" in record && "data" in record)
+            return record.data;
+    }
+    return data;
+}
 async function getJson(path) {
-    const res = await fetch(getBackendUrl() + path);
+    const res = await fetch(originFor(path) + path);
     const text = await res.text();
     let data = null;
     if (text) {
@@ -153,7 +182,35 @@ async function getJson(path) {
         const err = data?.error;
         throw new Error(err?.message ?? `HTTP ${res.status}`);
     }
-    return data;
+    return unwrap(data);
+}
+async function postJson(path, body) {
+    const res = await fetch(originFor(path) + path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    let data = null;
+    if (text) {
+        try {
+            data = JSON.parse(text);
+        }
+        catch {
+            data = text;
+        }
+    }
+    if (!res.ok) {
+        const err = data?.error;
+        const message = err?.message ?? `HTTP ${res.status}`;
+        // Surface the relayer's machine-readable code so callers can branch on it
+        // (FEE_TOO_LOW, UNKNOWN_ROOT, NULLIFIER_SPENT, …) without parsing prose.
+        const error = new Error(message);
+        if (err?.code)
+            error.code = err.code;
+        throw error;
+    }
+    return unwrap(data);
 }
 export async function fetchRelayerInfo() {
     const r = await getJson("/api/relayer/info");
@@ -166,6 +223,55 @@ export async function fetchRelayerInfo() {
             mint: m.mint,
             feeAta: m.fee_ata,
         })),
+        transactRentLamports: Number(r.transact_rent_lamports ?? 0),
+        minTransactFeeLamports: Number(r.min_transact_fee_lamports ?? 0),
+        splRelayAvailable: r.spl_relay_available !== false,
+    };
+}
+/**
+ * Hand a proof to the relayer and let it build, sign and submit.
+ *
+ * This is the privacy-critical path. A wallet-signed withdrawal names the
+ * withdrawing wallet as fee payer and signer directly beside the recipient and the
+ * amount, which links them without breaking any cryptography. Sending a pre-signed
+ * transaction cannot fix that, because the fee payer is part of the signed message —
+ * so the relayer has to be the one compiling it.
+ *
+ * The relayer cannot tamper with any of this: recipient, amount, fee, fee recipient,
+ * mint and both ciphertexts are hashed into `extDataHash`, a Groth16 public input the
+ * program verifies. It can refuse, delay, reorder and observe. Nothing else.
+ */
+export async function relayTransact(req) {
+    const p = req.proof;
+    const r = await postJson("/api/relayer/transact", {
+        proof: {
+            proof_a: bytesToHex(p.proofA),
+            proof_b: bytesToHex(p.proofB),
+            proof_c: bytesToHex(p.proofC),
+            root: bytesToHex(p.root),
+            public_amount: bytesToHex(p.publicAmount),
+            ext_data_hash: bytesToHex(p.extDataHash),
+            input_nullifiers: p.inputNullifiers.map((n) => bytesToHex(n)),
+            output_commitments: p.outputCommitments.map((n) => bytesToHex(n)),
+        },
+        ext_amount: req.extAmount,
+        fee: req.fee,
+        encrypted_output1: bytesToHex(req.encryptedOutput1),
+        encrypted_output2: bytesToHex(req.encryptedOutput2),
+        recipient: req.recipient,
+        fee_recipient: req.feeRecipient,
+        mint: req.mint,
+        is_spl: req.isSpl,
+        ...(req.recipientTokenAccount
+            ? { recipient_token_account: req.recipientTokenAccount }
+            : {}),
+    });
+    if (!r?.signature)
+        throw new Error("relayer returned no signature");
+    return {
+        signature: r.signature,
+        rentLamports: Number(r.rent_lamports ?? 0),
+        feeLamports: Number(r.fee_lamports ?? 0),
     };
 }
 /** Latest blockhash + slot from the backend — no client RPC needed to build a tx. */
@@ -186,18 +292,15 @@ export async function fetchTreeState(treeKey) {
         knownRoots: (s.known_roots ?? []).map((h) => hexToDecimal("0x" + h)),
     };
 }
-export async function fetchMerkleProof(treeKey, leafIndex) {
-    const p = await getJson(`/api/merkle/${encodeURIComponent(treeKey)}/proof/${leafIndex}`);
-    const raw = p.path_elements;
-    const isNested = Array.isArray(raw) && raw.length > 0 && Array.isArray(raw[0]);
-    const asHex = isNested
-        ? raw.map((b) => bytesToHex(b))
-        : raw;
-    return {
-        pathElements: asHex.map(hexToDecimal),
-        pathIndices: p.path_indices,
-    };
-}
+// There is deliberately no `fetchMerkleProof` here. `GET /api/merkle/{tree}/proof/
+// {leafIndex}` still exists behind a dev-only backend flag for debugging, but asking
+// for it in production names the leaf you are about to spend, which is the one fact
+// the pool is built to hide. Paths come from a locally rebuilt tree instead — see the
+// note above `merkleForSpend` in `client.ts`.
+//
+// Same reasoning removed `checkEncryptedOutput`: asking "is this exact ciphertext
+// indexed yet" identifies the ciphertext as yours. `waitForLeafIndex` answers the
+// same question with a leaf count, which is identical for every caller.
 export async function isNullifierSpent(hashHex) {
     try {
         const r = await getJson(`/api/nullifier/${encodeURIComponent(hashHex)}`);
@@ -230,23 +333,6 @@ export async function fetchUtxoRange(treeKey, start, end) {
         })),
     };
 }
-export async function checkEncryptedOutput(encryptedHex, treeKey) {
-    const hex = encryptedHex.replace(/^0x/i, "").toLowerCase();
-    const q = treeKey
-        ? `?tree_key=${encodeURIComponent(treeKey)}`
-        : "";
-    const r = await getJson(`/api/utxos/check/${encodeURIComponent(hex)}${q}`);
-    if (!r.exists)
-        return { exists: false };
-    return {
-        exists: true,
-        treeKey: r.tree_key,
-        leafIndex: Number(r.leaf_index),
-        commitment: r.commitment,
-        signature: r.signature,
-        slot: Number(r.slot),
-    };
-}
 /** Poll until `next_leaf_index > minLeafIndex` (i.e. leaves through minLeafIndex exist). */
 export async function waitForLeafIndex(treeKey, minLeafIndex, opts = {}) {
     const timeoutMs = opts.timeoutMs ?? 60_000;
@@ -261,19 +347,6 @@ export async function waitForLeafIndex(treeKey, minLeafIndex, opts = {}) {
     }
     throw new Error(`indexer timeout waiting for leaf ${minLeafIndex} on tree ${treeKey}` +
         (last ? ` (next=${last.nextLeafIndex})` : ""));
-}
-/** Poll until an encrypted output hex appears in the indexer. */
-export async function waitForEncryptedOutput(encryptedHex, treeKey, opts = {}) {
-    const timeoutMs = opts.timeoutMs ?? 60_000;
-    const intervalMs = opts.intervalMs ?? 750;
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-        const r = await checkEncryptedOutput(encryptedHex, treeKey);
-        if (r.exists)
-            return r;
-        await sleep(intervalMs);
-    }
-    throw new Error("indexer timeout waiting for encrypted output");
 }
 function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
@@ -293,30 +366,48 @@ export function commitmentToDecimal(c) {
         return BigInt("0x" + s).toString();
     return s;
 }
-/** All tree commitments in leaf-index order (decimal field elements). */
-export async function fetchTreeLeaves(treeKey) {
+/**
+ * Commitments from `from` onward, in leaf-index order (decimal field elements).
+ *
+ * Deliberately not parameterized by which leaf you care about. The request is
+ * identical for everyone at the same sync position, so it tells the backend nothing
+ * about which note is yours — see the note above `merkleForSpend` in `client.ts`.
+ * `/api/merkle/{tree}/leaves` returns bare commitments, roughly an order of
+ * magnitude less bandwidth than `/api/utxos/range`, which also ships the ciphertext
+ * and signature per leaf only for this caller to discard them.
+ */
+export async function fetchTreeLeavesFrom(treeKey, from = 0) {
     const byIndex = new Map();
-    let start = 0;
-    let nextIndex = 0;
+    let start = from;
+    let nextIndex = from;
     while (true) {
-        const page = await fetchUtxoRange(treeKey, start, start + 2_000);
-        nextIndex = page.nextIndex;
-        for (const u of page.utxos) {
-            byIndex.set(u.leafIndex, commitmentToDecimal(u.commitment));
+        const q = new URLSearchParams({ from: String(start) });
+        const r = await getJson(`/api/merkle/${encodeURIComponent(treeKey)}/leaves?${q}`);
+        nextIndex = Number(r.next_leaf_index ?? r.nextLeafIndex ?? nextIndex);
+        const rows = (r.leaves ?? []);
+        for (const row of rows) {
+            byIndex.set(Number(row.leaf_index), commitmentToDecimal(row.commitment));
         }
-        if (!page.hasMore)
+        const hasMore = !!(r.has_more ?? r.hasMore);
+        if (!hasMore || rows.length === 0)
             break;
-        start = page.end;
+        start = Number(r.next_from ?? r.nextFrom ?? start + rows.length);
     }
     const leaves = [];
-    for (let i = 0; i < nextIndex; i++) {
+    for (let i = from; i < nextIndex; i++) {
         const c = byIndex.get(i);
         if (c === undefined) {
-            throw new Error(`merkle indexer gap at leaf ${i} (have ${byIndex.size} of ${nextIndex})`);
+            // A hole means the indexer is mid-write. Rebuilding on a gapped tree would
+            // produce a root that matches nothing, so fail loudly instead.
+            throw new Error(`merkle indexer gap at leaf ${i} (have ${byIndex.size} leaves from ${from} to ${nextIndex})`);
         }
         leaves.push(c);
     }
-    return leaves;
+    return { leaves, from, nextIndex };
+}
+/** All tree commitments in leaf-index order (decimal field elements). */
+export async function fetchTreeLeaves(treeKey) {
+    return (await fetchTreeLeavesFrom(treeKey, 0)).leaves;
 }
 export async function registerPrivacyKeys(args) {
     const res = await fetch(getBackendUrl() + "/api/registration/register", {

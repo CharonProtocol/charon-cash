@@ -51,6 +51,7 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         db,
         merkle_manager: merkle_manager.clone(),
+        config: Arc::new(config),
     };
 
     let app = router(state)

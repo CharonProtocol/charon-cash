@@ -53,6 +53,12 @@ const conn = new Connection(RPC, "confirmed")
 const payer = Keypair.fromSecretKey(Buffer.from(JSON.parse(readFileSync(idJson, "utf8"))))
 const wasm = await WasmFactory.getInstance()
 
+// Rent-exempt minimum for one 1-byte NullifierAccount: (128 + 1) * 3480 * 2. The
+// account is never closed, so whoever signs a transact pays this twice and never
+// gets it back — which is the entire reason a relayed spend has to carry a fee.
+const NULLIFIER_RENT_LAMPORTS = 897_840
+const TRANSACT_RENT_LAMPORTS = NULLIFIER_RENT_LAMPORTS * 2
+
 const dec2hex = (dec) => "0x" + BigInt(dec).toString(16).padStart(64, "0")
 const dec2hexU = (dec) => BigInt(dec).toString(16).padStart(64, "0").toUpperCase()
 const be = (b) => { let r = 0n; for (const x of b) r = (r << 8n) + BigInt(x); return r }
@@ -489,7 +495,22 @@ Bun.serve({
       if (p === "/api/relayer/info") {
         let fees = { withdrawalFeeRateBps: 25, feeErrorMarginBps: 500 }
         try { fees = await readGlobalFees(conn, PROGRAM) } catch { }
-        return json({ program_id: PROGRAM.toBase58(), fee_recipient: payer.publicKey.toBase58(), fee_rate_bps: 0, withdrawal_fee_rate_bps: fees.withdrawalFeeRateBps, fee_error_margin_bps: fees.feeErrorMarginBps, supported_mints: [] })
+        return json({
+          program_id: PROGRAM.toBase58(),
+          fee_recipient: payer.publicKey.toBase58(),
+          fee_rate_bps: 0,
+          withdrawal_fee_rate_bps: fees.withdrawalFeeRateBps,
+          fee_error_margin_bps: fees.feeErrorMarginBps,
+          supported_mints: [],
+          nullifier_rent_lamports: NULLIFIER_RENT_LAMPORTS,
+          transact_rent_lamports: TRANSACT_RENT_LAMPORTS,
+          estimated_tx_fee_lamports: 7_000,
+          // The shim pays out of a funded local keypair, so it has no solvency
+          // requirement. Reporting a real floor anyway keeps dev fee arithmetic
+          // identical to production instead of only failing after deploy.
+          min_transact_fee_lamports: TRANSACT_RENT_LAMPORTS + 7_000,
+          spl_relay_available: true,
+        })
       }
 
       const m = p.match(/^\/api\/merkle\/([^/]+)$/)
@@ -502,6 +523,30 @@ Bun.serve({
         } catch (e) {
           return json({ error: { code: "TREE_NOT_INITIALIZED", message: e.message } }, 404)
         }
+      }
+
+      // Bare commitments from `from` onward. This is how clients get Merkle paths:
+      // they download every leaf and build the tree themselves, because that request
+      // is identical for every caller and so reveals nothing about which leaf is
+      // theirs. See the note above `merkleForSpend` in `sdk/src/client.ts`.
+      const ml = p.match(/^\/api\/merkle\/([^/]+)\/leaves$/)
+      if (ml && method === "GET") {
+        const treeKey = decodeURIComponent(ml[1])
+        const from = Math.max(0, Number(url.searchParams.get("from") ?? 0))
+        const limit = Math.min(20_000, Math.max(1, Number(url.searchParams.get("limit") ?? 10_000)))
+        const all = utxos
+          .filter((u) => u.treeKey === treeKey && u.leafIndex >= from)
+          .sort((a, b) => a.leafIndex - b.leafIndex)
+        const page = all.slice(0, limit)
+        const total = utxos.filter((u) => u.treeKey === treeKey).length
+        return json({
+          tree_key: treeKey,
+          from,
+          next_leaf_index: total,
+          has_more: from + page.length < total,
+          next_from: from + page.length,
+          leaves: page.map((u) => ({ leaf_index: u.leafIndex, commitment: u.commitment })),
+        })
       }
 
       const mp = p.match(/^\/api\/merkle\/([^/]+)\/proof\/(\d+)$/)
@@ -753,24 +798,29 @@ async function ensureSplAlt(mint) {
   return (await conn.getAddressLookupTable(altAddr)).value
 }
 
+/**
+ * Dev stand-in for `POST /api/relayer/transact` in the Rust relayer.
+ *
+ * Same contract, same trust model: the client sends a proof plus the raw extData
+ * components and the shim compiles, signs and pays, so the user's wallet never
+ * appears in a withdrawal or transfer. The production relayer additionally
+ * recomputes `ext_data_hash` and enforces a fee floor before spending its own
+ * lamports; the shim skips both because the program's own `ext_data_hash` check is
+ * what actually makes tampering impossible, and a local payer has nothing to lose.
+ */
 async function relayWithdraw(body) {
-  const kind = String(body.kind || "").toLowerCase()
-  if (Number(body.ext_amount) >= 0) {
-    throw new Error("relayer only handles withdrawals (ext_amount must be negative)")
+  const extAmount = BigInt(body.ext_amount)
+  if (extAmount > 0n) {
+    throw new Error(
+      "deposits are not relayed: the program funds them from the signer, so relaying one " +
+      "would spend the relayer's balance. Sign deposits with your wallet and POST them to " +
+      "/api/relayer/submit.",
+    )
   }
-  const proof = {
-    proofA: [...hexToBuf(body.proof_a)],
-    proofB: [...hexToBuf(body.proof_b)],
-    proofC: [...hexToBuf(body.proof_c)],
-    root: [...hexToBuf(body.root)],
-    publicAmount: [...hexToBuf(body.public_amount)],
-    extDataHash: [...hexToBuf(body.ext_data_hash)],
-    inputNullifiers: [[...hexToBuf(body.input_nullifiers[0])], [...hexToBuf(body.input_nullifiers[1])]],
-    outputCommitments: [[...hexToBuf(body.output_commitments[0])], [...hexToBuf(body.output_commitments[1])]],
-  }
+  const isSpl = !!body.is_spl
+  const proof = proofFromBody(body.proof ?? body)
   const enc1 = hexToBuf(body.encrypted_output1)
   const enc2 = hexToBuf(body.encrypted_output2)
-  const extAmount = BigInt(body.ext_amount)
   const fee = BigInt(body.fee)
   const BN = (await import("bn.js")).default
   const extBN = new BN(extAmount.toString())
@@ -782,7 +832,7 @@ async function relayWithdraw(body) {
 
   const ixs = [ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 })]
 
-  if (kind === "sol") {
+  if (!isSpl) {
     const recipient = new PublicKey(body.recipient)
     const feeRecipient = payer.publicKey
     const data = buildTransactIxData(false, proof, extBN, feeBN, enc1, enc2, accounts.bump0, accounts.bump1)
@@ -803,10 +853,12 @@ async function relayWithdraw(body) {
       ],
       data,
     }))
-  } else if (kind === "spl") {
+  } else {
     const mint = new PublicKey(body.mint)
-    const owner = new PublicKey(body.recipient_owner)
-    const recipientAta = new PublicKey(body.recipient)
+    const owner = new PublicKey(body.recipient)
+    // Bound by `ext_data_hash`, so taking it from the client is safe: a wrong value
+    // makes the program reject the proof rather than misdirect the payout.
+    const recipientAta = new PublicKey(body.recipient_token_account)
     const feeAta = getAssociatedTokenAddressSync(mint, payer.publicKey, true)
     const signerAta = getAssociatedTokenAddressSync(mint, payer.publicKey)
 
@@ -838,12 +890,15 @@ async function relayWithdraw(body) {
     // SPL transact references a mint-specific splTree; use a per-mint ALT so the
     // tx compresses under Solana's 1232-byte limit (the .env ALT is mint-agnostic).
     const splAlt = await ensureSplAlt(mint)
-    return sendIxMany(ixs, splAlt)
-  } else {
-    throw new Error(`kind must be sol or spl, got ${kind}`)
+    return withRelayFees(await sendIxMany(ixs, splAlt), fee)
   }
 
-  return sendIxMany(ixs)
+  return withRelayFees(await sendIxMany(ixs), fee)
+}
+
+/** Mirrors the Rust relayer's response so the SDK can report what it paid. */
+function withRelayFees(result, fee) {
+  return { ...result, rent_lamports: TRANSACT_RENT_LAMPORTS, fee_lamports: Number(fee) }
 }
 
 async function sendIxMany(ixs, altAccount = null) {

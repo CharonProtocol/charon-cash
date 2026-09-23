@@ -66,5 +66,14 @@ export declare const SEED: {
 };
 export declare const SOL_TREE_KEY = "sol";
 export declare function backendUrl(): string;
+/**
+ * Origin serving `/api/relayer/*`.
+ *
+ * The relayer is a separate service from the indexer in production — it holds a hot
+ * signing key and has its own rate limits and failure modes, so it should not share
+ * a process with the thing serving public Merkle data. In dev both are the same shim,
+ * so this falls back to the backend URL and needs no configuration.
+ */
+export declare function relayerUrl(): string;
 export declare function envProgramId(): PublicKey | null;
 //# sourceMappingURL=constants.d.ts.map

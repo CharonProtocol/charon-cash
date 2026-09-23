@@ -7,6 +7,11 @@ Cargo.lock
 # Backend
 backend/.env
 
+# Relayer — holds a hot signing key path and fee recipient
+relayer/.env
+relayer/*.json
+!relayer/.env.example
+
 # Frontend
 app/node_modules
 app/.next
