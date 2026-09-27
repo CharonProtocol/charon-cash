@@ -1,0 +1,47 @@
+import { PublicKey, VersionedTransaction } from "@solana/web3.js";
+import BN from "bn.js";
+export interface Signer {
+    publicKey: PublicKey;
+    signMessage: (message: Uint8Array) => Promise<Uint8Array>;
+    signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>;
+}
+export declare const SIGN_MESSAGE = "Privacy Money account sign in";
+type UtxoRef = {
+    utxoId: number;
+    walletPubkey: string;
+    amount: BN;
+};
+type UtxoSummary = {
+    maxSingleTxAmount: BN;
+    totalAmount: BN;
+    utxos: UtxoRef[];
+};
+export declare class SilentPay {
+    private connection;
+    publicKey: PublicKey;
+    private encryptionService;
+    private signer;
+    private storageService;
+    private isRuning?;
+    private lightwasm;
+    private circuit;
+    utxoByMint: Map<string, UtxoSummary>;
+    lastLoadedNote: number;
+    worker: Worker;
+    private SYNC_MESSAGE;
+    private constructor();
+    static generateClient({ rpcUrl, owner, }: {
+        rpcUrl: string;
+        owner: Signer;
+    }): Promise<SilentPay>;
+    sendSol(amountInLamports: number, recipientKey: string): Promise<{
+        signature: string;
+    }>;
+    withdrawSol(amountInLamports: number): Promise<{
+        signature: string;
+    }>;
+    syncUtxos(): Promise<void>;
+    stopClient(): Promise<void>;
+}
+export {};
+//# sourceMappingURL=client.d.ts.map
