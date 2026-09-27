@@ -32,6 +32,7 @@ yellowstone-grpc-proto = { version = "12.5.0", features = ["tonic"] }
 # Encoding for ix data / note lookups
 bs58 = "0.5"
 hex = "0.4"
+base64 = "0.22"
 
 # Config / errors / logs
 dotenvy = "0.15"
