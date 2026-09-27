@@ -1,80 +1,132 @@
-import { useEffect, useState } from "react"
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui"
-import { Home, ShieldCheck, Lock, Activity, ShieldAlert, Moon, Sun } from "lucide-react"
+import { useEffect, useState } from "react";
+import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import {
+  Home,
+  ShieldCheck,
+  Lock,
+  Activity,
+  ShieldAlert,
+  Moon,
+  Sun,
+} from "lucide-react";
 
-import { api } from "@/lib/api"
-import { useTheme } from "@/hooks/useTheme"
-import { Button } from "@/components/ui/button"
+import { api } from "@/lib/api";
+import { useTheme } from "@/hooks/useTheme";
+import { Button } from "@/components/ui/button";
 
-type Health = "ok" | "down" | "loading"
+type Health = "ok" | "down" | "loading";
 
 interface NavBarProps {
-  currentRoute: string
-  onNavigate: (route: string) => void
+  currentRoute: string;
+  onNavigate: (route: string) => void;
 }
 
 function BrandMark() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-      <g fill="none" stroke="currentColor" strokeWidth="1.6" className="text-primary">
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        className="text-primary"
+      >
         <path d="M12 3 V9 M12 9 L6 14 M12 9 L18 14 M6 14 L3 20 M6 14 L9 20 M18 14 L15 20 M18 14 L21 20" />
       </g>
-      <g fill="currentColor" className="text-primary">
-        <circle cx="12" cy="3" r="1.8" />
-        <circle cx="6" cy="14" r="1.5" />
-        <circle cx="18" cy="14" r="1.5" />
+      <g
+        fill="currentColor"
+        className="text-primary"
+      >
+        <circle
+          cx="12"
+          cy="3"
+          r="1.8"
+        />
+        <circle
+          cx="6"
+          cy="14"
+          r="1.5"
+        />
+        <circle
+          cx="18"
+          cy="14"
+          r="1.5"
+        />
       </g>
-      <g fill="currentColor" className="text-muted-foreground">
-        <circle cx="3" cy="20" r="1.3" />
-        <circle cx="9" cy="20" r="1.3" />
-        <circle cx="15" cy="20" r="1.3" />
-        <circle cx="21" cy="20" r="1.3" />
+      <g
+        fill="currentColor"
+        className="text-muted-foreground"
+      >
+        <circle
+          cx="3"
+          cy="20"
+          r="1.3"
+        />
+        <circle
+          cx="9"
+          cy="20"
+          r="1.3"
+        />
+        <circle
+          cx="15"
+          cy="20"
+          r="1.3"
+        />
+        <circle
+          cx="21"
+          cy="20"
+          r="1.3"
+        />
       </g>
     </svg>
-  )
+  );
 }
 
 export function NavBar({ currentRoute, onNavigate }: NavBarProps) {
-  const [health, setHealth] = useState<Health>("loading")
-  const { theme, toggle } = useTheme()
+  const [health, setHealth] = useState<Health>("loading");
+  const { theme, toggle } = useTheme();
 
   useEffect(() => {
-    let alive = true
+    let alive = true;
     const tick = async () => {
       try {
-        await api.health()
-        if (alive) setHealth("ok")
+        await api.health();
+        if (alive) setHealth("ok");
       } catch {
-        if (alive) setHealth("down")
+        if (alive) setHealth("down");
       }
-    }
-    tick()
-    const id = setInterval(tick, 10_000)
+    };
+    tick();
+    const id = setInterval(tick, 10_000);
     return () => {
-      alive = false
-      clearInterval(id)
-    }
-  }, [])
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
 
   const dot =
     health === "ok"
       ? "bg-green-500"
       : health === "down"
         ? "bg-red-500"
-        : "bg-amber-500"
+        : "bg-amber-500";
   const label =
     health === "ok"
       ? "Backend Online"
       : health === "down"
         ? "Backend Offline"
-        : "Checking backend…"
+        : "Checking backend…";
 
   const navItems = [
     { id: "landing", label: "Overview", icon: Home },
     { id: "app", label: "App", icon: ShieldCheck },
     { id: "vault", label: "Vault & Notes", icon: Lock },
     { id: "explorer", label: "Explorer", icon: Activity },
-  ]
+  ];
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/85 backdrop-blur-xl">
@@ -99,8 +151,8 @@ export function NavBar({ currentRoute, onNavigate }: NavBarProps) {
 
           <nav className="hidden items-center gap-1 rounded-xl border border-border bg-secondary p-1 lg:flex">
             {navItems.map((item) => {
-              const Icon = item.icon
-              const isActive = currentRoute === item.id
+              const Icon = item.icon;
+              const isActive = currentRoute === item.id;
               return (
                 <button
                   key={item.id}
@@ -114,7 +166,7 @@ export function NavBar({ currentRoute, onNavigate }: NavBarProps) {
                   <Icon className="size-3.5" />
                   {item.label}
                 </button>
-              )
+              );
             })}
           </nav>
         </div>
@@ -125,7 +177,9 @@ export function NavBar({ currentRoute, onNavigate }: NavBarProps) {
             title={label}
           >
             <span className={`size-2 rounded-full ${dot}`} />
-            <span className="hidden font-mono text-[11px] sm:inline">{label}</span>
+            <span className="hidden font-mono text-[11px] sm:inline">
+              {label}
+            </span>
           </div>
 
           <Button
@@ -136,7 +190,11 @@ export function NavBar({ currentRoute, onNavigate }: NavBarProps) {
             aria-label="Toggle color theme"
             className="size-9"
           >
-            {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            {theme === "dark" ? (
+              <Sun className="size-4" />
+            ) : (
+              <Moon className="size-4" />
+            )}
           </Button>
 
           <button
@@ -158,22 +216,24 @@ export function NavBar({ currentRoute, onNavigate }: NavBarProps) {
 
       <div className="flex gap-1 overflow-x-auto border-t border-border bg-background px-4 py-2 lg:hidden">
         {navItems.map((item) => {
-          const Icon = item.icon
-          const isActive = currentRoute === item.id
+          const Icon = item.icon;
+          const isActive = currentRoute === item.id;
           return (
             <button
               key={item.id}
               onClick={() => onNavigate(item.id)}
               className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1 text-xs font-medium ${
-                isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+                isActive
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground"
               }`}
             >
               <Icon className="size-3.5" />
               {item.label}
             </button>
-          )
+          );
         })}
       </div>
     </header>
-  )
+  );
 }

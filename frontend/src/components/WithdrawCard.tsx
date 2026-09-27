@@ -1,76 +1,68 @@
-import { useEffect, useState } from "react"
-import { useWallet } from "@solana/wallet-adapter-react"
-import { toast } from "sonner"
-import { ArrowUpFromLine } from "lucide-react"
+import { useEffect, useState } from "react";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { toast } from "sonner";
+import { ArrowUpFromLine } from "lucide-react";
 
-import { usePrivacyCash } from "@/hooks/usePrivacyCash"
-import { lamportsToSol, shortHash } from "@/lib/format"
+import { usePrivacyCash } from "@/hooks/usePrivacyCash";
+import { shortHash } from "@/lib/format";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { ErrorBlock, JsonBlock } from "@/components/ResponsePanel"
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { ErrorBlock, JsonBlock } from "@/components/ResponsePanel";
 
 interface Result {
-  signature: string
-  recipientLamports: number
-  feeLamports: number
-  changeLamports: string
-  nullifiers?: string[]
+  signature: string;
 }
 
 export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
-  const { client, connected } = usePrivacyCash()
-  const { publicKey } = useWallet()
-  const [amount, setAmount] = useState("0.01")
-  const [recipient, setRecipient] = useState("")
-  const [busy, setBusy] = useState(false)
-  const [status, setStatus] = useState<string | null>(null)
-  const [result, setResult] = useState<Result | null>(null)
-  const [err, setErr] = useState<string | null>(null)
+  const { client, connected } = usePrivacyCash();
+  const { publicKey } = useWallet();
+  const [amount, setAmount] = useState("0.01");
+  const [recipient, setRecipient] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [result, setResult] = useState<Result | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    if (publicKey && !recipient) setRecipient(publicKey.toBase58())
-  }, [publicKey, recipient])
+    if (publicKey && !recipient) setRecipient(publicKey.toBase58());
+  }, [publicKey, recipient]);
 
   const handleWithdraw = async () => {
-    if (!client) return
-    setBusy(true)
-    setErr(null)
-    setResult(null)
-    setStatus("unlocking (approve the wallet signature)…")
+    if (!client) return;
+    setBusy(true);
+    setErr(null);
+    setResult(null);
+    setStatus("unlocking (approve the wallet signature)…");
     try {
-      const lamports = Math.round(Number(amount) * 1_000_000_000)
-      if (!lamports || lamports <= 0) throw new Error("enter a valid amount")
-      setStatus("generating ZK proof + posting to relayer…")
-      const res = await client.withdrawSOL(lamports, recipient.trim())
+      const lamports = Math.round(Number(amount) * 1_000_000_000);
+      if (!lamports || lamports <= 0) throw new Error("enter a valid amount");
+      setStatus("generating ZK proof + posting to relayer…");
+      const res = await client.withdrawSol(lamports);
       setResult({
         signature: res.signature,
-        recipientLamports: res.recipientLamports,
-        feeLamports: res.feeLamports,
-        changeLamports: res.changeLamports,
-        nullifiers: res.nullifiers,
-      })
-      setStatus(null)
-      onChanged?.()
-      client.backupNotes().catch(() => {})
+      });
+      setStatus(null);
+      onChanged?.();
       toast.success("withdraw landed", {
         description: shortHash(res.signature, 8, 6),
-      })
+      });
     } catch (e) {
-      setStatus(null)
-      setErr((e as Error).message)
+      setStatus(null);
+      console.log(e);
+      setErr((e as Error).message);
     } finally {
-      setBusy(false)
+      setBusy(false);
     }
-  }
+  };
 
   return (
     <Card>
@@ -121,7 +113,7 @@ export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
           disabled={!connected || busy}
           className="w-full"
         >
-          {busy ? status ?? "Working…" : "Withdraw SOL"}
+          {busy ? (status ?? "Working…") : "Withdraw SOL"}
         </Button>
 
         {result && (
@@ -130,16 +122,17 @@ export function WithdrawCard({ onChanged }: { onChanged?: () => void }) {
             <JsonBlock
               value={{
                 signature: result.signature,
-                recipient_sol: lamportsToSol(result.recipientLamports).toFixed(9),
-                fee_sol: lamportsToSol(result.feeLamports).toFixed(9),
-                change_lamports: result.changeLamports,
-                nullifiers: result.nullifiers,
               }}
             />
           </div>
         )}
-        {err && <ErrorBlock code="WITHDRAW_FAILED" message={err} />}
+        {err && (
+          <ErrorBlock
+            code="WITHDRAW_FAILED"
+            message={err}
+          />
+        )}
       </CardContent>
     </Card>
-  )
+  );
 }

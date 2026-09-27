@@ -1,21 +1,53 @@
-import { useMemo } from "react"
-import { useWallet } from "@solana/wallet-adapter-react"
-
-import { PrivacyCashClient } from "privacy-cash-sdk"
+import { useEffect, useState } from "react";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { SilentPay } from "privacy-cash-sdk";
 
 export function usePrivacyCash() {
-  const { publicKey, signMessage, signTransaction } = useWallet()
+  const { publicKey, signMessage, signTransaction } = useWallet();
 
-  const connected = !!(publicKey && signMessage && signTransaction)
+  const [client, setClient] = useState<SilentPay | null>(null);
 
-  const client = useMemo(() => {
-    if (!connected || !publicKey || !signMessage || !signTransaction) return null
-    return new PrivacyCashClient({
-      publicKey,
-      signMessage,
-      signTransaction,
-    })
-  }, [connected, publicKey, signMessage, signTransaction])
+  const connected = !!(publicKey && signMessage && signTransaction);
+  const pubkeyStr = publicKey?.toBase58() ?? null;
 
-  return { client, connected, publicKey }
+  useEffect(() => {
+    if (!connected || !publicKey || !signMessage || !signTransaction) {
+      setClient(null);
+      return;
+    }
+
+    let cancelled = false;
+    let localClient: SilentPay | null = null;
+
+    async function initialize() {
+      const newClient = await SilentPay.generateClient({
+        rpcUrl: "http://127.0.0.1:8899",
+        owner: {
+          publicKey: publicKey!,
+          signMessage: signMessage!,
+          signTransaction: signTransaction!,
+        },
+      });
+
+      if (cancelled) {
+        newClient.stopClient();
+        return;
+      }
+      localClient = newClient;
+      setClient(newClient);
+    }
+
+    initialize();
+
+    return () => {
+      cancelled = true;
+      if (localClient) localClient.stopClient();
+    };
+  }, [connected, pubkeyStr]); // only re-run when the actual wallet identity changes
+
+  return {
+    client,
+    connected,
+    publicKey,
+  };
 }
