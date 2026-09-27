@@ -1,63 +1,78 @@
-import { useState } from "react"
-import { useWallet } from "@solana/wallet-adapter-react"
-import { toast } from "sonner"
-import { ArrowDownToLine } from "lucide-react"
+import { useState } from "react";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { toast } from "sonner";
+import { ArrowDownToLine } from "lucide-react";
 
-import { usePrivacyCash } from "@/hooks/usePrivacyCash"
-import { solToLamports, lamportsToSol, shortHash } from "@/lib/format"
+import { usePrivacyCash } from "@/hooks/usePrivacyCash";
+import { solToLamports, lamportsToSol, shortHash } from "@/lib/format";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { ErrorBlock, JsonBlock } from "@/components/ResponsePanel"
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { ErrorBlock, JsonBlock } from "@/components/ResponsePanel";
+import { PublicKey } from "@solana/web3.js";
 
 interface Result {
-  signature: string
-  amountLamports: number
-  leafIndex: number
-  nullifiers?: string[]
+  signature: string;
+}
+
+function isValidPubkey(value: string) {
+  try {
+    new PublicKey(value.trim());
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function DepositCard({ onChanged }: { onChanged?: () => void }) {
-  const { client, connected } = usePrivacyCash()
-  const { publicKey } = useWallet()
-  const [amount, setAmount] = useState("0.05")
-  const [busy, setBusy] = useState(false)
-  const [status, setStatus] = useState<string | null>(null)
-  const [result, setResult] = useState<Result | null>(null)
-  const [err, setErr] = useState<string | null>(null)
+  const { client, connected } = usePrivacyCash();
+  const { publicKey } = useWallet();
+  const [amount, setAmount] = useState("0.05");
+  const [recipient, setRecipient] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [result, setResult] = useState<Result | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const recipientTrimmed = (recipient || "").trim();
+  const recipientValid =
+    recipientTrimmed.length > 0 && isValidPubkey(recipientTrimmed);
 
   const handleDeposit = async () => {
-    if (!client) return
-    setBusy(true)
-    setErr(null)
-    setResult(null)
-    setStatus("unlocking (approve the wallet signature)…")
+    if (!client) return;
+    if (!recipientValid) {
+      setErr("Enter a valid recipient public key.");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    setResult(null);
+    setStatus("unlocking (approve the wallet signature)…");
     try {
-      const lamports = solToLamports(Number(amount) || 0)
-      setStatus("generating ZK proof + wallet signing…")
-      const res = await client.depositSOL(lamports)
-      setResult(res)
-      setStatus(null)
-      onChanged?.()
-      client.backupNotes().catch(() => {})
+      const lamports = solToLamports(Number(amount) || 0);
+      setStatus("generating ZK proof + wallet signing…");
+      const res = await client.sendSol(lamports, recipientTrimmed);
+      setResult(res);
+      setStatus(null);
+      onChanged?.();
       toast.success("deposit landed", {
         description: shortHash(res.signature, 8, 6),
-      })
+      });
     } catch (e) {
-      setStatus(null)
-      setErr((e as Error).message)
+      setStatus(null);
+      setErr((e as Error).message);
     } finally {
-      setBusy(false)
+      setBusy(false);
     }
-  }
+  };
 
   return (
     <Card>
@@ -96,12 +111,31 @@ export function DepositCard({ onChanged }: { onChanged?: () => void }) {
           </p>
         </div>
 
+        <div className="space-y-1.5">
+          <Label htmlFor="recipient">recipient</Label>
+          <Input
+            id="recipient"
+            value={recipient}
+            onChange={(e) => setRecipient(e.target.value)}
+            placeholder={recipient}
+            disabled={!connected || busy}
+            className={!recipientValid ? "border-destructive" : undefined}
+          />
+          <p className="text-xs text-muted-foreground">
+            {recipientTrimmed.length === 0
+              ? "leave as system program placeholder for a self-deposit"
+              : recipientValid
+                ? `sending to ${shortHash(recipientTrimmed, 6, 6)}`
+                : "invalid public key"}
+          </p>
+        </div>
+
         <Button
           onClick={handleDeposit}
-          disabled={!connected || busy}
+          disabled={!connected || busy || !recipientValid}
           className="w-full"
         >
-          {busy ? status ?? "Working…" : "Deposit SOL"}
+          {busy ? (status ?? "Working…") : "Deposit SOL"}
         </Button>
 
         {result && (
@@ -110,15 +144,17 @@ export function DepositCard({ onChanged }: { onChanged?: () => void }) {
             <JsonBlock
               value={{
                 signature: result.signature,
-                amount_sol: lamportsToSol(result.amountLamports).toFixed(9),
-                leaf_index: result.leafIndex,
-                nullifiers: result.nullifiers,
               }}
             />
           </div>
         )}
-        {err && <ErrorBlock code="DEPOSIT_FAILED" message={err} />}
+        {err && (
+          <ErrorBlock
+            code="DEPOSIT_FAILED"
+            message={err}
+          />
+        )}
       </CardContent>
     </Card>
-  )
+  );
 }
