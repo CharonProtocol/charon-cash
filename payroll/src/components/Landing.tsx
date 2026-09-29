@@ -5,15 +5,11 @@ import {
   CircleDashed,
   Code2,
   EyeOff,
-  Gauge,
   Loader2,
   ShieldCheck,
-  Timer,
-  Users,
-  Zap,
 } from "lucide-react"
 
-import { useEffect } from "react"
+import { useEffect, type CSSProperties } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -21,10 +17,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ThemeToggle } from "@/components/ThemeToggle"
 
 const stats = [
-  { v: "902s → 67.6s", l: "to pay 210 salaries — day one vs today, standard circuit", icon: Timer },
-  { v: "13×", l: "faster, on the same 8 GB laptop", icon: Gauge },
-  { v: "210 / 210", l: "paid exact — unequal salaries, 0 failures", icon: Users },
-  { v: "1", l: "wallet signature for the whole run (0 when the vault is funded)", icon: Zap },
+  { v: "67.6s", l: "to pay 210 salaries - standard circuit" },
+  { v: "13x", l: "faster than day one, same 8 GB laptop" },
+  { v: "210 / 210", l: "paid exact - unequal salaries, 0 failures" },
+  { v: "1", l: "signature per run (0 when the vault is funded)" },
 ]
 
 const steps = [
@@ -63,13 +59,17 @@ const capabilities = [
   "Relayer mirror sync - no chain scan for users",
 ]
 
-const bench = [
-  { v: "0.28s", l: "one Groth16 proof - arkworks prover, in-process on the relayer" },
-  { v: "~4s", l: "one proof in the browser - snarkjs, no install" },
-  { v: "195.5k", l: "compute units per batched pool transact (append_many)" },
-  { v: "67.6s", l: "210 unequal salaries - standard circuit (63.3s packed)" },
-  { v: "11.32s", l: "same 210 salaries - batched-circuit bench pipeline" },
-  { v: "8 / tx", l: "salaries packed per transaction via SPL-memo padding" },
+const runtimeBars = [
+  { label: "day one - standard circuit", v: "902s", w: "100%", cls: "bg-zinc-300 dark:bg-zinc-700" },
+  { label: "today - standard circuit", v: "67.6s", w: "7.5%", cls: "bg-emerald-500" },
+  { label: "today - batched circuit", v: "11.32s", w: "1.25%", cls: "bg-zinc-900 dark:bg-zinc-100" },
+]
+
+const pipeline = [
+  { n: "Prove", v: "0.28s", d: "one arkworks Groth16 proof, in-process on the relayer" },
+  { n: "Pack", v: "8 / tx", d: "salaries packed per transaction via SPL-memo padding" },
+  { n: "Submit", v: "195.5k CU", d: "append_many transact into the merkle tree" },
+  { n: "In browser", v: "~4s", d: "snarkjs proving when a claim runs client-side" },
 ]
 
 const SDK_SNIPPET = `import { PrivacyCashClient, publishRecipientKeys } from "privacy-cash-sdk"
@@ -160,7 +160,7 @@ function RunStatusChip({ status }: { status: string }) {
 
 function LedgerRow({ what, to, amt, at, shielded }: { what: string; to: string; amt: string; at: string; shielded: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-2 rounded-lg bg-secondary/70 px-3 py-2 text-xs">
+    <div className="flex items-center justify-between gap-2 rounded-lg bg-secondary/70 px-3 py-2 text-xs transition-colors hover:bg-secondary">
       <span className="min-w-0 flex-1 truncate text-muted-foreground">{what}</span>
       <span className="mono hidden text-muted-foreground sm:inline">{to}</span>
       <span className="font-mono font-medium">{amt}</span>
@@ -202,7 +202,8 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         <div className="grid-lines" />
       </div>
 
-      <header className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6 sm:py-5">
+      <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-md">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6 sm:py-5">
         <div className="flex items-center gap-2">
           <div className="flex size-8 items-center justify-center rounded-lg bg-primary font-bold text-primary-foreground">
             P
@@ -214,9 +215,10 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
           <Button variant="ghost" size="sm" onClick={() => onRole("employee")} className="hidden sm:inline-flex">
             Employee sign in
           </Button>
-          <Button size="sm" className="btn-glow" onClick={() => onRole("employer")}>
+          <Button size="sm" className="group btn-glow" onClick={() => onRole("employer")}>
             Employer sign in
           </Button>
+        </div>
         </div>
       </header>
 
@@ -238,8 +240,8 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
           deposits and payouts — never who was paid, how much, or what the treasury still holds.
         </p>
         <div className="anim anim-4 mt-9 flex flex-wrap items-center justify-center gap-3">
-          <Button size="lg" className="btn-glow" onClick={() => onRole("employer")}>
-            Run payroll <ArrowRight className="ml-1 size-4" />
+          <Button size="lg" className="group btn-glow" onClick={() => onRole("employer")}>
+            Run payroll <ArrowRight className="ml-1 size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
           </Button>
           <Button size="lg" variant="outline" onClick={() => onRole("employee")}>
             I'm an employee
@@ -268,8 +270,8 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
                 <div className="progress-glow run-fill-live h-full w-[60%]" />
               </div>
             </div>
-            <Button className="btn-glow w-full" onClick={() => onRole("employer")}>
-              Pay 5 employees now <ArrowRight className="ml-1 size-4" />
+            <Button className="group btn-glow w-full" onClick={() => onRole("employer")}>
+              Pay 5 employees now <ArrowRight className="ml-1 size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
             </Button>
             <p className="mt-3 text-center text-[11px] text-muted-foreground">
               proofs built in your browser · payouts signed by the relayer · employees need zero SOL
@@ -286,7 +288,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
           On a normal wallet, every salary is permanent, public data — who you employ, what you pay
           them, and how much is left. The same run through the pool:
         </p>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div data-stagger className="grid gap-4 md:grid-cols-2">
           <Card className="card-lift">
             <CardHeader>
               <CardTitle className="flex items-center justify-between text-base">
@@ -333,17 +335,12 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
       </section>
 
       {/* ---------- stats ---------- */}
-      <section data-reveal className="anim anim-6 mx-auto grid max-w-5xl grid-cols-2 gap-3 px-4 py-10 sm:px-6 lg:grid-cols-4">
-        {stats.map((s) => (
-          <Card key={s.v} className="card-lift">
-            <CardContent className="pt-6">
-              <span className="mb-3 flex size-8 items-center justify-center rounded-lg bg-secondary">
-                <s.icon className="size-4 text-emerald-600 dark:text-emerald-400" />
-              </span>
-              <div className="stat-number text-2xl font-bold sm:text-3xl">{s.v}</div>
-              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{s.l}</p>
-            </CardContent>
-          </Card>
+      <section data-reveal data-stagger className="mx-auto grid max-w-5xl grid-cols-2 gap-x-6 gap-y-10 px-4 py-14 sm:px-6 lg:grid-cols-4">
+        {stats.map((st) => (
+          <div key={st.v}>
+            <div className="stat-number text-3xl font-bold sm:text-4xl">{st.v}</div>
+            <p className="mt-2 max-w-[22ch] text-xs leading-relaxed text-muted-foreground">{st.l}</p>
+          </div>
         ))}
       </section>
 
@@ -369,8 +366,8 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
               </li>
             ))}
           </ul>
-          <Button className="btn-glow mt-6" onClick={() => onRole("employer")}>
-            Sign in as employer <ArrowRight className="ml-1 size-4" />
+          <Button className="group btn-glow mt-6" onClick={() => onRole("employer")}>
+            Sign in as employer <ArrowRight className="ml-1 size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
           </Button>
         </div>
         <Card className="card-lift mx-auto w-full max-w-md border-border bg-card shadow-[0_24px_60px_-24px_rgba(9,9,11,0.18)] dark:shadow-[0_24px_60px_-24px_rgba(0,0,0,0.6)]">
@@ -399,7 +396,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
             </div>
             <div className="space-y-2">
               {runRows.map((r) => (
-                <div key={r.who} className="flex items-center gap-3 rounded-lg bg-secondary/70 px-3 py-2">
+                <div key={r.who} className="flex items-center gap-3 rounded-lg bg-secondary/70 px-3 py-2 transition-colors hover:bg-secondary">
                   <span className="flex size-7 flex-none items-center justify-center rounded-full bg-secondary text-[11px] font-semibold text-muted-foreground">
                     {r.init}
                   </span>
@@ -446,7 +443,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
             </div>
             <div className="space-y-2">
               {noteRowsMock.map((n) => (
-                <div key={n.leaf} className="flex items-center justify-between gap-2 rounded-lg bg-secondary/70 px-3 py-2 text-xs">
+                <div key={n.leaf} className="flex items-center justify-between gap-2 rounded-lg bg-secondary/70 px-3 py-2 text-xs transition-colors hover:bg-secondary">
                   <span className="font-mono font-medium">**** SOL</span>
                   <span className="text-muted-foreground">note {n.leaf}</span>
                   <span className="hidden text-muted-foreground sm:inline">{n.at}</span>
@@ -454,7 +451,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
                 </div>
               ))}
             </div>
-            <Button className="btn-glow w-full">Claim to wallet</Button>
+            <Button className="group btn-glow w-full">Claim to wallet</Button>
             <p className="text-center text-[11px] text-muted-foreground">
               gasless - no SOL needed, the relayer submits for you
             </p>
@@ -479,8 +476,8 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
               </li>
             ))}
           </ul>
-          <Button className="mt-6" variant="outline" onClick={() => onRole("employee")}>
-            Sign in as employee <ArrowRight className="ml-1 size-4" />
+          <Button className="group mt-6" variant="outline" onClick={() => onRole("employee")}>
+            Sign in as employee <ArrowRight className="ml-1 size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
           </Button>
         </div>
       </section>
@@ -489,7 +486,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
       <section data-reveal className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
         <p className="eyebrow justify-center">Capabilities</p>
         <h2 className="h-display mb-8 text-center text-3xl">Everything a payroll run needs</h2>
-        <div className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
+        <div data-stagger className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
           {capabilities.map((c) => (
             <div key={c} className="flex items-start gap-3 text-sm text-muted-foreground">
               <span className="mt-0.5 flex size-5 flex-none items-center justify-center rounded-full bg-emerald-50 dark:bg-emerald-500/10">
@@ -507,7 +504,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         <p className="mb-8 text-center text-sm text-muted-foreground">
           Four stages, sixteen parallel lanes, one merkle tree.
         </p>
-        <div className="relative grid gap-3 md:grid-cols-4">
+        <div data-stagger className="relative grid gap-3 md:grid-cols-4">
           <div
             aria-hidden
             className="absolute left-0 right-0 top-7 hidden h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent md:block"
@@ -527,22 +524,58 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
       </section>
 
       {/* ---------- benchmarks ---------- */}
-      <section data-reveal className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+      <section data-reveal data-stagger className="mx-auto max-w-5xl px-4 py-14 sm:px-6">
         <p className="eyebrow justify-center">Benchmarks</p>
         <h2 className="h-display mb-1 text-center text-3xl">Measured, not promised</h2>
         <p className="mb-8 text-center text-sm text-muted-foreground">
-          Every number is from a logged run on an 8 GB laptop against a local validator - see{" "}
-          <span className="mono">payroll/SPEED-JOURNEY.html</span>.
+          Every number is from a logged run - 210 unequal salaries, same 8 GB laptop, local
+          validator. Bars are to scale.
         </p>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {bench.map((b) => (
-            <Card key={b.v} className="card-lift">
-              <CardContent className="pt-6">
-                <div className="stat-number text-3xl font-bold">{b.v}</div>
-                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{b.l}</p>
-              </CardContent>
-            </Card>
-          ))}
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card className="card-lift">
+            <CardHeader>
+              <CardTitle className="text-base">210 salaries, end to end</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {runtimeBars.map((b) => (
+                <div key={b.label}>
+                  <div className="mb-1.5 flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">{b.label}</span>
+                    <span className="stat-number font-bold">{b.v}</span>
+                  </div>
+                  <div className="h-3 w-full overflow-hidden rounded-md bg-secondary">
+                    <div
+                      className={`chart-bar h-full rounded-md ${b.cls}`}
+                      style={{ "--w": b.w } as CSSProperties}
+                    />
+                  </div>
+                </div>
+              ))}
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Total wall-clock, first signature to last confirmation. 63.3s of the standard run
+                is proving - packed across 16 parallel lanes.
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="card-lift">
+            <CardHeader>
+              <CardTitle className="text-base">Where the time goes</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {pipeline.map((st) => (
+                <div key={st.n} className="flex items-start justify-between gap-3 rounded-xl bg-secondary/70 px-3 py-2.5">
+                  <span className="min-w-0">
+                    <span className="block text-xs font-medium">{st.n}</span>
+                    <span className="block text-[11px] leading-relaxed text-muted-foreground">{st.d}</span>
+                  </span>
+                  <span className="stat-number flex-none text-sm font-bold">{st.v}</span>
+                </div>
+              ))}
+              <p className="pt-1 text-xs leading-relaxed text-muted-foreground">
+                16 lanes prove in parallel - throughput is set by submit and confirm, not proving.
+              </p>
+            </CardContent>
+          </Card>
         </div>
       </section>
 
@@ -633,8 +666,8 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
               gasless, with nothing but a regular wallet.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-3">
-              <Button size="lg" className="btn-glow" onClick={() => onRole("employer")}>
-                Run payroll <ArrowRight className="ml-1 size-4" />
+              <Button size="lg" className="group btn-glow" onClick={() => onRole("employer")}>
+                Run payroll <ArrowRight className="ml-1 size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
               </Button>
               <Button size="lg" variant="outline" onClick={() => onRole("employee")}>
                 I'm an employee

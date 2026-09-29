@@ -66,7 +66,9 @@ export default function App() {
           </div>
         </div>
       </header>
-      {role === "employer" ? <EmployerApp /> : <EmployeeApp />}
+      <div key={role} className="anim">
+        {role === "employer" ? <EmployerApp /> : <EmployeeApp />}
+      </div>
     </div>
   )
 }
