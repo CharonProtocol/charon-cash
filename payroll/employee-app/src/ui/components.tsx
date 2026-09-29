@@ -44,8 +44,13 @@ export function Button({
       ? theme.accent
       : variant === "danger"
         ? theme.dangerSoft
-        : theme.surfaceMuted;
-  const fg = variant === "primary" ? "#0C0E12" : variant === "danger" ? theme.danger : theme.text;
+        : theme.surface;
+  const fg =
+    variant === "primary"
+      ? "#FFFFFF"
+      : variant === "danger"
+        ? theme.dangerText
+        : theme.text;
   const border = variant === "ghost" ? theme.hairline : "transparent";
   const active = !disabled && !loading;
   return (
@@ -142,11 +147,12 @@ export function Pill({
   tone = "muted",
 }: {
   children: React.ReactNode;
-  tone?: "muted" | "accent" | "amber" | "danger";
+  tone?: "muted" | "accent" | "ok" | "amber" | "danger";
 }) {
   const map = {
     muted: { bg: theme.surfaceMuted, fg: theme.textSoft },
-    accent: { bg: theme.accentSoft, fg: theme.accent },
+    accent: { bg: theme.accentSoft, fg: theme.text },
+    ok: { bg: theme.okSoft, fg: theme.ok },
     amber: { bg: theme.amberSoft, fg: theme.amber },
     danger: { bg: theme.dangerSoft, fg: theme.danger },
   }[tone];
@@ -169,10 +175,10 @@ export function ErrorBanner({ message, onDismiss }: { message: string; onDismiss
         marginBottom: 14,
       }}
     >
-      <Text style={[typography.small, { color: theme.danger, flexShrink: 1 }]}>{message}</Text>
+      <Text style={[typography.small, { color: theme.dangerText, flexShrink: 1 }]}>{message}</Text>
       {onDismiss ? (
         <Pressable onPress={onDismiss} hitSlop={8} style={{ marginTop: 6 }}>
-          <Text style={[typography.micro, { color: theme.danger }]}>DISMISS</Text>
+          <Text style={[typography.micro, { color: theme.dangerText }]}>DISMISS</Text>
         </Pressable>
       ) : null}
     </View>

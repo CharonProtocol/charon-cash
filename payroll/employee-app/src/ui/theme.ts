@@ -1,28 +1,34 @@
-// Design tokens  -  aligned to the web app's dark palette (frontend/src/index.css
-// `.dark`). Same deep ink ground, but the accent is the web's indigo-violet
-// (#8b85f0) so the mobile app reads as the same product.
+// Design tokens - aligned to the web app's crisp minimalist fintech light
+// system (payroll/src/index.css). Pure white canvas, zinc hairlines, obsidian
+// type, black primary actions, emerald = verified, amber = warning, rose =
+// danger. Same tokens, same product, on mobile.
 
 export const theme = {
-  bg: "#0C0E12",
-  bgElevated: "#141820",
-  surface: "#141820",
-  surfaceMuted: "#1A1F2A",
-  hairline: "#2A3140",
+  bg: "#FFFFFF",
+  bgElevated: "#FFFFFF",
+  surface: "#FFFFFF",
+  surfaceMuted: "#F4F4F5", // zinc-100
+  hairline: "#E4E4E7", // zinc-200
+  hairlineStrong: "#D4D4D8", // zinc-300
 
-  text: "#E8EAEF",
-  textSoft: "#B4BAC8",
-  textMuted: "#8B93A7",
+  text: "#09090B", // zinc-950
+  textSoft: "#52525B", // zinc-600
+  textMuted: "#71717A", // zinc-500
 
-  accent: "#8B85F0", // indigo-violet (web --primary)
-  accentSoft: "rgba(139,133,240,0.16)",
-  accentLine: "rgba(139,133,240,0.40)",
-  amber: "#E8A24A",
-  amberSoft: "rgba(232,162,74,0.14)",
-  danger: "#F87171",
-  dangerSoft: "rgba(248,113,113,0.12)",
+  accent: "#09090B", // primary action: solid obsidian
+  accentSoft: "rgba(9,9,11,0.05)",
+  accentLine: "rgba(9,9,11,0.16)",
 
-  radius: 16,
-  radiusSm: 12,
+  ok: "#059669", // emerald-600 (verified)
+  okSoft: "rgba(16,185,129,0.12)",
+  amber: "#B45309", // amber-700 (warning, readable on light)
+  amberSoft: "rgba(245,158,11,0.12)",
+  danger: "#E11D48", // rose-600 (critical)
+  dangerText: "#BE123C", // rose-700
+  dangerSoft: "rgba(244,63,94,0.10)",
+
+  radius: 12, // cards: rounded-xl
+  radiusSm: 8, // inputs/buttons: rounded-lg
   space: (n: number) => n * 4,
 } as const;
 
@@ -31,9 +37,9 @@ import { StyleSheet, type TextStyle } from "react-native";
 // Typed as TextStyle so `fontWeight` stays a literal union member instead of
 // widening to `string` (RN 0.86's TextStyle.fontWeight rejects plain strings).
 export const typography: Record<string, TextStyle> = {
-  hero: { fontSize: 34, lineHeight: 40, fontWeight: "800", letterSpacing: -0.8 },
-  title: { fontSize: 22, lineHeight: 28, fontWeight: "700", letterSpacing: -0.4 },
-  h2: { fontSize: 17, lineHeight: 23, fontWeight: "700" },
+  hero: { fontSize: 34, lineHeight: 40, fontWeight: "700", letterSpacing: -0.9 },
+  title: { fontSize: 22, lineHeight: 28, fontWeight: "700", letterSpacing: -0.5 },
+  h2: { fontSize: 17, lineHeight: 23, fontWeight: "600" },
   body: { fontSize: 15, lineHeight: 22, fontWeight: "400" },
   small: { fontSize: 13, lineHeight: 18, fontWeight: "500" },
   mono: { fontSize: 13, lineHeight: 18 },
