@@ -45,7 +45,7 @@ export default function App() {
       <header className="border-b">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3 sm:px-6">
           <button
-            className="flex items-center gap-2"
+            className="flex items-center gap-2 outline-none focus-visible:outline-none"
             onClick={() => go("landing")}
             aria-label="Back to landing"
           >

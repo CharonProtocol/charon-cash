@@ -79,7 +79,7 @@ export function UploadCard({ onParsed }: { onParsed: (p: ParsedFile | null) => v
             const f = e.dataTransfer.files?.[0]
             if (f) await ingestFile(f)
           }}
-          className={`flex w-full cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed px-6 py-9 text-center transition-all ${
+          className={`flex w-full cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed px-6 py-9 text-center outline-none transition-all focus-visible:outline-none ${
             drag
               ? "border-zinc-950 bg-zinc-50 dark:border-zinc-300 dark:bg-zinc-900"
               : "border-border hover:border-zinc-400 hover:bg-zinc-50 dark:hover:border-zinc-500 dark:hover:bg-zinc-900"

@@ -339,6 +339,10 @@ body {
   background: var(--panel) !important;
   border-color: var(--line-2) !important;
 }
+.wallet-adapter-button:focus,
+.wallet-adapter-button:focus-visible {
+  outline: none !important;
+}
 .wallet-adapter-button[disabled] {
   opacity: 0.45 !important;
 }
