@@ -17,10 +17,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ThemeToggle } from "@/components/ThemeToggle"
 
 const stats = [
-  { v: "67.6s", l: "to pay 210 salaries - standard circuit" },
-  { v: "13x", l: "faster than day one, same 8 GB laptop" },
-  { v: "210 / 210", l: "paid exact - unequal salaries, 0 failures" },
-  { v: "1", l: "signature per run (0 when the vault is funded)" },
+  { v: "67.6s", l: "to pay 210 salaries", sub: "standard circuit, the app as it runs today" },
+  { v: "11.32s", l: "the same payroll, batched", sub: "batched-circuit bench pipeline" },
+  { v: "210 / 210", l: "paid exact", sub: "unequal salaries, 0 failures" },
+  { v: "1", l: "signature per run", sub: "0 when the vault is funded" },
 ]
 
 const steps = [
@@ -60,16 +60,15 @@ const capabilities = [
 ]
 
 const runtimeBars = [
-  { label: "day one - standard circuit", v: "902s", w: "100%", cls: "bg-zinc-300 dark:bg-zinc-700" },
+  { label: "before optimization", v: "902s", w: "100%", cls: "bg-zinc-300 dark:bg-zinc-700" },
   { label: "today - standard circuit", v: "67.6s", w: "7.5%", cls: "bg-emerald-500" },
-  { label: "today - batched circuit", v: "11.32s", w: "1.25%", cls: "bg-zinc-900 dark:bg-zinc-100" },
+  { label: "batched pipeline (bench)", v: "11.32s", w: "1.25%", cls: "bg-zinc-900 dark:bg-zinc-100" },
 ]
 
 const pipeline = [
-  { n: "Prove", v: "0.28s", d: "one arkworks Groth16 proof, in-process on the relayer" },
-  { n: "Pack", v: "8 / tx", d: "salaries packed per transaction via SPL-memo padding" },
-  { n: "Submit", v: "195.5k CU", d: "append_many transact into the merkle tree" },
-  { n: "In browser", v: "~4s", d: "snarkjs proving when a claim runs client-side" },
+  { n: "zk proof", v: "0.28s", d: "one Groth16 proof, built in-process on the relayer" },
+  { n: "batched write", v: "8 / tx", d: "salaries packed into a single on-chain transaction" },
+  { n: "browser proof", v: "~4s", d: "snarkjs in the employee's wallet when they claim" },
 ]
 
 const SDK_SNIPPET = `import { PrivacyCashClient, publishRecipientKeys } from "privacy-cash-sdk"
@@ -335,13 +334,19 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
       </section>
 
       {/* ---------- stats ---------- */}
-      <section data-reveal data-stagger className="mx-auto grid max-w-5xl grid-cols-2 gap-x-6 gap-y-10 px-4 py-14 sm:px-6 lg:grid-cols-4">
-        {stats.map((st) => (
-          <div key={st.v}>
-            <div className="stat-number text-3xl font-bold sm:text-4xl">{st.v}</div>
-            <p className="mt-2 max-w-[22ch] text-xs leading-relaxed text-muted-foreground">{st.l}</p>
-          </div>
-        ))}
+      <section data-reveal className="mx-auto max-w-5xl px-4 py-16 text-center sm:px-6">
+        <h2 className="h-display mx-auto max-w-2xl text-3xl sm:text-4xl">
+          A 210-person payroll, start to confirmed, in about a minute.
+        </h2>
+        <div data-stagger className="mt-12 grid grid-cols-2 gap-x-6 gap-y-10 text-left lg:grid-cols-4">
+          {stats.map((st) => (
+            <div key={st.v}>
+              <div className="stat-number text-3xl font-bold sm:text-4xl">{st.v}</div>
+              <p className="mt-2 text-sm font-medium">{st.l}</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{st.sub}</p>
+            </div>
+          ))}
+        </div>
       </section>
 
       {/* ---------- employer use case: the run screen ---------- */}
@@ -524,17 +529,17 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
       </section>
 
       {/* ---------- benchmarks ---------- */}
-      <section data-reveal data-stagger className="mx-auto max-w-5xl px-4 py-14 sm:px-6">
+      <section data-reveal className="mx-auto max-w-5xl px-4 py-14 sm:px-6">
         <p className="eyebrow justify-center">Benchmarks</p>
         <h2 className="h-display mb-1 text-center text-3xl">Measured, not promised</h2>
         <p className="mb-8 text-center text-sm text-muted-foreground">
-          Every number is from a logged run - 210 unequal salaries, same 8 GB laptop, local
-          validator. Bars are to scale.
+          Same 210 unequal salaries, same 8 GB laptop, local validator. Bars are to scale.
         </p>
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div data-stagger className="grid gap-4 lg:grid-cols-2">
           <Card className="card-lift">
-            <CardHeader>
-              <CardTitle className="text-base">210 salaries, end to end</CardTitle>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-base">Pay a team of 210, end to end</CardTitle>
+              <span className="stat-number text-lg font-bold">67.6s</span>
             </CardHeader>
             <CardContent className="space-y-5">
               {runtimeBars.map((b) => (
@@ -552,14 +557,15 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
                 </div>
               ))}
               <p className="text-xs leading-relaxed text-muted-foreground">
-                Total wall-clock, first signature to last confirmation. 63.3s of the standard run
-                is proving - packed across 16 parallel lanes.
+                First signature to last confirmation. 63.3s of the standard run is proving - the
+                batched pipeline is bench-only for now.
               </p>
             </CardContent>
           </Card>
           <Card className="card-lift">
-            <CardHeader>
-              <CardTitle className="text-base">Where the time goes</CardTitle>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-base">One salary through the pool</CardTitle>
+              <span className="stat-number text-lg font-bold">0.28s</span>
             </CardHeader>
             <CardContent className="space-y-2">
               {pipeline.map((st) => (
@@ -572,7 +578,8 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
                 </div>
               ))}
               <p className="pt-1 text-xs leading-relaxed text-muted-foreground">
-                16 lanes prove in parallel - throughput is set by submit and confirm, not proving.
+                Proving runs 16 lanes wide, so a full run waits on submit and confirm - not
+                proving.
               </p>
             </CardContent>
           </Card>
