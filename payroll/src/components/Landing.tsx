@@ -1,6 +1,7 @@
 import {
   ArrowRight,
   Building2,
+  ChevronDown,
   EyeOff,
   Gauge,
   ShieldCheck,
@@ -42,6 +43,45 @@ const steps = [
     n: "4",
     title: "Claim",
     body: "Employees hold private notes in their wallet and claim to plain SOL whenever they want — gasless.",
+  },
+]
+
+const publicLedger = [
+  { what: "salary - engineering", to: "7fKq...3wPd", amt: "+2.10 SOL", at: "09:14" },
+  { what: "salary - design", to: "9sBv...2kQn", amt: "+1.40 SOL", at: "09:14" },
+  { what: "salary - operations", to: "4hTe...9xLm", amt: "+0.90 SOL", at: "09:15" },
+  { what: "contractor payout", to: "2mWc...8rTf", amt: "+0.65 SOL", at: "09:15" },
+  { what: "salary - marketing", to: "6pDn...5vKj", amt: "+1.15 SOL", at: "09:16" },
+]
+
+const shieldedLedger = [
+  { what: "pool payout", to: "****...****", amt: "****", at: "09:14" },
+  { what: "pool payout", to: "****...****", amt: "****", at: "09:14" },
+  { what: "pool payout", to: "****...****", amt: "****", at: "09:15" },
+  { what: "pool payout", to: "****...****", amt: "****", at: "09:15" },
+  { what: "pool payout", to: "****...****", amt: "****", at: "09:16" },
+]
+
+const faqs = [
+  {
+    q: "What does the chain actually see?",
+    a: "One deposit going in and salary-sized payouts coming out of the pool - plus commitments, nullifiers, and zero-knowledge proofs. What it never sees: which deposit funded which salary, the amounts in between, or the company's remaining shielded balance.",
+  },
+  {
+    q: "Do employees need SOL to claim?",
+    a: "No. Claims are relayed, so employees pay zero gas - a wallet with nothing in it can still receive and claim a private note. The employer's run needs one signature total, and none at all once the vault is funded.",
+  },
+  {
+    q: "How fast is a real payroll run?",
+    a: "Measured on an 8 GB laptop against a local validator: 210 unequal salaries in 67.6s on the standard circuit (63.3s packed), and the batched-circuit bench lands the same 210 in 11.32s. Every number on this page is from a logged run.",
+  },
+  {
+    q: "Can this be audited?",
+    a: "Deposits and exits are public by design - that is the boundary of the privacy. The employer keeps per-run receipts with every proof and signature, so the company can always account for its own payroll.Recipient-scoped viewing keys (share one payment's history without exposing anything else) are on the roadmap, not shipped yet.",
+  },
+  {
+    q: "Which tokens are supported?",
+    a: "SOL payroll runs today. The private-note format (v2) is token-agnostic, so SPL stablecoins like USDC are the natural next pool - the circuit and tree do not care what the note represents.",
   },
 ]
 
@@ -197,6 +237,77 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
                 <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{s.body}</p>
               </CardContent>
             </Card>
+          ))}
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+        <h2 className="h-display mb-1 text-center text-3xl">What an observer sees</h2>
+        <p className="mb-8 text-center text-sm text-muted-foreground">
+          The same payroll run, twice - sent from a normal wallet, and sent through the pool.
+        </p>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card className="card-lift">
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between text-base">
+                <span>Public payroll</span>
+                <span className="tag tag--pub">public</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {publicLedger.map((r, i) => (
+                <div key={i} className="flex items-center justify-between rounded-lg border px-3 py-2 text-xs">
+                  <span className="text-muted-foreground">{r.what}</span>
+                  <span className="mono text-muted-foreground">{r.to}</span>
+                  <span className="font-mono font-medium">{r.amt}</span>
+                  <span className="text-muted-foreground">{r.at}</span>
+                </div>
+              ))}
+              <p className="pt-1 text-xs text-muted-foreground">
+                Every row is a permanent public record - salaries, staff count, and who still works
+                there, readable by anyone with the treasury address.
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="card-lift bg-secondary/50">
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between text-base">
+                <span>Shielded payroll</span>
+                <span className="tag tag--priv">shielded</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {shieldedLedger.map((r, i) => (
+                <div key={i} className="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-xs">
+                  <span className="text-muted-foreground">{r.what}</span>
+                  <span className="mono text-muted-foreground">{r.to}</span>
+                  <span className="font-mono font-medium">{r.amt}</span>
+                  <span className="text-muted-foreground">{r.at}</span>
+                </div>
+              ))}
+              <p className="pt-1 text-xs text-muted-foreground">
+                The deposit is public - which salary it funded never is. Amounts, recipients, and
+                the remaining balance stay inside the pool.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
+        <h2 className="h-display mb-1 text-center text-3xl">Questions, answered</h2>
+        <p className="mb-8 text-center text-sm text-muted-foreground">
+          What the chain sees, what it costs, and what it cannot do yet.
+        </p>
+        <div className="divide-y overflow-hidden rounded-2xl border bg-card shadow-[0_1px_2px_rgba(9,9,11,0.03),0_14px_36px_-16px_rgba(9,9,11,0.14)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.35),0_14px_36px_-16px_rgba(0,0,0,0.5)]">
+          {faqs.map((f) => (
+            <details key={f.q} className="group px-5 py-4">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-medium [&::-webkit-details-marker]:hidden">
+                {f.q}
+                <ChevronDown className="size-4 flex-none text-muted-foreground transition-transform group-open:rotate-180" />
+              </summary>
+              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{f.a}</p>
+            </details>
           ))}
         </div>
       </section>
