@@ -52,7 +52,7 @@ export default function App() {
             <div className="flex size-7 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
               P
             </div>
-            <span className="hidden font-semibold tracking-tight sm:inline">Privacy Payroll</span>
+            <span className="hidden font-semibold tracking-tight sm:inline">Charon Pay</span>
           </button>
           <div className="flex items-center gap-2">
             <Badge variant="secondary">{role === "employer" ? "employer" : "employee"}</Badge>

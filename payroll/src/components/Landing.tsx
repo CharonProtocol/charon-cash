@@ -207,7 +207,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
           <div className="flex size-8 items-center justify-center rounded-lg bg-primary font-bold text-primary-foreground">
             P
           </div>
-          <span className="h-display hidden text-lg sm:inline">Privacy Payroll</span>
+          <span className="h-display hidden text-lg sm:inline">Charon Pay</span>
         </div>
         <div className="flex items-center gap-2">
           <ThemeToggle />
@@ -231,12 +231,11 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         <h1 className="h-display anim anim-2 mx-auto max-w-3xl text-4xl leading-[1.05] sm:text-6xl">
           Pay your whole team.
           <br />
-          <span className="text-gradient">Prove nothing on-chain.</span>
+          <span className="text-gradient">In private.</span>
         </h1>
         <p className="anim anim-3 mx-auto mt-6 max-w-xl text-pretty text-base text-muted-foreground sm:text-lg">
-          Run payroll from a Solana wallet with zero-knowledge proofs. An observer sees a deposit go
-          in and salaries come out — but can never link the two, the amounts in between, or your
-          company's remaining balance.
+          Charon Pay routes salaries through a zero-knowledge pool on Solana. The chain records
+          deposits and payouts — never who was paid, how much, or what the treasury still holds.
         </p>
         <div className="anim anim-4 mt-9 flex flex-wrap items-center justify-center gap-3">
           <Button size="lg" className="btn-glow" onClick={() => onRole("employer")}>
@@ -338,9 +337,11 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         {stats.map((s) => (
           <Card key={s.v} className="card-lift">
             <CardContent className="pt-6">
-              <s.icon className="mb-3 size-4 text-emerald-600 dark:text-emerald-400" />
-              <div className="stat-number text-xl font-bold sm:text-[1.7rem]">{s.v}</div>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{s.l}</p>
+              <span className="mb-3 flex size-8 items-center justify-center rounded-lg bg-secondary">
+                <s.icon className="size-4 text-emerald-600 dark:text-emerald-400" />
+              </span>
+              <div className="stat-number text-2xl font-bold sm:text-3xl">{s.v}</div>
+              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{s.l}</p>
             </CardContent>
           </Card>
         ))}

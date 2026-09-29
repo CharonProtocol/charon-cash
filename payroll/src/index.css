@@ -358,7 +358,7 @@ body {
   font-family: var(--font-sans) !important;
   font-size: 1rem !important;
   font-weight: 500 !important;
-  border-radius: 999px !important;
+  border-radius: 0.625rem !important;
   background: var(--paper) !important;
   color: var(--foreground) !important;
   border: 1px solid var(--line) !important;

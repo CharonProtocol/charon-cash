@@ -172,27 +172,18 @@ export function EmployeeApp() {
                   here after a scan.
                 </p>
               ) : (
-                <div className="-mx-1 overflow-x-auto">
-                <table className="w-full min-w-[460px] text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-xs text-muted-foreground">
-                      <th className="py-2 font-medium">Amount</th>
-                      <th className="py-2 font-medium">Leaf</th>
-                      <th className="py-2 font-medium">Received</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {noteRows.map((n) => (
-                      <tr key={n.id} className="border-b last:border-0">
-                        <td className="py-2 tabular-nums">{lamportsToSol(BigInt(n.amount).toString()).toFixed(6)} SOL</td>
-                        <td className="py-2 font-mono text-xs text-muted-foreground">#{n.index}</td>
-                        <td className="py-2 text-xs text-muted-foreground">
-                          {new Date(n.createdAt).toLocaleString()}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="space-y-2">
+                  {noteRows.map((n) => (
+                    <div key={n.id} className="flex items-center justify-between gap-2 rounded-xl bg-secondary/70 px-3 py-2.5 text-sm">
+                      <span className="font-mono tabular-nums">
+                        {lamportsToSol(BigInt(n.amount).toString()).toFixed(6)} SOL
+                      </span>
+                      <span className="font-mono text-xs text-muted-foreground">leaf #{n.index}</span>
+                      <span className="hidden text-xs text-muted-foreground sm:inline">
+                        {new Date(n.createdAt).toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
             </CardContent>
