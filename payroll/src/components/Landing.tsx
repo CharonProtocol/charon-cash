@@ -13,6 +13,8 @@ import {
   Zap,
 } from "lucide-react"
 
+import { useEffect } from "react"
+
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -158,7 +160,7 @@ function RunStatusChip({ status }: { status: string }) {
 
 function LedgerRow({ what, to, amt, at, shielded }: { what: string; to: string; amt: string; at: string; shielded: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2 text-xs">
+    <div className="flex items-center justify-between gap-2 rounded-lg bg-secondary/70 px-3 py-2 text-xs">
       <span className="min-w-0 flex-1 truncate text-muted-foreground">{what}</span>
       <span className="mono hidden text-muted-foreground sm:inline">{to}</span>
       <span className="font-mono font-medium">{amt}</span>
@@ -173,6 +175,27 @@ function LedgerRow({ what, to, amt, at, shielded }: { what: string; to: string; 
 }
 
 export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => void }) {
+  useEffect(() => {
+    const els = Array.from(document.querySelectorAll("[data-reveal]"))
+    if (!("IntersectionObserver" in window)) {
+      els.forEach((el) => el.classList.add("reveal-in"))
+      return
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            e.target.classList.add("reveal-in")
+            io.unobserve(e.target)
+          }
+        }
+      },
+      { threshold: 0.1 },
+    )
+    els.forEach((el) => io.observe(el))
+    return () => io.disconnect()
+  }, [])
+
   return (
     <div className="relative min-h-dvh">
       <div className="aurora" aria-hidden>
@@ -243,7 +266,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
                 <span className="font-mono">3 / 5</span>
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
-                <div className="progress-glow h-full w-[60%] transition-all duration-500" />
+                <div className="progress-glow run-fill-live h-full w-[60%]" />
               </div>
             </div>
             <Button className="btn-glow w-full" onClick={() => onRole("employer")}>
@@ -257,7 +280,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
       </section>
 
       {/* ---------- the problem: your payroll is a public record ---------- */}
-      <section className="mx-auto max-w-5xl px-4 py-14 sm:px-6">
+      <section data-reveal className="mx-auto max-w-5xl px-4 py-14 sm:px-6">
         <p className="eyebrow justify-center">Why private payroll</p>
         <h2 className="h-display mb-1 text-center text-3xl sm:text-4xl">Your payroll is a public record.</h2>
         <p className="mx-auto mb-10 max-w-xl text-center text-sm text-muted-foreground">
@@ -311,7 +334,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
       </section>
 
       {/* ---------- stats ---------- */}
-      <section className="anim anim-6 mx-auto grid max-w-5xl grid-cols-2 gap-3 px-4 py-10 sm:px-6 lg:grid-cols-4">
+      <section data-reveal className="anim anim-6 mx-auto grid max-w-5xl grid-cols-2 gap-3 px-4 py-10 sm:px-6 lg:grid-cols-4">
         {stats.map((s) => (
           <Card key={s.v} className="card-lift">
             <CardContent className="pt-6">
@@ -324,7 +347,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
       </section>
 
       {/* ---------- employer use case: the run screen ---------- */}
-      <section className="mx-auto grid max-w-5xl items-center gap-10 px-4 py-14 sm:px-6 lg:grid-cols-2">
+      <section data-reveal className="mx-auto grid max-w-5xl items-center gap-10 px-4 py-14 sm:px-6 lg:grid-cols-2">
         <div>
           <p className="eyebrow">For employers</p>
           <h2 className="h-display mb-3 text-3xl">The whole run, from one screen</h2>
@@ -370,12 +393,12 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
                 <span className="font-mono">13 / 20</span>
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
-                <div className="progress-glow h-full w-[65%] transition-all duration-500" />
+                <div className="progress-glow run-fill-live h-full w-[65%]" />
               </div>
             </div>
             <div className="space-y-2">
               {runRows.map((r) => (
-                <div key={r.who} className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2">
+                <div key={r.who} className="flex items-center gap-3 rounded-lg bg-secondary/70 px-3 py-2">
                   <span className="flex size-7 flex-none items-center justify-center rounded-full bg-secondary text-[11px] font-semibold text-muted-foreground">
                     {r.init}
                   </span>
@@ -397,7 +420,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
       </section>
 
       {/* ---------- employee use case: the claim screen ---------- */}
-      <section className="mx-auto grid max-w-5xl items-center gap-10 px-4 py-14 sm:px-6 lg:grid-cols-2">
+      <section data-reveal className="mx-auto grid max-w-5xl items-center gap-10 px-4 py-14 sm:px-6 lg:grid-cols-2">
         <Card className="card-lift order-2 mx-auto w-full max-w-sm border-border bg-card shadow-[0_24px_60px_-24px_rgba(9,9,11,0.18)] dark:shadow-[0_24px_60px_-24px_rgba(0,0,0,0.6)] lg:order-1">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center justify-between text-sm">
@@ -409,12 +432,12 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-lg border bg-secondary/60 p-3">
+              <div className="rounded-lg bg-secondary/70 p-3">
                 <p className="text-[11px] text-muted-foreground">Private notes</p>
                 <p className="stat-number mt-0.5 text-lg font-bold">4.15 SOL</p>
                 <p className="text-[11px] text-muted-foreground">3 notes, shielded</p>
               </div>
-              <div className="rounded-lg border p-3">
+              <div className="rounded-lg bg-secondary/70 p-3">
                 <p className="text-[11px] text-muted-foreground">Wallet balance</p>
                 <p className="stat-number mt-0.5 text-lg font-bold">0.42 SOL</p>
                 <p className="text-[11px] text-muted-foreground">public, spendable</p>
@@ -422,7 +445,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
             </div>
             <div className="space-y-2">
               {noteRowsMock.map((n) => (
-                <div key={n.leaf} className="flex items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2 text-xs">
+                <div key={n.leaf} className="flex items-center justify-between gap-2 rounded-lg bg-secondary/70 px-3 py-2 text-xs">
                   <span className="font-mono font-medium">**** SOL</span>
                   <span className="text-muted-foreground">note {n.leaf}</span>
                   <span className="hidden text-muted-foreground sm:inline">{n.at}</span>
@@ -462,7 +485,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
       </section>
 
       {/* ---------- capabilities ---------- */}
-      <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+      <section data-reveal className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
         <p className="eyebrow justify-center">Capabilities</p>
         <h2 className="h-display mb-8 text-center text-3xl">Everything a payroll run needs</h2>
         <div className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
@@ -478,7 +501,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
       </section>
 
       {/* ---------- how it works ---------- */}
-      <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+      <section data-reveal className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
         <h2 className="h-display mb-1 text-center text-3xl">How it works</h2>
         <p className="mb-8 text-center text-sm text-muted-foreground">
           Four stages, sixteen parallel lanes, one merkle tree.
@@ -491,7 +514,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
           {steps.map((s) => (
             <Card key={s.n} className="card-lift relative">
               <CardContent className="pt-6">
-                <div className="relative z-10 mb-3 flex size-9 items-center justify-center rounded-full border border-zinc-300 bg-background font-mono text-sm font-semibold text-primary">
+                <div className="relative z-10 mb-3 flex size-9 items-center justify-center rounded-full bg-secondary font-mono text-sm font-semibold text-primary">
                   {s.n}
                 </div>
                 <div className="font-medium">{s.title}</div>
@@ -503,7 +526,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
       </section>
 
       {/* ---------- benchmarks ---------- */}
-      <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+      <section data-reveal className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
         <p className="eyebrow justify-center">Benchmarks</p>
         <h2 className="h-display mb-1 text-center text-3xl">Measured, not promised</h2>
         <p className="mb-8 text-center text-sm text-muted-foreground">
@@ -523,7 +546,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
       </section>
 
       {/* ---------- developers ---------- */}
-      <section className="mx-auto grid max-w-5xl items-center gap-8 px-4 py-10 sm:px-6 lg:grid-cols-2">
+      <section data-reveal className="mx-auto grid max-w-5xl items-center gap-8 px-4 py-10 sm:px-6 lg:grid-cols-2">
         <div>
           <p className="eyebrow">For developers</p>
           <h2 className="h-display mb-3 text-3xl">One SDK, the whole pool</h2>
@@ -564,12 +587,12 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
       </section>
 
       {/* ---------- faq ---------- */}
-      <section className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
+      <section data-reveal className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
         <h2 className="h-display mb-1 text-center text-3xl">Questions, answered</h2>
         <p className="mb-8 text-center text-sm text-muted-foreground">
           What the chain sees, what it costs, and what it cannot do yet.
         </p>
-        <div className="divide-y overflow-hidden rounded-2xl border bg-card shadow-[0_1px_2px_rgba(9,9,11,0.03),0_14px_36px_-16px_rgba(9,9,11,0.14)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.35),0_14px_36px_-16px_rgba(0,0,0,0.5)]">
+        <div className="divide-y overflow-hidden rounded-2xl bg-card shadow-[0_1px_2px_rgba(9,9,11,0.03),0_14px_36px_-16px_rgba(9,9,11,0.14)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.35),0_14px_36px_-16px_rgba(0,0,0,0.5)]">
           {faqs.map((f) => (
             <details key={f.q} className="group px-5 py-4">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-medium [&::-webkit-details-marker]:hidden">
@@ -583,7 +606,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
       </section>
 
       {/* ---------- what the chain never learns ---------- */}
-      <section className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+      <section data-reveal className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
         <Card className="card-lift bg-secondary/50">
           <CardContent className="flex flex-col items-center gap-4 pt-6 text-center sm:flex-row sm:text-left">
             <ShieldCheck className="size-8 flex-none text-emerald-600 dark:text-emerald-400" />
@@ -600,7 +623,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
       </section>
 
       {/* ---------- final cta ---------- */}
-      <section className="mx-auto max-w-5xl px-4 pb-4 pt-10 sm:px-6">
+      <section data-reveal className="mx-auto max-w-5xl px-4 pb-4 pt-10 sm:px-6">
         <Card className="card-lift bg-secondary/50">
           <CardContent className="flex flex-col items-center gap-5 pt-8 pb-8 text-center">
             <h2 className="h-display max-w-xl text-3xl sm:text-4xl">Ready to run a shielded payroll?</h2>
