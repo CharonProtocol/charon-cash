@@ -75,7 +75,7 @@ export function EmployerApp() {
   )
 
   return (
-    <main className="mx-auto max-w-3xl space-y-4 p-6">
+    <main className="mx-auto max-w-3xl space-y-4 p-4 sm:p-6">
       <div>
         <p className="eyebrow">treasury console</p>
         <h1 className="h-display -mt-2 text-2xl">Payroll runs</h1>

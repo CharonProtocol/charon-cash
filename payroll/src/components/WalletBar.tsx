@@ -40,7 +40,7 @@ export function WalletBar({
   }
 
   return (
-    <div className="flex items-center justify-between gap-2">
+    <div className="flex flex-wrap items-center justify-between gap-2 gap-y-2">
       <div className="flex items-center gap-2">
         <Badge variant={relayerOk === null ? "secondary" : relayerOk ? "default" : "destructive"}>
           {relayerOk === null ? "relayer…" : relayerOk ? "relayer up" : "relayer down"}

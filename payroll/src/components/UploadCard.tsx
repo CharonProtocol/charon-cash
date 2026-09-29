@@ -129,7 +129,8 @@ export function UploadCard({ onParsed }: { onParsed: (p: ParsedFile | null) => v
               <span>{parsed.entries.length} payments · file {shortHash(parsed.fileHash, 6, 4)}</span>
             </div>
             <div className="max-h-56 overflow-y-auto">
-              <table className="w-full text-xs">
+              <div className="-mx-1 overflow-x-auto">
+                <table className="w-full min-w-[420px] text-xs">
                 <thead>
                   <tr className="text-left text-muted-foreground">
                     <th className="px-3 py-1.5 font-medium">#</th>
@@ -149,6 +150,7 @@ export function UploadCard({ onParsed }: { onParsed: (p: ParsedFile | null) => v
                   ))}
                 </tbody>
               </table>
+                </div>
             </div>
           </div>
         )}

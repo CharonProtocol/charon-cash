@@ -69,7 +69,7 @@ export function EmployeeApp() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl space-y-4 p-6">
+    <main className="mx-auto max-w-3xl space-y-4 p-4 sm:p-6">
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">My payments</h1>
         {publicKey && (
@@ -172,7 +172,8 @@ export function EmployeeApp() {
                   here after a scan.
                 </p>
               ) : (
-                <table className="w-full text-sm">
+                <div className="-mx-1 overflow-x-auto">
+                <table className="w-full min-w-[460px] text-sm">
                   <thead>
                     <tr className="border-b text-left text-xs text-muted-foreground">
                       <th className="py-2 font-medium">Amount</th>
@@ -192,6 +193,7 @@ export function EmployeeApp() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
             </CardContent>
           </Card>

@@ -43,7 +43,7 @@ export default function App() {
         <div className="grid-lines" />
       </div>
       <header className="border-b">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-3">
+        <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3 sm:px-6">
           <button
             className="flex items-center gap-2"
             onClick={() => go("landing")}
@@ -52,7 +52,7 @@ export default function App() {
             <div className="flex size-7 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
               P
             </div>
-            <span className="font-semibold tracking-tight">Privacy Payroll</span>
+            <span className="hidden font-semibold tracking-tight sm:inline">Privacy Payroll</span>
           </button>
           <div className="flex items-center gap-2">
             <Badge variant="secondary">{role === "employer" ? "employer" : "employee"}</Badge>

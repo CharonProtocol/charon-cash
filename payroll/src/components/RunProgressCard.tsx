@@ -99,7 +99,8 @@ export function RunProgressCard({
             style={{ width: `${pct}%` }}
           />
         </div>
-        <table className="w-full text-xs">
+        <div className="-mx-1 overflow-x-auto">
+          <table className="w-full min-w-[420px] text-xs">
           <tbody>
             {rows.map((r) => (
               <Row
@@ -113,7 +114,8 @@ export function RunProgressCard({
               />
             ))}
           </tbody>
-        </table>
+          </table>
+        </div>
         <div className="flex gap-2">
           {!done && <Button variant="outline" onClick={onCancel}>Cancel</Button>}
           {done && (
