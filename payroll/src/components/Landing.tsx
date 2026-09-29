@@ -1,12 +1,14 @@
 import {
   ArrowRight,
-  Building2,
+  Check,
   ChevronDown,
+  CircleDashed,
+  Code2,
   EyeOff,
   Gauge,
+  Loader2,
   ShieldCheck,
   Timer,
-  User,
   Users,
   Zap,
 } from "lucide-react"
@@ -46,21 +48,39 @@ const steps = [
   },
 ]
 
-const publicLedger = [
-  { what: "salary - engineering", to: "7fKq...3wPd", amt: "+2.10 SOL", at: "09:14" },
-  { what: "salary - design", to: "9sBv...2kQn", amt: "+1.40 SOL", at: "09:14" },
-  { what: "salary - operations", to: "4hTe...9xLm", amt: "+0.90 SOL", at: "09:15" },
-  { what: "contractor payout", to: "2mWc...8rTf", amt: "+0.65 SOL", at: "09:15" },
-  { what: "salary - marketing", to: "6pDn...5vKj", amt: "+1.15 SOL", at: "09:16" },
+const capabilities = [
+  "CSV / JSON upload with row validation",
+  "Plan review with exact fees before signing",
+  "Public or fully shielded mode per run",
+  "Live per-row progress and receipts",
+  "One-click resume of failed rows",
+  "One wallet signature per run - zero when the vault is funded",
+  "Gasless claims - employees need zero SOL",
+  "Notes encrypted to published recipient keys",
+  "Token-agnostic v2 note format",
+  "Relayer mirror sync - no chain scan for users",
 ]
 
-const shieldedLedger = [
-  { what: "pool payout", to: "****...****", amt: "****", at: "09:14" },
-  { what: "pool payout", to: "****...****", amt: "****", at: "09:14" },
-  { what: "pool payout", to: "****...****", amt: "****", at: "09:15" },
-  { what: "pool payout", to: "****...****", amt: "****", at: "09:15" },
-  { what: "pool payout", to: "****...****", amt: "****", at: "09:16" },
+const bench = [
+  { v: "0.28s", l: "one Groth16 proof - arkworks prover, in-process on the relayer" },
+  { v: "~4s", l: "one proof in the browser - snarkjs, no install" },
+  { v: "195.5k", l: "compute units per batched pool transact (append_many)" },
+  { v: "67.6s", l: "210 unequal salaries - standard circuit (63.3s packed)" },
+  { v: "11.32s", l: "same 210 salaries - batched-circuit bench pipeline" },
+  { v: "8 / tx", l: "salaries packed per transaction via SPL-memo padding" },
 ]
+
+const SDK_SNIPPET = `import { PrivacyCashClient, publishRecipientKeys } from "privacy-cash-sdk"
+
+// employees publish receiving keys once - notes are encrypted to them
+await publishRecipientKeys({ publicKey, signMessage, signTransaction })
+
+const client = new PrivacyCashClient(signer)
+await client.init()   // load the shielded pool view
+await client.unlock() // decrypt your notes locally
+
+// claim a private note to your wallet - gasless, relayed
+const r = await client.withdrawSOL(amountLamports, recipient, { relay: true })`
 
 const faqs = [
   {
@@ -77,13 +97,80 @@ const faqs = [
   },
   {
     q: "Can this be audited?",
-    a: "Deposits and exits are public by design - that is the boundary of the privacy. The employer keeps per-run receipts with every proof and signature, so the company can always account for its own payroll.Recipient-scoped viewing keys (share one payment's history without exposing anything else) are on the roadmap, not shipped yet.",
+    a: "Deposits and exits are public by design - that is the boundary of the privacy. The employer keeps per-run receipts with every proof and signature, so the company can always account for its own payroll. Recipient-scoped viewing keys (share one payment's history without exposing anything else) are on the roadmap, not shipped yet.",
   },
   {
     q: "Which tokens are supported?",
     a: "SOL payroll runs today. The private-note format (v2) is token-agnostic, so SPL stablecoins like USDC are the natural next pool - the circuit and tree do not care what the note represents.",
   },
 ]
+
+/* ---------- product mockup data ---------- */
+
+const publicLedger = [
+  { what: "salary - engineering", to: "7fKq...3wPd", amt: "+2.10 SOL", at: "09:14" },
+  { what: "salary - design", to: "9sBv...2kQn", amt: "+1.40 SOL", at: "09:14" },
+  { what: "salary - operations", to: "4hTe...9xLm", amt: "+0.90 SOL", at: "09:15" },
+  { what: "contractor payout", to: "2mWc...8rTf", amt: "+0.65 SOL", at: "09:15" },
+  { what: "salary - marketing", to: "6pDn...5vKj", amt: "+1.15 SOL", at: "09:16" },
+]
+
+const shieldedLedger = [
+  { what: "pool payout", to: "****...****", amt: "****", at: "09:14" },
+  { what: "pool payout", to: "****...****", amt: "****", at: "09:14" },
+  { what: "pool payout", to: "****...****", amt: "****", at: "09:15" },
+  { what: "pool payout", to: "****...****", amt: "****", at: "09:15" },
+  { what: "pool payout", to: "****...****", amt: "****", at: "09:16" },
+]
+
+const runRows = [
+  { who: "Alex R.", dept: "Engineering", init: "AR", amt: "******", status: "sent" },
+  { who: "Mia T.", dept: "Design", init: "MT", amt: "******", status: "sent" },
+  { who: "Dan W.", dept: "Operations", init: "DW", amt: "1.85 SOL", status: "proving" },
+  { who: "Sara K.", dept: "Marketing", init: "SK", amt: "******", status: "queued" },
+]
+
+const noteRowsMock = [
+  { leaf: "#41", at: "Oct 24" },
+  { leaf: "#42", at: "Oct 24" },
+  { leaf: "#57", at: "Nov 02" },
+]
+
+function RunStatusChip({ status }: { status: string }) {
+  if (status === "sent")
+    return (
+      <span className="inline-flex flex-none items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+        <Check className="size-3" /> sent
+      </span>
+    )
+  if (status === "proving")
+    return (
+      <span className="inline-flex flex-none items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+        <Loader2 className="size-3 animate-spin" /> proving
+      </span>
+    )
+  return (
+    <span className="inline-flex flex-none items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+      <CircleDashed className="size-3" /> queued
+    </span>
+  )
+}
+
+function LedgerRow({ what, to, amt, at, shielded }: { what: string; to: string; amt: string; at: string; shielded: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2 text-xs">
+      <span className="min-w-0 flex-1 truncate text-muted-foreground">{what}</span>
+      <span className="mono hidden text-muted-foreground sm:inline">{to}</span>
+      <span className="font-mono font-medium">{amt}</span>
+      <span className="hidden text-muted-foreground sm:inline">{at}</span>
+      {shielded ? (
+        <span className="tag tag--priv hidden md:inline-flex">shielded</span>
+      ) : (
+        <span className="tag tag--pub hidden md:inline-flex">public</span>
+      )}
+    </div>
+  )
+}
 
 export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => void }) {
   return (
@@ -110,6 +197,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         </div>
       </header>
 
+      {/* ---------- hero ---------- */}
       <section className="mx-auto max-w-5xl px-4 pb-6 pt-10 text-center sm:px-6 sm:pt-16">
         <Badge
           variant="secondary"
@@ -136,7 +224,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
           </Button>
         </div>
 
-        {/* hero product widget — what the treasurer's screen actually looks like */}
+        {/* hero product widget - the treasurer's screen, mid-run */}
         <Card className="anim anim-5 card-lift mx-auto mt-12 max-w-md border-border bg-card text-left shadow-[0_24px_60px_-24px_rgba(9,9,11,0.18)] dark:shadow-[0_24px_60px_-24px_rgba(0,0,0,0.6)]">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between text-sm">
@@ -149,14 +237,16 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
             <p className="mt-1 text-xs text-muted-foreground">
               5 employees · est. fees 0.022 SOL · one signature
             </p>
-            <div className="mt-5 flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
-              <span className="text-muted-foreground">Payout mode</span>
-              <span className="flex gap-1 rounded-md border p-0.5 font-medium">
-                <span className="rounded-md bg-secondary px-2 py-0.5 text-xs text-muted-foreground">Public</span>
-                <span className="rounded-md bg-primary px-2 py-0.5 text-xs text-primary-foreground">Private notes</span>
-              </span>
+            <div className="mt-5 mb-4">
+              <div className="mb-1.5 flex items-center justify-between text-xs text-muted-foreground">
+                <span>paying 5 people</span>
+                <span className="font-mono">3 / 5</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                <div className="progress-glow h-full w-[60%] transition-all duration-500" />
+              </div>
             </div>
-            <Button className="btn-glow mt-4 w-full" onClick={() => onRole("employer")}>
+            <Button className="btn-glow w-full" onClick={() => onRole("employer")}>
               Pay 5 employees now <ArrowRight className="ml-1 size-4" />
             </Button>
             <p className="mt-3 text-center text-[11px] text-muted-foreground">
@@ -166,7 +256,62 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         </Card>
       </section>
 
-      <section className="anim anim-6 mx-auto grid max-w-5xl grid-cols-2 gap-3 px-4 py-12 sm:px-6 lg:grid-cols-4">
+      {/* ---------- the problem: your payroll is a public record ---------- */}
+      <section className="mx-auto max-w-5xl px-4 py-14 sm:px-6">
+        <p className="eyebrow justify-center">Why private payroll</p>
+        <h2 className="h-display mb-1 text-center text-3xl sm:text-4xl">Your payroll is a public record.</h2>
+        <p className="mx-auto mb-10 max-w-xl text-center text-sm text-muted-foreground">
+          On a normal wallet, every salary is permanent, public data — who you employ, what you pay
+          them, and how much is left. The same run through the pool:
+        </p>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card className="card-lift">
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between text-base">
+                <span>Public payroll</span>
+                <span className="tag tag--pub">public</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="flex items-center justify-between rounded-lg bg-secondary px-3 py-2.5 text-sm">
+                <span className="text-muted-foreground">Treasury balance</span>
+                <span className="stat-number font-bold">48.20 SOL</span>
+              </div>
+              {publicLedger.map((r, i) => (
+                <LedgerRow key={i} what={r.what} to={r.to} amt={r.amt} at={r.at} shielded={false} />
+              ))}
+              <p className="pt-1 text-xs leading-relaxed text-muted-foreground">
+                Every row is a permanent public record - salaries, headcount, and who still works
+                there, readable by anyone with the treasury address.
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="card-lift bg-secondary/50">
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between text-base">
+                <span>Shielded payroll</span>
+                <span className="tag tag--priv">shielded</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="flex items-center justify-between rounded-lg bg-card px-3 py-2.5 text-sm">
+                <span className="text-muted-foreground">Treasury balance</span>
+                <span className="stat-number font-bold">****</span>
+              </div>
+              {shieldedLedger.map((r, i) => (
+                <LedgerRow key={i} what={r.what} to={r.to} amt={r.amt} at={r.at} shielded={true} />
+              ))}
+              <p className="pt-1 text-xs leading-relaxed text-muted-foreground">
+                The deposit is public - which salary it funded never is. Amounts, recipients, and
+                the remaining balance stay inside the pool.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      {/* ---------- stats ---------- */}
+      <section className="anim anim-6 mx-auto grid max-w-5xl grid-cols-2 gap-3 px-4 py-10 sm:px-6 lg:grid-cols-4">
         {stats.map((s) => (
           <Card key={s.v} className="card-lift">
             <CardContent className="pt-6">
@@ -178,45 +323,161 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         ))}
       </section>
 
-      <section className="mx-auto grid max-w-5xl gap-4 px-4 py-8 sm:px-6 md:grid-cols-2">
-        <Card className="card-lift bg-secondary/50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Building2 className="size-5 text-emerald-600 dark:text-emerald-400" /> For employers
+      {/* ---------- employer use case: the run screen ---------- */}
+      <section className="mx-auto grid max-w-5xl items-center gap-10 px-4 py-14 sm:px-6 lg:grid-cols-2">
+        <div>
+          <p className="eyebrow">For employers</p>
+          <h2 className="h-display mb-3 text-3xl">The whole run, from one screen</h2>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Sign in with your treasury wallet, drop in a CSV, and review the exact plan and fees
+            before anything is signed. Then watch every salary prove, relay, and confirm - live.
+          </p>
+          <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
+            {[
+              "CSV / JSON upload with per-row validation",
+              "Public mode or fully shielded notes per run",
+              "Live progress, receipts, one-click resume of failed rows",
+              "One signature for the whole run - zero when the vault is funded",
+            ].map((li) => (
+              <li key={li} className="flex items-start gap-2">
+                <Check className="mt-0.5 size-4 flex-none text-emerald-600 dark:text-emerald-400" />
+                {li}
+              </li>
+            ))}
+          </ul>
+          <Button className="btn-glow mt-6" onClick={() => onRole("employer")}>
+            Sign in as employer <ArrowRight className="ml-1 size-4" />
+          </Button>
+        </div>
+        <Card className="card-lift mx-auto w-full max-w-md border-border bg-card shadow-[0_24px_60px_-24px_rgba(9,9,11,0.18)] dark:shadow-[0_24px_60px_-24px_rgba(0,0,0,0.6)]">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center justify-between text-sm">
+              <span className="flex items-center gap-2">
+                <span className="flex size-7 items-center justify-center rounded-lg bg-secondary font-mono text-[11px] font-semibold text-muted-foreground">
+                  #2847
+                </span>
+                October payroll
+              </span>
+              <Badge variant="secondary" className="gap-1">
+                <EyeOff className="size-3" /> shielded
+              </Badge>
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>Sign in with your treasury wallet and pay everyone from one screen:</p>
-            <ul className="list-inside list-disc space-y-1">
-              <li>Upload a CSV of addresses and amounts, review the plan and fees</li>
-              <li>Public mode or fully shielded notes (v2) per run</li>
-              <li>Live progress, receipts, and one-click resume of failed rows</li>
-            </ul>
-            <Button className="btn-glow mt-3 w-full" onClick={() => onRole("employer")}>
-              Sign in as employer
-            </Button>
-          </CardContent>
-        </Card>
-        <Card className="card-lift">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <User className="size-5 text-emerald-600 dark:text-emerald-400" /> For employees
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>Your regular wallet is all you need:</p>
-            <ul className="list-inside list-disc space-y-1">
-              <li>One-time toggle to receive private notes instead of public transfers</li>
-              <li>See every payment that's yours — amounts hidden from everyone else</li>
-              <li>Claim notes to your public balance whenever you like</li>
-            </ul>
-            <Button className="mt-3 w-full" variant="outline" onClick={() => onRole("employee")}>
-              Sign in as employee
-            </Button>
+          <CardContent className="space-y-3">
+            <div>
+              <div className="mb-1.5 flex items-center justify-between text-xs text-muted-foreground">
+                <span>paying 20 people</span>
+                <span className="font-mono">13 / 20</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                <div className="progress-glow h-full w-[65%] transition-all duration-500" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              {runRows.map((r) => (
+                <div key={r.who} className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2">
+                  <span className="flex size-7 flex-none items-center justify-center rounded-full bg-secondary text-[11px] font-semibold text-muted-foreground">
+                    {r.init}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-medium">{r.who}</span>
+                    <span className="hidden text-[11px] text-muted-foreground sm:block">{r.dept}</span>
+                  </span>
+                  <span className="font-mono text-xs">{r.amt}</span>
+                  <RunStatusChip status={r.status} />
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between border-t pt-3 text-xs text-muted-foreground">
+              <span>total disbursed</span>
+              <span className="font-mono">****** · est. fees 0.022 SOL</span>
+            </div>
           </CardContent>
         </Card>
       </section>
 
+      {/* ---------- employee use case: the claim screen ---------- */}
+      <section className="mx-auto grid max-w-5xl items-center gap-10 px-4 py-14 sm:px-6 lg:grid-cols-2">
+        <Card className="card-lift order-2 mx-auto w-full max-w-sm border-border bg-card shadow-[0_24px_60px_-24px_rgba(9,9,11,0.18)] dark:shadow-[0_24px_60px_-24px_rgba(0,0,0,0.6)] lg:order-1">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center justify-between text-sm">
+              <span>My payments</span>
+              <Badge variant="outline" className="font-mono text-[11px]">
+                7fKq...3wPd
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-lg border bg-secondary/60 p-3">
+                <p className="text-[11px] text-muted-foreground">Private notes</p>
+                <p className="stat-number mt-0.5 text-lg font-bold">4.15 SOL</p>
+                <p className="text-[11px] text-muted-foreground">3 notes, shielded</p>
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-[11px] text-muted-foreground">Wallet balance</p>
+                <p className="stat-number mt-0.5 text-lg font-bold">0.42 SOL</p>
+                <p className="text-[11px] text-muted-foreground">public, spendable</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {noteRowsMock.map((n) => (
+                <div key={n.leaf} className="flex items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2 text-xs">
+                  <span className="font-mono font-medium">**** SOL</span>
+                  <span className="text-muted-foreground">note {n.leaf}</span>
+                  <span className="hidden text-muted-foreground sm:inline">{n.at}</span>
+                  <span className="tag tag--priv">claimable</span>
+                </div>
+              ))}
+            </div>
+            <Button className="btn-glow w-full">Claim to wallet</Button>
+            <p className="text-center text-[11px] text-muted-foreground">
+              gasless - no SOL needed, the relayer submits for you
+            </p>
+          </CardContent>
+        </Card>
+        <div className="order-1 lg:order-2">
+          <p className="eyebrow">For employees</p>
+          <h2 className="h-display mb-3 text-3xl">Get paid without publishing it</h2>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Your regular wallet is all you need. A one-time toggle publishes your receiving keys,
+            and every payout after that arrives as a private note that only you can read.
+          </p>
+          <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
+            {[
+              "One-time enable - two signatures, then nothing to do",
+              "See every payment that's yours - amounts hidden from everyone else",
+              "Claim notes to plain SOL whenever you like, gasless",
+            ].map((li) => (
+              <li key={li} className="flex items-start gap-2">
+                <Check className="mt-0.5 size-4 flex-none text-emerald-600 dark:text-emerald-400" />
+                {li}
+              </li>
+            ))}
+          </ul>
+          <Button className="mt-6" variant="outline" onClick={() => onRole("employee")}>
+            Sign in as employee <ArrowRight className="ml-1 size-4" />
+          </Button>
+        </div>
+      </section>
+
+      {/* ---------- capabilities ---------- */}
+      <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+        <p className="eyebrow justify-center">Capabilities</p>
+        <h2 className="h-display mb-8 text-center text-3xl">Everything a payroll run needs</h2>
+        <div className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
+          {capabilities.map((c) => (
+            <div key={c} className="flex items-start gap-3 text-sm text-muted-foreground">
+              <span className="mt-0.5 flex size-5 flex-none items-center justify-center rounded-full bg-emerald-50 dark:bg-emerald-500/10">
+                <Check className="size-3 text-emerald-600 dark:text-emerald-400" />
+              </span>
+              {c}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ---------- how it works ---------- */}
       <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
         <h2 className="h-display mb-1 text-center text-3xl">How it works</h2>
         <p className="mb-8 text-center text-sm text-muted-foreground">
@@ -241,59 +502,68 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         </div>
       </section>
 
+      {/* ---------- benchmarks ---------- */}
       <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
-        <h2 className="h-display mb-1 text-center text-3xl">What an observer sees</h2>
+        <p className="eyebrow justify-center">Benchmarks</p>
+        <h2 className="h-display mb-1 text-center text-3xl">Measured, not promised</h2>
         <p className="mb-8 text-center text-sm text-muted-foreground">
-          The same payroll run, twice - sent from a normal wallet, and sent through the pool.
+          Every number is from a logged run on an 8 GB laptop against a local validator - see{" "}
+          <span className="mono">payroll/SPEED-JOURNEY.html</span>.
         </p>
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card className="card-lift">
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between text-base">
-                <span>Public payroll</span>
-                <span className="tag tag--pub">public</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {publicLedger.map((r, i) => (
-                <div key={i} className="flex items-center justify-between rounded-lg border px-3 py-2 text-xs">
-                  <span className="text-muted-foreground">{r.what}</span>
-                  <span className="mono text-muted-foreground">{r.to}</span>
-                  <span className="font-mono font-medium">{r.amt}</span>
-                  <span className="text-muted-foreground">{r.at}</span>
-                </div>
-              ))}
-              <p className="pt-1 text-xs text-muted-foreground">
-                Every row is a permanent public record - salaries, staff count, and who still works
-                there, readable by anyone with the treasury address.
-              </p>
-            </CardContent>
-          </Card>
-          <Card className="card-lift bg-secondary/50">
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between text-base">
-                <span>Shielded payroll</span>
-                <span className="tag tag--priv">shielded</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {shieldedLedger.map((r, i) => (
-                <div key={i} className="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-xs">
-                  <span className="text-muted-foreground">{r.what}</span>
-                  <span className="mono text-muted-foreground">{r.to}</span>
-                  <span className="font-mono font-medium">{r.amt}</span>
-                  <span className="text-muted-foreground">{r.at}</span>
-                </div>
-              ))}
-              <p className="pt-1 text-xs text-muted-foreground">
-                The deposit is public - which salary it funded never is. Amounts, recipients, and
-                the remaining balance stay inside the pool.
-              </p>
-            </CardContent>
-          </Card>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {bench.map((b) => (
+            <Card key={b.v} className="card-lift">
+              <CardContent className="pt-6">
+                <div className="stat-number text-3xl font-bold">{b.v}</div>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{b.l}</p>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       </section>
 
+      {/* ---------- developers ---------- */}
+      <section className="mx-auto grid max-w-5xl items-center gap-8 px-4 py-10 sm:px-6 lg:grid-cols-2">
+        <div>
+          <p className="eyebrow">For developers</p>
+          <h2 className="h-display mb-3 text-3xl">One SDK, the whole pool</h2>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            The TypeScript SDK talks to your wallet and the relayer: scanning, note decryption, proof
+            generation, and gasless claims - without running provers, syncing merkle trees, or
+            shipping circuit builds yourself.
+          </p>
+          <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
+            <li className="flex items-start gap-2">
+              <Check className="mt-0.5 size-4 flex-none text-emerald-600 dark:text-emerald-400" />
+              Browser-native Groth16 proving (snarkjs), or relayer-side arkworks
+            </li>
+            <li className="flex items-start gap-2">
+              <Check className="mt-0.5 size-4 flex-none text-emerald-600 dark:text-emerald-400" />
+              Recipients registry - notes encrypted to published keys
+            </li>
+            <li className="flex items-start gap-2">
+              <Check className="mt-0.5 size-4 flex-none text-emerald-600 dark:text-emerald-400" />
+              Note backup, restore, and export built in
+            </li>
+          </ul>
+        </div>
+        <Card className="overflow-hidden bg-zinc-950 text-zinc-100 shadow-[0_1px_2px_rgba(9,9,11,0.03),0_14px_36px_-16px_rgba(9,9,11,0.14)] dark:bg-zinc-900">
+          <CardContent className="px-0 py-0">
+            <div className="flex items-center gap-1.5 border-b border-zinc-800 px-5 py-3">
+              <span className="size-2.5 rounded-full bg-zinc-700" />
+              <span className="size-2.5 rounded-full bg-zinc-700" />
+              <span className="size-2.5 rounded-full bg-zinc-700" />
+              <span className="mono ml-2 text-[11px] text-zinc-500">claim.ts</span>
+              <Code2 className="ml-auto size-3.5 text-zinc-500" />
+            </div>
+            <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed">
+              <code>{SDK_SNIPPET}</code>
+            </pre>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* ---------- faq ---------- */}
       <section className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
         <h2 className="h-display mb-1 text-center text-3xl">Questions, answered</h2>
         <p className="mb-8 text-center text-sm text-muted-foreground">
@@ -312,6 +582,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         </div>
       </section>
 
+      {/* ---------- what the chain never learns ---------- */}
       <section className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
         <Card className="card-lift bg-secondary/50">
           <CardContent className="flex flex-col items-center gap-4 pt-6 text-center sm:flex-row sm:text-left">
@@ -328,7 +599,28 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         </Card>
       </section>
 
-      <footer className="mx-auto max-w-5xl px-4 py-10 text-center sm:px-6 text-xs text-muted-foreground">
+      {/* ---------- final cta ---------- */}
+      <section className="mx-auto max-w-5xl px-4 pb-4 pt-10 sm:px-6">
+        <Card className="card-lift bg-secondary/50">
+          <CardContent className="flex flex-col items-center gap-5 pt-8 pb-8 text-center">
+            <h2 className="h-display max-w-xl text-3xl sm:text-4xl">Ready to run a shielded payroll?</h2>
+            <p className="max-w-md text-sm text-muted-foreground">
+              One signature for the whole run - none once the vault is funded. Employees claim
+              gasless, with nothing but a regular wallet.
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <Button size="lg" className="btn-glow" onClick={() => onRole("employer")}>
+                Run payroll <ArrowRight className="ml-1 size-4" />
+              </Button>
+              <Button size="lg" variant="outline" onClick={() => onRole("employee")}>
+                I'm an employee
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <footer className="mx-auto max-w-5xl px-4 py-10 text-center text-xs text-muted-foreground sm:px-6">
         Runs against your configured Solana cluster and relayer — see Settings after signing in.
         Every number on this page is measured: 210-employee runs on a local validator, logged in{" "}
         <span className="mono">payroll/SPEED-JOURNEY.html</span>.
