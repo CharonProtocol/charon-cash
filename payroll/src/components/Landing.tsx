@@ -15,8 +15,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 const stats = [
-  { v: "902s → 11.3s", l: "to pay 210 salaries — day one vs today", icon: Timer },
-  { v: "80×", l: "faster, on the same 8 GB laptop", icon: Gauge },
+  { v: "902s → 67.6s", l: "to pay 210 salaries — day one vs today, standard circuit", icon: Timer },
+  { v: "13×", l: "faster, on the same 8 GB laptop", icon: Gauge },
   { v: "210 / 210", l: "paid exact — unequal salaries, 0 failures", icon: Users },
   { v: "1", l: "wallet signature for the whole run (0 when the vault is funded)", icon: Zap },
 ]
@@ -35,7 +35,7 @@ const steps = [
   {
     n: "3",
     title: "Pay",
-    body: "Every salary leaves with its own zero-knowledge proof. 210 people in ~11 seconds, 0 retries.",
+    body: "Every salary leaves with its own zero-knowledge proof. 210 people in ~68 seconds on a tuned relayer, 0 failures.",
   },
   {
     n: "4",
@@ -185,7 +185,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
           {steps.map((s) => (
             <Card key={s.n} className="card-lift relative">
               <CardContent className="pt-6">
-                <div className="relative z-10 mb-3 flex size-9 items-center justify-center rounded-full border border-primary/30 bg-background font-mono text-sm font-semibold text-primary shadow-[0_0_18px_-4px] shadow-primary/50">
+                <div className="relative z-10 mb-3 flex size-9 items-center justify-center rounded-full border border-zinc-300 bg-background font-mono text-sm font-semibold text-primary">
                   {s.n}
                 </div>
                 <div className="font-medium">{s.title}</div>

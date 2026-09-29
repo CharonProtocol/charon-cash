@@ -81,8 +81,8 @@ export function UploadCard({ onParsed }: { onParsed: (p: ParsedFile | null) => v
           }}
           className={`flex w-full cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed px-6 py-9 text-center transition-all ${
             drag
-              ? "border-primary bg-primary/10 shadow-[0_0_40px_-10px] shadow-primary/60"
-              : "border-border hover:border-primary/50 hover:bg-secondary/50"
+              ? "border-zinc-950 bg-zinc-50 dark:border-zinc-300 dark:bg-zinc-900"
+              : "border-border hover:border-zinc-400 hover:bg-zinc-50 dark:hover:border-zinc-500 dark:hover:bg-zinc-900"
           }`}
         >
           <div className="flex size-12 items-center justify-center rounded-xl bg-primary/10">

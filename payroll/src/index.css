@@ -3,78 +3,95 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * BOT SQUAD - crisp minimalist fintech (light).
+ * Pure white canvas, zinc hairlines, obsidian type, black primary actions,
+ * emerald = verified, amber = warning, rose = critical, ice blue = protocol.
+ * Dark mode is the zinc twin of the same system.
+ */
 :root {
-  --radius: 0.875rem;
+  --radius: 0.625rem;
 
-  /* light-editorial palette */
+  /* neutrals */
   --paper: #ffffff;
-  --panel: #f5f6f8;
-  --panel-2: #eef0f4;
-  --line: #e4e7ec;
-  --line-2: #d4d8e0;
-  --ink: #0e1116;
-  --body-ink: #3f4757;
-  --mute: #868f9e;
-  --accent: #5b54e6;
-  --accent-soft: #ecebfc;
+  --panel: #f9fafb;      /* zinc-50 */
+  --panel-2: #f4f4f5;    /* zinc-100 */
+  --line: #e4e4e7;       /* zinc-200 */
+  --line-2: #d4d4d8;     /* zinc-300 */
+  --ink: #09090b;        /* zinc-950 */
+  --body-ink: #3f3f46;   /* zinc-700 */
+  --mute: #71717a;       /* zinc-500 */
+  --accent: #09090b;
+  --accent-soft: #f4f4f5;
+
+  /* functional */
+  --ok: #10b981;         /* emerald-500 */
+  --warn: #f59e0b;       /* amber-500 */
+  --critical: #f43f5e;   /* rose-500 */
+  --protocol: #0284c7;   /* sky-600 */
 
   /* shadcn semantic tokens (light) */
   --background: #ffffff;
-  --foreground: #0e1116;
+  --foreground: #09090b;
   --card: #ffffff;
-  --card-foreground: #0e1116;
+  --card-foreground: #09090b;
   --popover: #ffffff;
-  --popover-foreground: #0e1116;
-  --primary: #5b54e6;
+  --popover-foreground: #09090b;
+  --primary: #09090b;
   --primary-foreground: #ffffff;
-  --secondary: #eef0f4;
-  --secondary-foreground: #0e1116;
-  --muted: #f5f6f8;
-  --muted-foreground: #868f9e;
-  --accent-2: #5b54e6;
-  --accent-foreground: #ffffff;
-  --destructive: #dc2626;
-  --border: #e4e7ec;
-  --input: #e4e7ec;
-  --ring: #5b54e6;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #09090b;
+  --muted: #f9fafb;
+  --muted-foreground: #71717a;
+  --accent-2: #f4f4f5;
+  --accent-foreground: #09090b;
+  --destructive: #f43f5e;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #09090b;
 }
 
 .dark {
-  --paper: #0c0e12;
-  --panel: #141820;
-  --panel-2: #1a1f2a;
-  --line: #2a3140;
-  --line-2: #3a4254;
-  --ink: #e8eaef;
-  --body-ink: #b4bac8;
-  --mute: #8b93a7;
-  --accent: #8b85f0;
-  --accent-soft: #1e1c3a;
+  --paper: #09090b;
+  --panel: #131316;
+  --panel-2: #18181b;
+  --line: #27272a;
+  --line-2: #3f3f46;
+  --ink: #fafafa;
+  --body-ink: #d4d4d8;
+  --mute: #a1a1aa;
+  --accent: #fafafa;
+  --accent-soft: #27272a;
 
-  --background: #0c0e12;
-  --foreground: #e8eaef;
-  --card: #141820;
-  --card-foreground: #e8eaef;
-  --popover: #141820;
-  --popover-foreground: #e8eaef;
-  --primary: #8b85f0;
-  --primary-foreground: #0c0e12;
-  --secondary: #1a1f2a;
-  --secondary-foreground: #e8eaef;
-  --muted: #1a1f2a;
-  --muted-foreground: #8b93a7;
-  --accent-2: #8b85f0;
-  --accent-foreground: #0c0e12;
-  --destructive: #f87171;
-  --border: #2a3140;
-  --input: #2a3140;
-  --ring: #8b85f0;
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --critical: #fb7185;
+  --protocol: #38bdf8;
+
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #131316;
+  --card-foreground: #fafafa;
+  --popover: #131316;
+  --popover-foreground: #fafafa;
+  --primary: #fafafa;
+  --primary-foreground: #09090b;
+  --secondary: #1f1f23;
+  --secondary-foreground: #fafafa;
+  --muted: #1f1f23;
+  --muted-foreground: #a1a1aa;
+  --accent-2: #27272a;
+  --accent-foreground: #fafafa;
+  --destructive: #fb7185;
+  --border: #27272a;
+  --input: #27272a;
+  --ring: #fafafa;
 }
 
 /*
  * Map the semantic tokens to Tailwind v4 color utilities so the shadcn
  * primitives resolve (bg-primary, bg-card, text-muted-foreground, border-input,
- * bg-destructive, ring-ring …). Without this block those classes are no-ops.
+ * bg-destructive, ring-ring ...). Without this block those classes are no-ops.
  */
 @theme inline {
   --color-background: var(--background);
@@ -98,22 +115,23 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
-  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
-  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-display: "Inter", ui-sans-serif, system-ui, sans-serif;
 }
 
 body {
   background-color: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   min-height: 100vh;
 }
 
-/* ---------- editorial utility classes (ported from presentation.html) ---------- */
+/* ---------- utility classes ---------- */
 .eyebrow {
   font-family: var(--font-mono);
   font-size: 0.74rem;
@@ -127,10 +145,10 @@ body {
 }
 .eyebrow::before {
   content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 2px;
-  background: var(--accent);
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--ok);
 }
 
 .chip {
@@ -142,7 +160,7 @@ body {
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--body-ink);
-  background: var(--panel);
+  background: var(--paper);
   border: 1px solid var(--line);
   padding: 0.4em 0.8em;
   border-radius: 999px;
@@ -150,23 +168,23 @@ body {
 }
 .chip::before {
   content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  background: var(--cc, var(--accent));
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--cc, var(--ink));
 }
-.chip--program { --cc: #111827; }
-.chip--indexer { --cc: #0e7c86; }
-.chip--wallet  { --cc: #5b54e6; }
-.chip--sdk     { --cc: #b45309; }
-.chip--data    { --cc: #424a57; }
+.chip--program { --cc: #09090b; }
+.chip--indexer { --cc: #10b981; }
+.chip--wallet  { --cc: #0284c7; }
+.chip--sdk     { --cc: #f59e0b; }
+.chip--data    { --cc: #71717a; }
 
 .mono { font-family: var(--font-mono); }
-.accent-text { color: var(--accent); }
+.accent-text { color: var(--ink); }
 .h-display {
   font-family: var(--font-display);
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
 }
 
 .tag {
@@ -176,13 +194,18 @@ body {
   font-family: var(--font-mono);
   font-size: 0.72rem;
   padding: 0.28em 0.6em;
-  border-radius: 7px;
+  border-radius: 999px;
   border: 1px solid var(--line);
 }
 .tag--pub {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
-  color: var(--accent);
-  background: var(--accent-soft);
+  border-color: #bae6fd; /* sky-200 */
+  color: #0369a1;        /* sky-700 */
+  background: #f0f9ff;   /* sky-50 */
+}
+.dark .tag--pub {
+  border-color: #155e75; /* cyan-800 */
+  color: #7dd3fc;        /* sky-300 */
+  background: rgba(2, 132, 199, 0.12);
 }
 .tag--priv {
   border-style: dashed;
@@ -207,7 +230,7 @@ body {
   background: var(--mute);
 }
 
-/* ---------- demo shine: aurora field behind everything ---------- */
+/* ---------- backdrop: pure white canvas with a faint hairline grid ---------- */
 .aurora {
   position: fixed;
   inset: 0;
@@ -215,110 +238,62 @@ body {
   overflow: hidden;
   pointer-events: none;
 }
-.aurora::before,
-.aurora::after {
-  content: "";
-  position: absolute;
-  width: 58vw;
-  height: 58vw;
-  border-radius: 50%;
-  filter: blur(90px);
-  opacity: 0.22;
-}
-.aurora::before {
-  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 70%, transparent), transparent 65%);
-  top: -22vw;
-  right: -12vw;
-  animation: aurora-drift 18s ease-in-out infinite alternate;
-}
-.aurora::after {
-  background: radial-gradient(circle, rgba(76, 195, 138, 0.5), transparent 65%);
-  bottom: -28vw;
-  left: -16vw;
-  animation: aurora-drift 24s ease-in-out infinite alternate-reverse;
-}
-.dark .aurora::before { opacity: 0.32; }
-.dark .aurora::after { opacity: 0.2; }
 .aurora .grid-lines {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(var(--line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--line) 45%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--line) 45%, transparent) 1px, transparent 1px);
   background-size: 44px 44px;
-  mask-image: radial-gradient(ellipse 85% 65% at 50% 0%, black 25%, transparent 78%);
-  opacity: 0.55;
-}
-@keyframes aurora-drift {
-  from { transform: translate(0, 0) scale(1); }
-  to { transform: translate(-6vw, 8vh) scale(1.15); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .aurora::before, .aurora::after { animation: none; }
+  mask-image: radial-gradient(ellipse 85% 60% at 50% 0%, black 20%, transparent 75%);
+  opacity: 0.5;
 }
 
-/* glowing primary action */
+/* primary action: flat obsidian, no glow */
 .btn-glow {
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--primary) 55%, transparent),
-    0 10px 34px -8px color-mix(in srgb, var(--primary) 60%, transparent);
-  transition: box-shadow 0.25s ease, transform 0.25s ease;
-}
-.btn-glow:hover {
-  box-shadow:
-    0 0 0 1px var(--primary),
-    0 14px 44px -8px color-mix(in srgb, var(--primary) 80%, transparent);
-  transform: translateY(-1px);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
-/* cards that answer the cursor */
+/* cards: hairline border darkens on hover, no lift */
 .card-lift {
-  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .card-lift:hover {
-  transform: translateY(-3px);
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
-  box-shadow: 0 18px 44px -20px color-mix(in srgb, var(--accent) 50%, transparent);
+  border-color: var(--line-2);
 }
 
-/* gradient accent text */
+/* accent text: solid ink (no gradient) */
 .text-gradient {
-  background: linear-gradient(100deg, var(--accent) 10%, #4cc38a 90%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--ink);
 }
 
-/* animated progress fill */
+/* progress fill: solid emerald */
 .progress-glow {
-  background: linear-gradient(90deg, var(--accent), #4cc38a, var(--accent));
-  background-size: 200% 100%;
-  animation: progress-shimmer 2.2s linear infinite;
-  box-shadow: 0 0 14px -2px color-mix(in srgb, var(--accent) 60%, transparent);
-}
-@keyframes progress-shimmer {
-  to { background-position: -200% 0; }
+  background: var(--ok);
 }
 
 /* big measured numbers */
 .stat-number {
   font-family: var(--font-display);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
 }
 
-/* ---------- wallet-adapter connect popup → match the app theme ---------- */
+/* ---------- wallet-adapter connect popup -> match the app theme ---------- */
 .wallet-adapter-modal-container,
 .wallet-adapter-modal-overlay {
-  background: rgba(6, 8, 12, 0.6) !important;
-  backdrop-filter: blur(6px);
+  background: rgba(9, 9, 11, 0.4) !important;
+  backdrop-filter: blur(4px);
 }
 .wallet-adapter-modal-wrapper {
   background: var(--card) !important;
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)) !important;
-  border-radius: 1.1rem !important;
-  box-shadow: 0 40px 90px -24px rgba(0, 0, 0, 0.65), 0 0 60px -20px color-mix(in srgb, var(--accent) 45%, transparent) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 1rem !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
   font-family: var(--font-sans) !important;
+}
+.dark .wallet-adapter-modal-wrapper {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7) !important;
 }
 .wallet-adapter-modal-title,
 .wallet-adapter-modal-content,
@@ -330,12 +305,12 @@ body {
   font-family: var(--font-sans) !important;
 }
 .wallet-adapter-modal-title {
-  font-family: var(--font-display) !important;
-  font-weight: 700 !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.025em !important;
 }
 .wallet-adapter-modal-list-more,
 .wallet-adapter-modal-middle-button {
-  color: var(--accent) !important;
+  color: var(--foreground) !important;
 }
 .wallet-adapter-modal-button-close {
   background: var(--panel) !important;
@@ -345,21 +320,21 @@ body {
   font-family: var(--font-sans) !important;
   font-size: 1rem !important;
   font-weight: 500 !important;
-  border-radius: 0.8rem !important;
-  background: var(--panel) !important;
+  border-radius: 0.625rem !important;
+  background: var(--paper) !important;
   color: var(--foreground) !important;
   border: 1px solid var(--line) !important;
-  transition: border-color 0.2s ease, transform 0.2s ease !important;
+  transition: background-color 0.15s ease, border-color 0.15s ease !important;
 }
 .wallet-adapter-button:hover:not([disabled]) {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--line)) !important;
-  transform: translateY(-1px);
+  background: var(--panel) !important;
+  border-color: var(--line-2) !important;
 }
 .wallet-adapter-button[disabled] {
   opacity: 0.45 !important;
 }
 .wallet-adapter-modal-list-item {
-  border-radius: 0.8rem !important;
+  border-radius: 0.625rem !important;
 }
 .wallet-adapter-modal-list-item > .wallet-adapter-button {
   width: 100% !important;

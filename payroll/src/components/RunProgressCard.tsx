@@ -33,7 +33,7 @@ function Row({ status, address, memo, sig, error, noteLeafIndex }: {
   return (
     <tr className="border-t">
       <td className="px-3 py-1.5">
-        {status === "confirmed" ? <CheckCircle2 className="size-4 text-green-600" />
+        {status === "confirmed" ? <CheckCircle2 className="size-4 text-emerald-600" />
           : status === "failed" ? <Ban className="size-4 text-destructive" />
           : status === "queued" ? <CircleDashed className="size-4 text-muted-foreground" />
           : <Loader2 className="size-4 animate-spin text-muted-foreground" />}

@@ -97,7 +97,7 @@ export function EmployerApp() {
       {!publicKey ? (
         <Card className="card-lift border-dashed">
           <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
-            <div className="flex size-16 items-center justify-center rounded-2xl border border-primary/30 bg-primary/10 shadow-[0_0_36px_-6px] shadow-primary/50">
+            <div className="flex size-16 items-center justify-center rounded-2xl border border-zinc-200 bg-secondary">
               <Wallet className="size-7 text-primary" />
             </div>
             <div>
