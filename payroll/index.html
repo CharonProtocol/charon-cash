@@ -12,10 +12,9 @@
       rel="stylesheet"
     />
     <script>
-      // paint the right theme before first render (no white flash in dark mode)
+      // light by default; dark only when the user picked it (no white flash)
       try {
-        var t = localStorage.getItem("privacy-cash-theme")
-        if (t === "dark" || (!t && matchMedia("(prefers-color-scheme: dark)").matches))
+        if (localStorage.getItem("privacy-cash-theme") === "dark")
           document.documentElement.classList.add("dark")
       } catch (e) {}
     </script>

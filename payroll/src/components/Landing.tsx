@@ -13,6 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ThemeToggle } from "@/components/ThemeToggle"
 
 const stats = [
   { v: "902s → 67.6s", l: "to pay 210 salaries — day one vs today, standard circuit", icon: Timer },
@@ -59,6 +60,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
           <span className="h-display text-lg">Privacy Payroll</span>
         </div>
         <div className="flex items-center gap-2">
+          <ThemeToggle />
           <Button variant="ghost" size="sm" onClick={() => onRole("employee")}>
             Employee sign in
           </Button>
@@ -69,20 +71,23 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
       </header>
 
       <section className="mx-auto max-w-5xl px-6 pb-6 pt-16 text-center">
-        <Badge variant="secondary" className="mb-6 px-3 py-1.5">
+        <Badge
+          variant="secondary"
+          className="anim anim-1 mb-6 rounded-full border-emerald-200 bg-emerald-50 px-3.5 py-1.5 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+        >
           <EyeOff className="mr-1 size-3" /> zero-knowledge payroll · solana
         </Badge>
-        <h1 className="h-display mx-auto max-w-3xl text-5xl leading-[1.05] sm:text-6xl">
+        <h1 className="h-display anim anim-2 mx-auto max-w-3xl text-5xl leading-[1.05] sm:text-6xl">
           Pay your whole team.
           <br />
           <span className="text-gradient">Prove nothing on-chain.</span>
         </h1>
-        <p className="mx-auto mt-6 max-w-xl text-pretty text-muted-foreground">
+        <p className="anim anim-3 mx-auto mt-6 max-w-xl text-pretty text-lg text-muted-foreground">
           Run payroll from a Solana wallet with zero-knowledge proofs. An observer sees a deposit go
           in and salaries come out — but can never link the two, the amounts in between, or your
           company's remaining balance.
         </p>
-        <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
+        <div className="anim anim-4 mt-9 flex flex-wrap items-center justify-center gap-3">
           <Button size="lg" className="btn-glow" onClick={() => onRole("employer")}>
             Run payroll <ArrowRight className="ml-1 size-4" />
           </Button>
@@ -92,7 +97,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         </div>
 
         {/* hero product widget — what the treasurer's screen actually looks like */}
-        <Card className="card-lift mx-auto mt-12 max-w-md border-primary/25 bg-card/80 text-left backdrop-blur">
+        <Card className="anim anim-5 card-lift mx-auto mt-12 max-w-md border-border bg-card text-left shadow-[0_24px_60px_-24px_rgba(9,9,11,0.18)] dark:shadow-[0_24px_60px_-24px_rgba(0,0,0,0.6)]">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">October payroll</span>
@@ -121,11 +126,11 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         </Card>
       </section>
 
-      <section className="mx-auto grid max-w-5xl grid-cols-2 gap-3 px-6 py-12 lg:grid-cols-4">
+      <section className="anim anim-6 mx-auto grid max-w-5xl grid-cols-2 gap-3 px-6 py-12 lg:grid-cols-4">
         {stats.map((s) => (
           <Card key={s.v} className="card-lift">
             <CardContent className="pt-6">
-              <s.icon className="mb-3 size-4 text-primary" />
+              <s.icon className="mb-3 size-4 text-emerald-600 dark:text-emerald-400" />
               <div className="stat-number text-2xl font-bold sm:text-[1.7rem]">{s.v}</div>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{s.l}</p>
             </CardContent>
@@ -134,10 +139,10 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
       </section>
 
       <section className="mx-auto grid max-w-5xl gap-4 px-6 py-8 md:grid-cols-2">
-        <Card className="card-lift border-primary/25 bg-secondary/40">
+        <Card className="card-lift bg-secondary/50">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Building2 className="size-5 text-primary" /> For employers
+              <Building2 className="size-5 text-emerald-600 dark:text-emerald-400" /> For employers
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">
@@ -155,7 +160,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         <Card className="card-lift">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <User className="size-5 text-primary" /> For employees
+              <User className="size-5 text-emerald-600 dark:text-emerald-400" /> For employees
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">
@@ -199,7 +204,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
       <section className="mx-auto max-w-5xl px-6 py-8">
         <Card className="card-lift bg-secondary/50">
           <CardContent className="flex flex-col items-center gap-4 pt-6 text-center sm:flex-row sm:text-left">
-            <ShieldCheck className="size-8 flex-none text-primary" />
+            <ShieldCheck className="size-8 flex-none text-emerald-600 dark:text-emerald-400" />
             <div>
               <p className="font-medium">What the chain never learns</p>
               <p className="mt-1 text-sm leading-relaxed text-muted-foreground">

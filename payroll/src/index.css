@@ -254,12 +254,17 @@ body {
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
-/* cards: hairline border darkens on hover, no lift */
+/* cards: hairline border + soft shadow lift on hover */
 .card-lift {
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.2s ease, box-shadow 0.25s ease, transform 0.25s ease;
 }
 .card-lift:hover {
   border-color: var(--line-2);
+  transform: translateY(-2px);
+  box-shadow: 0 16px 40px -16px rgba(9, 9, 11, 0.16);
+}
+.dark .card-lift:hover {
+  box-shadow: 0 16px 40px -16px rgba(0, 0, 0, 0.6);
 }
 
 /* accent text: solid ink (no gradient) */
@@ -279,11 +284,13 @@ body {
   letter-spacing: -0.025em;
 }
 
-/* ---------- wallet-adapter connect popup -> match the app theme ---------- */
-.wallet-adapter-modal-container,
-.wallet-adapter-modal-overlay {
-  background: rgba(9, 9, 11, 0.4) !important;
-  backdrop-filter: blur(4px);
+/* ---------- wallet-adapter connect popup -> match the app theme ----------
+ * NEVER put backdrop-filter on the overlay or container: the overlay is the
+ * last child of the modal root, and a backdrop-filter there both blurs the
+ * whole viewport and hijacks hit-testing (every click lands on the overlay).
+ * Dim via the modal root's own background only. */
+.wallet-adapter-modal.wallet-adapter-modal-fade-in {
+  background: rgba(9, 9, 11, 0.44) !important;
 }
 .wallet-adapter-modal-wrapper {
   background: var(--card) !important;
@@ -307,20 +314,22 @@ body {
 .wallet-adapter-modal-title {
   font-weight: 600 !important;
   letter-spacing: -0.025em !important;
+  font-size: 1.15rem !important;
 }
 .wallet-adapter-modal-list-more,
 .wallet-adapter-modal-middle-button {
-  color: var(--foreground) !important;
+  color: var(--muted-foreground) !important;
 }
 .wallet-adapter-modal-button-close {
   background: var(--panel) !important;
+  border-radius: 999px !important;
   box-shadow: 0 0 0 1px var(--line) !important;
 }
 .wallet-adapter-button {
   font-family: var(--font-sans) !important;
   font-size: 1rem !important;
   font-weight: 500 !important;
-  border-radius: 0.625rem !important;
+  border-radius: 999px !important;
   background: var(--paper) !important;
   color: var(--foreground) !important;
   border: 1px solid var(--line) !important;
@@ -333,9 +342,34 @@ body {
 .wallet-adapter-button[disabled] {
   opacity: 0.45 !important;
 }
+.wallet-adapter-modal-list .wallet-adapter-button {
+  border-radius: 0 !important;
+  border-color: var(--line) !important;
+}
 .wallet-adapter-modal-list-item {
-  border-radius: 0.625rem !important;
+  border-radius: 0 !important;
 }
 .wallet-adapter-modal-list-item > .wallet-adapter-button {
   width: 100% !important;
+}
+.wallet-adapter-modal-list .wallet-adapter-button:hover:not([disabled]) {
+  background: var(--panel) !important;
+}
+
+/* ---------- entrance motion: one orchestrated load sequence ---------- */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.anim {
+  animation: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.anim-1 { animation-delay: 0.03s; }
+.anim-2 { animation-delay: 0.08s; }
+.anim-3 { animation-delay: 0.13s; }
+.anim-4 { animation-delay: 0.18s; }
+.anim-5 { animation-delay: 0.23s; }
+.anim-6 { animation-delay: 0.28s; }
+@media (prefers-reduced-motion: reduce) {
+  .anim { animation: none; }
 }
