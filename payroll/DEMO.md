@@ -51,7 +51,7 @@ as the run pays out, rows turn green with ▲ deltas.
 
 ## 4. The demo flow
 
-1. Landing page — talk through the four stat cards (902s → 11.3s, 80×, 210/210, 1 signature)
+1. Landing page — talk through the four stat cards (902s → 67.6s, 13×, 210/210, 1 signature)
    and the hero widget: *"this is the actual treasurer screen."*
 2. Employer sign in → connect Phantom (the imported `treasury.json` account, or any wallet).
    One free signature popup unlocks the vault (message signature, no gas).

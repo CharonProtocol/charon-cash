@@ -6,20 +6,18 @@ import { createRequire } from "node:module"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { cloudflare } from "@cloudflare/vite-plugin";
+
 const require = createRequire(import.meta.url)
 const polyfillsRoot = dirname(dirname(require.resolve("vite-plugin-node-polyfills")))
 const shim = (name: string) => join(polyfillsRoot, "shims", name, "dist", "index.js")
 
 export default defineConfig({
-  plugins: [
-    react(),
-    tailwindcss(),
-    nodePolyfills({
-      include: ["buffer", "process", "stream", "util", "assert", "path", "crypto"],
-      globals: { Buffer: true, process: true, global: true },
-      protocolImports: true,
-    }),
-  ],
+  plugins: [react(), tailwindcss(), nodePolyfills({
+    include: ["buffer", "process", "stream", "util", "assert", "path", "crypto"],
+    globals: { Buffer: true, process: true, global: true },
+    protocolImports: true,
+  }), cloudflare()],
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),

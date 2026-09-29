@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
-    "postinstall": "node scripts/setup-native-deps.mjs"
+    "postinstall": "node scripts/setup-native-deps.mjs",
+    "deploy": "bun run build && wrangler deploy",
+    "preview": "bun run build && wrangler dev"
   },
   "dependencies": {
     "@ethersproject/keccak256": "^5.8.0",
@@ -40,6 +42,7 @@
     "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.62.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/bn.js": "^5.2.0",
     "@types/node": "^24.13.2",
@@ -52,6 +55,7 @@
     "typescript": "~6.0.2",
     "vite": "^6.3.5",
     "vite-plugin-node-polyfills": "^0.28.0",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "wrangler": "^4.143.0"
   }
 }

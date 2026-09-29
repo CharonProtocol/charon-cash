@@ -20,6 +20,9 @@ SURFPOOL="${SURFPOOL_BIN:-$HOME/.local/bin/surfpool}"
 # up as a mysterious "VersionedTransaction too large" from the relayer.
 [[ -n "$SURFPOOL_BIN" ]] || echo "WARNING: SURFPOOL_BIN unset — starting $SURFPOOL without v1 support; v1 benches will fail"
 # extra surfpool start flags, e.g. SURFPOOL_FLAGS="--feature txv1hPU76QFBVeq3942jJ65e9Em2xbdbCJrzX8sM4U4"
+# --offline by default: otherwise surfpool resolves missing accounts against mainnet
+# and initialize fails wherever mainnet is unreachable
+[[ -n "$SURFPOOL_FLAGS" ]] || SURFPOOL_FLAGS="--offline"
 SURFPOOL_FLAGS=(${=SURFPOOL_FLAGS})
 
 # the program build must exist: keypair + .so with a matching declare_id
@@ -52,9 +55,22 @@ if [[ ! -f /tmp/deploy-payer.json ]]; then
   solana-keygen new --no-bip39-passphrase --silent --outfile /tmp/deploy-payer.json >/dev/null
 fi
 
-# 1. fresh chain
+# 1. fresh chain (wait for RPC readiness; cold start can exceed a fixed sleep)
 nohup "$SURFPOOL" start $SURFPOOL_FLAGS > /dev/null 2>&1 &
-sleep 12
+sleep 3
+surfpool_up=0
+for i in {1..60}; do
+  if curl -s -m 2 http://localhost:8899 -X POST -H "Content-Type: application/json" \
+       -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'; then
+    surfpool_up=1
+    break
+  fi
+  sleep 2
+done
+if [[ $surfpool_up -ne 1 ]]; then
+  echo "surfpool did not become healthy on :8899 within 120s" >&2
+  exit 1
+fi
 
 # 2. redeploy the current program build (runbook may pick a stale artifact)
 # fresh machines: fund the deploy payer first; an already-funded key errors harmlessly
