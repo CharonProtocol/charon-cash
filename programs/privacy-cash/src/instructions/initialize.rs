@@ -1,10 +1,10 @@
 use crate::{
     constants::{
-        ADMIN_PUBKEY, GLOBAL_CONFIG_ADDRESS, GLOBAL_CONFIG_SEED, TREE_ACCOUNT_ADDRESS,
-        TREE_ACCOUNT_SEED, TREE_TOKEN_ACCOUNT_ADDRESS, TREE_TOKEN_ACCOUNT_SEED,
+        ADMIN_PUBKEY, GLOBAL_CONFIG_SEED, TREE_ACCOUNT_SEED,
+        TREE_TOKEN_ACCOUNT_SEED,
     },
     error::PrivacyCashError,
-    helper::{verify_address, verify_program_id, verify_signer, verify_uninitialized},
+    helper::{verify_pda, verify_program_id, verify_signer, verify_uninitialized},
     merkle_tree::MerkleTree,
     state::{GlobalConfig, MerkleTreeAccount, TreeTokenAccount},
 };
@@ -53,19 +53,23 @@ pub fn process_initialize(accounts: &[AccountView], data: &[u8]) -> ProgramResul
     let tree_account_bump = [params.tree_account_bump];
     let tree_token_account_bump = [params.tree_token_account_bump];
     let global_bump = [params.global_config_bump];
-    // These three are singletons at compile-time-known addresses. Checking
-    // against the constants -- rather than re-deriving from whatever bumps the
-    // caller supplied -- also rejects the non-canonical bumps that would
-    // otherwise let a second SOL tree or global config be created alongside
-    // the real one. `CreateAccount` below still needs the caller's bumps to
-    // sign, and they must equal the canonical ones for that to succeed.
     {
-        verify_address(tree_account, &TREE_ACCOUNT_ADDRESS)?;
-        verify_address(tree_token_account, &TREE_TOKEN_ACCOUNT_ADDRESS)?;
-        verify_address(global_config, &GLOBAL_CONFIG_ADDRESS)?;
+        verify_pda(
+            tree_account,
+            &[TREE_ACCOUNT_SEED, &tree_account_bump],
+            &crate::ID,
+        )?;
+        verify_pda(
+            tree_token_account,
+            &[TREE_TOKEN_ACCOUNT_SEED, &tree_token_account_bump],
+            &crate::ID,
+        )?;
+        verify_pda(
+            global_config,
+            &[GLOBAL_CONFIG_SEED, &global_bump],
+            &crate::ID,
+        )?;
     }
-
-    let rent = Rent::get()?;
 
     let tree_account_seed = [
         Seed::from(TREE_ACCOUNT_SEED),
@@ -76,7 +80,7 @@ pub fn process_initialize(accounts: &[AccountView], data: &[u8]) -> ProgramResul
     CreateAccount {
         from: authority,
         to: tree_account,
-        lamports: rent.try_minimum_balance(MerkleTreeAccount::LEN)?,
+        lamports: Rent::get()?.try_minimum_balance(MerkleTreeAccount::LEN)?,
         space: MerkleTreeAccount::LEN as u64,
         owner: &Address::from(crate::ID),
     }
@@ -103,7 +107,7 @@ pub fn process_initialize(accounts: &[AccountView], data: &[u8]) -> ProgramResul
     CreateAccount {
         from: authority,
         to: tree_token_account,
-        lamports: rent.try_minimum_balance(TreeTokenAccount::LEN)?,
+        lamports: Rent::get()?.try_minimum_balance(TreeTokenAccount::LEN)?,
         space: TreeTokenAccount::LEN as u64,
         owner: &Address::from(crate::ID),
     }
@@ -122,7 +126,7 @@ pub fn process_initialize(accounts: &[AccountView], data: &[u8]) -> ProgramResul
     CreateAccount {
         from: authority,
         to: global_config,
-        lamports: rent.try_minimum_balance(GlobalConfig::LEN)?,
+        lamports: Rent::get()?.try_minimum_balance(GlobalConfig::LEN)?,
         space: GlobalConfig::LEN as u64,
         owner: &Address::from(crate::ID),
     }

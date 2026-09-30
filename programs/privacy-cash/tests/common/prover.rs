@@ -28,9 +28,7 @@ pub struct DepositProofToSubmit {
 static PROVER: Mutex<Option<(PathBuf, Arc<Prover>)>> = Mutex::new(None);
 
 fn prover_for(key_base_path: &Path) -> Result<Arc<Prover>> {
-    let mut slot = PROVER
-        .lock()
-        .map_err(|_| anyhow!("prover cache poisoned"))?;
+    let mut slot = PROVER.lock().map_err(|_| anyhow!("prover cache poisoned"))?;
     if let Some((path, prover)) = slot.as_ref() {
         if path == key_base_path {
             return Ok(prover.clone());
@@ -63,7 +61,7 @@ fn circuit_input(input: &ProofInput) -> ProofInput {
 /// Convert the proof + public inputs into the exact submit shape used by the SDK.
 pub fn deposit_artifacts_to_submit(
     artifacts: &DepositProofArtifacts,
-    compressed: bool,
+    _compressed: bool,
 ) -> Result<DepositProofToSubmit> {
     let proof_bytes = proof_to_bytes(&artifacts.proof, true);
     let public_inputs_bytes = privacy_cash_prover::public_inputs_to_bytes(&artifacts.public_inputs);

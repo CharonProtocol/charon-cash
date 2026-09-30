@@ -2,15 +2,14 @@ use pinocchio::{entrypoint, error::ProgramError, AccountView, Address, ProgramRe
 use pinocchio_pubkey::declare_id;
 
 use crate::instructions::{
-    process_initialize, process_initialize_tree_account_for_spl_token, process_transact,
-    process_transact_spl, process_update_global_config,
+    process_initialize, process_initialize_tree_account_for_spl_token, process_swap,
+    process_transact, process_transact_spl, process_update_global_config, process_wrap_sol,
     update_deposit_limit::process_update_deposit_limit,
     update_deposit_limit_for_spl::process_update_deposit_limit_for_spl, PrivacyCashInstructions,
 };
 
 pub mod constants;
 pub mod error;
-pub mod field;
 pub mod groth16;
 pub mod helper;
 pub mod instructions;
@@ -18,17 +17,11 @@ pub mod merkle_tree;
 pub mod state;
 pub mod utils;
 
-declare_id!("A6jNiYjV9g7omJ4zHAyiDQtcRewobsko7gs9UjZ2pWRa");
+declare_id!("Dz8MTy797RkN55JhgLCuKQ3sWDs4YHBipEoThADFFf58");
 
-// The widest instruction, `transact_spl`, takes 16 accounts. Sizing the
-// entrypoint's account array to that instead of the 255-slot default keeps the
-// entrypoint stack frame an order of magnitude smaller.
-//
-// The allocator stays: `solana-bn254` allocates its result buffer inside every
-// `alt_bn128` syscall wrapper, so `no_allocator!` would abort the program in
-// `verify_proof`.
-entrypoint!(process_instructions, 16);
+entrypoint!(process_instructions, 64);
 
+#[inline(never)]
 fn process_instructions(
     _program_id: &Address,
     accounts: &[AccountView],
@@ -54,6 +47,8 @@ fn process_instructions(
         PrivacyCashInstructions::UpdateGlobalConfig => {
             process_update_global_config(accounts, data)?
         }
+        PrivacyCashInstructions::Swap => process_swap(accounts, data)?,
+        PrivacyCashInstructions::WrapSol => process_wrap_sol(accounts, data)?,
     }
     Ok(())
 }

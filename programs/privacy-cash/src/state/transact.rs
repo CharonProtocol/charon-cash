@@ -8,9 +8,12 @@ pub const FIXED_TRANSACT_ARGS_SIZE: usize = PROOF_SIZE + EXT_DATA_MINIFIED_SIZE;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub struct Proof {
-    pub proof_a: [u8; 64],
-    pub proof_b: [u8; 128],
-    pub proof_c: [u8; 64],
+    /// Compressed G1
+    pub proof_a: [u8; 32],
+    /// Compressed G2.
+    pub proof_b: [u8; 64],
+    /// Compressed G1.
+    pub proof_c: [u8; 32],
     pub root: [u8; 32],
     pub public_amount: [u8; 32],
     pub ext_data_hash: [u8; 32],
@@ -42,10 +45,11 @@ impl<'a> TransactArgs<'a> {
 
         let proof = bytemuck::try_from_bytes::<Proof>(&data[..PROOF_SIZE])
             .map_err(|_| ProgramError::InvalidInstructionData)?;
-        
+
         let ext_data_minified = bytemuck::try_pod_read_unaligned::<ExtDataMinified>(
             &data[PROOF_SIZE..FIXED_TRANSACT_ARGS_SIZE],
-        ).map_err(|_| ProgramError::InvalidInstructionData)?;
+        )
+        .map_err(|_| ProgramError::InvalidInstructionData)?;
 
         let mut offset = FIXED_TRANSACT_ARGS_SIZE;
         let encrypted_output1 = read_length_prefixed_slice(data, &mut offset)?;

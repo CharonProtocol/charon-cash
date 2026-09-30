@@ -1,6 +1,7 @@
 use crate::error::PrivacyCashError;
-use crate::field::{lt_be, reduce_mod_r_be, sub_be, FQ_BE, FR_BE};
-use crate::groth16::{Groth16Verifier, Groth16Verifyingkey};
+use crate::groth16::{
+    decompress_g1, decompress_g2, negate_g1, Groth16Verifier, Groth16Verifyingkey, FR_MODULUS_BE,
+};
 use crate::state::Proof;
 use light_hasher::{Hasher, Sha256};
 use pinocchio::error::ProgramError;
@@ -146,106 +147,157 @@ pub fn calculate_complete_ext_data_hash(
     fee_recipient: &[u8; 32],
     mint_address: &[u8; 32],
 ) -> Result<[u8; 32], ProgramError> {
-    // `hashv` feeds the syscall the pieces directly, so the digest is
-    // identical to hashing their concatenation but nothing is copied -- and
-    // the encrypted outputs are the largest values in the instruction data.
-    Sha256::hashv(&[
-        recipient,
-        &ext_amount.to_le_bytes(),
-        &(encrypted_output1.len() as u32).to_le_bytes(),
-        encrypted_output1,
-        &(encrypted_output2.len() as u32).to_le_bytes(),
-        encrypted_output2,
-        &fee.to_le_bytes(),
-        fee_recipient,
-        mint_address,
-    ])
-    .map_err(|_| ProgramError::InvalidInstructionData)
+    let mut data = Vec::new();
+
+    data.extend_from_slice(recipient);
+    data.extend_from_slice(&ext_amount.to_le_bytes());
+    data.extend_from_slice(&(encrypted_output1.len() as u32).to_le_bytes());
+    data.extend_from_slice(encrypted_output1);
+    data.extend_from_slice(&(encrypted_output2.len() as u32).to_le_bytes());
+    data.extend_from_slice(encrypted_output2);
+    data.extend_from_slice(&fee.to_le_bytes());
+    data.extend_from_slice(fee_recipient);
+    data.extend_from_slice(mint_address);
+
+    Sha256::hash(&data).map_err(|_| ProgramError::InvalidInstructionData)
 }
 
-/// Compares the recomputed ext-data hash against the one the proof commits to,
-/// as scalar field elements.
-///
-/// The circuit consumes the SHA-256 digest little-endian, so reversing the
-/// digest gives the big-endian integer it stands for; both sides are then
-/// reduced mod `r` exactly as `Fr::from_*_bytes_mod_order` would.
+/// In-leg swap hash: dest mint, min-out, and both out-leg commitments.
+pub fn calculate_swap_in_ext_data_hash(
+    ext_amount_in: i64,
+    encrypted_output1: &[u8],
+    encrypted_output2: &[u8],
+    in_mint: &[u8; 32],
+    out_mint: &[u8; 32],
+    ext_amount_out: i64,
+    out_commitments: &[[u8; 32]; 2],
+) -> Result<[u8; 32], ProgramError> {
+    let mut data = Vec::new();
+    data.extend_from_slice(crate::constants::SWAP_IN_DOMAIN);
+    data.extend_from_slice(&ext_amount_in.to_le_bytes());
+    data.extend_from_slice(&(encrypted_output1.len() as u32).to_le_bytes());
+    data.extend_from_slice(encrypted_output1);
+    data.extend_from_slice(&(encrypted_output2.len() as u32).to_le_bytes());
+    data.extend_from_slice(encrypted_output2);
+    data.extend_from_slice(in_mint);
+    data.extend_from_slice(out_mint);
+    data.extend_from_slice(&ext_amount_out.to_le_bytes());
+    data.extend_from_slice(&out_commitments[0]);
+    data.extend_from_slice(&out_commitments[1]);
+    Sha256::hash(&data).map_err(|_| ProgramError::InvalidInstructionData)
+}
+
+/// Out-leg swap hash. Deliberately does not mention the in-leg (no cycle).
+pub fn calculate_swap_out_ext_data_hash(
+    ext_amount_out: i64,
+    encrypted_output1: &[u8],
+    encrypted_output2: &[u8],
+    out_mint: &[u8; 32],
+) -> Result<[u8; 32], ProgramError> {
+    let mut data = Vec::new();
+    data.extend_from_slice(crate::constants::SWAP_OUT_DOMAIN);
+    data.extend_from_slice(&ext_amount_out.to_le_bytes());
+    data.extend_from_slice(&(encrypted_output1.len() as u32).to_le_bytes());
+    data.extend_from_slice(encrypted_output1);
+    data.extend_from_slice(&(encrypted_output2.len() as u32).to_le_bytes());
+    data.extend_from_slice(encrypted_output2);
+    data.extend_from_slice(out_mint);
+    Sha256::hash(&data).map_err(|_| ProgramError::InvalidInstructionData)
+}
+
 pub fn ext_data_hash_matches(calculated: [u8; 32], proof_hash: [u8; 32]) -> bool {
-    let mut calculated_be = calculated;
-    calculated_be.reverse();
-
-    reduce_mod_r_be(&calculated_be) == reduce_mod_r_be(&proof_hash)
+    // SHA256 is interpreted little-endian in the circuit; the proof stores the
+    // field element big-endian. Do the reduction with integer subtract so we
+    // never rely on `num-bigint` on SBF (it disagrees with the host `% r`).
+    fr_reduce_be(&swab32(&calculated)) == fr_reduce_be(&proof_hash)
 }
 
-/// Checks that the proof's `public_amount` is the field element the transfer
-/// parameters imply: `ext_amount - fee` for a deposit, `-(|ext_amount| + fee)`
-/// for a withdrawal.
-///
-/// Both branches land far below `r`, so the expected element is laid out
-/// directly as big-endian bytes -- a deposit is a `u64`, and a withdrawal is
-/// `r` minus a value below `2^65`.
+fn swab32(bytes: &[u8; 32]) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    for i in 0..32 {
+        out[i] = bytes[31 - i];
+    }
+    out
+}
+
+fn cmp_be(a: &[u8; 32], b: &[u8; 32]) -> core::cmp::Ordering {
+    for i in 0..32 {
+        if a[i] != b[i] {
+            return a[i].cmp(&b[i]);
+        }
+    }
+    core::cmp::Ordering::Equal
+}
+
+fn sub_be(a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    let mut borrow = 0u16;
+    for i in (0..32).rev() {
+        let av = a[i] as u16;
+        let bv = b[i] as u16 + borrow;
+        if av >= bv {
+            out[i] = (av - bv) as u8;
+            borrow = 0;
+        } else {
+            out[i] = (av + 256 - bv) as u8;
+            borrow = 1;
+        }
+    }
+    out
+}
+
+fn fr_reduce_be(bytes: &[u8; 32]) -> [u8; 32] {
+    let mut x = *bytes;
+    while cmp_be(&x, &FR_MODULUS_BE) != core::cmp::Ordering::Less {
+        x = sub_be(&x, &FR_MODULUS_BE);
+    }
+    x
+}
+
+fn u64_to_be32(n: u64) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    out[24..].copy_from_slice(&n.to_be_bytes());
+    out
+}
+
 pub fn check_public_amount(ext_amount: i64, fee: u64, public_amount_bytes: [u8; 32]) -> bool {
     if ext_amount == i64::MIN {
         return false;
     }
 
-    let net_amount: i128 = (ext_amount as i128) - (fee as i128);
-    let expected = if net_amount >= 0 {
-        let mut bytes = [0u8; 32];
-        bytes[16..].copy_from_slice(&(net_amount as u128).to_be_bytes());
-        bytes
-    } else {
-        let abs_net = net_amount.unsigned_abs();
-        let mut bytes = [0u8; 32];
-        bytes[16..].copy_from_slice(&abs_net.to_be_bytes());
+    // Shielded transfer: no public deposit/withdraw. Circuit public_amount is
+    // `(ext - fee) mod Fr` = `-fee` (0 when fee is 0).
+    if ext_amount == 0 {
+        let expected = if fee == 0 {
+            [0u8; 32]
+        } else {
+            sub_be(&FR_MODULUS_BE, &u64_to_be32(fee))
+        };
+        return fr_reduce_be(&public_amount_bytes) == expected;
+    }
 
-        match sub_be(&FR_BE, &bytes) {
-            (negated, false) => negated,
-            (_, true) => return false,
+    let expected = if ext_amount > 0 {
+        let ext_n = ext_amount as u64;
+        if ext_n <= fee {
+            return false;
         }
+        u64_to_be32(ext_n - fee)
+    } else {
+        let abs_ext = match ext_amount.checked_neg() {
+            Some(val) => val as u64,
+            None => return false,
+        };
+        let sum = match abs_ext.checked_add(fee) {
+            Some(v) => v,
+            None => return false,
+        };
+        sub_be(&FR_MODULUS_BE, &u64_to_be32(sum))
     };
 
-    expected == reduce_mod_r_be(&public_amount_bytes)
+    fr_reduce_be(&public_amount_bytes) == expected
 }
 
-/// Negates a BN254 G1 point in the big-endian affine encoding `x || y` that
-/// the `alt_bn128` syscalls and the proof both use.
-///
-/// Negation on an affine short-Weierstrass point is `(x, y) -> (x, q - y)`, so
-/// the point never has to become a field element: one 256-bit subtraction
-/// replaces a deserialization, four Montgomery conversions and a
-/// re-serialization.
-///
-/// Nothing is validated here beyond what the negation itself needs.
-/// `solana-bn254` deserializes every point it is handed and runs
-/// `is_on_curve` before pairing, returning `GroupError` otherwise, so an
-/// arkworks-side check would only fail marginally earlier.
-///
-/// Returns `None` for the two encodings that negation cannot handle:
-///
-/// - `y >= q` is not a field element, and wrapping the subtraction could turn
-///   a rejected encoding into an accepted one.
-/// - `y == 0` is never a curve point, because `y^2 = x^3 + 3` has no root at
-///   zero: BN254's G1 has odd prime order and therefore no 2-torsion. It is
-///   rejected explicitly rather than left to the syscall, since an all-zero
-///   G1 encoding means the point at infinity there and would pair silently
-///   instead of failing.
-fn negate_g1_be(point: &[u8; 64]) -> Option<[u8; 64]> {
-    let mut negated = *point;
-
-    let y: [u8; 32] = point[32..64].try_into().ok()?;
-    if y == [0u8; 32] || !lt_be(&y, &FQ_BE) {
-        return None;
-    }
-
-    let (negated_y, borrow) = sub_be(&FQ_BE, &y);
-    if borrow {
-        return None;
-    }
-    negated[32..64].copy_from_slice(&negated_y);
-
-    Some(negated)
-}
-
+#[inline(never)]
 pub fn verify_proof(proof: &Proof, verifying_key: &Groth16Verifyingkey) -> bool {
     let mut public_inputs_vec: [[u8; 32]; 7] = [[0u8; 32]; 7];
 
@@ -257,16 +309,25 @@ pub fn verify_proof(proof: &Proof, verifying_key: &Groth16Verifyingkey) -> bool 
     public_inputs_vec[5] = proof.output_commitments[0];
     public_inputs_vec[6] = proof.output_commitments[1];
 
-    // The pairing equation needs -A.
-    let proof_a = match negate_g1_be(&proof.proof_a) {
-        Some(negated) => negated,
-        None => return false,
+    let proof_a_uncomp = match decompress_g1(&proof.proof_a) {
+        Ok(p) => p,
+        Err(_) => return false,
     };
+    let proof_b_uncomp = match decompress_g2(&proof.proof_b) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    let proof_c_uncomp = match decompress_g1(&proof.proof_c) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+
+    let proof_a = negate_g1(&proof_a_uncomp);
 
     let mut verifier = match Groth16Verifier::new(
         &proof_a,
-        &proof.proof_b,
-        &proof.proof_c,
+        &proof_b_uncomp,
+        &proof_c_uncomp,
         &public_inputs_vec,
         verifying_key,
     ) {
@@ -280,237 +341,32 @@ pub fn verify_proof(proof: &Proof, verifying_key: &Groth16Verifyingkey) -> bool 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_bn254::{Fq, Fr, G1Affine};
-    use ark_ff::{BigInteger, PrimeField, UniformRand};
-    use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
     use bytemuck::Zeroable;
-    use core::ops::Neg;
+    use num_bigint::BigUint;
 
-    /// A deterministic byte stream, so failures reproduce.
-    struct Lcg(u64);
-
-    impl Lcg {
-        fn next_u64(&mut self) -> u64 {
-            self.0 = self
-                .0
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(1442695040888963407);
-            self.0
-        }
-
-        fn next_bytes(&mut self) -> [u8; 32] {
-            let mut out = [0u8; 32];
-            for chunk in out.chunks_mut(8) {
-                chunk.copy_from_slice(&self.next_u64().to_be_bytes());
-            }
-            out
-        }
-    }
-
-    /// The arkworks implementations these functions replaced, kept verbatim as
-    /// the oracle the byte arithmetic is checked against.
-    mod reference {
-        use super::*;
-
-        pub fn ext_data_hash_matches(calculated: [u8; 32], proof_hash: [u8; 32]) -> bool {
-            Fr::from_le_bytes_mod_order(&calculated) == Fr::from_be_bytes_mod_order(&proof_hash)
-        }
-
-        pub fn check_public_amount(
-            ext_amount: i64,
-            fee: u64,
-            public_amount_bytes: [u8; 32],
-        ) -> bool {
-            if ext_amount == i64::MIN {
-                return false;
-            }
-
-            let fee_fr = Fr::from(fee);
-            let ext_amount_fr = if ext_amount >= 0 {
-                Fr::from(ext_amount as u64)
-            } else {
-                let abs_ext_amount = match ext_amount.checked_neg() {
-                    Some(val) => val,
-                    None => return false,
-                };
-                Fr::from(abs_ext_amount as u64)
-            };
-
-            let result_public_amount = if ext_amount >= 0 {
-                ext_amount_fr - fee_fr
-            } else {
-                -(ext_amount_fr + fee_fr)
-            };
-
-            Fr::from_be_bytes_mod_order(&public_amount_bytes) == result_public_amount
-        }
-
-        /// The old `verify_proof` prologue: byte-swap, deserialize with a full
-        /// on-curve check, negate, re-serialize, byte-swap back.
-        pub fn negate_g1_be(point: &[u8; 64]) -> Option<[u8; 64]> {
-            let g1 = G1Affine::deserialize_with_mode(
-                &*[&change_endianness(&point[..64]), &[0u8][..]].concat(),
-                Compress::No,
-                Validate::Yes,
-            )
-            .ok()?;
-
-            let mut negated_le = [0u8; 64];
-            g1.neg()
-                .x
-                .serialize_with_mode(&mut negated_le[..32], Compress::No)
-                .ok()?;
-            g1.neg()
-                .y
-                .serialize_with_mode(&mut negated_le[32..], Compress::No)
-                .ok()?;
-
-            change_endianness(&negated_le).try_into().ok()
-        }
-
-        pub fn change_endianness(bytes: &[u8]) -> Vec<u8> {
-            let mut out = Vec::new();
-            for chunk in bytes.chunks(32) {
-                for byte in chunk.iter().rev() {
-                    out.push(*byte);
-                }
-            }
-            out
-        }
-    }
-
-    fn g1_to_be_bytes(point: &G1Affine) -> [u8; 64] {
-        let mut out = [0u8; 64];
-        out[..32].copy_from_slice(&point.x.into_bigint().to_bytes_be());
-        out[32..].copy_from_slice(&point.y.into_bigint().to_bytes_be());
-        out
+    fn fr_from_le_mod(bytes: &[u8; 32]) -> BigUint {
+        let r = BigUint::from_bytes_be(&FR_MODULUS_BE);
+        BigUint::from_bytes_le(bytes) % r
     }
 
     #[test]
-    fn ext_data_hash_matches_agrees_with_arkworks() {
-        let mut rng = Lcg(0x9e37_79b9_7f4a_7c15);
-
-        for _ in 0..256 {
-            let calculated = rng.next_bytes();
-            let proof_hash = rng.next_bytes();
-
-            // Overwhelmingly the mismatching case.
-            assert_eq!(
-                ext_data_hash_matches(calculated, proof_hash),
-                reference::ext_data_hash_matches(calculated, proof_hash),
-            );
-
-            // And the matching one: the same element written both ways.
-            let mut reversed = calculated;
-            reversed.reverse();
-            assert!(ext_data_hash_matches(calculated, reversed));
-            assert!(reference::ext_data_hash_matches(calculated, reversed));
-        }
+    fn test_check_public_amount_shielded_transfer() {
+        assert!(check_public_amount(0, 0, [0u8; 32]));
+        assert!(!check_public_amount(0, 0, {
+            let mut x = [0u8; 32];
+            x[31] = 1;
+            x
+        }));
+        let fee = 25u64;
+        let expected = sub_be(&FR_MODULUS_BE, &u64_to_be32(fee));
+        assert!(check_public_amount(0, fee, expected));
+        assert!(!check_public_amount(1_000, 0, [0u8; 32]));
+        assert!(check_public_amount(1_000, 0, u64_to_be32(1_000)));
     }
 
     #[test]
-    fn check_public_amount_agrees_with_arkworks() {
-        let mut rng = Lcg(0x0123_4567_89ab_cdef);
-
-        let mut amounts = vec![0i64, 1, -1, 2, -2, i64::MAX, i64::MIN, i64::MIN + 1];
-        let mut fees = vec![0u64, 1, 2, u64::MAX, u64::MAX - 1];
-        for _ in 0..32 {
-            amounts.push(rng.next_u64() as i64);
-            fees.push(rng.next_u64());
-        }
-
-        for &ext_amount in &amounts {
-            for &fee in &fees {
-                // A `public_amount` that should be accepted, derived through
-                // arkworks so the two paths cannot share a mistake.
-                let expected: [u8; 32] = if ext_amount >= 0 {
-                    (Fr::from(ext_amount as u64) - Fr::from(fee))
-                        .into_bigint()
-                        .to_bytes_be()
-                        .try_into()
-                        .unwrap()
-                } else if ext_amount == i64::MIN {
-                    [0u8; 32]
-                } else {
-                    (-(Fr::from(ext_amount.unsigned_abs()) + Fr::from(fee)))
-                        .into_bigint()
-                        .to_bytes_be()
-                        .try_into()
-                        .unwrap()
-                };
-
-                for candidate in [expected, rng.next_bytes(), [0u8; 32], [0xffu8; 32]] {
-                    assert_eq!(
-                        check_public_amount(ext_amount, fee, candidate),
-                        reference::check_public_amount(ext_amount, fee, candidate),
-                        "ext_amount {ext_amount}, fee {fee}, candidate {candidate:?}",
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn negate_g1_be_agrees_with_arkworks_on_curve_points() {
-        let mut rng = ark_std::test_rng();
-
-        for _ in 0..64 {
-            let point = G1Affine::rand(&mut rng);
-            let bytes = g1_to_be_bytes(&point);
-
-            assert_eq!(
-                negate_g1_be(&bytes),
-                reference::negate_g1_be(&bytes),
-                "point {point}",
-            );
-            assert_eq!(negate_g1_be(&bytes).unwrap(), g1_to_be_bytes(&point.neg()));
-        }
-    }
-
-    #[test]
-    fn negate_g1_be_rejects_what_arkworks_rejected() {
-        // y == 0 with a non-zero x: `y^2 = x^3 + 3` has no root at zero, so
-        // arkworks failed the on-curve check here too.
-        let mut zero_y = [0u8; 64];
-        zero_y[31] = 7;
-        assert!(negate_g1_be(&zero_y).is_none());
-        assert!(reference::negate_g1_be(&zero_y).is_none());
-
-        // y == q and y > q are not field elements, and arkworks refused to
-        // deserialize them. Wrapping the subtraction instead of rejecting
-        // would map y == q onto a zero y coordinate.
-        let mut y_is_q = [0u8; 64];
-        y_is_q[32..].copy_from_slice(&FQ_BE);
-        assert!(negate_g1_be(&y_is_q).is_none());
-        assert!(reference::negate_g1_be(&y_is_q).is_none());
-
-        let mut y_above_q = [0xffu8; 64];
-        y_above_q[..32].copy_from_slice(&Fq::from(3u64).into_bigint().to_bytes_be());
-        assert!(negate_g1_be(&y_above_q).is_none());
-        assert!(reference::negate_g1_be(&y_above_q).is_none());
-    }
-
-    /// The one place the byte path is stricter than the arkworks path it
-    /// replaced.
-    ///
-    /// arkworks reads an all-zero G1 encoding as the point at infinity and
-    /// negates it to itself, leaving the pairing to reject the proof.
-    /// `negate_g1_be` rejects it outright, which skips a pointless pairing and
-    /// keeps the point at infinity -- the one encoding the syscall accepts
-    /// without an on-curve check -- off the verification path entirely.
-    ///
-    /// No honest proof is lost: `A` is the point at infinity only with
-    /// negligible probability, and such a proof cannot satisfy the pairing
-    /// equation anyway, since with `e(-A, B) == 1` nothing on the remaining
-    /// side can cancel the `alpha * beta` term.
-    #[test]
-    fn negate_g1_be_rejects_the_point_at_infinity() {
-        assert!(negate_g1_be(&[0u8; 64]).is_none());
-        assert_eq!(reference::negate_g1_be(&[0u8; 64]), Some([0u8; 64]));
-
-        // Either way `verify_proof` says no.
-        let proof = Proof::zeroed();
-        assert!(!verify_proof(&proof, &VERIFYING_KEY));
+    fn test_proof_size_is_352() {
+        assert_eq!(crate::state::transact::PROOF_SIZE, 352);
     }
 
     #[test]
@@ -518,7 +374,7 @@ mod tests {
         // proof_a of all zeros is not a valid on-curve G1 point, so
         // verification must fail before reaching the pairing.
         let mut proof = Proof::zeroed();
-        proof.proof_a = [7u8; 64];
+        proof.proof_a = [7u8; 32];
         assert!(!verify_proof(&proof, &VERIFYING_KEY));
     }
 
@@ -528,5 +384,54 @@ mod tests {
         // pairing check must still reject it.
         let proof = Proof::zeroed();
         assert!(!verify_proof(&proof, &VERIFYING_KEY));
+    }
+
+    #[test]
+    fn test_ext_data_hash_matches_le_be() {
+        let calculated = {
+            let mut c = [0u8; 32];
+            c[0] = 7;
+            c[15] = 9;
+            c[31] = 3;
+            c
+        };
+        let left = fr_from_le_mod(&calculated);
+        let be = {
+            let bytes = left.to_bytes_be();
+            let mut out = [0u8; 32];
+            out[32 - bytes.len()..].copy_from_slice(&bytes);
+            out
+        };
+        assert!(ext_data_hash_matches(calculated, be));
+        assert!(!ext_data_hash_matches(calculated, calculated));
+    }
+
+    #[test]
+    fn test_swap_hashes_are_domain_separated() {
+        let c0 = [1u8; 32];
+        let c1 = [2u8; 32];
+        let in_hash = calculate_swap_in_ext_data_hash(
+            -1_000,
+            b"in1",
+            b"in2",
+            &[3u8; 32],
+            &[4u8; 32],
+            900,
+            &[c0, c1],
+        )
+        .unwrap();
+        let out_hash = calculate_swap_out_ext_data_hash(900, b"out1", b"out2", &[4u8; 32]).unwrap();
+        assert_ne!(in_hash, out_hash);
+        let in_hash2 = calculate_swap_in_ext_data_hash(
+            -1_000,
+            b"in1",
+            b"in2",
+            &[3u8; 32],
+            &[4u8; 32],
+            900,
+            &[c1, c0],
+        )
+        .unwrap();
+        assert_ne!(in_hash, in_hash2);
     }
 }

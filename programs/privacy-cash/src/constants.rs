@@ -1,4 +1,4 @@
-use pinocchio_pubkey::{derive_address_const, pubkey};
+use pinocchio_pubkey::pubkey;
 
 pub const ROOT_HISTORY_SIZE: u8 = 100;
 
@@ -14,9 +14,25 @@ pub const ALLOW_ALL_SPL_TOKENS: bool = true;
 pub const ALLOWED_TOKENS: &[[u8; 32]] = &[
     pubkey!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"), // USDC
     pubkey!("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"), // USDT
+    pubkey!("oreoU2P8bN6jkk3jbaiVxYnG1dCXcYxwhwyK9jSybcp"),  // ORE
+    pubkey!("A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS"), // ZEC
+    pubkey!("sTorERYB6xAZ1SSbwpK3zoK2EEwbBrc7TZAzg1uCGiH"),  // stORE (legacy)
+    pubkey!("9BEcn9aPEmhSPbPQeFGjidRiEKki46fVQDyPpSQXPA2D"), // jlUSDC
+    pubkey!("2uQsyo1fXXQkDtcpXnLofWy88PxcvnfH2L8FPSE62FVU"), // jlWSOL
+    pubkey!("storenSbvkfzircixnaosc5CbzNZVrHJ6S3EKrS1yqR"),  // stORE
 ];
 
 pub const SOL_ADDRESS: [u8; 32] = pubkey!("11111111111111111111111111111112");
+
+/// Jupiter v6 aggregator. Swap remaining accounts are a CPI into this program.
+pub const JUPITER_PROGRAM_ID: [u8; 32] = pubkey!("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4");
+
+/// Native mint used when wrapping/unwrapping SOL for Jupiter.
+pub const WSOL_MINT: [u8; 32] = pubkey!("So11111111111111111111111111111111111111112");
+
+/// Domain-separated SHA-256 prefixes for the two swap Groth16 legs.
+pub const SWAP_IN_DOMAIN: &[u8] = b"privacy_cash:swap_in:v1";
+pub const SWAP_OUT_DOMAIN: &[u8] = b"privacy_cash:swap_out:v1";
 
 // For the Global Config update mask
 pub const UPDATE_DEPOSIT_FEE: u8 = 1 << 0;
@@ -29,72 +45,3 @@ pub const TREE_ACCOUNT_SEED: &[u8] = b"merkle_tree";
 pub const TREE_TOKEN_ACCOUNT_SEED: &[u8] = b"tree_token";
 pub const NULLIFIER0_SEED: &[u8] = b"nullifier0";
 pub const NULLIFIER1_SEED: &[u8] = b"nullifier1";
-
-// Three PDAs of this program are singletons: their seeds are fixed strings
-// with no runtime component, so their canonical addresses are known at compile
-// time. Comparing 32 bytes against these replaces a `sol_sha256` derivation on
-// every instruction that touches them.
-//
-// Only the canonical bump is accepted. A non-canonical bump derives a
-// different, equally valid PDA, which would be a second SOL tree or a second
-// global config -- state this program has no way to reconcile.
-//
-// `tests::singleton_pdas_are_canonical` pins each bump to
-// `Pubkey::find_program_address`.
-
-pub const TREE_ACCOUNT_BUMP: u8 = 255;
-pub const TREE_TOKEN_ACCOUNT_BUMP: u8 = 255;
-pub const GLOBAL_CONFIG_BUMP: u8 = 255;
-
-pub const TREE_ACCOUNT_ADDRESS: [u8; 32] =
-    derive_address_const(&[TREE_ACCOUNT_SEED], Some(TREE_ACCOUNT_BUMP), &crate::ID);
-
-pub const TREE_TOKEN_ACCOUNT_ADDRESS: [u8; 32] = derive_address_const(
-    &[TREE_TOKEN_ACCOUNT_SEED],
-    Some(TREE_TOKEN_ACCOUNT_BUMP),
-    &crate::ID,
-);
-
-pub const GLOBAL_CONFIG_ADDRESS: [u8; 32] =
-    derive_address_const(&[GLOBAL_CONFIG_SEED], Some(GLOBAL_CONFIG_BUMP), &crate::ID);
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use solana_address::Address;
-
-    /// The singleton addresses above are compiled in with a hardcoded bump.
-    /// If any of them is not the canonical (highest) bump, the program would
-    /// reject the accounts a standard client derives.
-    #[test]
-    fn singleton_pdas_are_canonical() {
-        let program_id = Address::from(crate::ID);
-
-        for (name, seed, address, bump) in [
-            (
-                "merkle_tree",
-                TREE_ACCOUNT_SEED,
-                TREE_ACCOUNT_ADDRESS,
-                TREE_ACCOUNT_BUMP,
-            ),
-            (
-                "tree_token",
-                TREE_TOKEN_ACCOUNT_SEED,
-                TREE_TOKEN_ACCOUNT_ADDRESS,
-                TREE_TOKEN_ACCOUNT_BUMP,
-            ),
-            (
-                "global_config",
-                GLOBAL_CONFIG_SEED,
-                GLOBAL_CONFIG_ADDRESS,
-                GLOBAL_CONFIG_BUMP,
-            ),
-        ] {
-            let (expected_address, expected_bump) =
-                Address::find_program_address(&[seed], &program_id);
-
-            assert_eq!(expected_bump, bump, "{name} bump");
-            assert_eq!(expected_address.to_bytes(), address, "{name} address");
-        }
-    }
-}
