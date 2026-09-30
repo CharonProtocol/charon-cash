@@ -17,7 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ThemeToggle } from "@/components/ThemeToggle"
 
 const stats = [
-  { v: "67.6s", l: "to pay 210 salaries", sub: "standard circuit, the app as it runs today" },
+  { v: "67.6s", l: "to pay 210 salaries", sub: "standard circuit, 16-lane stack with the server-side prover" },
   { v: "11.32s", l: "the same payroll, batched", sub: "batched-circuit bench pipeline" },
   { v: "210 / 210", l: "paid exact", sub: "unequal salaries, 0 failures" },
   { v: "1", l: "signature per run", sub: "0 when the vault is funded" },
@@ -557,8 +557,9 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
                 </div>
               ))}
               <p className="text-xs leading-relaxed text-muted-foreground">
-                First signature to last confirmation. 63.3s of the standard run is proving - the
-                batched pipeline is bench-only for now.
+                First signature to last confirmation, on the bench stack (server-side prover, 16
+                lanes). The browser UI today proves one-by-one with snarkjs (~4s/proof). The
+                batched pipeline is bench-only.
               </p>
             </CardContent>
           </Card>
