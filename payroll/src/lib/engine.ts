@@ -34,6 +34,8 @@ export interface RunRequest {
   mode?: RunMode
   /** Relayer minimum ext=0 SOL fee (lamports); sizes shielded SOL funding. */
   minTransferFee?: number
+  /** Parallel proving lanes (1-8); defaults to 8. */
+  lanes?: number
 }
 
 export interface EngineClient {
@@ -91,6 +93,8 @@ export interface EngineDeps {
 
 const ATTEMPTS = 3
 const LANES = 8
+/** A funding note smaller than this can't cover a real salary — don't split further. */
+const MIN_FUNDING_PART = 10_000_000
 const RESERVE_POLL_MS = 800
 const RESERVE_WAIT_CAP_MS = 120_000
 const REFRESH_MIN_GAP_MS = 1_500
@@ -203,16 +207,29 @@ export class PayrollEngine {
     if (plan.shortfall > 0n) {
       this.emit("funding")
       try {
-        const lamports = Number(plan.shortfall)
-        if (!Number.isSafeInteger(lamports)) throw new Error("shortfall too large")
-        const dep =
-          req.asset.kind === "sol"
-            ? await this.deps.client.depositSOL(lamports)
-            : await this.deps.client.depositSPL(req.asset.mint, lamports)
-        await this.deps.waitUntilIndexed(treeKeyOf(req.asset), dep.leafIndex)
+        const total = Number(plan.shortfall)
+        if (!Number.isSafeInteger(total)) throw new Error("shortfall too large")
+        // Fund as several notes instead of one: lanes can only prove
+        // concurrently while distinct spendable notes exist, and a single
+        // deposit serialises every payout through its change-note chain.
+        const maxParts = Math.max(1, Math.min(req.lanes ?? LANES, LANES, req.entries.length || 1))
+        const parts = Math.max(1, Math.min(maxParts, Math.floor(total / MIN_FUNDING_PART)))
+        const base = Math.floor(total / parts)
+        let firstSig: string | undefined
+        let lastLeaf = -1
+        for (let i = 0; i < parts; i++) {
+          const amount = i === parts - 1 ? total - base * (parts - 1) : base
+          const dep =
+            req.asset.kind === "sol"
+              ? await this.deps.client.depositSOL(amount)
+              : await this.deps.client.depositSPL(req.asset.mint, amount)
+          firstSig ??= dep.signature
+          lastLeaf = Math.max(lastLeaf, dep.leafIndex)
+        }
+        await this.deps.waitUntilIndexed(treeKeyOf(req.asset), lastLeaf)
         await this.deps.client.refreshNotes()
-        funding = { depositedRaw: plan.shortfall, txSignature: dep.signature }
-        this.emit("funding", dep.signature)
+        funding = { depositedRaw: plan.shortfall, txSignature: firstSig ?? "" }
+        this.emit("funding", firstSig)
       } catch (e) {
         for (const r of rows) {
           r.status = "failed"
@@ -378,7 +395,7 @@ export class PayrollEngine {
         await payOne(rows[i], plan.rows[i])
       }
     }
-    const laneCount = ledger ? Math.min(LANES, rows.length) : 1
+    const laneCount = ledger ? Math.min(Math.max(1, req.lanes ?? LANES), LANES, rows.length) : 1
     await Promise.all(Array.from({ length: laneCount }, () => worker()))
 
     if (this.cancelled) {

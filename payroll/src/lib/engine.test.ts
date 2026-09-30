@@ -103,19 +103,20 @@ function deps(client: EngineClient, extra?: {
 }
 
 describe("PayrollEngine", () => {
-  it("deposits the shortfall once, pays every entry, confirms, and writes a receipt", async () => {
+  it("deposits the shortfall as lane-sized notes, pays every entry, confirms, and writes a receipt", async () => {
     const { client, calls } = mockClient({ fails: new Map() })
     const engine = new PayrollEngine(deps(client))
     const snapshots: RunSnapshot[] = []
     const receipt = await engine.run(req(), (s) => snapshots.push({ ...s }))
-    expect(calls.deposits).toHaveLength(1)
+    // 3 rows -> 3 funding notes (one per lane), summing to the full shortfall
+    expect(calls.deposits).toHaveLength(3)
+    expect(calls.deposits.reduce((s, n) => s + BigInt(n), 0n)).toBe(receipt.funding!.depositedRaw)
     expect(calls.withdraws).toHaveLength(3)
     expect(receipt.summary).toEqual({ sent: 3, failed: 0, total: 3 })
     expect(receipt.entries.every((e) => e.status === "sent")).toBe(true)
     expect(receipt.funding?.txSignature).toBe("DEP")
     expect(snapshots.at(-1)!.phase).toBe("settled")
   })
-
   it("skips the deposit when the vault covers the run", async () => {
     const { client, calls } = mockClient({ fails: new Map() })
     const engine = new PayrollEngine(deps(client))
