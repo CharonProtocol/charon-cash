@@ -1,0 +1,18 @@
+[package]
+name = "witness-equivalence"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Checks privacy-cash-prover's witness graph against circom's transaction2.wasm under Wasmer"
+
+# Its own crate because ark-circom force-enables ark-ec/ark-groth16 `parallel`,
+# which would put arkworks' thread-spawning MSM into the prover's own tests.
+[dependencies]
+
+[dev-dependencies]
+ark-bn254 = { version = "0.6.0", default-features = false, features = ["curve", "std"] }
+ark-circom = "0.6.0"
+num-bigint = "0.4"
+privacy-cash-prover = { path = "../privacy-cash-prover" }
+serde_json = "1"
+wasmer = "6.1.0"

@@ -24,7 +24,20 @@ export {
 export {
   prove,
   parseToBytesArray,
+  preloadProver,
+  configureProver,
+  terminateProver,
+  proverThreads,
 } from "./prover"
+export type { Groth16Proof, ProverOptions } from "./prover"
+export {
+  CIRCUIT_ARTIFACTS,
+  CIRCUIT_CACHE_NAME,
+  DEFAULT_CIRCUIT_BASE_URL,
+  loadCircuitArtifacts,
+  verifyArtifact,
+} from "./circuit-artifacts"
+export type { CircuitArtifacts } from "./circuit-artifacts"
 export {
   buildTransactTransaction,
   buildTransactIxData,

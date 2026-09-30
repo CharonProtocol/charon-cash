@@ -2,6 +2,7 @@
 // The SDK talks ONLY to the backend (shim on :8080). The Connection below is test-
 // harness funding only — PrivacyCashClient itself makes NO rpc calls.
 // Run: PROGRAM_ID=... bun scripts/sdk-e2e.mjs
+import "./local-prover.mjs"
 import { Connection, Keypair, PublicKey } from "@solana/web3.js"
 import nacl from "tweetnacl"
 import { PrivacyCashClient, setBackendUrl, buildUnlockMessage } from "privacy-cash-sdk"

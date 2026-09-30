@@ -1,6 +1,7 @@
 // Comprehensive e2e on surfpool: multiple accounts do SOL deposit+withdraw,
 // then SPL deposit+withdraw. Proves the client-sdk works for all interactions
 // against our Pinocchio program. Run:  bun scripts/e2e-surfpool.mjs
+import "./local-prover.mjs"
 import { readFileSync } from "node:fs"
 import { homedir } from "node:os"
 

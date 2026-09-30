@@ -28,11 +28,6 @@ const RPC = process.env.SOLANA_RPC_URL ?? "http://localhost:8899"
 const PORT = Number(process.env.PORT ?? 8080)
 const idJson = process.env.ID_JSON ?? path.join(homedir(), ".config/solana/id.json")
 const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..")
-const PROVE_URL = process.env.PROVE_URL ?? null
-const releaseBin = path.join(repoRoot, "crates/privacy-cash-prover/target/release/privacy-cash-prover")
-const debugBin = path.join(repoRoot, "crates/privacy-cash-prover/target/debug/privacy-cash-prover")
-const PROVER_BIN = process.env.PROVER_BIN ?? (existsSync(releaseBin) ? releaseBin : debugBin)
-
 // Address Lookup Table — required to compress the SPL transact's many accounts
 // into a v0 message (without it compileToV0Message overruns on SPL withdraw).
 function readDotEnv() {
@@ -656,10 +651,6 @@ Bun.serve({
         let body = {}
         try { const text = await req.text(); if (text.trim()) body = JSON.parse(text) } catch { }
 
-        if (p === "/api/prove") {
-          const proof = await hostedProve(body)
-          return json({ success: true, data: proof })
-        }
         if (p === "/api/jupiter/route") {
           return json(await jupiterRoute(body))
         }
@@ -943,96 +934,6 @@ function proofFromBody(p) {
       [...hexToBuf(p.output_commitments?.[0] ?? p.outputCommitments[0])],
       [...hexToBuf(p.output_commitments?.[1] ?? p.outputCommitments[1])],
     ],
-  }
-}
-
-async function hostedProve(circuitInput) {
-  if (PROVE_URL) {
-    const res = await fetch(PROVE_URL.replace(/\/$/, "") + "/api/prove", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(circuitInput),
-    })
-    const json = await res.json()
-    if (!res.ok) throw new Error(json.error?.message ?? "prove proxy failed")
-    return json.data ?? json
-  }
-  const started = Date.now()
-  const result = await proveViaServe(circuitInput)
-  console.log(`prove latency_ms=${Date.now() - started}`)
-  return result
-}
-
-let serveProc = null
-let stdoutReader = null
-let serveStdoutBuf = ""
-let proveLock = Promise.resolve()
-
-async function proveViaServe(circuitInput) {
-  const run = () => proveViaServeLocked(circuitInput)
-  const p = proveLock.then(run, run)
-  proveLock = p.catch(() => {})
-  return p
-}
-
-async function ensureServe() {
-  if (serveProc && serveProc.exitCode === null) return
-  serveProc = null
-  stdoutReader = null
-  if (!existsSync(PROVER_BIN)) {
-    throw new Error(`prover binary missing at ${PROVER_BIN}; cargo build --release --manifest-path crates/privacy-cash-prover/Cargo.toml`)
-  }
-  serveStdoutBuf = ""
-  serveProc = Bun.spawn([PROVER_BIN, "serve"], {
-    stdin: "pipe",
-    stdout: "pipe",
-    stderr: "pipe",
-    env: {
-      ...process.env,
-      CIRCUIT_BASE: process.env.CIRCUIT_BASE ?? path.join(repoRoot, "programs/privacy-cash/artifacts/circuits/transaction2"),
-    },
-  })
-  stdoutReader = serveProc.stdout.getReader()
-  ;(async () => {
-    try {
-      const err = await new Response(serveProc.stderr).text()
-      if (err.trim()) console.log(err.trim())
-    } catch { /* process ended */ }
-  })()
-}
-
-async function readServeLine() {
-  while (!serveStdoutBuf.includes("\n")) {
-    const { done, value } = await stdoutReader.read()
-    if (done || !value) {
-      serveProc = null
-      throw new Error("prover serve stdout closed")
-    }
-    serveStdoutBuf += new TextDecoder().decode(value)
-  }
-  const i = serveStdoutBuf.indexOf("\n")
-  const line = serveStdoutBuf.slice(0, i)
-  serveStdoutBuf = serveStdoutBuf.slice(i + 1)
-  return line
-}
-
-async function proveViaServeLocked(circuitInput) {
-  await ensureServe()
-  try {
-    serveProc.stdin.write(JSON.stringify(circuitInput) + "\n")
-    const line = await readServeLine()
-    const parsed = JSON.parse(line)
-    if (parsed?.error) throw new Error(String(parsed.error))
-    return parsed
-  } catch (e) {
-    const msg = String(e?.message ?? e)
-    // Keep the process up for prove failures (JSON `error` field). Only
-    // respawn when stdin/stdout actually died.
-    if (/stdout closed|EPIPE|write after end|spawn/i.test(msg) || e instanceof SyntaxError) {
-      try { serveProc?.kill() } catch { }
-      serveProc = null
-    }
-    throw e
   }
 }
 

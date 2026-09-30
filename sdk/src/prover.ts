@@ -1,11 +1,157 @@
 import { utils } from "ffjavascript"
-import { getBackendUrl } from "./merkle"
 
-export interface HostedProof {
+import {
+  DEFAULT_CIRCUIT_BASE_URL,
+  loadCircuitArtifacts,
+  type CircuitArtifacts,
+} from "./circuit-artifacts"
+import { createWasmProver, type LoadedProver, type ProverWasmSource } from "./prover-core"
+import type { ProverRequest, ProverResponse } from "./prover-worker"
+
+export interface Groth16Proof {
   proofA: number[]
   proofB: number[]
   proofC: number[]
   publicSignals: string[]
+}
+
+export interface ProverOptions {
+  /** Where `transaction2.zkey` and `transaction2.graph` are served. Default `/circuit/`. */
+  circuitBaseUrl?: string
+  /**
+   * Prove on the calling thread instead of a Web Worker. Defaults to true
+   * when there is no `window`/`Worker` (Node, Bun, tests).
+   */
+  inThread?: boolean
+  /**
+   * Max threads for the threaded wasm build. It is used only on cross-origin
+   * isolated pages (COOP `same-origin` + COEP `require-corp`); elsewhere the
+   * single-threaded build runs. `1` forces single-threaded. Default: all cores.
+   */
+  threads?: number
+  /** In-thread only: supply the artifacts yourself (they are still hash-checked by the caller). */
+  loadArtifacts?: () => Promise<CircuitArtifacts>
+  /** In-thread only: the single-threaded `privacy_cash_prover_bg.wasm` bytes or URL. */
+  wasm?: ProverWasmSource
+}
+
+let options: ProverOptions = {}
+let worker: Worker | null = null
+let workerReady: Promise<void> | null = null
+let nextId = 1
+const pending = new Map<number, { resolve: (v: string | undefined) => void; reject: (e: Error) => void }>()
+let inThreadProver: Promise<LoadedProver> | null = null
+let threadsInUse: number | null = null
+
+/** Overrides prover settings. Drops any loaded prover so the next call reloads. */
+export function configureProver(opts: ProverOptions): void {
+  terminateProver()
+  options = { ...opts }
+}
+
+/** Stops the worker and frees the parsed proving key. */
+export function terminateProver(): void {
+  worker?.terminate()
+  worker = null
+  workerReady = null
+  inThreadProver = null
+  threadsInUse = null
+  for (const p of pending.values()) p.reject(new Error("prover terminated"))
+  pending.clear()
+}
+
+function useWorker(): boolean {
+  if (options.inThread !== undefined) return !options.inThread
+  return typeof window !== "undefined" && typeof Worker !== "undefined"
+}
+
+function circuitBaseUrl(): string {
+  const base = options.circuitBaseUrl ?? DEFAULT_CIRCUIT_BASE_URL
+  // Resolve on the page so a relative base does not resolve against the worker script.
+  return typeof location === "undefined" ? base : new URL(base, location.href).toString()
+}
+
+function getWorker(): Worker {
+  if (worker) return worker
+  const w = new Worker(new URL("./prover-worker.js", import.meta.url), { type: "module" })
+  w.onmessage = (ev: MessageEvent<ProverResponse>) => {
+    const msg = ev.data
+    const p = pending.get(msg.id)
+    if (!p) return
+    pending.delete(msg.id)
+    if (msg.ok) p.resolve(msg.result)
+    else p.reject(new Error(msg.error))
+  }
+  w.onerror = (ev) => {
+    const err = new Error(`prover worker failed: ${ev.message || "unknown error"}`)
+    for (const p of pending.values()) p.reject(err)
+    pending.clear()
+    worker = null
+    workerReady = null
+  }
+  worker = w
+  return w
+}
+
+function call(req: { type: "init" } | { type: "prove"; input: string }): Promise<string | undefined> {
+  const id = nextId++
+  const w = getWorker()
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve, reject })
+    w.postMessage({
+      ...req,
+      id,
+      circuitBaseUrl: circuitBaseUrl(),
+      threads: options.threads,
+    } as ProverRequest)
+  })
+}
+
+function getInThreadProver(): Promise<LoadedProver> {
+  inThreadProver ??= (options.loadArtifacts ?? (() => loadCircuitArtifacts(circuitBaseUrl())))()
+    .then((artifacts) => createWasmProver(artifacts, { wasm: options.wasm, threads: options.threads }))
+    .then((loaded) => {
+      threadsInUse = loaded.threads
+      if (loaded.threadError) warnThreadFallback(loaded.threadError)
+      return loaded
+    })
+    .catch((e) => {
+      inThreadProver = null
+      throw e
+    })
+  return inThreadProver
+}
+
+function warnThreadFallback(reason: string): void {
+  console.warn(`privacy-cash: threaded prover failed to start, proving on one thread (${reason})`)
+}
+
+/**
+ * Threads the loaded prover uses: more than 1 only with the threaded build on
+ * a cross-origin isolated page. `null` until `preloadProver()` or `prove()` has loaded it.
+ */
+export function proverThreads(): number | null {
+  return threadsInUse
+}
+
+/**
+ * Starts downloading, verifying and parsing the proving artifacts so the
+ * first `prove()` does not pay for it. Safe to call repeatedly.
+ */
+export function preloadProver(): Promise<void> {
+  if (!useWorker()) return getInThreadProver().then(() => undefined)
+  workerReady ??= call({ type: "init" }).then(
+    (result) => {
+      const info = JSON.parse(result ?? "{}") as { threads?: number; threadError?: string }
+      threadsInUse = info.threads ?? 1
+      if (info.threadError) warnThreadFallback(info.threadError)
+    },
+    (e) => {
+      workerReady = null
+      throw e
+    },
+  )
+  return workerReady
 }
 
 function hexToBytes(hex: string): number[] {
@@ -41,39 +187,39 @@ function jsonSafeCircuitInput(
   return utils.stringifyBigInts(replaceBytes(input)) as Record<string, unknown>
 }
 
-async function proveHosted(input: Record<string, unknown>): Promise<HostedProof> {
-  const res = await fetch(getBackendUrl() + "/api/prove", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(jsonSafeCircuitInput(input)),
-  })
-  const json = await res.json()
-  const data = json.data ?? json
-  if (!res.ok || json.success === false) {
-    throw new Error(json.error?.message ?? json.message ?? `prove failed (${res.status})`)
+function parseProof(json: string): Groth16Proof {
+  const data = JSON.parse(json) as {
+    proof_a: string
+    proof_b: string
+    proof_c: string
+    public_signals: string[]
   }
-  const proofA = hexToBytes(String(data.proof_a))
-  const proofB = hexToBytes(String(data.proof_b))
-  const proofC = hexToBytes(String(data.proof_c))
+  const proofA = hexToBytes(data.proof_a)
+  const proofB = hexToBytes(data.proof_b)
+  const proofC = hexToBytes(data.proof_c)
   if (proofA.length !== 32 || proofB.length !== 64 || proofC.length !== 32) {
     throw new Error(
-      `hosted prove returned unexpected sizes ${proofA.length}/${proofB.length}/${proofC.length}`,
+      `prover returned unexpected sizes ${proofA.length}/${proofB.length}/${proofC.length}`,
     )
   }
-  return {
-    proofA,
-    proofB,
-    proofC,
-    publicSignals: data.public_signals,
-  }
+  return { proofA, proofB, proofC, publicSignals: data.public_signals }
 }
 
 /**
- * Generate a groth16 proof via POST /api/prove (ark-groth16).
- * Returns compressed 32/64/32 bytes. Does not log the witness.
+ * Generates a Groth16 proof on this device (Web Worker in browsers).
+ * Returns compressed 32/64/32 bytes and the 7 public signals. The witness,
+ * including the spend key, is never sent over the network.
  */
-export async function prove(input: Record<string, unknown>): Promise<HostedProof> {
-  return proveHosted(input)
+export async function prove(input: Record<string, unknown>): Promise<Groth16Proof> {
+  const json = JSON.stringify(jsonSafeCircuitInput(input))
+  if (!useWorker()) {
+    const p = await getInThreadProver()
+    return parseProof(p.prover.prove(json))
+  }
+  await preloadProver()
+  const out = await call({ type: "prove", input: json })
+  if (out === undefined) throw new Error("prover returned no result")
+  return parseProof(out)
 }
 
 /** Parse public signals into 32-byte big-endian field-element byte arrays. */

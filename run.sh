@@ -102,12 +102,25 @@ else
   ( cd frontend && PROGRAM_ID="$PROG" VITE_ALT_ADDRESS="${EXISTING_ALT:-}" bun scripts/create-alt.mjs 2>&1 | sed 's/^/    /' ) || echo "    ⚠ ALT create failed — SPL deposit will try to create one via wallet"
 fi
 
-echo "▶ 3c/6 Hosted Groth16 prover…"
-PROVER_BIN=crates/privacy-cash-prover/target/release/privacy-cash-prover
-if [ "$FRESH" = "1" ] || [ ! -x "$PROVER_BIN" ]; then
-  cargo build --release --manifest-path crates/privacy-cash-prover/Cargo.toml 2>&1 | tail -3
+echo "▶ 3c/6 Browser Groth16 prover (wasm + circuit artifacts)…"
+CIRCUITS=programs/privacy-cash/artifacts/circuits
+( cd programs/privacy-cash && shasum -a 256 -c artifacts/circuits/SHA256SUMS --quiet ) \
+  || { echo "    ✗ circuit artifacts do not match SHA256SUMS"; exit 1; }
+PROVER_WASM=sdk/prover-wasm/privacy_cash_prover_bg.wasm
+PROVER_WASM_MT=sdk/prover-wasm-mt/privacy_cash_prover_bg.wasm
+if [ "$FRESH" = "1" ] || [ ! -f "$PROVER_WASM" ] || [ ! -f "$PROVER_WASM_MT" ]; then
+  command -v wasm-pack >/dev/null || { echo "    ✗ wasm-pack missing: cargo install wasm-pack --locked"; exit 1; }
+  # Threaded variant needs nightly + rust-src (build-std with atomics).
+  rustup toolchain install nightly --profile minimal --component rust-src \
+    --target wasm32-unknown-unknown >/dev/null 2>&1 \
+    || { echo "    ✗ could not install nightly toolchain (needed for threaded prover)"; exit 1; }
+  ( set -o pipefail; cd sdk && bun run build:prover 2>&1 | grep -E "Done|rror" | sed 's/^/    /' ) || { echo "    ✗ prover wasm build failed"; exit 1; }
+  [ -f "$PROVER_WASM_MT" ] || { echo "    ✗ threaded prover wasm missing after build"; exit 1; }
 fi
-echo "    $PROVER_BIN"
+mkdir -p frontend/public/circuit
+rm -f frontend/public/circuit/transaction2.wasm
+cp "$CIRCUITS/transaction2.zkey" "$CIRCUITS/transaction2.graph" frontend/public/circuit/
+echo "    $PROVER_WASM, $PROVER_WASM_MT, frontend/public/circuit/{transaction2.zkey,transaction2.graph}"
 
 echo "▶ 3d/6 SDK (frontend imports dist/)…"
 ( cd sdk && bun run build 2>&1 | tail -5 | sed 's/^/    /' ) || { echo "    ✗ sdk build failed"; exit 1; }

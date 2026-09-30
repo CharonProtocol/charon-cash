@@ -1,6 +1,7 @@
 export { PrivacyCashClient } from "./client";
 export { EncryptionService, Keypair, Utxo, getExtDataHash, getMintAddressField, getSwapInExtDataHash, getSwapOutExtDataHash, encodePrivacyAddress, parsePrivacyAddress, isPrivacyAddress, PRIVACY_ADDRESS_PREFIX, } from "./crypto";
-export { prove, parseToBytesArray, } from "./prover";
+export { prove, parseToBytesArray, preloadProver, configureProver, terminateProver, proverThreads, } from "./prover";
+export { CIRCUIT_ARTIFACTS, CIRCUIT_CACHE_NAME, DEFAULT_CIRCUIT_BASE_URL, loadCircuitArtifacts, verifyArtifact, } from "./circuit-artifacts";
 export { buildTransactTransaction, buildTransactIxData, buildTransactSplTransaction, buildTransactSplInstruction, buildSwapInstruction, buildSwapIxData, buildSwapTransaction, buildWrapSolInstruction, deriveAccounts, deriveSplTreeAccount, deriveSwapAccounts, } from "./program";
 export { compileV1Transaction, signWireTransaction, v1SignedSize, V1_MAX_SIZE, V1_PREFIX, } from "./tx-v1";
 export { ensureAlt, fetchAlt, splAltAddresses, envAltAddress, cachedAltAddress, cacheAltAddress, } from "./alt";

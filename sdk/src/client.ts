@@ -87,7 +87,7 @@ import {
   type Note,
 } from "./notes"
 import { pushEncryptedNotes, pullEncryptedNotes } from "./notestore"
-import { parseToBytesArray, prove } from "./prover"
+import { parseToBytesArray, preloadProver, prove } from "./prover"
 import {
   buildTransactSplTransaction,
   buildTransactTransaction,
@@ -318,6 +318,10 @@ export class PrivacyCashClient {
     await this.init()
     if (this.utxoKeypair) return
     if (!this.unlocking) {
+      // Fetch + verify + parse the proving key while the wallet prompt is open.
+      preloadProver().catch(() => {
+        /* the first prove() retries and surfaces the error */
+      })
       this.unlocking = (async () => {
         const sig = await this.signUnlock()
         const enc = new EncryptionService()

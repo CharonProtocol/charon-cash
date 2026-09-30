@@ -1,8 +1,35 @@
 # How to run / test
 
 Run from the repo root. Install once: `surfpool`, `solana`, `cargo`, `bun`.
-The upstream SDK must be cloned next to this repo (for the circuit files):
-`git clone https://github.com/Privacy-Cash/privacy-cash-sdk` (one-time, not repeated below).
+
+Proofs are made on the user's device by the Rust prover compiled to wasm
+(`crates/privacy-cash-prover`, see `docs/client-side-proving-build.md`). There is no
+prove endpoint. The circuit files it needs are in the repo
+(`programs/privacy-cash/artifacts/circuits/transaction2.{zkey,graph}`), and the built
+wasm is committed in two builds: `sdk/prover-wasm-mt/` (multi-threaded, used when the
+page is cross-origin isolated) and `sdk/prover-wasm/` (single-threaded fallback). You
+only need extra tools to rebuild those:
+
+```bash
+# rebuild sdk/prover-wasm{,-mt}/ after changing crates/privacy-cash-prover
+rustup target add wasm32-unknown-unknown
+rustup toolchain install nightly --profile minimal --component rust-src --target wasm32-unknown-unknown
+cargo install wasm-pack
+cd sdk && bun run build:prover          # both; `node scripts/build-prover.mjs st` = stable-only
+
+# rebuild transaction2.graph after changing the circuit (needs protoc on PATH or $PROTOC)
+programs/privacy-cash/scripts/build-witness-graph.sh
+```
+
+`./run.sh` checks the circuit files against `artifacts/circuits/SHA256SUMS`, builds both
+wasm variants if either is missing (or with `--fresh`; it installs the nightly toolchain
+via rustup for that), and copies the zkey and graph to `frontend/public/circuit/`.
+
+Threaded proving (about 0.6–0.9 s instead of 2 s) needs the page served with
+`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`.
+`vite dev` / `vite preview` send them, and `frontend/public/_headers` covers
+Netlify/Cloudflare Pages. Any other host must add them, or proofs silently run
+single-threaded. Check in the browser console: `crossOriginIsolated` should be `true`.
 
 ## 1. Start surfpool (local Solana)
 ```bash
@@ -38,7 +65,7 @@ cargo +stable run -p privacy-cash-backend
 ## 4. Frontend setup
 ```bash
 cd frontend
-bun install                           # postinstall copies hasher wasm + circuit
+bun install                           # postinstall copies hasher wasm + transaction2.{zkey,graph} to public/circuit/
 cp .env.example .env                  # set VITE_BACKEND_URL / VITE_SOLANA_RPC_URL / VITE_PROGRAM_ID
 ```
 
@@ -60,6 +87,21 @@ bun run dev                           # http://localhost:5173  (connect Phantom 
 cd frontend
 bun run test                          # client-sdk proof/crypto tests
 bun run build                         # tsc + vite
+
+# program tests prove with the same crate the browser runs (no Wasmer)
+cd programs/privacy-cash && cargo test --release
+
+# prover crate: graph witness == Circom wasm witness, proofs verify
+cd crates/privacy-cash-prover && cargo test --release
+```
+
+## 8. Timing
+```bash
+cd crates/privacy-cash-prover && cargo run --release --example timing   # native parse / witness / prove
+node sdk/bench/prove-timing.mjs                                            # wasm on V8 (Chrome's engine)
+bun sdk/bench/prove-timing.mjs                                             # wasm on JavaScriptCore (Safari's engine)
+node frontend/bench/run-browser-bench.mjs                                  # headless Chrome, SDK -> Web Worker; needs `bun run dev`
+cd frontend && bun bench/withdraw-timing.mjs                               # full relayed withdraw; needs surfpool + backend
 ```
 
 ## Notes

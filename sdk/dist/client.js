@@ -10,7 +10,7 @@ import { clearCachedLeaves, loadCachedLeaves, saveCachedLeaves, } from "./mirror
 import { canRelay, minEconomicWithdrawal, transferFee, transferRecipient, withdrawalFee, } from "./relay-policy";
 import { clearNotes, exportNotes, getSyncOffset, importNotes, loadNotes, markNoteSpent, newNoteId, resetSyncOffset, saveNote, setSyncOffset, unspentNotes, upsertNote, markNoteSpentByIndex, } from "./notes";
 import { pushEncryptedNotes, pullEncryptedNotes } from "./notestore";
-import { parseToBytesArray, prove } from "./prover";
+import { parseToBytesArray, preloadProver, prove } from "./prover";
 import { buildTransactSplTransaction, buildTransactTransaction, deriveSwapAccounts, } from "./program";
 import { ensureAlt, envAltAddress, splAltAddresses, } from "./alt";
 function mixerTreeKey(mint) {
@@ -135,6 +135,10 @@ export class PrivacyCashClient {
         if (this.utxoKeypair)
             return;
         if (!this.unlocking) {
+            // Fetch + verify + parse the proving key while the wallet prompt is open.
+            preloadProver().catch(() => {
+                /* the first prove() retries and surfaces the error */
+            });
             this.unlocking = (async () => {
                 const sig = await this.signUnlock();
                 const enc = new EncryptionService();
@@ -890,10 +894,6 @@ export class PrivacyCashClient {
         const dummyPath = new Array(MERKLE_TREE_DEPTH).fill("0");
         const deadline = Date.now() + 45_000;
         let lastErr = "merkle indexer not ready";
-        // Hoisted out of the retry loop. A transient root mismatch means the indexer is
-        // a few leaves behind, so the fix is to top up the delta on the next pass — not
-        // to re-download and rebuild the entire tree, which is what made a brief
-        // mismatch cost the whole 45-second deadline.
         let leaves = await loadCachedLeaves(treeKey).catch(() => []);
         let mirror = LocalMirror.fromLeaves(this.wasm, leaves);
         let persistedCount = leaves.length;

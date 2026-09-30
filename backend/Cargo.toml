@@ -38,4 +38,3 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rs-merkle-tree = {git = "https://github.com/Cheapstar/rs-merkle-tree.git", features = ["rocksdb_store_v2"]}
 rocksdb = { version = "0.24" }
 chrono = "0.4.45"
-privacy-cash-prover = { path = "../crates/privacy-cash-prover" }

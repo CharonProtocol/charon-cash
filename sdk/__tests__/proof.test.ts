@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest"
+import { readFileSync } from "node:fs"
 import { WasmFactory } from "@lightprotocol/hasher.rs"
 
 import { FIELD_SIZE, MERKLE_TREE_DEPTH, WRAPPED_SOL_MINT } from "../src/constants"
@@ -10,9 +11,12 @@ import {
   parsePrivacyAddress,
   getExtDataHash,
 } from "../src/crypto"
-import { getBackendUrl } from "../src/merkle"
-import { prove, parseToBytesArray } from "../src/prover"
+import { verifyArtifact } from "../src/circuit-artifacts"
+import { configureProver, preloadProver, prove, parseToBytesArray } from "../src/prover"
 import { LocalMirror } from "../src/local-provider"
+
+const CIRCUITS = new URL("../../programs/privacy-cash/artifacts/circuits/", import.meta.url)
+const PROVER_WASM = new URL("../prover-wasm/privacy_cash_prover_bg.wasm", import.meta.url)
 
 const FIELD = BigInt(FIELD_SIZE.toString())
 
@@ -28,28 +32,24 @@ function le(b: ArrayLike<number>): bigint {
 }
 const mod = (x: bigint) => ((x % FIELD) + FIELD) % FIELD
 
-async function hostedProveUp(): Promise<boolean> {
-  try {
-    const res = await fetch(getBackendUrl() + "/health", {
-      signal: AbortSignal.timeout(2000),
-    })
-    return res.ok
-  } catch {
-    return false
-  }
-}
-
 describe("client-sdk crypto + proof", () => {
-  let proveOk = false
-
   beforeAll(async () => {
-    proveOk = await hostedProveUp()
-    if (!proveOk) {
-      console.warn(
-        `skipping Groth16 tests: ${getBackendUrl()}/api/prove not reachable (start ./run.sh)`,
-      )
-    }
-  })
+    // Same wasm prover the browser Worker runs, on this thread, fed from the repo artifacts.
+    configureProver({
+      inThread: true,
+      wasm: readFileSync(PROVER_WASM),
+      loadArtifacts: async () => {
+        const zkey = new Uint8Array(readFileSync(new URL("transaction2.zkey", CIRCUITS)))
+        const graph = new Uint8Array(readFileSync(new URL("transaction2.graph", CIRCUITS)))
+        await verifyArtifact("zkey", zkey)
+        await verifyArtifact("graph", graph)
+        return { zkey, graph }
+      },
+    })
+    const started = performance.now()
+    await preloadProver()
+    console.log(`wasm prover load ${Math.round(performance.now() - started)} ms`)
+  }, 120_000)
 
   it("encrypts and decrypts a UTXO round-trip (Web Crypto AES-GCM)", async () => {
     const wasm = await WasmFactory.getInstance()
@@ -112,7 +112,6 @@ describe("client-sdk crypto + proof", () => {
   })
 
   it("generates a valid deposit proof whose public signals satisfy the on-chain checks", async () => {
-    if (!proveOk) return
     const wasm = await WasmFactory.getInstance()
     const enc = new EncryptionService()
     enc.deriveFromSignature(new Uint8Array(64).fill(9))
@@ -162,9 +161,11 @@ describe("client-sdk crypto + proof", () => {
       mintAddress: WRAPPED_SOL_MINT,
     }
 
+    const started = performance.now()
     const { publicSignals, proofA, proofB, proofC } = await prove(
       circuitInput as unknown as Record<string, unknown>,
     )
+    console.log(`wasm deposit prove ${Math.round(performance.now() - started)} ms`)
     expect(publicSignals.length).toBe(7)
     expect(proofA.length).toBe(32)
     expect(proofB.length).toBe(64)
@@ -185,7 +186,6 @@ describe("client-sdk crypto + proof", () => {
   }, 120_000)
 
   it("generates a valid WITHDRAW proof (negative ext_amount, real Merkle path)", async () => {
-    if (!proveOk) return
     const wasm = await WasmFactory.getInstance()
     const enc = new EncryptionService()
     enc.deriveFromSignature(new Uint8Array(64).fill(13))

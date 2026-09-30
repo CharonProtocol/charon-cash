@@ -1,8 +1,10 @@
 // Surfpool e2e: deposit SOL, then atomic SOL↔USDC swap via shim-signed v1 Swap ix.
 // Merkle paths come from a local mirror of leaves this script inserted (same as
 // e2e-surfpool private transfer). Both trees must start at next_index 0.
-// Requires ./run.sh (surfpool + shim) and `cargo build --manifest-path crates/privacy-cash-prover/Cargo.toml`.
+// Requires ./run.sh (surfpool + shim) and `cd sdk && bun run build:prover`.
+// Proofs are generated in this process by the SDK's wasm prover.
 // Run: bun scripts/e2e-swap.mjs
+import "./local-prover.mjs"
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"

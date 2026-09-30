@@ -2,7 +2,6 @@ mod health;
 mod indexer_status;
 mod merkle;
 mod notes;
-mod prove;
 mod register;
 
 use axum::routing::{get, post};
@@ -27,8 +26,7 @@ pub fn router(state: AppState) -> Router {
             "/api/registration/get_viewing_key/{wallet_pubkey}",
             get(register::get_viewing_key),
         )
-        .route("/api/notes/send_notes/{index}", get(notes::send_notes))
-        .route("/api/prove", post(prove::prove));
+        .route("/api/notes/send_notes/{index}", get(notes::send_notes));
 
     // Per-leaf Merkle proofs are a deanonymization vector: the request identifies the
     // leaf the caller owns. Clients build the tree locally instead, so nothing needs

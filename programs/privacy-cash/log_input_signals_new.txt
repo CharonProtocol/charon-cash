@@ -1,0 +1,14 @@
+root 1 0
+publicAmount 1 0
+extDataHash 1 0
+inputNullifier 2 0
+outputCommitment 2 0
+mintAddress 1 0
+inAmount 2 0
+inPrivateKey 2 0
+inBlinding 2 0
+inPathIndices 2 0
+inPathElements 52 0
+outAmount 2 0
+outPubkey 2 0
+outBlinding 2 0

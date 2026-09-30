@@ -60,7 +60,7 @@ function MerkleHero() {
 
 const STATS = [
   { k: "Tree", v: "26 levels", s: "Poseidon Merkle" },
-  { k: "Proof", v: "Groth16", s: "BN254, hosted prove" },
+  { k: "Proof", v: "Groth16", s: "BN254, proved in your browser" },
   { k: "Withdraw", v: "Relayer-signed", s: "no browser RPC submit" },
   { k: "Swap", v: "Atomic v1", s: "shielded SOL ↔ SPL" },
 ]
