@@ -15,11 +15,21 @@
   },
   "files": [
     "dist",
+    "prover-wasm/privacy_cash_prover.js",
+    "prover-wasm/privacy_cash_prover.d.ts",
+    "prover-wasm/privacy_cash_prover_bg.wasm",
+    "prover-wasm/privacy_cash_prover_bg.wasm.d.ts",
+    "prover-wasm-mt/privacy_cash_prover.js",
+    "prover-wasm-mt/privacy_cash_prover.d.ts",
+    "prover-wasm-mt/privacy_cash_prover_bg.wasm",
+    "prover-wasm-mt/privacy_cash_prover_bg.wasm.d.ts",
+    "prover-wasm-mt/snippets",
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && cp -r circuits dist/circuits",
-    "prepublishOnly": "bun run build && bun test",
+    "build": "tsc -p tsconfig.json",
+    "build:prover": "node scripts/build-prover.mjs",
+    "prepublishOnly": "bun run build:prover && bun run build && bun test",
     "test": "bun test",
     "setup": "node scripts/initialize.mjs && node scripts/init-spl.mjs && node scripts/alt-init.mjs"
   },

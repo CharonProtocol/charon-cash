@@ -9,7 +9,8 @@ use common::{
     },
     merkle_tree::MerkleTree,
     prover::{
-        deposit_artifacts_to_submit, prove, DepositProofArtifacts, DepositProofToSubmit, ProofInput,
+        deposit_artifacts_to_submit, prove, prove_unverified, DepositProofArtifacts,
+        DepositProofToSubmit, ProofInput,
     },
     test_alt::{
         create_global_test_alt, create_versioned_tx_with_alt, get_global_test_alt,
@@ -60,7 +61,6 @@ use std::{
     path::PathBuf,
     str::FromStr,
 };
-use wasmer::sys::global;
 
 use crate::common::utxo::default_mint_address;
 
@@ -1190,7 +1190,8 @@ fn deposit_sol_withdraw_usdc() {
         .join("circuits")
         .join("transaction2");
 
-    let withdraw_proof_result = prove(&withdraw_input, &key_base_path).unwrap();
+    // The SOL note is not in the SPL tree, so the witness is unsatisfied.
+    let withdraw_proof_result = prove_unverified(&withdraw_input, &key_base_path).unwrap();
 
     let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
 

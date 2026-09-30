@@ -3,6 +3,7 @@
 // SPL deposit + withdraw. Exercises fetchAlt (/api/relayer/alt) + ensureAlt + the
 // ALT-compressed SPL tx, all via the backend. The Connection below is test-harness
 // setup (mint/ATA/ALT) only — PrivacyCashClient makes NO rpc calls.
+import "./local-prover.mjs"
 import { readFileSync } from "node:fs"
 import {
   AddressLookupTableProgram, ComputeBudgetProgram, Connection, Keypair, PublicKey,

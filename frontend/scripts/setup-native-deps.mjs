@@ -1,10 +1,19 @@
 // Reproduces native artifacts the client SDK needs at runtime:
-//   1. @lightprotocol/hasher.rs browser wasm (shipped in dist/, referenced from dist/browser-fat/es/)
-//   2. the circom transaction2.{wasm,zkey} circuit (copied from the sibling
-//      privacy-cash-sdk clone into public/circuit/)
+// - @lightprotocol/hasher.rs browser wasm (shipped in dist/, referenced from dist/browser-fat/es/)
+// - public/circuit/transaction2.{zkey,graph}, fetched by the in-browser prover
 // Run automatically on `postinstall`. Safe to re-run.
-import { copyFileSync, existsSync, mkdirSync } from "node:fs"
+import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs"
 import path from "node:path"
+
+const circuits = "../programs/privacy-cash/artifacts/circuits"
+if (existsSync(path.join(circuits, "transaction2.graph"))) {
+  mkdirSync("public/circuit", { recursive: true })
+  rmSync("public/circuit/transaction2.wasm", { force: true })
+  for (const f of ["transaction2.zkey", "transaction2.graph"]) {
+    copyFileSync(path.join(circuits, f), path.join("public/circuit", f))
+  }
+  console.log("[setup] copied transaction2.{zkey,graph} -> public/circuit/")
+}
 
 // hasher.rs may be in frontend/node_modules OR hoisted to the workspace root (../node_modules)
 const hasherDist = [
@@ -22,22 +31,4 @@ if (hasherDist) {
       console.log(`[setup] copied ${src} -> browser-fat/es/`)
     }
   }
-}
-
-const sdkCircuit = path.join("..", "privacy-cash-sdk", "circuit2")
-const publicCircuit = path.join("public", "circuit")
-if (existsSync(sdkCircuit)) {
-  mkdirSync(publicCircuit, { recursive: true })
-  for (const f of ["transaction2.wasm", "transaction2.zkey"]) {
-    const from = path.join(sdkCircuit, f)
-    if (existsSync(from)) {
-      copyFileSync(from, path.join(publicCircuit, f))
-      console.log(`[setup] copied ${f} -> public/circuit/`)
-    }
-  }
-} else {
-  console.warn(
-    "[setup] privacy-cash-sdk/ not found as a sibling — skipping circuit copy.\n" +
-      "        Clone https://github.com/Privacy-Cash/privacy-cash-sdk next to this repo and re-run.",
-  )
 }
