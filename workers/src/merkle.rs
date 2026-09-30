@@ -187,33 +187,70 @@ pub async fn state(store: &Store, tree_key: &str) -> AppResult<TreeState> {
     })
 }
 
-pub async fn proof(store: &Store, tree_key: &str, leaf_index: u32) -> AppResult<MerklePath> {
-    let data = load_tree(store, tree_key)
-        .await
-        .map_err(|e| AppError::internal(format!("load tree {tree_key}: {e}")))?;
-    if leaf_index >= data.next_index {
-        return Err(AppError::not_found(
-            "LEAF_NOT_FOUND",
-            format!("leaf_index {leaf_index} out of range (next={})", data.next_index),
-        ));
-    }
+/// Fold the sibling path of `leaf_index` up to the root, hashing exactly like
+/// append_leaves. Used to detect torn reads: the sync writer updates the meta
+/// row and the level rows in separate D1 queries, so a proof request racing a
+/// sync can pair levels from one tree generation with a root from another —
+/// the circuit rejects that pairing as ForceEqual.
+fn fold_path_root(data: &TreeData, leaf_index: u32) -> Result<[u8; 32], String> {
     let zb = zero_bytes();
-    let mut path = [[0u8; 32]; MERKLE_TREE_HEIGHT];
+    let mut cur = *data
+        .levels
+        .first()
+        .and_then(|l| l.get(leaf_index as usize))
+        .ok_or_else(|| format!("leaf {leaf_index} missing from mirror"))?;
+    let mut pos = leaf_index as usize;
     for i in 0..MERKLE_TREE_HEIGHT {
-        let sibling = ((leaf_index >> i) ^ 1) as usize;
-        path[i] = data.levels[i].get(sibling).copied().unwrap_or(zb[i]);
+        let sib = data.levels[i].get((pos ^ 1) as usize).copied().unwrap_or(zb[i]);
+        let (left, right) = if pos % 2 == 0 { (cur, sib) } else { (sib, cur) };
+        cur = Poseidon::hashv(&[&left, &right]).map_err(|e| e.to_string())?;
+        pos >>= 1;
     }
-    let mut indices = [0u8; MERKLE_TREE_HEIGHT];
-    for i in 0..MERKLE_TREE_HEIGHT {
-        indices[i] = ((leaf_index >> i) & 1) as u8;
+    Ok(cur)
+}
+
+pub async fn proof(store: &Store, tree_key: &str, leaf_index: u32) -> AppResult<MerklePath> {
+    // Serve only self-consistent snapshots: verify the path folds to the
+    // current root before returning it, retrying briefly while a concurrent
+    // sync write leaves the mirror torn.
+    for round in 0..8 {
+        let data = load_tree(store, tree_key)
+            .await
+            .map_err(|e| AppError::internal(format!("load tree {tree_key}: {e}")))?;
+        if leaf_index >= data.next_index {
+            if round + 1 == 8 {
+                return Err(AppError::not_found(
+                    "LEAF_NOT_FOUND",
+                    format!("leaf_index {leaf_index} out of range (next={})", data.next_index),
+                ));
+            }
+            crate::rpc::sleep_ms(150).await;
+            continue;
+        }
+        let current_root = data.root_history[data.root_index];
+        if fold_path_root(&data, leaf_index) == Ok(current_root) {
+            let zb = zero_bytes();
+            let mut path = [[0u8; 32]; MERKLE_TREE_HEIGHT];
+            for i in 0..MERKLE_TREE_HEIGHT {
+                let sibling = ((leaf_index >> i) ^ 1) as usize;
+                path[i] = data.levels[i].get(sibling).copied().unwrap_or(zb[i]);
+            }
+            let mut indices = [0u8; MERKLE_TREE_HEIGHT];
+            for i in 0..MERKLE_TREE_HEIGHT {
+                indices[i] = ((leaf_index >> i) & 1) as u8;
+            }
+            return Ok(MerklePath {
+                root: hex::encode_upper(current_root),
+                next_leaf_index: data.next_index,
+                path_elements: path,
+                path_indices: indices,
+            });
+        }
+        crate::rpc::sleep_ms(150).await;
     }
-    let current_root = data.root_history[data.root_index];
-    Ok(MerklePath {
-        root: hex::encode_upper(current_root),
-        next_leaf_index: data.next_index,
-        path_elements: path,
-        path_indices: indices,
-    })
+    Err(AppError::internal(format!(
+        "proof {leaf_index}: mirror stayed inconsistent after retries"
+    )))
 }
 
 pub async fn is_known_root(store: &Store, tree_key: &str, root: [u8; 32]) -> AppResult<bool> {
