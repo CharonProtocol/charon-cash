@@ -98,6 +98,9 @@ export declare class PrivacyCashClient {
     depositSOL(amountLamports: number): Promise<DepositResult>;
     withdrawSOL(grossLamports: number, recipient: PublicKey | string, opts?: {
         relay?: boolean;
+        inputNotes?: Array<{
+            blinding: string;
+        }>;
     }): Promise<WithdrawResult>;
     /**
      * Shielded transfer: pay `netLamports` as a note only the recipient can spend.
@@ -109,6 +112,9 @@ export declare class PrivacyCashClient {
         inputNote?: {
             blinding: string;
         };
+        inputNotes?: Array<{
+            blinding: string;
+        }>;
     }): Promise<WithdrawResult & {
         leafIndex: number;
         commitment: string;
@@ -120,6 +126,9 @@ export declare class PrivacyCashClient {
         inputNote?: {
             blinding: string;
         };
+        inputNotes?: Array<{
+            blinding: string;
+        }>;
     }): Promise<WithdrawResult & {
         leafIndex: number;
         commitment: string;
@@ -127,6 +136,9 @@ export declare class PrivacyCashClient {
     depositSPL(mint: PublicKey | string, amountRaw: number | string): Promise<DepositResult>;
     withdrawSPL(mint: PublicKey | string, grossRaw: number | string, recipient: PublicKey | string, opts?: {
         relay?: boolean;
+        inputNotes?: Array<{
+            blinding: string;
+        }>;
     }): Promise<WithdrawResult>;
     getPrivateBalanceSOL(): bigint;
     getPrivateBalanceSPL(mint: PublicKey | string): bigint;

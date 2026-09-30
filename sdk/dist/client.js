@@ -326,6 +326,7 @@ export class PrivacyCashClient {
                 recipient: toPubkey(recipient),
                 isSpl: false,
                 relay: opts?.relay,
+                inputNotes: opts?.inputNotes,
             });
         }
         catch (e) {
@@ -354,6 +355,7 @@ export class PrivacyCashClient {
             relay: opts?.relay,
             onSubmitted: opts?.onSubmitted,
             inputNote: opts?.inputNote,
+            inputNotes: opts?.inputNotes,
         });
     }
     /** SPL twin of transferNoteSOL on a registered mint's tree. */
@@ -371,6 +373,7 @@ export class PrivacyCashClient {
             relay: opts?.relay,
             onSubmitted: opts?.onSubmitted,
             inputNote: opts?.inputNote,
+            inputNotes: opts?.inputNotes,
         });
     }
     async depositSPL(mint, amountRaw) {
@@ -477,6 +480,7 @@ export class PrivacyCashClient {
                 isSpl: true,
                 mint: mintPk,
                 relay: opts?.relay,
+                inputNotes: opts?.inputNotes,
             });
         }
         catch (e) {
@@ -578,18 +582,34 @@ export class PrivacyCashClient {
             .sort((a, b) => Number(b.amount) - Number(a.amount));
         if (sorted.length === 0)
             throw new Error("no spendable notes");
-        let inputNotes = sorted.filter((n) => BigInt(n.amount) >= BigInt(args.grossLamports));
-        if (inputNotes.length === 0) {
-            const a = sorted[0];
-            const need = BigInt(args.grossLamports) - BigInt(a.amount);
-            const b = sorted.slice(1).find((n) => BigInt(n.amount) >= need);
-            if (!b && BigInt(a.amount) < BigInt(args.grossLamports)) {
-                throw new Error(`insufficient private balance: have ${a.amount}, need ${args.grossLamports}`);
+        let inputNotes;
+        if (args.inputNotes?.length) {
+            inputNotes = args.inputNotes.map((p) => {
+                const pinned = sorted.find((n) => n.blinding === p.blinding);
+                if (!pinned)
+                    throw new Error("pinned note not found in spendable set");
+                return pinned;
+            });
+            const have = inputNotes.reduce((s, n) => s + BigInt(n.amount), 0n);
+            if (have < BigInt(args.grossLamports)) {
+                throw new Error(`pinned notes hold ${have}, need ${args.grossLamports}`);
             }
-            inputNotes = b ? [a, b] : [a];
+            inputNotes.sort((a, b) => Number(b.amount) - Number(a.amount));
         }
         else {
-            inputNotes = [inputNotes[0]];
+            inputNotes = sorted.filter((n) => BigInt(n.amount) >= BigInt(args.grossLamports));
+            if (inputNotes.length === 0) {
+                const a = sorted[0];
+                const need = BigInt(args.grossLamports) - BigInt(a.amount);
+                const b = sorted.slice(1).find((n) => BigInt(n.amount) >= need);
+                if (!b && BigInt(a.amount) < BigInt(args.grossLamports)) {
+                    throw new Error(`insufficient private balance: have ${a.amount}, need ${args.grossLamports}`);
+                }
+                inputNotes = b ? [a, b] : [a];
+            }
+            else {
+                inputNotes = [inputNotes[0]];
+            }
         }
         const realInputs = inputNotes.map((n) => new Utxo({
             wasm,
@@ -792,15 +812,19 @@ export class PrivacyCashClient {
         // from the indexer, so without a pin every concurrent caller converges on
         // the same largest note and they collide at the relayer.
         let inputNotes;
-        if (args.inputNote) {
-            const pinned = sorted.find((n) => n.blinding === args.inputNote.blinding);
-            if (!pinned) {
-                throw new Error("pinned note not found in spendable set");
+        const pinned = args.inputNotes ?? (args.inputNote ? [args.inputNote] : []);
+        if (pinned.length > 0) {
+            inputNotes = pinned.map((p) => {
+                const found = sorted.find((n) => n.blinding === p.blinding);
+                if (!found)
+                    throw new Error("pinned note not found in spendable set");
+                return found;
+            });
+            const have = inputNotes.reduce((s, n) => s + BigInt(n.amount), 0n);
+            if (have < BigInt(gross.toString())) {
+                throw new Error(`pinned notes hold ${have}, need ${gross.toString()}`);
             }
-            if (BigInt(pinned.amount) < BigInt(gross.toString())) {
-                throw new Error(`pinned note holds ${pinned.amount}, need ${gross.toString()}`);
-            }
-            inputNotes = [pinned];
+            inputNotes.sort((a, b) => Number(b.amount) - Number(a.amount));
         }
         else {
             inputNotes = sorted.filter((n) => BigInt(n.amount) >= BigInt(gross.toString()));

@@ -237,3 +237,165 @@ describe("PayrollEngine", () => {
     expect(calls.deposits).toEqual([520_000])
   })
 })
+
+// ---------------------------------------------------------------------------
+// parallel lanes: reservation ledger + pinned inputs
+// ---------------------------------------------------------------------------
+
+function laneClient(ctl: {
+  notes: Array<{ id: string; amount: bigint }>
+  withdrawMs: number
+  withdraws: Array<{ lamports: number; recipient: string; pins: string[] }>
+}) {
+  let changeSeq = 0
+  const inFlight = new Set<string>()
+  const refreshes = { n: 0 }
+  const listNotes = () =>
+    ctl.notes.map((n) => ({ id: n.id, amount: n.amount.toString(), blinding: n.id }))
+  const client: EngineClient = {
+    init: async () => {},
+    unlock: async () => {},
+    refreshNotes: async () => {
+      refreshes.n++
+    },
+    depositSOL: async () => {
+      throw new Error("lane tests pre-fund the vault")
+    },
+    depositSPL: async () => {
+      throw new Error("lane tests pre-fund the vault")
+    },
+    withdrawSOL: async (lamports: number, recipient: string, opts) => {
+      const pins = (opts?.inputNotes ?? []).map((p) => p.blinding)
+      for (const b of pins) {
+        if (inFlight.has(b)) throw new Error(`OVERLAP: ${b} pinned by two lanes`)
+        inFlight.add(b)
+      }
+      try {
+        await new Promise((r) => setTimeout(r, ctl.withdrawMs))
+        let held = 0n
+        for (const b of pins) {
+          const i = ctl.notes.findIndex((n) => n.id === b)
+          if (i < 0) throw new Error("pinned note vanished")
+          held += ctl.notes[i].amount
+          ctl.notes.splice(i, 1)
+        }
+        if (held < BigInt(lamports)) throw new Error(`pinned ${held} < gross ${lamports}`)
+        const change = held - BigInt(lamports)
+        if (change > 0n) ctl.notes.push({ id: `change${changeSeq}`, amount: change })
+        changeSeq++
+        ctl.withdraws.push({ lamports, recipient, pins })
+        return { signature: `SIG-${recipient[0]}` }
+      } finally {
+        for (const b of pins) inFlight.delete(b)
+      }
+    },
+    withdrawSPL: async () => {
+      throw new Error("not used")
+    },
+    transferNoteSOL: async () => {
+      throw new Error("not used")
+    },
+    transferNoteSPL: async () => {
+      throw new Error("not used")
+    },
+  }
+  return { client, listNotes, refreshes }
+}
+
+function laneDeps(client: EngineClient, listNotes: () => ReturnType<ReturnType<typeof laneClient>["listNotes"]>) {
+  return {
+    client,
+    listNotes: () => listNotes(),
+    waitUntilIndexed: async () => {},
+    confirmSignature: async () => true,
+    now: () => Date.now(),
+    newId: () => "run1",
+    // compress the 800ms reservation poll so handoffs stay fast in tests
+    sleep: (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms / 50)),
+  }
+}
+
+describe("PayrollEngine lanes", () => {
+  it("one big note feeds 8 rows through change-note handoffs with zero pin overlap", async () => {
+    const notes = [{ id: "big", amount: 100n * 10n ** 9n }]
+    const withdraws: Array<{ lamports: number; recipient: string; pins: string[] }> = []
+    const { client, listNotes } = laneClient({ notes, withdrawMs: 12, withdraws })
+    const engine = new PayrollEngine(laneDeps(client, listNotes))
+    const receipt = await engine.run(
+      req({
+        vaultRaw: 10n ** 20n,
+        entries: Array.from({ length: 8 }, (_, i) => ({
+          address: String(i).repeat(32),
+          amountHuman: "1",
+        })),
+      }),
+    )
+    expect(receipt.summary).toEqual({ sent: 8, failed: 0, total: 8 })
+    expect(withdraws).toHaveLength(8)
+    // every payout must have run on exactly the reserved note, one at a time
+    expect(withdraws.every((w) => w.pins.length === 1)).toBe(true)
+    const pinned = withdraws.flatMap((w) => w.pins)
+    expect(new Set(pinned).size).toBe(pinned.length)
+  })
+
+  it("fails a row as insufficient when no note (or change note) can ever cover it", async () => {
+    const notes = [{ id: "mid", amount: 6n * 10n ** 9n }]
+    const withdraws: Array<{ lamports: number; recipient: string; pins: string[] }> = []
+    const { client, listNotes } = laneClient({ notes, withdrawMs: 8, withdraws })
+    const engine = new PayrollEngine(laneDeps(client, listNotes))
+    const receipt = await engine.run(
+      req({
+        vaultRaw: 10n ** 20n,
+        entries: [
+          { address: "A".repeat(32), amountHuman: "5" },
+          { address: "B".repeat(32), amountHuman: "5" },
+        ],
+      }),
+    )
+    expect(receipt.entries[0].status).toBe("sent")
+    expect(receipt.entries[1].status).toBe("failed")
+    expect(receipt.entries[1].error).toMatch(/insufficient/)
+    expect(withdraws).toHaveLength(1)
+  })
+
+  it("reserves a two-note pair when no single note covers the payout", async () => {
+    const notes = [
+      { id: "three", amount: 3n * 10n ** 9n },
+      { id: "four", amount: 4n * 10n ** 9n },
+    ]
+    const withdraws: Array<{ lamports: number; recipient: string; pins: string[] }> = []
+    const { client, listNotes } = laneClient({ notes, withdrawMs: 5, withdraws })
+    const engine = new PayrollEngine(laneDeps(client, listNotes))
+    const receipt = await engine.run(
+      req({
+        vaultRaw: 10n ** 20n,
+        entries: [{ address: "A".repeat(32), amountHuman: "5" }],
+      }),
+    )
+    expect(receipt.summary).toEqual({ sent: 1, failed: 0, total: 1 })
+    expect(withdraws[0].pins.sort()).toEqual(["four", "three"])
+  })
+
+  it("cancel() with more rows than lanes marks never-started rows failed-cancelled", async () => {
+    const notes = Array.from({ length: 20 }, (_, i) => ({ id: `n${i}`, amount: 10n ** 9n }))
+    const withdraws: Array<{ lamports: number; recipient: string; pins: string[] }> = []
+    const { client, listNotes } = laneClient({ notes, withdrawMs: 15, withdraws })
+    const engine = new PayrollEngine(laneDeps(client, listNotes))
+    const p = engine.run(
+      req({
+        vaultRaw: 10n ** 20n,
+        entries: Array.from({ length: 20 }, (_, i) => ({
+          address: String(i).repeat(32),
+          amountHuman: "0.5",
+        })),
+      }),
+    )
+    setTimeout(() => engine.cancel(), 30)
+    const receipt = await p
+    expect(receipt.summary.sent).toBe(withdraws.length)
+    expect(receipt.summary.sent + receipt.summary.failed).toBe(20)
+    const cancelled = receipt.entries.filter((e) => e.error === "cancelled")
+    expect(cancelled.length).toBe(receipt.summary.failed)
+    expect(cancelled.every((e) => e.status === "failed")).toBe(true)
+  })
+})

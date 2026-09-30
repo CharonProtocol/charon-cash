@@ -484,7 +484,7 @@ export class PrivacyCashClient {
   async withdrawSOL(
     grossLamports: number,
     recipient: PublicKey | string,
-    opts?: { relay?: boolean },
+    opts?: { relay?: boolean; inputNotes?: Array<{ blinding: string }> },
   ): Promise<WithdrawResult> {
     await this.unlock()
     await this.syncNotes(SOL_TREE_KEY).catch(() => { })
@@ -496,6 +496,7 @@ export class PrivacyCashClient {
         recipient: toPubkey(recipient),
         isSpl: false,
         relay: opts?.relay,
+        inputNotes: opts?.inputNotes,
       })
     } catch (e) {
       // A spent nullifier means the local note set is stale (the note was
@@ -519,6 +520,7 @@ export class PrivacyCashClient {
       relay?: boolean
       onSubmitted?: OnSubmitted
       inputNote?: { blinding: string }
+      inputNotes?: Array<{ blinding: string }>
     },
   ): Promise<WithdrawResult & { leafIndex: number; commitment: string }> {
     await this.unlock()
@@ -532,6 +534,7 @@ export class PrivacyCashClient {
       relay: opts?.relay,
       onSubmitted: opts?.onSubmitted,
       inputNote: opts?.inputNote,
+      inputNotes: opts?.inputNotes,
     })
   }
 
@@ -544,6 +547,7 @@ export class PrivacyCashClient {
       relay?: boolean
       onSubmitted?: OnSubmitted
       inputNote?: { blinding: string }
+      inputNotes?: Array<{ blinding: string }>
     },
   ): Promise<WithdrawResult & { leafIndex: number; commitment: string }> {
     await this.unlock()
@@ -559,6 +563,7 @@ export class PrivacyCashClient {
       relay: opts?.relay,
       onSubmitted: opts?.onSubmitted,
       inputNote: opts?.inputNote,
+      inputNotes: opts?.inputNotes,
     })
   }
 
@@ -676,7 +681,7 @@ export class PrivacyCashClient {
     mint: PublicKey | string,
     grossRaw: number | string,
     recipient: PublicKey | string,
-    opts?: { relay?: boolean },
+    opts?: { relay?: boolean; inputNotes?: Array<{ blinding: string }> },
   ): Promise<WithdrawResult> {
     await this.unlock()
     const mintPk = toPubkey(mint)
@@ -691,6 +696,7 @@ export class PrivacyCashClient {
         isSpl: true,
         mint: mintPk,
         relay: opts?.relay,
+        inputNotes: opts?.inputNotes,
       })
     } catch (e) {
       // Same stale-note-set recovery as withdrawSOL.
@@ -816,6 +822,8 @@ export class PrivacyCashClient {
     mint?: PublicKey
     /** default true: gasless relayer-signed withdraw; false = client-signed broadcast. */
     relay?: boolean
+    /** Pin exact inputs (parallel callers): spend these blindings instead of auto-selecting. */
+    inputNotes?: Array<{ blinding: string }>
   }): Promise<WithdrawResult> {
     const feeBps = this.info!.withdrawalFeeRateBps
     const wasm = this.wasm!
@@ -826,21 +834,37 @@ export class PrivacyCashClient {
       .sort((a, b) => Number(b.amount) - Number(a.amount))
     if (sorted.length === 0) throw new Error("no spendable notes")
 
-    let inputNotes = sorted.filter(
-      (n) => BigInt(n.amount) >= BigInt(args.grossLamports),
-    )
-    if (inputNotes.length === 0) {
-      const a = sorted[0]
-      const need = BigInt(args.grossLamports) - BigInt(a.amount)
-      const b = sorted.slice(1).find((n) => BigInt(n.amount) >= need)
-      if (!b && BigInt(a.amount) < BigInt(args.grossLamports)) {
+    let inputNotes: Note[]
+    if (args.inputNotes?.length) {
+      inputNotes = args.inputNotes.map((p) => {
+        const pinned = sorted.find((n) => n.blinding === p.blinding)
+        if (!pinned) throw new Error("pinned note not found in spendable set")
+        return pinned
+      })
+      const have = inputNotes.reduce((s, n) => s + BigInt(n.amount), 0n)
+      if (have < BigInt(args.grossLamports)) {
         throw new Error(
-          `insufficient private balance: have ${a.amount}, need ${args.grossLamports}`,
+          `pinned notes hold ${have}, need ${args.grossLamports}`,
         )
       }
-      inputNotes = b ? [a, b] : [a]
+      inputNotes.sort((a, b) => Number(b.amount) - Number(a.amount))
     } else {
-      inputNotes = [inputNotes[0]]
+      inputNotes = sorted.filter(
+        (n) => BigInt(n.amount) >= BigInt(args.grossLamports),
+      )
+      if (inputNotes.length === 0) {
+        const a = sorted[0]
+        const need = BigInt(args.grossLamports) - BigInt(a.amount)
+        const b = sorted.slice(1).find((n) => BigInt(n.amount) >= need)
+        if (!b && BigInt(a.amount) < BigInt(args.grossLamports)) {
+          throw new Error(
+            `insufficient private balance: have ${a.amount}, need ${args.grossLamports}`,
+          )
+        }
+        inputNotes = b ? [a, b] : [a]
+      } else {
+        inputNotes = [inputNotes[0]]
+      }
     }
 
     const realInputs = inputNotes.map(
@@ -1060,6 +1084,8 @@ export class PrivacyCashClient {
     relay?: boolean
     onSubmitted?: OnSubmitted
     inputNote?: { blinding: string }
+    /** Pin exact inputs (parallel callers): takes precedence over inputNote. */
+    inputNotes?: Array<{ blinding: string }>
   }): Promise<WithdrawResult & { leafIndex: number; commitment: string }> {
     const keys = await fetchRecipientKeys(args.recipient)
     if (!keys) {
@@ -1089,19 +1115,20 @@ export class PrivacyCashClient {
     // from the indexer, so without a pin every concurrent caller converges on
     // the same largest note and they collide at the relayer.
     let inputNotes: Note[]
-    if (args.inputNote) {
-      const pinned = sorted.find(
-        (n) => n.blinding === args.inputNote!.blinding,
-      )
-      if (!pinned) {
-        throw new Error("pinned note not found in spendable set")
-      }
-      if (BigInt(pinned.amount) < BigInt(gross.toString())) {
+    const pinned = args.inputNotes ?? (args.inputNote ? [args.inputNote] : [])
+    if (pinned.length > 0) {
+      inputNotes = pinned.map((p) => {
+        const found = sorted.find((n) => n.blinding === p.blinding)
+        if (!found) throw new Error("pinned note not found in spendable set")
+        return found
+      })
+      const have = inputNotes.reduce((s, n) => s + BigInt(n.amount), 0n)
+      if (have < BigInt(gross.toString())) {
         throw new Error(
-          `pinned note holds ${pinned.amount}, need ${gross.toString()}`,
+          `pinned notes hold ${have}, need ${gross.toString()}`,
         )
       }
-      inputNotes = [pinned]
+      inputNotes.sort((a, b) => Number(b.amount) - Number(a.amount))
     } else {
       inputNotes = sorted.filter(
         (n) => BigInt(n.amount) >= BigInt(gross.toString()),
