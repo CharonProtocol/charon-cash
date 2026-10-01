@@ -16,8 +16,16 @@ ark-std = { version = "0.6", features = ["parallel"] }
 color-eyre = "0.6.5"
 num-bigint = "0.4"
 rayon = "1"
+rust-witness = "0.1.6"
 serde_json = "1.0.151"
+
+[build-dependencies]
+rust-witness = "0.1.6"
 
 [[bin]]
 name = "prover-server"
 path = "src/bin/prover-server.rs"
+
+[[bin]]
+name = "wc-bench"
+path = "src/bin/wc-bench.rs"
