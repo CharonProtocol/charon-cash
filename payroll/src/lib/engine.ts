@@ -409,10 +409,30 @@ export class PayrollEngine {
           void scheduleRefresh()
           return
         } catch (e) {
+          // A throw after broadcast must never free the pinned notes for a
+          // retry: they may already be spent on-chain, and re-reserving
+          // would pay this row twice. If the pinned notes vanished from the
+          // spendable view, the payout landed — commit them as spent and
+          // stop retrying.
+          let landed = false
+          if (pinned) {
+            await this.deps.client.refreshNotes().catch(() => {})
+            reloadLedger()
+            const spendable = new Set(
+              (this.deps.listNotes?.(req.asset) ?? []).map((n) => n.blinding),
+            )
+            landed = pinned.blindings.every((b) => !spendable.has(b))
+          }
           if (pinned && ledger) {
-            ledger.release(pinned)
+            if (landed) ledger.commitSpent(pinned)
+            else ledger.release(pinned)
             ledger.busy--
             pinned = null
+          }
+          if (landed) {
+            row.error = `unconfirmed after broadcast: ${(e as Error).message}`
+            row.status = "confirming"
+            return
           }
           row.error = (e as Error).message
           if (attempt === ATTEMPTS) row.status = "failed"
