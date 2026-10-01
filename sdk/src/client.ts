@@ -471,7 +471,11 @@ export class PrivacyCashClient {
     await this.waitForLeaves(treeKey, nextLeafIndex + 1)
 
     const leafIndex = await this.locateNoteLeaf(treeKey, nextLeafIndex, outputs[0])
-    if (leafIndex >= 0 && leafIndex !== nextLeafIndex) {
+    // Un-pend on every confirmed locate, even when the pre-send guess was
+    // exact: the note is stored pending and unspentNotes holds pending notes
+    // out, so skipping the upsert would hide the deposit until some later
+    // scan happens to rescue it.
+    if (leafIndex >= 0) {
       removeStaleNote(
         this.publicKey,
         WRAPPED_SOL_MINT,
@@ -663,7 +667,11 @@ export class PrivacyCashClient {
     await this.waitForLeaves(treeKey, nextLeafIndex + 1)
 
     const leafIndex = await this.locateNoteLeaf(treeKey, nextLeafIndex, outputs[0])
-    if (leafIndex >= 0 && leafIndex !== nextLeafIndex) {
+    // Un-pend on every confirmed locate, even when the pre-send guess was
+    // exact: the note is stored pending and unspentNotes holds pending notes
+    // out, so skipping the upsert would hide the deposit until some later
+    // scan happens to rescue it.
+    if (leafIndex >= 0) {
       removeStaleNote(
         this.publicKey,
         mintStr,
