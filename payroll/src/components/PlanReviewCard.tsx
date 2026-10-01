@@ -157,9 +157,11 @@ export function PlanReviewCard({
           <Play className="size-4" /> Review &amp; run
         </CardTitle>
         <CardDescription>
-          Vault funds are spent first. {shortfall > 0n
-            ? `You will sign one deposit of ${rawToHuman(shortfall, SOL_DECIMALS)} SOL.`
-            : "No deposit needed — vault covers this run."}
+          {kind === "sol" && totals
+            ? shortfall > 0n
+              ? `Vault holds ${rawToHuman(vaultBig, SOL_DECIMALS)} SOL, this run needs ${rawToHuman(totals.totalNet + totals.totalFees, SOL_DECIMALS)} SOL — you'll sign one deposit of ${rawToHuman(shortfall, SOL_DECIMALS)} SOL (the difference).`
+              : `Vault holds ${rawToHuman(vaultBig, SOL_DECIMALS)} SOL — covers the ${rawToHuman(totals.totalNet + totals.totalFees, SOL_DECIMALS)} SOL this run needs. No deposit to sign.`
+            : "Vault funds are spent first."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
