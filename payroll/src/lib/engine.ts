@@ -212,13 +212,37 @@ export class PayrollEngine {
         // Fund as several notes instead of one: lanes can only prove
         // concurrently while distinct spendable notes exist, and a single
         // deposit serialises every payout through its change-note chain.
+        // Every part except the last is a whole multiple of the widest
+        // row's gross: a payout spends exactly one gross per note (change
+        // = input - gross), so those chains drain to zero. The last part
+        // absorbs the slack, so the deposit total stays exactly the
+        // shortfall. An equal split instead strands a sub-gross remainder
+        // per lane that tail rows cannot reserve (2/210 rows failed that
+        // way in the local 210-row E2E).
         const maxParts = Math.max(1, Math.min(req.lanes ?? LANES, LANES, req.entries.length || 1))
-        const parts = Math.max(1, Math.min(maxParts, Math.floor(total / MIN_FUNDING_PART)))
-        const base = Math.floor(total / parts)
+        const step = plan.rows.reduce((m, r) => (r.gross > m ? r.gross : m), 0n)
+        // every part but the last must hold at least one gross, or it could
+        // never serve a row on its own
+        const parts = Math.max(
+          1,
+          Math.min(
+            maxParts,
+            Math.floor(total / MIN_FUNDING_PART),
+            step > 0n ? Number((plan.shortfall - 1n) / step) + 1 : maxParts,
+          ),
+        )
+        const base = BigInt(Math.floor(total / parts))
+        let perPart = 0n
+        if (step > 0n) {
+          perPart = (base / step) * step
+          if (perPart === 0n) perPart = step
+        }
         let firstSig: string | undefined
         let lastLeaf = -1
         for (let i = 0; i < parts; i++) {
-          const amount = i === parts - 1 ? total - base * (parts - 1) : base
+          const amountB =
+            i === parts - 1 ? plan.shortfall - perPart * BigInt(parts - 1) : perPart
+          const amount = Number(amountB)
           const dep =
             req.asset.kind === "sol"
               ? await this.deps.client.depositSOL(amount)
