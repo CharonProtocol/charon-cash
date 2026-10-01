@@ -14,6 +14,7 @@ import { UploadCard } from "@/components/UploadCard"
 import { WalletBar } from "@/components/WalletBar"
 import { useConnectWallet } from "@/components/WalletProvider"
 import { usePayrollClient } from "@/hooks/usePayrollClient"
+import { browserProverInfo, ensureBrowserProver } from "@/lib/browserProver"
 import { createEngine, type RunSnapshot } from "@/lib/engine"
 import { failedEntriesOf, storageOk } from "@/lib/store"
 import type { Asset, ParsedFile, RunMode, RunReceipt } from "@/lib/types"
@@ -43,6 +44,14 @@ export function EmployerApp() {
       const engine = createEngine(client)
       engineRef.current = engine
       try {
+        // Prove client-side on the wasm-arkworks engine (standard circuit);
+        // falls back to in-page snarkjs if the worker pool can't start.
+        try {
+          const info = await ensureBrowserProver()
+          if (!browserProverInfo()?.proves) toast.success(`Browser prover ready (${info.workers} workers)`)
+        } catch (e) {
+          toast.warning(`Browser prover unavailable, using snarkjs: ${(e as Error).message}`)
+        }
         let vaultRaw = vaultSolRaw ?? 0n
         if (asset.kind === "spl") {
           await client.syncNotes(asset.mint)
