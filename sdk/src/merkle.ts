@@ -294,6 +294,14 @@ export async function isNullifierSpent(hashHex: string): Promise<boolean> {
   }
 }
 
+/** Spent flag plus the spending tx signature, when the relayer recorded one. */
+export async function nullifierInfo(
+  hashHex: string,
+): Promise<{ spent: boolean; signature?: string }> {
+  const r = await getJson(`/api/nullifier/${encodeURIComponent(hashHex)}`)
+  return { spent: !!r.spent, signature: r.signature ?? undefined }
+}
+
 export async function fetchUtxoRange(
   treeKey: string,
   start: number,

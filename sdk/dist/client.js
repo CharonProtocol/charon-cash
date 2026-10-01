@@ -5,7 +5,7 @@ import BN from "bn.js";
 import { envProgramId, FIELD_SIZE, MERKLE_TREE_DEPTH, RECEIVE_SIGN_MESSAGE, SIGN_MESSAGE, SOL_TREE_KEY, WRAPPED_SOL_MINT, } from "./constants";
 import { EncryptionService, Keypair, Utxo, encryptUtxoTo, getExtDataHash, getMintAddressField, } from "./crypto";
 import { fetchRecipientKeys } from "./recipients";
-import { bytesToHex, fetchMerkleProof, fetchRelayerInfo, fetchBlockhash, fetchTreeState, fetchUtxoRange, fieldToHex32, isNullifierSpent, submitTransaction, relayWithdraw, waitForLeafIndex, } from "./merkle";
+import { bytesToHex, fetchMerkleProof, fetchRelayerInfo, fetchBlockhash, fetchTreeState, fetchUtxoRange, fieldToHex32, isNullifierSpent, nullifierInfo, submitTransaction, relayWithdraw, waitForLeafIndex, } from "./merkle";
 import { clearNotes, exportNotes, getSyncOffset, importNotes, loadNotes, markNoteSpent, newNoteId, purgeLegacyStorage, removeStaleNote, readLegacyNotes, saveNote, setSyncOffset, unspentNotes, upsertNote, markNoteSpentByIndex, } from "./notes";
 import { pushEncryptedNotes, pullEncryptedNotes } from "./notestore";
 import { parseProofToBytesArray, parseToBytesArray, prove } from "./prover";
@@ -122,7 +122,7 @@ export class PrivacyCashClient {
         await this.persistNotes().catch(() => { });
     }
     /** Unlock + rescan + persist. Powers the UI "Load notes" action. */
-    async refreshNotes() {
+    async refreshNotes(opts) {
         await this.unlock();
         // Scan the SOL tree plus every supported mint's tree: a recipient of a
         // shielded SPL transfer has no local hint about the mint, so discovery
@@ -135,7 +135,7 @@ export class PrivacyCashClient {
         let added = 0;
         let spent = 0;
         for (const treeKey of trees) {
-            const r = await this.syncNotes(treeKey).catch(() => ({
+            const r = await this.syncNotes(treeKey, opts?.fromScratch ?? false).catch(() => ({
                 scanned: 0,
                 added: 0,
                 spent: 0,
@@ -1079,25 +1079,40 @@ export class PrivacyCashClient {
         const proofBytes = parseProofToBytesArray(proof);
         const pub = parseToBytesArray(publicSignals);
         const nullifierHexes = [pub[3], pub[4]].map((b) => bytesToHex(b));
-        const signature = await relayWithdraw({
-            kind: args.isSpl ? "spl" : "sol",
-            proofA: proofBytes.proofA,
-            proofB: proofBytes.proofB,
-            proofC: proofBytes.proofC,
-            root: pub[0],
-            publicAmount: pub[1],
-            extDataHash: pub[2],
-            inputNullifiers: [pub[3], pub[4]],
-            outputCommitments: [pub[5], pub[6]],
-            extAmount: args.extAmount.toNumber(),
-            fee: args.fee.toNumber(),
-            encryptedOutput1: args.encryptedOutput1,
-            encryptedOutput2: args.encryptedOutput2,
-            recipient: args.relayRecipient,
-            mint: args.mint,
-            recipientOwner: args.recipientOwner,
-            altAddress: args.altAddress,
-        });
+        let signature;
+        try {
+            signature = await relayWithdraw({
+                kind: args.isSpl ? "spl" : "sol",
+                proofA: proofBytes.proofA,
+                proofB: proofBytes.proofB,
+                proofC: proofBytes.proofC,
+                root: pub[0],
+                publicAmount: pub[1],
+                extDataHash: pub[2],
+                inputNullifiers: [pub[3], pub[4]],
+                outputCommitments: [pub[5], pub[6]],
+                extAmount: args.extAmount.toNumber(),
+                fee: args.fee.toNumber(),
+                encryptedOutput1: args.encryptedOutput1,
+                encryptedOutput2: args.encryptedOutput2,
+                recipient: args.relayRecipient,
+                mint: args.mint,
+                recipientOwner: args.recipientOwner,
+                altAddress: args.altAddress,
+            });
+        }
+        catch (e) {
+            // The relayer may have broadcast before this request failed; a spent
+            // input nullifier means the payout landed — recover its signature
+            // instead of throwing the caller into a retry that would double-pay.
+            for (const nf of nullifierHexes) {
+                const info = await nullifierInfo(nf).catch(() => null);
+                if (info?.spent && info.signature) {
+                    return { signature: info.signature, nullifiers: nullifierHexes };
+                }
+            }
+            throw e;
+        }
         return { signature, nullifiers: nullifierHexes };
     }
     async proveAndSend(args) {

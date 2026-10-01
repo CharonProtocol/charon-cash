@@ -190,6 +190,11 @@ export async function isNullifierSpent(hashHex) {
         return false;
     }
 }
+/** Spent flag plus the spending tx signature, when the relayer recorded one. */
+export async function nullifierInfo(hashHex) {
+    const r = await getJson(`/api/nullifier/${encodeURIComponent(hashHex)}`);
+    return { spent: !!r.spent, signature: r.signature ?? undefined };
+}
 export async function fetchUtxoRange(treeKey, start, end) {
     const q = new URLSearchParams({
         tree_key: treeKey,

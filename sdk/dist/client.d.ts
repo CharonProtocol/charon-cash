@@ -80,7 +80,9 @@ export declare class PrivacyCashClient {
     /** Clear all notes — wipes the in-memory cache and the encrypted backend blob. */
     clearAllNotes(): Promise<void>;
     /** Unlock + rescan + persist. Powers the UI "Load notes" action. */
-    refreshNotes(): Promise<SyncResult>;
+    refreshNotes(opts?: {
+        fromScratch?: boolean;
+    }): Promise<SyncResult>;
     /**
      * Scan encrypted outputs from the backend, decrypt ours, upsert notes,
      * and mark spent via nullifier checks.

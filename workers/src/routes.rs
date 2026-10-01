@@ -338,12 +338,16 @@ pub fn router(state: Arc<AppState>) -> Router<'static, Arc<AppState>> {
             if let Err(e) = sync::sync_tree(&state).await {
                 worker::console_warn!("nullifier sync skipped: {e}");
             }
-            let spent = state
+            let spent_by = state
                 .store
-                .is_nullifier_spent(&hex::encode(bytes))
+                .nullifier_spent_by(&hex::encode(bytes))
                 .await
-                .unwrap_or(false);
-            ok_json(&json!({ "nullifier": hash, "spent": spent }))
+                .unwrap_or(None);
+            ok_json(&json!({
+                "nullifier": hash,
+                "spent": spent_by.is_some(),
+                "signature": spent_by,
+            }))
         }))
         .get_async("/api/utxos/range", |req, ctx| Box::pin(async move {
             let state = state_of(&ctx);

@@ -37,6 +37,7 @@ import {
   fetchUtxoRange,
   fieldToHex32,
   isNullifierSpent,
+  nullifierInfo,
   submitTransaction,
   relayWithdraw,
   waitForLeafIndex,
@@ -1442,25 +1443,39 @@ export class PrivacyCashClient {
     const pub = parseToBytesArray(publicSignals)
     const nullifierHexes = [pub[3], pub[4]].map((b) => bytesToHex(b))
 
-    const signature = await relayWithdraw({
-      kind: args.isSpl ? "spl" : "sol",
-      proofA: proofBytes.proofA,
-      proofB: proofBytes.proofB,
-      proofC: proofBytes.proofC,
-      root: pub[0],
-      publicAmount: pub[1],
-      extDataHash: pub[2],
-      inputNullifiers: [pub[3], pub[4]],
-      outputCommitments: [pub[5], pub[6]],
-      extAmount: args.extAmount.toNumber(),
-      fee: args.fee.toNumber(),
-      encryptedOutput1: args.encryptedOutput1,
-      encryptedOutput2: args.encryptedOutput2,
-      recipient: args.relayRecipient,
-      mint: args.mint,
-      recipientOwner: args.recipientOwner,
-      altAddress: args.altAddress,
-    })
+    let signature: string
+    try {
+      signature = await relayWithdraw({
+        kind: args.isSpl ? "spl" : "sol",
+        proofA: proofBytes.proofA,
+        proofB: proofBytes.proofB,
+        proofC: proofBytes.proofC,
+        root: pub[0],
+        publicAmount: pub[1],
+        extDataHash: pub[2],
+        inputNullifiers: [pub[3], pub[4]],
+        outputCommitments: [pub[5], pub[6]],
+        extAmount: args.extAmount.toNumber(),
+        fee: args.fee.toNumber(),
+        encryptedOutput1: args.encryptedOutput1,
+        encryptedOutput2: args.encryptedOutput2,
+        recipient: args.relayRecipient,
+        mint: args.mint,
+        recipientOwner: args.recipientOwner,
+        altAddress: args.altAddress,
+      })
+    } catch (e) {
+      // The relayer may have broadcast before this request failed; a spent
+      // input nullifier means the payout landed — recover its signature
+      // instead of throwing the caller into a retry that would double-pay.
+      for (const nf of nullifierHexes) {
+        const info = await nullifierInfo(nf).catch(() => null)
+        if (info?.spent && info.signature) {
+          return { signature: info.signature, nullifiers: nullifierHexes }
+        }
+      }
+      throw e
+    }
 
     return { signature, nullifiers: nullifierHexes }
   }

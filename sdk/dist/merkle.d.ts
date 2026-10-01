@@ -91,6 +91,11 @@ export declare function fetchAltAccount(address: string): Promise<string | null>
 export declare function fetchTreeState(treeKey: string): Promise<TreeState>;
 export declare function fetchMerkleProof(treeKey: string, leafIndex: number): Promise<MerkleProof>;
 export declare function isNullifierSpent(hashHex: string): Promise<boolean>;
+/** Spent flag plus the spending tx signature, when the relayer recorded one. */
+export declare function nullifierInfo(hashHex: string): Promise<{
+    spent: boolean;
+    signature?: string;
+}>;
 export declare function fetchUtxoRange(treeKey: string, start: number, end: number): Promise<UtxoRangePage>;
 export declare function checkEncryptedOutput(encryptedHex: string, treeKey?: string): Promise<UtxoCheckResult>;
 export interface WaitOpts {
