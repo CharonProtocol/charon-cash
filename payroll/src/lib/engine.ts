@@ -93,8 +93,6 @@ export interface EngineDeps {
 
 const ATTEMPTS = 3
 const LANES = 8
-/** A funding note smaller than this can't cover a real salary — don't split further. */
-const MIN_FUNDING_PART = 10_000_000
 const RESERVE_POLL_MS = 800
 const RESERVE_WAIT_CAP_MS = 120_000
 const REFRESH_MIN_GAP_MS = 1_500
@@ -207,42 +205,22 @@ export class PayrollEngine {
     if (plan.shortfall > 0n) {
       this.emit("funding")
       try {
-        const total = Number(plan.shortfall)
-        if (!Number.isSafeInteger(total)) throw new Error("shortfall too large")
-        // Fund as several notes instead of one: lanes can only prove
-        // concurrently while distinct spendable notes exist, and a single
-        // deposit serialises every payout through its change-note chain.
-        // Every part except the last is a whole multiple of the widest
-        // row's gross: a payout spends exactly one gross per note (change
-        // = input - gross), so those chains drain to zero. The last part
-        // absorbs the slack, so the deposit total stays exactly the
-        // shortfall. An equal split instead strands a sub-gross remainder
-        // per lane that tail rows cannot reserve (2/210 rows failed that
-        // way in the local 210-row E2E).
-        const maxParts = Math.max(1, Math.min(req.lanes ?? LANES, LANES, req.entries.length || 1))
-        const step = plan.rows.reduce((m, r) => (r.gross > m ? r.gross : m), 0n)
-        // every part but the last must hold at least one gross, or it could
-        // never serve a row on its own
-        const parts = Math.max(
-          1,
-          Math.min(
-            maxParts,
-            Math.floor(total / MIN_FUNDING_PART),
-            step > 0n ? Number((plan.shortfall - 1n) / step) + 1 : maxParts,
-          ),
+        // Fund per-row instead of a step ladder: each deposit becomes a note
+        // sized to exactly one row's gross (widest rows first), so every
+        // funded row can reserve a fresh note no matter how the vault's older
+        // notes are fragmented. Leftover budget lands as one filler note that
+        // pairs with existing fragments for the remaining rows. (Cutting
+        // notes to multiples of the widest gross stranded rows when a
+        // partially-funded vault held fragments smaller than that gross.)
+        const rowsByGross = [...plan.rows].sort((a, b) =>
+          a.gross > b.gross ? -1 : a.gross < b.gross ? 1 : 0,
         )
-        const base = BigInt(Math.floor(total / parts))
-        let perPart = 0n
-        if (step > 0n) {
-          perPart = (base / step) * step
-          if (perPart === 0n) perPart = step
-        }
+        let budget = plan.shortfall
         let firstSig: string | undefined
         let lastLeaf = -1
-        for (let i = 0; i < parts; i++) {
-          const amountB =
-            i === parts - 1 ? plan.shortfall - perPart * BigInt(parts - 1) : perPart
+        const depositPart = async (amountB: bigint): Promise<void> => {
           const amount = Number(amountB)
+          if (amount <= 0 || !Number.isSafeInteger(amount)) throw new Error("bad deposit size")
           const dep =
             req.asset.kind === "sol"
               ? await this.deps.client.depositSOL(amount)
@@ -250,6 +228,13 @@ export class PayrollEngine {
           firstSig ??= dep.signature
           lastLeaf = Math.max(lastLeaf, dep.leafIndex)
         }
+        for (const r of rowsByGross) {
+          if (budget <= 0n) break
+          const part = r.gross <= budget ? r.gross : budget
+          await depositPart(part)
+          budget -= part
+        }
+        if (budget > 0n) await depositPart(budget)
         await this.deps.waitUntilIndexed(treeKeyOf(req.asset), lastLeaf)
         await this.deps.client.refreshNotes()
         funding = { depositedRaw: plan.shortfall, txSignature: firstSig ?? "" }
