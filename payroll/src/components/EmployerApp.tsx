@@ -30,6 +30,9 @@ export function EmployerApp() {
   const [receipt, setReceipt] = useState<RunReceipt | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const engineRef = useRef<{ cancel: () => void } | null>(null)
+  // Kept so a stopped/crashed run's failed rows can be retried without the
+  // receipt (snapshots don't carry asset/mode/fileHash).
+  const lastRun = useRef<{ asset: Asset; mode: RunMode; fileHash: string } | null>(null)
 
   const startRun = useCallback(
     async (
@@ -39,6 +42,7 @@ export function EmployerApp() {
       mode: RunMode = "public",
     ) => {
       if (!client || !entries || !fileHash || bps === null) return
+      lastRun.current = { asset, mode, fileHash }
       setReceipt(null)
       setSnapshot({ phase: "funding", rows: entries.map((e) => ({ ...e, status: "queued" as const, attempts: 0 })) })
       const engine = createEngine(client)
@@ -67,7 +71,9 @@ export function EmployerApp() {
         else toast.success("Payroll run complete")
       } catch (e) {
         toast.error(`Run crashed: ${(e as Error).message}`)
-        setSnapshot(null)
+        // Keep the rows on screen and mark the run stopped so the failed
+        // ones can be retried; clearing the snapshot would hide the state.
+        setSnapshot((s) => (s ? { ...s, phase: "aborted" } : null))
       }
     },
     [client, parsed, bps, minTransferFee, vaultSolRaw, refreshVault],
@@ -82,6 +88,16 @@ export function EmployerApp() {
     },
     [startRun],
   )
+
+  const resumeAbortedSnapshot = useCallback(() => {
+    const cfg = lastRun.current
+    if (!cfg || !snapshot) return
+    const entries = snapshot.rows
+      .filter((r) => r.status === "failed")
+      .map((r) => ({ address: r.address, amountHuman: r.amountHuman, memo: r.memo }))
+    if (!entries.length) return
+    startRun(cfg.asset, entries, cfg.fileHash, cfg.mode)
+  }, [snapshot, startRun])
 
   return (
     <main className="mx-auto max-w-3xl space-y-4 p-4 sm:p-6">
@@ -139,6 +155,7 @@ export function EmployerApp() {
             onCancel={() => engineRef.current?.cancel()}
             onDone={() => { setSnapshot(null); setReceipt(null); setParsed(null) }}
             onResumeFailed={() => receipt && resumeFailed(receipt)}
+            onResumeSnapshot={resumeAbortedSnapshot}
           />
         </>
       )}
