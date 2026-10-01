@@ -212,12 +212,13 @@ export class PrivacyCashClient {
      * Recover the true leaf index of a just-landed output note (a deposit, or
      * the change of a transfer). The pre-send `nextLeafIndex` is only a guess:
      * concurrent transactions can append ahead of ours before it confirms.
-     * Decrypt the window around the guess and match the note's blinding factor;
-     * fall back to the guess if the indexer never serves the note (syncNotes
-     * corrects the index on the next scan anyway).
+     * Decrypt the window around the guess and match the note's blinding factor.
+     * Returns -1 if not found within the deadline — callers must then save the
+     * note as `pending` (never spendable at the guessed index; syncNotes heals
+     * it authoritatively on the next scan).
      */
     async locateNoteLeaf(treeKey, guessIndex, note) {
-        const deadline = Date.now() + 10_000;
+        const deadline = Date.now() + 60_000;
         const start = Math.max(0, guessIndex - 2);
         let end = start + 16;
         while (Date.now() < deadline) {
@@ -237,7 +238,7 @@ export class PrivacyCashClient {
             end += 16;
             await new Promise((r) => setTimeout(r, 400));
         }
-        return guessIndex;
+        return -1;
     }
     async depositSOL(amountLamports) {
         await this.unlock();
@@ -285,7 +286,9 @@ export class PrivacyCashClient {
             mintAddress: WRAPPED_SOL_MINT,
             isSpl: false,
         });
-        // Persist note immediately — deposit already settled; indexer wait is best-effort.
+        // Persist note immediately — deposit already settled; indexer wait is
+        // best-effort. Pending: index is the pre-send guess, not spendable until
+        // located/scanned.
         saveNote(this.publicKey, {
             id: newNoteId(),
             amount: outputs[0].amount.toString(),
@@ -295,11 +298,12 @@ export class PrivacyCashClient {
             spent: false,
             createdAt: Date.now(),
             depositTx: signature,
+            pending: true,
         });
         await this.persistNotes().catch(() => { });
         await this.waitForLeaves(treeKey, nextLeafIndex + 1);
         const leafIndex = await this.locateNoteLeaf(treeKey, nextLeafIndex, outputs[0]);
-        if (leafIndex !== nextLeafIndex) {
+        if (leafIndex >= 0 && leafIndex !== nextLeafIndex) {
             removeStaleNote(this.publicKey, WRAPPED_SOL_MINT, outputs[0].amount.toString(), outputs[0].blinding.toString(), nextLeafIndex);
             upsertNote(this.publicKey, {
                 id: newNoteId(),
@@ -441,11 +445,12 @@ export class PrivacyCashClient {
             spent: false,
             createdAt: Date.now(),
             depositTx: signature,
+            pending: true,
         });
         await this.persistNotes().catch(() => { });
         await this.waitForLeaves(treeKey, nextLeafIndex + 1);
         const leafIndex = await this.locateNoteLeaf(treeKey, nextLeafIndex, outputs[0]);
-        if (leafIndex !== nextLeafIndex) {
+        if (leafIndex >= 0 && leafIndex !== nextLeafIndex) {
             removeStaleNote(this.publicKey, mintStr, outputs[0].amount.toString(), outputs[0].blinding.toString(), nextLeafIndex);
             upsertNote(this.publicKey, {
                 id: newNoteId(),
@@ -761,16 +766,19 @@ export class PrivacyCashClient {
             markNoteSpent(this.publicKey, n.id, signature);
         if (change.gt(new BN(0))) {
             await waitForLeafIndex(args.treeKey, nextLeafIndex).catch(() => { });
-            const changeIndex = await this.locateNoteLeaf(args.treeKey, nextLeafIndex, outputs[0]).catch(() => nextLeafIndex);
+            const changeIndex = await this.locateNoteLeaf(args.treeKey, nextLeafIndex, outputs[0]).catch(() => -1);
             saveNote(this.publicKey, {
                 id: newNoteId(),
                 amount: outputs[0].amount.toString(),
                 blinding: outputs[0].blinding.toString(),
-                index: changeIndex,
+                // guess if locate failed — pending keeps it unspendable until the
+                // next syncNotes scan confirms the true leaf position
+                index: changeIndex >= 0 ? changeIndex : nextLeafIndex,
                 mintAddress: args.mintAddress,
                 spent: false,
                 createdAt: Date.now(),
                 depositTx: signature,
+                pending: changeIndex < 0,
             });
         }
         await this.persistNotes().catch(() => { });
@@ -1006,11 +1014,14 @@ export class PrivacyCashClient {
                 id: newNoteId(),
                 amount: outputs[1].amount.toString(),
                 blinding: outputs[1].blinding.toString(),
-                index: changeIndex,
+                // guess if locate failed — pending keeps it unspendable until the
+                // next syncNotes scan confirms the true leaf position
+                index: changeIndex >= 0 ? changeIndex : nextLeafIndex + 1,
                 mintAddress: args.mintAddress,
                 spent: false,
                 createdAt: Date.now(),
                 depositTx: signature,
+                pending: changeIndex < 0,
             });
         }
         await this.persistNotes().catch(() => { });

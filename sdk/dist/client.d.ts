@@ -90,9 +90,10 @@ export declare class PrivacyCashClient {
      * Recover the true leaf index of a just-landed output note (a deposit, or
      * the change of a transfer). The pre-send `nextLeafIndex` is only a guess:
      * concurrent transactions can append ahead of ours before it confirms.
-     * Decrypt the window around the guess and match the note's blinding factor;
-     * fall back to the guess if the indexer never serves the note (syncNotes
-     * corrects the index on the next scan anyway).
+     * Decrypt the window around the guess and match the note's blinding factor.
+     * Returns -1 if not found within the deadline — callers must then save the
+     * note as `pending` (never spendable at the guessed index; syncNotes heals
+     * it authoritatively on the next scan).
      */
     private locateNoteLeaf;
     depositSOL(amountLamports: number): Promise<DepositResult>;

@@ -30,6 +30,9 @@ export function upsertNote(wallet, note) {
             ...note,
             id: notes[i].id,
             createdAt: notes[i].createdAt,
+            // explicit (not spread): an authoritative upsert without `pending`
+            // must clear a stale pending flag left by the pre-send save
+            pending: note.pending,
         };
     }
     else {
@@ -48,7 +51,9 @@ export function markNoteSpentByIndex(wallet, mintAddress, index, spendTx) {
     persist(wallet, notes);
 }
 export function unspentNotes(wallet) {
-    return loadNotes(wallet).filter((n) => !n.spent);
+    // pending = index still a guess; spending one makes the circuit's root
+    // check fail (ForceEqualIfEnabled), so hold it out until located/scanned
+    return loadNotes(wallet).filter((n) => !n.spent && !n.pending && n.index >= 0);
 }
 export function totalBalance(wallet, mintAddress = WRAPPED_SOL_MINT) {
     return unspentNotes(wallet)

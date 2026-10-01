@@ -24,6 +24,14 @@ export interface Note {
     createdAt: number;
     depositTx?: string;
     spendTx?: string;
+    /**
+     * True while `index` is still the pre-send guess: concurrent txs may have
+     * appended ahead of ours, so the true leaf position is not confirmed yet.
+     * Pending notes are excluded from `unspentNotes` — spending a note at a
+     * wrong index makes the circuit's root check (ForceEqualIfEnabled) fail.
+     * Cleared by locateNoteLeaf / the next syncNotes scan.
+     */
+    pending?: boolean;
 }
 export declare function loadNotes(wallet: PublicKey): Note[];
 export declare function saveNote(wallet: PublicKey, note: Note): void;

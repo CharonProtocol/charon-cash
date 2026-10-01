@@ -27,6 +27,14 @@ export interface Note {
   createdAt: number
   depositTx?: string
   spendTx?: string
+  /**
+   * True while `index` is still the pre-send guess: concurrent txs may have
+   * appended ahead of ours, so the true leaf position is not confirmed yet.
+   * Pending notes are excluded from `unspentNotes` — spending a note at a
+   * wrong index makes the circuit's root check (ForceEqualIfEnabled) fail.
+   * Cleared by locateNoteLeaf / the next syncNotes scan.
+   */
+  pending?: boolean
 }
 
 /** Page-wide note cache, keyed by wallet base58. Wiped on reload by design. */
@@ -70,6 +78,9 @@ export function upsertNote(wallet: PublicKey, note: Note): void {
       ...note,
       id: notes[i].id,
       createdAt: notes[i].createdAt,
+      // explicit (not spread): an authoritative upsert without `pending`
+      // must clear a stale pending flag left by the pre-send save
+      pending: note.pending,
     }
   } else {
     notes.push(note)
@@ -103,7 +114,9 @@ export function markNoteSpentByIndex(
 }
 
 export function unspentNotes(wallet: PublicKey): Note[] {
-  return loadNotes(wallet).filter((n) => !n.spent)
+  // pending = index still a guess; spending one makes the circuit's root
+  // check fail (ForceEqualIfEnabled), so hold it out until located/scanned
+  return loadNotes(wallet).filter((n) => !n.spent && !n.pending && n.index >= 0)
 }
 
 export function totalBalance(
