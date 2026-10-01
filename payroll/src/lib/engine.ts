@@ -41,7 +41,7 @@ export interface RunRequest {
 export interface EngineClient {
   init(): Promise<void>
   unlock(): Promise<void>
-  refreshNotes(): Promise<unknown>
+  refreshNotes(opts?: { fromScratch?: boolean }): Promise<unknown>
   depositSOL(lamports: number): Promise<{ signature: string; leafIndex: number }>
   depositSPL(mint: string, raw: number | string): Promise<{ signature: string; leafIndex: number }>
   withdrawSOL(
