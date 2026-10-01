@@ -9,7 +9,7 @@
  */
 
 import { openDB, type IDBPDatabase } from "idb";
-import { SilentPayError, SilentPayErrorCode } from "./error";
+import { CharonProtocolError, CharonProtocolErrorCode } from "./error";
 
 const CURRENTDBVERSION = 1;
 
@@ -28,12 +28,12 @@ const Indexes = {
   walletPubkeyAndID: ["walletPubkey", "id"],
 };
 
-const UTXO_STORE = "SILENTPAY_UTXOS";
-const INDEX_STORE = "SILENT_PAY_UTXO_INDEX_PER_WALLET";
+const UTXO_STORE = "CHARONPROTOCOL_UTXOS";
+const INDEX_STORE = "CHARON_PROTOCOL_UTXO_INDEX_PER_WALLET";
 
-export class StorageError extends SilentPayError {
+export class StorageError extends CharonProtocolError {
   constructor(message: string, options?: { cause: unknown }) {
-    super(message, SilentPayErrorCode.STORAGE_ERROR, {
+    super(message, CharonProtocolErrorCode.STORAGE_ERROR, {
       cause: options?.cause,
     });
 
@@ -52,7 +52,7 @@ export class StorageService {
 
   static async start() {
     try {
-      const db = await openDB("SilentPay", CURRENTDBVERSION, {
+      const db = await openDB("CHARONPROTOCOL_DB", CURRENTDBVERSION, {
         upgrade(db) {
           // schema for this is
           // StoredUtxoSchema = {

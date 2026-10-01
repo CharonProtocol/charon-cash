@@ -1,9 +1,9 @@
 import { PublicKey } from "@solana/web3.js";
 import BN from "bn.js";
 import { API_URL } from "./constants";
-import { SilentPayError, SilentPayErrorCode } from "./error";
+import { CharonProtocolError, CharonProtocolErrorCode } from "./error";
 
-export class ApiClientError extends SilentPayError {
+export class ApiClientError extends CharonProtocolError {
   apiErrorCode: ApiErrorCode;
   details?: ErrorDetail | null;
   status: number;
@@ -14,7 +14,7 @@ export class ApiClientError extends SilentPayError {
     status: number,
     details?: ErrorDetail | null,
   ) {
-    super(message, SilentPayErrorCode.API_ERROR);
+    super(message, CharonProtocolErrorCode.API_ERROR);
 
     this.name = "ApiClientError";
     this.apiErrorCode = apiErrorCode;
@@ -119,9 +119,9 @@ export type RegistrationInfo = {
 
 async function registerUser(info: RegistrationInfo) {
   if (info.viewingkey.length != 32) {
-    throw new SilentPayError(
+    throw new CharonProtocolError(
       "Length of viewing key must be 32",
-      SilentPayErrorCode.INVALID_VIEWING_KEY,
+      CharonProtocolErrorCode.INVALID_VIEWING_KEY,
     );
   }
 

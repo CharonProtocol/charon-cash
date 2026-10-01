@@ -37,21 +37,21 @@ import {
   ProofBytes,
   prove,
 } from "./prover";
-import { SilentPayError, SilentPayErrorCode } from "./error";
+import { CharonProtocolError, CharonProtocolErrorCode } from "./error";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   getAssociatedTokenAddress,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 
-export class ProgramError extends SilentPayError {
+export class ProgramError extends CharonProtocolError {
   programErrorCode: ProgramErrorCode | undefined;
   constructor(
     message: string,
     programErrorCode: ProgramErrorCode | undefined = undefined,
     options?: { cause: unknown },
   ) {
-    super(message, SilentPayErrorCode.PROGRAM_ERROR, {
+    super(message, CharonProtocolErrorCode.PROGRAM_ERROR, {
       cause: options?.cause,
     });
 

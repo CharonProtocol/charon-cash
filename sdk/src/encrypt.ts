@@ -14,16 +14,16 @@ import { x25519 as webX25519 } from "@noble/curves/webcrypto.js";
 import * as webCryptoHash from "@noble/hashes/webcrypto.js";
 import * as webCryptoCipher from "@noble/ciphers/webcrypto.js";
 import { randomBytes } from "@noble/ciphers/utils.js";
-import { SilentPayError, SilentPayErrorCode } from "./error";
+import { CharonProtocolError, CharonProtocolErrorCode } from "./error";
 
 interface CipherKeypair {
   publicKey: Uint8Array;
   secretKey: Uint8Array;
 }
 
-export class EncryptionError extends SilentPayError {
+export class EncryptionError extends CharonProtocolError {
   constructor(message: string, options?: { cause: unknown }) {
-    super(message, SilentPayErrorCode.ENCRYPTION_ERROR, {
+    super(message, CharonProtocolErrorCode.ENCRYPTION_ERROR, {
       cause: options?.cause,
     });
 

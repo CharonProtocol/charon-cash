@@ -4,7 +4,6 @@ import { EncryptionService } from "../encrypt";
 import { Utxo } from "../model/utxo";
 import { StorageService } from "../storage";
 import { Connection } from "@solana/web3.js";
-import { connect } from "http2";
 import { deriveNullifiers, poseidonStringToBytes32 } from "../utils";
 
 const POLL_TIME = 20 * 1000;

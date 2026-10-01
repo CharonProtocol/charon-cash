@@ -1,9 +1,4 @@
-import {
-  Connection,
-  PublicKey,
-  sendAndConfirmRawTransaction,
-  VersionedTransaction,
-} from "@solana/web3.js";
+import { Connection, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { EncryptionService } from "./encrypt";
 import { StorageService, StoredUtxoSchema } from "./storage";
 import { Utxo } from "./model/utxo";
@@ -14,11 +9,10 @@ import {
   WITHDRAW_FEE_RATE,
   WRAPPED_SOL_MINT,
 } from "./constants";
-import { register } from "module";
 import { API, RegistrationInfo } from "./api";
 
 import { transactSol } from "./program";
-import { SilentPayError, SilentPayErrorCode } from "./error";
+import { CharonProtocolError, CharonProtocolErrorCode } from "./error";
 import { loadCircuit } from "./prover";
 
 export interface Signer {
@@ -41,7 +35,7 @@ type UtxoSummary = {
   utxos: UtxoRef[];
 };
 
-export class SilentPay {
+export class CharonProtocol {
   private connection: Connection;
   public publicKey: PublicKey;
   private encryptionService: EncryptionService;
@@ -207,7 +201,7 @@ export class SilentPay {
 
     let connection = new Connection(rpcUrl);
 
-    let worker = createSilentPayWorker(
+    let worker = createSharonProtocolWorker(
       owner.publicKey.toString(),
       masterSeed,
       rpcUrl,
@@ -215,7 +209,7 @@ export class SilentPay {
 
     let { zkey, wasm } = await loadCircuit();
 
-    return new SilentPay({
+    return new CharonProtocol({
       connection,
       publicKey: owner.publicKey,
       signer: owner,
@@ -266,9 +260,9 @@ export class SilentPay {
     // Check if user has utxos to withdraw
     let utxosExists = this.utxoByMint.has(mintAddress);
     if (!utxosExists) {
-      throw new SilentPayError(
+      throw new CharonProtocolError(
         "No utxos Exists to Withdraw",
-        SilentPayErrorCode.UTXO_FINISHED,
+        CharonProtocolErrorCode.UTXO_FINISHED,
       );
     }
 
@@ -276,9 +270,9 @@ export class SilentPay {
     let UtxoSummary = this.utxoByMint.get(mintAddress)!;
 
     if (UtxoSummary.maxSingleTxAmount.lt(new BN(amountInLamports))) {
-      throw new SilentPayError(
+      throw new CharonProtocolError(
         `You can currently only withdraw equal or less than ${UtxoSummary.maxSingleTxAmount.toNumber()}`,
-        SilentPayErrorCode.WITHDRAWAL_LIMIT,
+        CharonProtocolErrorCode.WITHDRAWAL_LIMIT,
       );
     }
 
@@ -448,7 +442,7 @@ export class SilentPay {
   }
 }
 
-function createSilentPayWorker(
+function createSharonProtocolWorker(
   walletPubkey: string,
   masterSeed: Uint8Array,
   rpcUrl: string,

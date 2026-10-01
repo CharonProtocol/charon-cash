@@ -3,11 +3,11 @@ import { utils } from "ffjavascript";
 
 import { CIRCUIT } from "./constants";
 import BN from "bn.js";
-import { SilentPayError, SilentPayErrorCode } from "./error";
+import { CharonProtocolError, CharonProtocolErrorCode } from "./error";
 
-export class ProofGenError extends SilentPayError {
+export class ProofGenError extends CharonProtocolError {
   constructor(message: string, options?: { cause: unknown }) {
-    super(message, SilentPayErrorCode.PROOF_GENERATION_ERROR, {
+    super(message, CharonProtocolErrorCode.PROOF_GENERATION_ERROR, {
       cause: options?.cause,
     });
 

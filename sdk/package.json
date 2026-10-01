@@ -1,7 +1,7 @@
 {
-  "name": "privacy-cash-sdk",
+  "name": "charonprotocol-sdk",
   "version": "0.1.5",
-  "description": "Browser-native client SDK for the Privacy Cash Solana protocol (deposit/withdraw SOL & SPL tokens, ZK proofs, commitment notes).",
+  "description": "Browser-native client SDK for the Charon protocol (send/withdraw SOL & SPL tokens, ZK proofs, commitment notes).",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -28,7 +28,7 @@
     "privacy",
     "zk-snark",
     "groth16",
-    "privacy-cash",
+    "charon-protocol",
     "zero-knowledge",
     "relayer",
     "merkle-tree"

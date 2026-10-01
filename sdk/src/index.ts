@@ -5,4 +5,5 @@ export {
   setCircuitBuffers,
 } from "./prover";
 
-export { SilentPay } from "./client";
+export { CharonProtocol } from "./client";
+export { CharonProtocolError, CharonProtocolErrorCode } from "./error";
