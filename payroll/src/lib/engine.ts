@@ -267,7 +267,7 @@ export class PayrollEngine {
     if (ledger && this.deps.listNotes) ledger.reload(this.deps.listNotes(req.asset))
 
     let lastRefreshAt = 0
-    let fromScratchDone = false
+    let lastFromScratchAt = 0
     let refreshInFlight: Promise<void> | null = null
     const reloadLedger = (): void => {
       if (ledger && this.deps.listNotes) ledger.reload(this.deps.listNotes(req.asset))
@@ -324,12 +324,12 @@ export class PayrollEngine {
             await refreshNow()
             continue
           }
-          // a cursor-based scan can skip unscanned leaves while the mirror
-          // is under load, permanently hiding landed change notes (the local
-          // 210-row run lost 46 rows to this); one full rescan from index 0
-          // restores the true view before conceding the pool is spent
-          if (!fromScratchDone) {
-            fromScratchDone = true
+          // a cursor-based scan can hide landed change notes (fixed at the
+          // source in the SDK's cursor, but keep this heal as a safety net):
+          // one full rescan from index 0 per minute, then concede the pool
+          // is truly spent
+          if (this.deps.now() - lastFromScratchAt > 60_000) {
+            lastFromScratchAt = this.deps.now()
             await this.deps.client.refreshNotes({ fromScratch: true }).catch(() => {})
             reloadLedger()
             continue

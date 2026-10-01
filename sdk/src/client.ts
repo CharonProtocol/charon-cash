@@ -295,8 +295,10 @@ export class PrivacyCashClient {
     let scanned = 0
     let added = 0
     let spent = 0
+    let prevStart = -1
 
-    while (true) {
+    while (start !== prevStart) {
+      prevStart = start
       const page = await fetchUtxoRange(treeKey, start, start + RANGE_PAGE)
       for (const row of page.utxos) {
         scanned++
@@ -343,12 +345,19 @@ export class PrivacyCashClient {
         if (!before) added++
       }
 
-      // Resume from the tree tip, not the requested page end: when the tree is
-      // shorter than one page, page.end overshoots the tip and the next
-      // incremental scan would start above where new leaves land.
-      setSyncOffset(wallet, treeKey, page.hasMore ? page.end : page.nextIndex)
-      if (!page.hasMore) break
-      start = page.end
+      // Advance the cursor to the highest leaf actually returned (+1), never
+      // to the tree tip: the server reads next_index after the page snapshot,
+      // so leaves appended mid-scan would sit below the tip and be skipped
+      // forever (the local 210-row runs stranded ~5 change notes this way).
+      // When the tip moved past what we scanned, loop once more from the
+      // water line to pick the tail up; exit when a pass makes no progress.
+      const scannedTo = page.utxos.length
+        ? page.utxos[page.utxos.length - 1].leafIndex + 1
+        : start
+      setSyncOffset(wallet, treeKey, scannedTo)
+      if (page.hasMore || page.nextIndex > scannedTo) {
+        start = scannedTo
+      }
     }
 
     return { scanned, added, spent }
