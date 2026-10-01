@@ -16,6 +16,8 @@ export function usePayrollClient() {
   const [minTransferFee, setMinTransferFee] = useState(0)
   const clientRef = useRef<PrivacyCashClient | null>(null)
   const [client, setClient] = useState<PrivacyCashClient | null>(null)
+  const [unlocked, setUnlocked] = useState(false)
+  const [unlockBusy, setUnlockBusy] = useState(false)
 
   const connected = !!(publicKey && signMessage && signTransaction)
 
@@ -43,6 +45,8 @@ export function usePayrollClient() {
     // Stale guard: if the wallet re-keyed while init was in flight, the
     // results below belong to a client nobody holds anymore.
     let cancelled = false
+    setUnlocked(false)
+    setUnlockBusy(false)
     const c = new PrivacyCashClient({ publicKey, signMessage, signTransaction })
     clientRef.current = c
     setClient(c)
@@ -59,10 +63,10 @@ export function usePayrollClient() {
         // then degrades to bps-only fees) and clamp negatives off.
         const floor = Math.floor(Number(info.minTransferFee))
         setMinTransferFee(Number.isFinite(floor) && floor > 0 ? floor : 0)
-        await c.unlock() // wallet signature popup: derives the note keypair
-        await c.refreshNotes()
-        if (cancelled) return
-        setVaultSolRaw(totalBalance(publicKey, WRAPPED_SOL_MINT))
+        // No signature prompt on connect: unlocking derives the note keypair
+        // from a wallet signature, which is a user-surprising popup here.
+        // The wallet stays locked until "Unlock vault" (or the first run,
+        // which unlocks through the engine).
       } catch (e) {
         if (!cancelled) setError((e as Error).message)
       } finally {
@@ -74,12 +78,43 @@ export function usePayrollClient() {
     }
   }, [connected, publicKey, signMessage, signTransaction])
 
+  const unlockNow = useCallback(async () => {
+    const c = clientRef.current
+    if (!c || unlockBusy || unlocked) return
+    setUnlockBusy(true)
+    try {
+      await c.unlock() // wallet signature popup: derives the note keypair
+      await c.refreshNotes()
+      setVaultSolRaw(totalBalance(c.publicKey, WRAPPED_SOL_MINT))
+      setUnlocked(true)
+    } finally {
+      setUnlockBusy(false)
+    }
+  }, [unlockBusy, unlocked])
+
   const refreshVault = useCallback(async () => {
     const c = clientRef.current
     if (!c) return
+    if (!unlocked) {
+      await unlockNow()
+      return
+    }
     await c.refreshNotes()
     setVaultSolRaw(totalBalance(c.publicKey, WRAPPED_SOL_MINT))
-  }, [])
+  }, [unlocked, unlockNow])
 
-  return { client, ready: connected && !!client && !busy, busy, error, vaultSolRaw, bps, minTransferFee, connect, refreshVault }
+  return {
+    client,
+    ready: connected && !!client && !busy,
+    busy,
+    error,
+    vaultSolRaw,
+    bps,
+    minTransferFee,
+    connect,
+    refreshVault,
+    unlocked,
+    unlockBusy,
+    unlockNow,
+  }
 }

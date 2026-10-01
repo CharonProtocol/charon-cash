@@ -22,7 +22,8 @@ import type { Asset, ParsedFile, RunMode, RunReceipt } from "@/lib/types"
 export function EmployerApp() {
   const { open: openModal } = useConnectWallet()
   const { publicKey } = useWallet()
-  const { client, ready, busy, error, vaultSolRaw, bps, minTransferFee, refreshVault } = usePayrollClient()
+  const { client, ready, busy, error, vaultSolRaw, bps, minTransferFee, refreshVault, unlocked, unlockBusy, unlockNow } =
+    usePayrollClient()
   const [storageWarn] = useState(() => !storageOk())
 
   const [parsed, setParsed] = useState<ParsedFile | null>(null)
@@ -108,6 +109,9 @@ export function EmployerApp() {
       <WalletBar
         vaultSolRaw={vaultSolRaw}
         relayerOk={bps !== null}
+        unlocked={unlocked}
+        unlockBusy={unlockBusy}
+        onUnlock={unlockNow}
         onOpenSettings={() => setSettingsOpen(true)}
         onFunded={refreshVault}
       />
@@ -137,6 +141,8 @@ export function EmployerApp() {
           </CardContent>
         </Card>
       ) : busy ? (
+        <p className="text-sm text-muted-foreground">Connecting… (fetching relayer config)</p>
+      ) : unlockBusy ? (
         <p className="text-sm text-muted-foreground">Unlocking vault… (approve the signature request)</p>
       ) : (
         <>

@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useConnection, useWallet } from "@solana/wallet-adapter-react"
 import { toast } from "sonner"
-import { Droplets, Wallet } from "lucide-react"
+import { Droplets, Lock, Wallet } from "lucide-react"
 import { LAMPORTS_PER_SOL } from "@solana/web3.js"
 
 import { Badge } from "@/components/ui/badge"
@@ -12,11 +12,17 @@ import { lamportsToSol, shortHash } from "@/lib/format"
 export function WalletBar({
   vaultSolRaw,
   relayerOk,
+  unlocked,
+  unlockBusy,
+  onUnlock,
   onOpenSettings,
   onFunded,
 }: {
   vaultSolRaw: bigint | null
   relayerOk: boolean | null
+  unlocked: boolean
+  unlockBusy: boolean
+  onUnlock: () => void
   onOpenSettings: () => void
   onFunded?: () => void
 }) {
@@ -60,6 +66,19 @@ export function WalletBar({
                 <Droplets className="mr-1 size-3.5 text-primary" />
                 {faucetBusy ? "dripping…" : "Faucet +10"}
               </Button>
+            )}
+            {/* Pending action in place of the connect-time signature popup:
+                unlocking is explicit, one click when the user is ready. */}
+            {!unlocked && (
+              <Button size="sm" disabled={unlockBusy} onClick={onUnlock}>
+                <Lock className="mr-1 size-3.5" />
+                {unlockBusy ? "Unlocking…" : "Unlock vault"}
+              </Button>
+            )}
+            {unlocked && vaultSolRaw !== null && (
+              <Badge variant="outline" className="border-emerald-500/40 text-emerald-600 dark:text-emerald-400">
+                unlocked
+              </Badge>
             )}
             <Badge variant="outline" className="font-mono">
               <Wallet className="mr-1 size-3" />
