@@ -1,15 +1,16 @@
 import { useCallback, useRef, useState } from "react"
 import { useWallet } from "@solana/wallet-adapter-react"
 import { toast } from "sonner"
-import { ArrowRight, Wallet } from "lucide-react"
+import { ArrowRight, History, Play, Settings, Users, Wallet } from "lucide-react"
 import { totalBalance } from "privacy-cash-sdk"
 
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { HistoryCard } from "@/components/HistoryCard"
+import { HistoryPage } from "@/components/HistoryPage"
 import { PlanReviewCard } from "@/components/PlanReviewCard"
 import { RunProgressCard } from "@/components/RunProgressCard"
 import { SettingsDrawer } from "@/components/SettingsDrawer"
+import { TeamPage } from "@/components/TeamPage"
 import { UploadCard } from "@/components/UploadCard"
 import { WalletBar } from "@/components/WalletBar"
 import { useConnectWallet } from "@/components/WalletProvider"
@@ -19,12 +20,15 @@ import { createEngine, type RunSnapshot } from "@/lib/engine"
 import { failedEntriesOf, storageOk } from "@/lib/store"
 import type { Asset, ParsedFile, RunMode, RunReceipt } from "@/lib/types"
 
+type Page = "payroll" | "history" | "team"
+
 export function EmployerApp() {
   const { open: openModal } = useConnectWallet()
   const { publicKey } = useWallet()
   const { client, ready, busy, error, vaultSolRaw, bps, minTransferFee, refreshVault, unlocked, unlockBusy, unlockNow } =
     usePayrollClient()
   const [storageWarn] = useState(() => !storageOk())
+  const [page, setPage] = useState<Page>("payroll")
 
   const [parsed, setParsed] = useState<ParsedFile | null>(null)
   const [snapshot, setSnapshot] = useState<RunSnapshot | null>(null)
@@ -101,73 +105,112 @@ export function EmployerApp() {
   }, [snapshot, startRun])
 
   return (
-    <main className="mx-auto max-w-3xl space-y-4 p-4 sm:p-6">
-      <div>
-        <p className="eyebrow">treasury console</p>
-        <h1 className="h-display -mt-2 text-2xl">Payroll runs</h1>
-      </div>
-      <WalletBar
-        vaultSolRaw={vaultSolRaw}
-        relayerOk={bps !== null}
-        unlocked={unlocked}
-        unlockBusy={unlockBusy}
-        onUnlock={unlockNow}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onFunded={refreshVault}
-      />
+    <div className="mx-auto flex max-w-6xl flex-col gap-4 p-4 sm:p-6 lg:flex-row">
+      {/* Sidebar nav (top tab bar on phones) */}
+      <aside className="lg:w-52 lg:flex-none">
+        <div className="flex items-center justify-between gap-2 lg:sticky lg:top-6 lg:flex-col lg:items-stretch lg:gap-1">
+          <div className="hidden lg:block">
+            <p className="eyebrow">charon</p>
+            <p className="h-display -mt-1 mb-4 text-lg">Pay</p>
+          </div>
+          {(
+            [
+              ["payroll", "Payroll", Play],
+              ["history", "History", History],
+              ["team", "Team", Users],
+            ] as const
+          ).map(([id, label, Icon]) => (
+            <button
+              key={id}
+              onClick={() => setPage(id)}
+              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                page === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+              }`}
+            >
+              <Icon className="size-4" /> {label}
+            </button>
+          ))}
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="hidden items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground lg:flex"
+          >
+            <Settings className="size-4" /> Settings
+          </button>
+        </div>
+      </aside>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
-      {storageWarn && (
-        <p className="text-sm text-muted-foreground">
-          Browser storage is unavailable — runs will work but receipts won't persist.
-        </p>
-      )}
-
-      {!publicKey ? (
-        <Card className="card-lift border-dashed">
-          <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
-            <div className="flex size-16 items-center justify-center rounded-2xl border border-zinc-200 bg-secondary">
-              <Wallet className="size-7 text-primary" />
-            </div>
-            <div>
-              <p className="h-display text-lg">Connect the treasury wallet</p>
-              <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
-                One signature unlocks the vault — then pay everyone from this screen, gasless.
-              </p>
-            </div>
-            <Button size="lg" className="btn-glow" onClick={openModal}>
-              Connect wallet <ArrowRight className="ml-1 size-4" />
-            </Button>
-          </CardContent>
-        </Card>
-      ) : busy ? (
-        <p className="text-sm text-muted-foreground">Connecting… (fetching relayer config)</p>
-      ) : unlockBusy ? (
-        <p className="text-sm text-muted-foreground">Unlocking vault… (approve the signature request)</p>
-      ) : (
-        <>
-          <UploadCard onParsed={setParsed} />
-          <PlanReviewCard
-            parsed={parsed}
-            bps={bps}
-            minTransferFee={minTransferFee}
+      <main className="min-w-0 flex-1 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="h-display text-2xl">
+            {page === "payroll" ? "Payroll runs" : page === "history" ? "Past payments" : "Team"}
+          </h1>
+          <WalletBar
             vaultSolRaw={vaultSolRaw}
-            disabled={!ready}
-            onRun={(asset, mode) => startRun(asset, undefined, undefined, mode)}
+            relayerOk={bps !== null}
+            unlocked={unlocked}
+            unlockBusy={unlockBusy}
+            onUnlock={unlockNow}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onFunded={refreshVault}
           />
-          <RunProgressCard
-            snapshot={snapshot}
-            receipt={receipt}
-            onCancel={() => engineRef.current?.cancel()}
-            onDone={() => { setSnapshot(null); setReceipt(null); setParsed(null) }}
-            onResumeFailed={() => receipt && resumeFailed(receipt)}
-            onResumeSnapshot={resumeAbortedSnapshot}
-          />
-        </>
-      )}
+        </div>
 
-      <HistoryCard onResumeFailed={resumeFailed} />
-      {settingsOpen && <SettingsDrawer onClose={() => setSettingsOpen(false)} />}
-    </main>
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        {storageWarn && (
+          <p className="text-sm text-muted-foreground">
+            Browser storage is unavailable — runs will work but receipts won't persist.
+          </p>
+        )}
+
+        {page === "history" ? (
+          <HistoryPage onResumeFailed={resumeFailed} />
+        ) : page === "team" ? (
+          <TeamPage extraEntries={parsed?.entries} />
+        ) : !publicKey ? (
+          <Card className="card-lift border-dashed">
+            <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
+              <div className="flex size-16 items-center justify-center rounded-2xl border border-zinc-200 bg-secondary">
+                <Wallet className="size-7 text-primary" />
+              </div>
+              <div>
+                <p className="h-display text-lg">Connect the treasury wallet</p>
+                <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
+                  One signature unlocks the vault — then pay everyone from this screen, gasless.
+                </p>
+              </div>
+              <Button size="lg" className="btn-glow" onClick={openModal}>
+                Connect wallet <ArrowRight className="ml-1 size-4" />
+              </Button>
+            </CardContent>
+          </Card>
+        ) : busy ? (
+          <p className="text-sm text-muted-foreground">Connecting… (fetching relayer config)</p>
+        ) : unlockBusy ? (
+          <p className="text-sm text-muted-foreground">Unlocking vault… (approve the signature request)</p>
+        ) : (
+          <>
+            <UploadCard onParsed={setParsed} />
+            <PlanReviewCard
+              parsed={parsed}
+              bps={bps}
+              minTransferFee={minTransferFee}
+              vaultSolRaw={vaultSolRaw}
+              disabled={!ready}
+              onRun={(asset, mode) => startRun(asset, undefined, undefined, mode)}
+            />
+            <RunProgressCard
+              snapshot={snapshot}
+              receipt={receipt}
+              onCancel={() => engineRef.current?.cancel()}
+              onDone={() => { setSnapshot(null); setReceipt(null); setParsed(null) }}
+              onResumeFailed={() => receipt && resumeFailed(receipt)}
+              onResumeSnapshot={resumeAbortedSnapshot}
+            />
+          </>
+        )}
+
+        {settingsOpen && <SettingsDrawer onClose={() => setSettingsOpen(false)} />}
+      </main>
+    </div>
   )
 }

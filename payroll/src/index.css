@@ -132,6 +132,16 @@ body {
   transition: background-color 0.25s ease, color 0.25s ease;
 }
 
+/* Tailwind v4 defaults bare `border` to currentColor, which renders white
+ * outlines around cards/tables/toggles in dark mode — pin them to the token. */
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--border);
+  }
+}
+
 /* ---------- utility classes ---------- */
 .eyebrow {
   font-family: var(--font-mono);
