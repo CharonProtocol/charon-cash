@@ -305,15 +305,17 @@ async function watchLoop() {
     if (confirmedUnprocessed.length) {
       const limit = Math.min(1000, Math.max(32, sigs.length + 32))
       const list = await rpcCall("getSignaturesForAddress", [PROGRAM_ID, { limit }])
-      // list is newest-first; walk until a processed sig (older ones already done)
+      // Walk the WHOLE page: getSignaturesForAddress is eventually consistent
+      // under load, and a confirmed sig can be missing while newer entries are
+      // present — breaking at the first known-processed sig stranded that
+      // middle sig forever, and once the replica's append order diverged from
+      // the chain's, every later deposit proved a phantom root (UnknownRoot).
       const batch = []
       for (const entry of list) {
         if (entry.err) continue
         const p = pending.get(entry.signature)
         if (p && p.confirmedAt && !p.processed) {
           batch.push({ sig: entry.signature, p, slot: entry.slot })
-        } else if (processedSigs.has(entry.signature)) {
-          break
         }
       }
       // list order = newest first; process oldest -> newest
