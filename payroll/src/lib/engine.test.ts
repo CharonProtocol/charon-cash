@@ -103,15 +103,14 @@ function deps(client: EngineClient, extra?: {
 }
 
 describe("PayrollEngine", () => {
-  it("deposits the shortfall as per-row notes, pays every entry, confirms, and writes a receipt", async () => {
+  it("deposits the shortfall as one lumpsum, pays every entry, confirms, and writes a receipt", async () => {
     const { client, calls } = mockClient({ fails: new Map() })
     const engine = new PayrollEngine(deps(client))
     const snapshots: RunSnapshot[] = []
     const receipt = await engine.run(req(), (s) => snapshots.push({ ...s }))
-    // 3 rows -> one gross-sized note per row (widest first) + a filler note
-    // absorbing the fee margin; the sum still equals the full shortfall
-    expect(calls.deposits).toHaveLength(4)
-    expect(calls.deposits.reduce((s, n) => s + BigInt(n), 0n)).toBe(receipt.funding!.depositedRaw)
+    // one deposit for the full shortfall — a single signature funds the run
+    expect(calls.deposits).toHaveLength(1)
+    expect(BigInt(calls.deposits[0])).toBe(receipt.funding!.depositedRaw)
     expect(calls.withdraws).toHaveLength(3)
     expect(receipt.summary).toEqual({ sent: 3, failed: 0, total: 3 })
     expect(receipt.entries.every((e) => e.status === "sent")).toBe(true)
@@ -236,11 +235,9 @@ describe("PayrollEngine", () => {
         minTransferFee: 10_000,
       }),
     )
-    // per-row funding: the row note carries net + floored fee (510_000);
-    // the margin lands as its own filler note — together they total the
-    // shortfall (520_000) without under-sizing the row's note
-    expect(calls.deposits[0]).toBe(510_000)
-    expect(calls.deposits.reduce((s, n) => s + BigInt(n), 0n)).toBe(520_000n)
+    // one lumpsum covering net + floored fee + margin (520_000): a single
+    // note big enough for the row — under-depositing would strand it
+    expect(calls.deposits).toEqual([520_000])
   })
 })
 

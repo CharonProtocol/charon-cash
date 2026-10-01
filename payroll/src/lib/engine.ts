@@ -205,36 +205,21 @@ export class PayrollEngine {
     if (plan.shortfall > 0n) {
       this.emit("funding")
       try {
-        // Fund per-row instead of a step ladder: each deposit becomes a note
-        // sized to exactly one row's gross (widest rows first), so every
-        // funded row can reserve a fresh note no matter how the vault's older
-        // notes are fragmented. Leftover budget lands as one filler note that
-        // pairs with existing fragments for the remaining rows. (Cutting
-        // notes to multiples of the widest gross stranded rows when a
-        // partially-funded vault held fragments smaller than that gross.)
-        const rowsByGross = [...plan.rows].sort((a, b) =>
-          a.gross > b.gross ? -1 : a.gross < b.gross ? 1 : 0,
-        )
-        let budget = plan.shortfall
+        // One lumpsum deposit: a single signature funds the whole run. The
+        // note is >= every row's gross, so rows pay through its change chain
+        // while the vault's older fragments cover rows via the pair logic.
+        // (Per-row funding costs one popup per row; the step ladder it
+        // replaced stranded rows when fragments couldn't fit a payout.)
         let firstSig: string | undefined
         let lastLeaf = -1
-        const depositPart = async (amountB: bigint): Promise<void> => {
-          const amount = Number(amountB)
-          if (amount <= 0 || !Number.isSafeInteger(amount)) throw new Error("bad deposit size")
-          const dep =
-            req.asset.kind === "sol"
-              ? await this.deps.client.depositSOL(amount)
-              : await this.deps.client.depositSPL(req.asset.mint, amount)
-          firstSig ??= dep.signature
-          lastLeaf = Math.max(lastLeaf, dep.leafIndex)
-        }
-        for (const r of rowsByGross) {
-          if (budget <= 0n) break
-          const part = r.gross <= budget ? r.gross : budget
-          await depositPart(part)
-          budget -= part
-        }
-        if (budget > 0n) await depositPart(budget)
+        const amount = Number(plan.shortfall)
+        if (amount <= 0 || !Number.isSafeInteger(amount)) throw new Error("bad deposit size")
+        const dep =
+          req.asset.kind === "sol"
+            ? await this.deps.client.depositSOL(amount)
+            : await this.deps.client.depositSPL(req.asset.mint, amount)
+        firstSig = dep.signature
+        lastLeaf = dep.leafIndex
         await this.deps.waitUntilIndexed(treeKeyOf(req.asset), lastLeaf)
         await this.deps.client.refreshNotes()
         funding = { depositedRaw: plan.shortfall, txSignature: firstSig ?? "" }
