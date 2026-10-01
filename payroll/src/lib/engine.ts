@@ -267,6 +267,7 @@ export class PayrollEngine {
     if (ledger && this.deps.listNotes) ledger.reload(this.deps.listNotes(req.asset))
 
     let lastRefreshAt = 0
+    let fromScratchDone = false
     let refreshInFlight: Promise<void> | null = null
     const reloadLedger = (): void => {
       if (ledger && this.deps.listNotes) ledger.reload(this.deps.listNotes(req.asset))
@@ -317,12 +318,23 @@ export class PayrollEngine {
         }
         if (this.cancelled) return null
         if (ledger.busy === 0) {
-          // nothing is in flight, so the view is authoritative — scan once
-          // unthrottled, then concede
-          if (scannedFinal) return null
-          scannedFinal = true
-          await refreshNow()
-          continue
+          // nothing is in flight, so the view is authoritative
+          if (!scannedFinal) {
+            scannedFinal = true
+            await refreshNow()
+            continue
+          }
+          // a cursor-based scan can skip unscanned leaves while the mirror
+          // is under load, permanently hiding landed change notes (the local
+          // 210-row run lost 46 rows to this); one full rescan from index 0
+          // restores the true view before conceding the pool is spent
+          if (!fromScratchDone) {
+            fromScratchDone = true
+            await this.deps.client.refreshNotes({ fromScratch: true }).catch(() => {})
+            reloadLedger()
+            continue
+          }
+          return null
         }
         // other lanes are mid-payout and their change notes are coming; wait
         scannedFinal = false

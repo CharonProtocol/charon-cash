@@ -254,7 +254,7 @@ export class PrivacyCashClient {
   }
 
   /** Unlock + rescan + persist. Powers the UI "Load notes" action. */
-  async refreshNotes(): Promise<SyncResult> {
+  async refreshNotes(opts?: { fromScratch?: boolean }): Promise<SyncResult> {
     await this.unlock()
     // Scan the SOL tree plus every supported mint's tree: a recipient of a
     // shielded SPL transfer has no local hint about the mint, so discovery
@@ -267,7 +267,7 @@ export class PrivacyCashClient {
     let added = 0
     let spent = 0
     for (const treeKey of trees) {
-      const r = await this.syncNotes(treeKey).catch(() => ({
+      const r = await this.syncNotes(treeKey, opts?.fromScratch ?? false).catch(() => ({
         scanned: 0,
         added: 0,
         spent: 0,
