@@ -10,11 +10,14 @@ import { explorerTxUrl } from "@/lib/explorer"
 import type { RunReceipt } from "@/lib/types"
 
 export function HistoryCard({ onResumeFailed }: { onResumeFailed: (r: RunReceipt) => void }) {
-  const [runs, setRuns] = useState<RunReceipt[]>(() => listRuns())
+  // Read on every render: this card mounts before the first run exists, and a
+  // mount-time snapshot would keep it hidden forever (its own Refresh button
+  // included). localStorage reads are cheap; the parent re-renders constantly
+  // during a run.
+  const runs = listRuns()
   const [openId, setOpenId] = useState<string | null>(null)
 
   if (runs.length === 0) return null
-  const reload = () => setRuns(listRuns())
 
   return (
     <Card>
@@ -81,7 +84,6 @@ export function HistoryCard({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
             )}
           </div>
         ))}
-        <Button size="sm" variant="ghost" onClick={reload}>Refresh</Button>
       </CardContent>
     </Card>
   )

@@ -84,6 +84,11 @@ function Row({ status, address, memo, sig, error, noteLeafIndex }: {
           {shortHash(address, 6, 4)}
           {noteLeafIndex !== undefined && ` · note @ leaf ${noteLeafIndex}`}
         </span>
+        {error && (
+          <span className="mt-0.5 block break-words font-mono text-[11px] text-destructive">
+            {error.length > 120 ? error.slice(0, 120) + "…" : error}
+          </span>
+        )}
       </span>
       <span className="hidden flex-none items-center sm:inline-flex">
         {sig && (
@@ -95,11 +100,6 @@ function Row({ status, address, memo, sig, error, noteLeafIndex }: {
           >
             {shortHash(sig, 6, 4)} <ExternalLink className="size-3" />
           </a>
-        )}
-        {error && (
-          <span className="font-mono text-[11px] text-destructive" title={error}>
-            {shortHash(error, 12, 8)}
-          </span>
         )}
       </span>
       <StatusChip status={status} />

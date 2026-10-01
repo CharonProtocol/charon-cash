@@ -44,7 +44,7 @@ export function PlanReviewCard({
   const [mint, setMint] = useState("")
   const [decimals, setDecimals] = useState<number | null>(null)
   const [mintError, setMintError] = useState<string | null>(null)
-  const [mode, setMode] = useState<RunMode>("public")
+  const [mode, setMode] = useState<RunMode>("shielded")
   const [recipientCheck, setRecipientCheck] = useState<RecipientCheck | null>(null)
   const [checking, setChecking] = useState(false)
   const [checkError, setCheckError] = useState<string | null>(null)
@@ -181,19 +181,24 @@ export function PlanReviewCard({
           <div className="space-y-2">
             <Label>Payout mode</Label>
             <div className="flex gap-1 rounded-lg border p-0.5">
-              {(["public", "shielded"] as const).map((m) => (
+              {(["shielded", "public"] as const).map((m) => (
                 <button
                   key={m}
                   onClick={() => setMode(m)}
                   className={`rounded-md px-3 py-1 text-xs font-medium ${mode === m ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
                 >
-                  {m === "public" ? "Public" : "Private notes"}
+                  {m === "public" ? "Direct (public)" : "Private notes"}
                 </button>
               ))}
               {mode === "shielded" && (
-                <Badge variant="secondary" className="ml-auto self-center">v2</Badge>
+                <Badge variant="secondary" className="ml-auto self-center">recommended</Badge>
               )}
             </div>
+            <p className="text-xs text-muted-foreground">
+              {mode === "shielded"
+                ? "Each employee gets an encrypted note — amount and name stay private. Your wallet signs once to fund the vault, then once per payout (the backend only broadcasts; fee ≈ 0.00001 SOL each)."
+                : "Sends SOL straight from your wallet to each address. Fast, but amount + recipient are PUBLIC on-chain. Same signing: once per payout."}
+            </p>
           </div>
           {mode === "shielded" && (
             <div className="space-y-2 sm:col-span-2">
