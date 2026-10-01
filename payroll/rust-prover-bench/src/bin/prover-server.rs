@@ -15,7 +15,10 @@ use ark_groth16::Groth16;
 use ark_snark::SNARK;
 use ark_std::rand::thread_rng;
 use num_bigint::{BigInt, BigUint};
+use rust_witness::witness;
 use serde_json::{json, Value};
+
+witness!(transaction2);
 
 const DEFAULT_CIRCUIT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../programs/privacy-cash/artifacts/circuits/transaction2");
 
@@ -80,7 +83,12 @@ fn main() -> color_eyre::Result<()> {
     rayon::ThreadPoolBuilder::new().num_threads(threads).build_global()?;
     let g2_swap = env::var("ARK_G2").as_deref() == Ok("c1c0");
     let circuit = env::var("ARK_CIRCUIT").unwrap_or_else(|_| DEFAULT_CIRCUIT.to_string());
-    eprintln!("circuit             {circuit}");
+    // ARK_WITNESS=native swaps the wasmer witness calculator for the
+    // C-transpiled rust-witness build of the same transaction2.wasm
+    // (3.6x faster witnessgen; only valid for the transaction2 circuit).
+    let native_witness = env::var("ARK_WITNESS").as_deref() == Ok("native")
+        && circuit == DEFAULT_CIRCUIT;
+    eprintln!("circuit             {circuit}   native_witness={native_witness}");
 
     let t = std::time::Instant::now();
     let mut zr = File::open(format!("{circuit}.zkey"))?;
@@ -124,11 +132,18 @@ fn main() -> color_eyre::Result<()> {
                     inputs.insert(k.clone(), flat);
                 }
                 let mut circuit = builder.setup();
-                let witness = builder.cfg.wtns.calculate_witness_element::<Fr, _>(
-                    &mut builder.cfg.store,
-                    inputs,
-                    builder.cfg.sanity_check,
-                )?;
+                let witness = if native_witness {
+                    transaction2_witness(inputs)
+                        .into_iter()
+                        .map(|b| Fr::from(b.to_biguint().unwrap_or_default()))
+                        .collect::<Vec<_>>()
+                } else {
+                    builder.cfg.wtns.calculate_witness_element::<Fr, _>(
+                        &mut builder.cfg.store,
+                        inputs,
+                        builder.cfg.sanity_check,
+                    )?
+                };
                 circuit.witness = Some(witness);
                 let pubs = circuit.get_public_inputs().ok_or_else(|| color_eyre::Report::msg("no witness for public inputs"))?;
                 let proof = Groth16::<Bn254, CircomReduction>::prove(&pk, circuit, &mut thread_rng())?;
