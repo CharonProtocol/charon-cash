@@ -652,26 +652,39 @@ async function defaultWaitUntilIndexed(treeKey: string, minLeafIndex: number, ti
     } catch {
       /* transient indexer hiccup — retry */
     }
-    await new Promise((r) => setTimeout(r, 1_000))
+    await new Promise((r) => setTimeout(r, 300))
   }
   throw new Error(`merkle tree did not index leaf ${minLeafIndex} within ${timeoutMs}ms`)
 }
 
 async function defaultConfirm(sig: string): Promise<boolean> {
   const conn = new Connection(config.get().rpcUrl, "confirmed")
-  const deadline = Date.now() + 45_000
-  while (Date.now() < deadline) {
-    try {
-      const { value } = await conn.getSignatureStatuses([sig], { searchTransactionHistory: true })
-      const st = value?.[0]
-      if (st?.confirmationStatus === "confirmed" || st?.confirmationStatus === "finalized") return true
-      if (st?.err) return false
-    } catch {
-      /* rate limit — retry */
-    }
-    await new Promise((r) => setTimeout(r, 2_000))
+  // The relay may broadcast faster than we subscribe; catch already-landed
+  // signatures before waiting on the websocket.
+  try {
+    const { value } = await conn.getSignatureStatuses([sig])
+    const st = value?.[0]
+    if (st?.confirmationStatus === "confirmed" || st?.confirmationStatus === "finalized") return !st.err
+    if (st?.err) return false
+  } catch {
+    /* fall through to the websocket */
   }
-  return false
+  // Push, not poll: Alpenglow finality is sub-second on devnet, so a polling
+  // interval added more latency than the chain itself.
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      conn.removeSignatureListener(subId)
+      resolve(false)
+    }, 45_000)
+    const subId = conn.onSignature(
+      sig,
+      (result) => {
+        clearTimeout(timer)
+        resolve(!result.err)
+      },
+      "confirmed",
+    )
+  })
 }
 
 export function createEngine(client: EngineClient): PayrollEngine {
