@@ -155,6 +155,71 @@
     }
   }
 
+  // ---- note consolidation ----
+  // The circuit accepts at most 2 input notes per proof, so a wallet whose
+  // total balance covers a send can still fail once fragments shrink past
+  // any note-or-pair fit. solveMergeNet sizes a self-transfer so the merged
+  // output note keeps the whole value minus the relayer fee (no dust change).
+  function solveMergeNet(totalBn, bps, floorBn) {
+    var net = totalBn;
+    for (var i = 0; i < 4; i++) {
+      var f = (net * bps + 9999n) / 10000n;
+      if (f < floorBn) f = floorBn;
+      net = totalBn - f;
+    }
+    var f2 = (net * bps + 9999n) / 10000n;
+    if (f2 < floorBn) f2 = floorBn;
+    if (net + f2 > totalBn) net = totalBn - f2;
+    return net;
+  }
+
+  // Merge the two largest free notes repeatedly (relayed, so gasless) until a
+  // single note or a pair covers targetBn. Returns true when covered.
+  async function mergeNotesFor(c, targetBn, mintAddress) {
+    var self = cfg().walletPubkey;
+    var bps = 25;
+    var floorBn = 10000n;
+    try {
+      var info = await nativeFetch(cfg().backendUrl + "/api/relayer/info").then(function (r) {
+        return r.json();
+      });
+      if (info && typeof info.fee_rate_bps === "number") bps = info.fee_rate_bps;
+      if (info && typeof info.min_transfer_fee === "number") floorBn = BigInt(info.min_transfer_fee);
+    } catch (e) {
+      // defaults above match the prod relayer
+    }
+    for (var m = 0; m < 8; m++) {
+      var notes = c
+        .getNotes()
+        .filter(function (n) {
+          return !n.spent && n.mintAddress === mintAddress;
+        })
+        .map(function (n) {
+          return { amount: BigInt(n.amount || "0"), blinding: n.blinding };
+        })
+        .sort(function (a, b) {
+          return a.amount > b.amount ? -1 : a.amount < b.amount ? 1 : 0;
+        });
+      if (notes[0] && notes[0].amount >= targetBn) return true;
+      if (notes[0] && notes[1] && notes[0].amount + notes[1].amount >= targetBn) return true;
+      if (notes.length < 2) return false;
+      var merged = notes[0].amount + notes[1].amount;
+      var net = solveMergeNet(merged, BigInt(bps), floorBn);
+      if (net <= 0n) return false;
+      await c.transferNoteSOL(self, Number(net), {
+        relay: true,
+        inputNotes: [{ blinding: notes[0].blinding }, { blinding: notes[1].blinding }],
+      });
+      await c.refreshNotes();
+    }
+    return false;
+  }
+
+  function isInsufficientBalanceError(e) {
+    var s = String((e && e.message) || e);
+    return s.indexOf("insufficient private balance") >= 0 || s.indexOf("no spendable notes") >= 0;
+  }
+
   async function handleCall(msg) {
     var c = ensureClient();
     switch (msg.method) {
@@ -203,14 +268,34 @@
       }
       case "transfer": {
         // args: [amountLamports, recipientBase58]. Spend an existing shielded note
-        // to pay an address (relayed gaslessly).
-        var res = await c.transferSOL(msg.args[0], msg.args[1], { relay: true });
-        return toPlain(res);
+        // to pay an address (relayed gaslessly). If the vault's fragments cannot
+        // fit the payment (2-input circuit limit), merge them to self first and
+        // retry once.
+        try {
+          var res = await c.transferSOL(msg.args[0], msg.args[1], { relay: true });
+          return toPlain(res);
+        } catch (e) {
+          if (!isInsufficientBalanceError(e)) throw e;
+          var gross = BigInt(msg.args[0]) + 20000n;
+          var ok = await mergeNotesFor(c, gross, SDK.WRAPPED_SOL_MINT);
+          if (!ok) throw e;
+          var res2 = await c.transferSOL(msg.args[0], msg.args[1], { relay: true });
+          return toPlain(res2);
+        }
       }
       case "transferSpl": {
         // args: [mintBase58, amountRaw, recipientBase58]
-        var res = await c.transferSPL(msg.args[0], msg.args[1], msg.args[2], { relay: true });
-        return toPlain(res);
+        try {
+          var resS = await c.transferSPL(msg.args[0], msg.args[1], msg.args[2], { relay: true });
+          return toPlain(resS);
+        } catch (e) {
+          if (!isInsufficientBalanceError(e)) throw e;
+          var grossS = BigInt(msg.args[1]) + 20000n;
+          var okS = await mergeNotesFor(c, grossS, msg.args[0]);
+          if (!okS) throw e;
+          var resS2 = await c.transferSPL(msg.args[0], msg.args[1], msg.args[2], { relay: true });
+          return toPlain(resS2);
+        }
       }
       case "send": {
         // Web-style "Send": deposit fresh from the wallet, then withdraw to the
