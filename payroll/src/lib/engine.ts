@@ -135,11 +135,6 @@ export interface EngineDeps {
    * run stays sequential (no reservation).
    */
   listNotes?(asset: Asset): NoteRef[]
-  /**
-   * Forces one indexer sync so plan-time balance reads see fresh leaves.
-   * Optional: tests omit it and no network call is made.
-   */
-  kickIndexer?(): Promise<void>
 }
 
 const ATTEMPTS = 3
@@ -251,26 +246,6 @@ class NoteLedger {
     return [...this.free.values()].map((n) => ({ amount: n.amount, blinding: n.blinding }))
   }
 
-  /** Free entries with ids, for prep passes that pick split sources by size. */
-  freeEntries(): Array<{ id: string; amount: bigint; blinding: string }> {
-    return [...this.free.values()]
-  }
-
-  /**
-   * Pin a note worth exactly gross — the exact-note prep path. Spending the
-   * input to the last lamport mints no change note, so the pool cannot
-   * fragment mid-run. Null when no exact-sized note exists yet.
-   */
-  tryReserveExact(gross: bigint): PinnedNotes | null {
-    for (const n of this.free.values()) {
-      if (n.amount !== gross) continue
-      this.free.delete(n.id)
-      this.reserved.add(n.id)
-      return { ids: [n.id], blindings: [n.blinding] }
-    }
-    return null
-  }
-
   totalFree(): bigint {
     let sum = 0n
     for (const n of this.free.values()) sum += n.amount
@@ -302,6 +277,11 @@ export class PayrollEngine {
     this.splits = 0
     this.statusRef = undefined
     const decimals = req.asset.kind === "sol" ? 9 : req.asset.decimals
+    const plan = planRun(req.entries, decimals, req.bps, req.vaultRaw, {
+      mode: req.mode,
+      // the floor is SOL-denominated; token raw units never pay it
+      minTransferFee: req.asset.kind === "sol" ? req.minTransferFee : 0,
+    })
     const rows: RowState[] = req.entries.map((e) => ({
       address: e.address,
       amountHuman: e.amountHuman,
@@ -333,44 +313,34 @@ export class PayrollEngine {
     await this.deps.client.init()
     await this.deps.client.unlock()
 
-    // Verify the vault from the chain before planning. The caller's
-    // pre-unlock total can hold phantom notes (spent on-chain by a cancelled
-    // earlier run but never marked spent locally), which under-quotes the
-    // deposit and let the vault run dry mid-run — 17 rows died with
-    // "insufficient private balance" in the measured 100-row run because of
-    // exactly that. A fresh scan re-derives ownership from the chain's own
-    // leaf set, so the deposit is sized against real money.
-    let vaultRaw = req.vaultRaw
-    if (this.deps.listNotes) {
-      try {
-        this.setStatus("Verifying the private vault balance from the chain…")
-        await this.deps.kickIndexer?.().catch(() => {})
-        await this.deps.client.refreshNotes({ fromScratch: true })
-        vaultRaw = this.deps.listNotes(req.asset).reduce((s, n) => s + BigInt(n.amount), 0n)
-      } catch {
-        // keep the caller's estimate — the mid-run top-up below still backstops it
-      }
-    }
-    const plan = planRun(req.entries, decimals, req.bps, vaultRaw, {
-      mode: req.mode,
-      // the floor is SOL-denominated; token raw units never pay it
-      minTransferFee: req.asset.kind === "sol" ? req.minTransferFee : 0,
-    })
-
     const feeFloorBig = BigInt(req.asset.kind === "sol" ? (req.minTransferFee ?? 0) : 0)
     const bpsBig = BigInt(req.bps)
     const feeOf = (net: bigint): bigint => {
       const f = (net * bpsBig + 9_999n) / 10_000n
       return f < feeFloorBig ? feeFloorBig : f
     }
-    // The exact-note prep pays a relayer fee per split self-transfer (one per
-    // note that has to be carved, at most rows-1). Budgeting the same per-row
-    // fees again covers that ceiling; whatever goes unused simply stays in
-    // the payer's own vault as notes.
-    const splitBudget =
-      plan.shortfall === 0n || plan.rows.length < SPLIT_MIN_ROWS
-        ? 0n
-        : (plan.totalFees * 3n) / 2n + 120_000n
+    // The lane fan-out pays a relayer fee per split self-transfer; without
+    // budgeting those, the final rows starve by a few tens of thousands of
+    // lamports (the measured 100-run: last row short by 28,482). Simulate the
+    // halving waves on the deposit itself, then pad — the extra stays in the
+    // payer's own vault.
+    const splitBudget = ((): bigint => {
+      if (plan.shortfall === 0n || plan.rows.length < SPLIT_MIN_ROWS) return 0n
+      const target = Math.min(Math.max(1, req.lanes ?? LANES), LANES, plan.rows.length)
+      let notes = [plan.shortfall]
+      let fees = 0n
+      while (notes.length < target && notes.length < 64) {
+        const next: bigint[] = []
+        for (const x of notes) {
+          const pool = x - feeOf(x)
+          const half = pool / 2n
+          fees += feeOf(half)
+          next.push(half, pool - half)
+        }
+        notes = next
+      }
+      return (fees * 3n) / 2n + 60_000n
+    })()
 
     let funding: RunReceipt["funding"] = null
     if (plan.shortfall > 0n) {
@@ -573,57 +543,6 @@ export class PayrollEngine {
       }
     }
 
-    /**
-     * Last-resort funding recovery when the note pool cannot cover a row: one
-     * full rescan (the "missing" money may be an unseen change note), then —
-     * if the vault is genuinely short — a single top-up deposit sized to
-     * everything still owed, shared by all starving lanes via the in-flight
-     * promise. Rows must never silently strand on a dry vault again (17 died
-     * that way in the measured run); one wallet signature mid-run is the
-     * price of guaranteeing it.
-     */
-    let topUpInFlight: Promise<boolean> | null = null
-    let topUpsUsed = 0
-    const ensureTopUp = async (gross: bigint): Promise<boolean> => {
-      if (!ledger || topUpsUsed >= 1) return false
-      if (topUpInFlight) return topUpInFlight
-      topUpInFlight = (async () => {
-        try {
-          await this.deps.client.refreshNotes({ fromScratch: true }).catch(() => {})
-          reloadLedger()
-          if (ledger.totalFree() >= gross) return true
-          topUpsUsed++
-          const owed = plan.rows.reduce(
-            (s, r, i) =>
-              rows[i].status === "confirmed" || rows[i].status === "relayed" || rows[i].status === "confirming"
-                ? s
-                : s + r.gross,
-            0n,
-          )
-          const amount = Number(owed + plan.margin + 120_000n)
-          if (amount <= 0 || !Number.isSafeInteger(amount)) return false
-          this.setStatus(
-            `Vault ran dry — signing one top-up deposit of ${(amount / 1e9).toFixed(4)} SOL to finish the run…`,
-          )
-          const dep =
-            req.asset.kind === "sol"
-              ? await this.deps.client.depositSOL(amount)
-              : await this.deps.client.depositSPL(req.asset.mint, amount)
-          await this.deps.waitUntilIndexed(treeKeyOf(req.asset), dep.leafIndex)
-          await this.deps.client.refreshNotes().catch(() => {})
-          reloadLedger()
-          return true
-        } catch {
-          // a rejected wallet popup (or dead RPC) is not a payout failure —
-          // concede and let the row report the honest balance error
-          return false
-        } finally {
-          topUpInFlight = null
-        }
-      })()
-      return topUpInFlight
-    }
-
     const payOne = async (row: RowState, planRow: (typeof plan.rows)[number]): Promise<void> => {
       const gross = planRow.gross
       for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
@@ -644,12 +563,7 @@ export class PayrollEngine {
         let submitted = false
         try {
           const reserveStart = this.deps.now()
-          // Exact-note fast path: prep sized a note to this row's gross, so
-          // spending it to the last lamport mints no change note and the pool
-          // never fragments. Anything else falls through to the shared chain.
-          pinned = ledger?.tryReserveExact(gross) ?? null
-          if (pinned) ledger!.busy++
-          else pinned = await reserveFor(gross)
+          pinned = await reserveFor(gross)
           timing.reserveMs = this.deps.now() - reserveStart
           if (this.cancelled) {
             if (pinned) {
@@ -659,11 +573,6 @@ export class PayrollEngine {
             row.status = "failed"
             row.error = "cancelled"
             return
-          }
-          // A dry vault must recover, not strand rows: one rescan, then one
-          // shared top-up deposit for everything still owed, then reserve again.
-          if (!pinned && ledger && (await ensureTopUp(gross))) {
-            pinned = await reserveFor(gross)
           }
           if (!pinned && ledger) {
             const total = ledger.totalFree()
@@ -787,90 +696,14 @@ export class PayrollEngine {
     }
 
     /**
-     * Exact-note prep (SOL shielded): reshape the vault so every row has a
-     * dedicated note worth exactly its gross (net + fee). A payout that
-     * consumes its input to the last lamport mints no change note, so the
-     * note pool cannot fragment mid-run and every lane keeps proving at full
-     * speed from the first row to the last. The shared change-chain design
-     * this replaces decayed into fragments: the measured 100-row run fell
-     * from ~45 payouts/min to a crawl with lanes queued behind merges and
-     * reserve waits.
-     */
-    const prepareExactNotes = async (): Promise<void> => {
-      if (!ledger || !selfAddress) return
-      // Multiset difference: which gross amounts still lack an exact note.
-      const missingAmounts = (): Array<[bigint, number]> => {
-        const need = new Map<bigint, number>()
-        for (const r of plan.rows) need.set(r.gross, (need.get(r.gross) ?? 0) + 1)
-        for (const n of ledger.freeEntries()) {
-          const c = need.get(n.amount)
-          if (c) need.set(n.amount, c - 1)
-        }
-        return [...need.entries()]
-          .filter(([, c]) => c > 0)
-          .sort((a, b) => (a[0] > b[0] ? -1 : a[0] < b[0] ? 1 : 0))
-      }
-      const batchSize = Math.min(Math.max(1, req.lanes ?? LANES), LANES)
-      for (let wave = 0; wave < 20 && !this.cancelled; wave++) {
-        const missing = missingAmounts()
-        const outstanding = missing.reduce((s, [, c]) => s + c, 0)
-        if (outstanding === 0) break
-        this.setStatus(
-          `Preparing exact payout notes: ${plan.rows.length - outstanding} of ${plan.rows.length} ready…`,
-        )
-        // Carve the widest missing amounts from the smallest notes that fit —
-        // and never burn a note that exactly matches a still-needed amount.
-        const keep = new Set(missing.map(([a]) => a))
-        const used = new Set<string>()
-        const jobs: Array<{ src: { id: string; blinding: string }; target: bigint }> = []
-        for (const [target, count] of missing) {
-          for (let k = 0; k < count; k++) {
-            const fee = feeOf(target)
-            const src = ledger
-              .freeEntries()
-              .filter((n) => !used.has(n.id) && !keep.has(n.amount) && n.amount >= target + fee)
-              .sort((a, b) => (a.amount < b.amount ? -1 : a.amount > b.amount ? 1 : 0))[0]
-            if (!src) break
-            used.add(src.id)
-            jobs.push({ src, target })
-          }
-        }
-        if (jobs.length === 0) break
-        for (let j = 0; j < jobs.length && !this.cancelled; j += batchSize) {
-          const batch = jobs.slice(j, j + batchSize)
-          await Promise.all(
-            batch.map(async ({ src, target }) => {
-              try {
-                const res = await this.deps.client.transferNoteSOL(selfAddress, Number(target), {
-                  relay: true as const,
-                  inputNotes: [{ blinding: src.blinding }],
-                })
-                this.splits++
-                this.setStatus(`Splitting exact payout notes: ${this.splits} done (proof ~5s each)…`)
-                await this.deps.waitUntilIndexed(treeKeyOf(req.asset), res.leafIndex)
-              } catch {
-                // best-effort: the row falls back to the shared change-chain path
-              }
-            }),
-          )
-          await this.deps.client.refreshNotes().catch(() => {})
-          reloadLedger()
-        }
-      }
-      this.setStatus(undefined)
-    }
-
-    /**
      * Lane fan-out: right after the single funding signature the vault is one
      * big note, so payout lanes serialize on its change chain (~8s per hop —
      * the measured 5-row run). Split notes with gasless self-transfers
      * (relayer-signed, still zero wallet signatures) until there are about
-     * `lanes` spendable notes, then rows prove truly in parallel. SOL shielded
-     * runs use the exact-note prep above instead — it subsumes lane fan-out.
+     * `lanes` spendable notes, then rows prove truly in parallel.
      */
     const splitForLanes = async (): Promise<void> => {
       if (!ledger || !selfAddress || plan.rows.length < SPLIT_MIN_ROWS) return
-      if (req.mode === "shielded" && req.asset.kind === "sol") return prepareExactNotes()
       const target = Math.min(Math.max(1, req.lanes ?? LANES), LANES, plan.rows.length)
       for (let wave = 0; wave < 4 && !this.cancelled; wave++) {
         const free = ledger
@@ -1110,8 +943,6 @@ export function createEngine(client: EngineClient): PayrollEngine {
           .map((n) => ({ id: n.id, amount: n.amount, blinding: n.blinding }))
       : undefined,
     waitUntilIndexed: defaultWaitUntilIndexed,
-    kickIndexer: () =>
-      fetch(`${getBackendUrl()}/api/indexer/kick`, { method: "POST" }).then(() => undefined),
     confirmSignature: defaultConfirm,
     now: () => Date.now(),
     newId: () =>

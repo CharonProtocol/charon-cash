@@ -241,173 +241,6 @@ describe("PayrollEngine", () => {
     expect(polled).toBe(9)
   })
 
-  it("prepays exact per-row notes so every payout spends a whole note with no change", async () => {
-    // bps=100 (1%), no floor: net 1 SOL -> fee 0.01 -> gross 1.01 SOL. The
-    // deposit is simulated as a note; each self-transfer consumes its pinned
-    // input and returns the change, mirroring the SDK's note accounting.
-    const GROSS = 101n * 10n ** 7n
-    const SELF = new PublicKey("11111111111111111111111111111111").toBase58()
-    const feeOf = (x: bigint) => (x * 100n) / 10_000n
-    let idc = 0
-    let leaf = 40
-    const mk = (amount: bigint) => ({ id: `n${++idc}`, amount: amount.toString(), blinding: `b${idc}` })
-    const notesArr: Array<{ id: string; amount: string; blinding: string }> = []
-    let splits = 0
-    const payoutInputAmounts: bigint[] = []
-    const { client: base } = mockClient({ fails: new Map() })
-    const client: EngineClient = {
-      ...base,
-      publicKey: new PublicKey("11111111111111111111111111111111"),
-      refreshNotes: async () => {},
-      depositSOL: async (lamports: number) => {
-        notesArr.push(mk(BigInt(lamports)))
-        return { signature: "DEP", leafIndex: ++leaf }
-      },
-      transferNoteSOL: async (recipient, netLamports, opts) => {
-        const amt = BigInt(netLamports)
-        const b = opts?.inputNotes?.[0]?.blinding
-        const i = notesArr.findIndex((n) => n.blinding === b)
-        if (i < 0) throw new Error("mock: pinned input not found")
-        const input = BigInt(notesArr[i].amount)
-        notesArr.splice(i, 1)
-        const change = input - amt - feeOf(amt)
-        if (recipient === SELF) {
-          splits++
-          notesArr.push(mk(amt))
-        } else {
-          payoutInputAmounts.push(input)
-        }
-        if (change > 0n) notesArr.push(mk(change))
-        return { signature: `S${++leaf}`, leafIndex: leaf, commitment: `c${leaf}` }
-      },
-    }
-    // letters, never digits: "1".repeat(32) would equal the mock's self-address
-    const entries = Array.from({ length: 10 }, (_, i) => ({
-      address: String.fromCharCode(65 + i).repeat(32),
-      amountHuman: "1",
-    }))
-    const engine = new PayrollEngine({
-      client,
-      listNotes: () => notesArr,
-      waitUntilIndexed: async () => {},
-      confirmSignature: async () => true,
-      now: () => 1,
-      newId: () => "run1",
-      sleep: async () => {},
-    })
-    const receipt = await engine.run(req({ vaultRaw: 0n, mode: "shielded", entries }))
-    expect(receipt.summary).toEqual({ sent: 10, failed: 0, total: 10 })
-    // prep carved one dedicated note per row; every payout consumed it whole
-    expect(splits).toBe(10)
-    expect(payoutInputAmounts).toHaveLength(10)
-    expect(payoutInputAmounts.every((a) => a === GROSS)).toBe(true)
-    expect(notesArr.some((n) => BigInt(n.amount) === GROSS)).toBe(false)
-  })
-
-  it("tops the vault up with one deposit when it runs dry instead of stranding rows", async () => {
-    let idc = 0
-    let leaf = 40
-    const mk = (amount: bigint) => ({ id: `n${++idc}`, amount: amount.toString(), blinding: `b${idc}` })
-    // 0.0005 SOL across the whole vault: no note can cover a 1 SOL row — the
-    // exact state the measured run died in with 17 "insufficient" rows.
-    const notesArr = [mk(5n * 10n ** 8n)]
-    const topDeposits: number[] = []
-    const { client: base } = mockClient({ fails: new Map() })
-    const feeOf = (x: bigint) => (x * 100n) / 10_000n
-    const client: EngineClient = {
-      ...base,
-      publicKey: new PublicKey("11111111111111111111111111111111"),
-      refreshNotes: async () => {},
-      depositSOL: async (lamports: number) => {
-        topDeposits.push(lamports)
-        notesArr.push(mk(BigInt(lamports)))
-        return { signature: "TOPUP", leafIndex: ++leaf }
-      },
-      transferNoteSOL: async (_recipient, netLamports, opts) => {
-        const amt = BigInt(netLamports)
-        const b = opts?.inputNotes?.[0]?.blinding
-        const i = notesArr.findIndex((n) => n.blinding === b)
-        if (i < 0) throw new Error("mock: pinned input not found")
-        const input = BigInt(notesArr[i].amount)
-        notesArr.splice(i, 1)
-        const change = input - amt - feeOf(amt)
-        if (change > 0n) notesArr.push(mk(change))
-        return { signature: `S${++leaf}`, leafIndex: leaf, commitment: `c${leaf}` }
-      },
-    }
-    const engine = new PayrollEngine({
-      client,
-      listNotes: () => notesArr,
-      waitUntilIndexed: async () => {},
-      confirmSignature: async () => true,
-      now: () => 1,
-      newId: () => "run1",
-      sleep: async () => {},
-    })
-    const receipt = await engine.run(req({ vaultRaw: 0n, mode: "shielded" }))
-    // the dry vault recovered via one shared top-up: every row paid, none stranded
-    expect(receipt.summary).toEqual({ sent: 3, failed: 0, total: 3 })
-    expect(topDeposits).toHaveLength(1)
-    expect(BigInt(topDeposits[0])).toBeGreaterThan(3n * 101n * 10n ** 7n)
-    expect(receipt.entries.every((e) => e.error === undefined)).toBe(true)
-    expect(receipt.entries.every((e) => e.attempts === 1)).toBe(true)
-  })
-
-  it("still fails honestly when the top-up deposit is rejected", async () => {
-    // The measured run's terminal state: funding sizes slightly short
-    // (3.03 SOL of notes vs a 3.04 SOL need), two rows pay, the third hits a
-    // dry vault — and when the wallet refuses the one top-up deposit, that
-    // row must fail with the honest balance error instead of hanging or
-    // lying. The first deposit call is the funding signature; every later
-    // call is the mid-run top-up being rejected.
-    let idc = 0
-    let leaf = 40
-    const mk = (amount: bigint) => ({ id: `n${++idc}`, amount: amount.toString(), blinding: `b${idc}` })
-    const notesArr = [mk(1050n * 10n ** 6n), mk(1050n * 10n ** 6n), mk(930n * 10n ** 6n)]
-    let funding = 0
-    let rejections = 0
-    const { client: base } = mockClient({ fails: new Map() })
-    const feeOf = (x: bigint) => (x * 100n) / 10_000n
-    const client: EngineClient = {
-      ...base,
-      publicKey: new PublicKey("11111111111111111111111111111111"),
-      refreshNotes: async () => {},
-      depositSOL: async () => {
-        if (funding++ === 0) return { signature: "FUND", leafIndex: 39 }
-        rejections++
-        throw new Error("user rejected the top-up")
-      },
-      transferNoteSOL: async (_recipient, netLamports, opts) => {
-        const amt = BigInt(netLamports)
-        const b = opts?.inputNotes?.[0]?.blinding
-        const i = notesArr.findIndex((n) => n.blinding === b)
-        if (i < 0) throw new Error("mock: pinned input not found")
-        const input = BigInt(notesArr[i].amount)
-        notesArr.splice(i, 1)
-        const change = input - amt - feeOf(amt)
-        if (change > 0n) notesArr.push(mk(change))
-        return { signature: `S${++leaf}`, leafIndex: leaf, commitment: `c${leaf}` }
-      },
-    }
-    const engine = new PayrollEngine({
-      client,
-      listNotes: () => notesArr,
-      waitUntilIndexed: async () => {},
-      confirmSignature: async () => true,
-      now: () => 1,
-      newId: () => "run1",
-      sleep: async () => {},
-    })
-    const receipt = await engine.run(req({ vaultRaw: 0n, mode: "shielded" }))
-    // 1 funding signature + 1 rejected mid-run top-up
-    expect(funding).toBe(2)
-    expect(receipt.entries[0].status).toBe("sent")
-    expect(receipt.entries[1].status).toBe("sent")
-    expect(receipt.entries[2].status).toBe("failed")
-    expect(receipt.entries[2].error).toMatch(/insufficient/)
-    expect(rejections).toBe(1)
-  })
-
   it("cancel() stops between entries and leaves the rest failed-cancelled", async () => {
     const { client, calls } = mockClient({ fails: new Map(), slow: 10 })
     const engine = new PayrollEngine(deps(client))
@@ -503,10 +336,22 @@ describe("PayrollEngine", () => {
       }),
     )
     // replicate the spec: base = 12x(net+fee) + widest-row-fee margin, then
-    // the exact-note prep ceiling — one relayer fee per row, padded x1.5 + 120k
+    // the simulated halving waves down to 8 notes, padded x1.5 + 20k
     const S = 12n * (10n ** 9n + 10_000_000n) + 10_000_000n
-    const prepFees = (12n * 10_000_000n * 3n) / 2n
-    expect(calls.deposits).toEqual([Number(S + prepFees + 120_000n)])
+    const feeOf = (x: bigint): bigint => (x * 100n + 9_999n) / 10_000n
+    let notes = [S]
+    let fees = 0n
+    while (notes.length < 8) {
+      const next: bigint[] = []
+      for (const x of notes) {
+        const pool = x - feeOf(x)
+        const half = pool / 2n
+        fees += feeOf(half)
+        next.push(half, pool - half)
+      }
+      notes = next
+    }
+    expect(calls.deposits).toEqual([Number(S + (fees * 3n) / 2n + 60_000n)])
     expect(calls.deposits[0]).toBeGreaterThan(Number(S))
   })
 })
@@ -521,7 +366,6 @@ function laneClient(ctl: {
   withdraws: Array<{ lamports: number; recipient: string; pins: string[] }>
   merges?: Array<{ net: bigint; pins: string[] }>
   splits?: Array<{ net: bigint; pins: string[] }>
-  deposits?: number[]
 }) {
   const SELF = "11111111111111111111111111111111"
   let changeSeq = 0
@@ -559,17 +403,11 @@ function laneClient(ctl: {
     refreshNotes: async () => {
       refreshes.n++
     },
-    // deposits mint a fresh spendable note — the contract the plan-time
-    // funding and the mid-run top-up both rely on
-    depositSOL: async (lamports: number) => {
-      ctl.deposits?.push(lamports)
-      ctl.notes.push({ id: `dep${changeSeq++}`, amount: BigInt(lamports) })
-      return { signature: `DEP-${changeSeq}`, leafIndex: 70 + changeSeq, commitment: `0xd${changeSeq}` }
+    depositSOL: async () => {
+      throw new Error("lane tests pre-fund the vault")
     },
-    depositSPL: async (_m: string, raw: number) => {
-      ctl.deposits?.push(raw)
-      ctl.notes.push({ id: `dep${changeSeq++}`, amount: BigInt(raw) })
-      return { signature: `DEP-${changeSeq}`, leafIndex: 70 + changeSeq, commitment: `0xd${changeSeq}` }
+    depositSPL: async () => {
+      throw new Error("lane tests pre-fund the vault")
     },
     transferNoteSOL: async (recipient: string, netLamports: number, opts) => {
       const pins = (opts?.inputNotes ?? []).map((p) => p.blinding)
@@ -661,15 +499,10 @@ describe("PayrollEngine lanes", () => {
     expect(new Set(pinned).size).toBe(pinned.length)
   })
 
-  it("tops the verified vault up at funding when the notes cannot cover the run", async () => {
-    // 6 SOL of notes vs two 5 SOL rows: the verified balance (not the
-    // caller's optimistic estimate) shows the gap, so funding deposits the
-    // difference and both rows pay — trusting the raw estimate instead is
-    // what dry-killed the second row in the measured run
+  it("fails a row as insufficient when no note (or change note) can ever cover it", async () => {
     const notes = [{ id: "mid", amount: 6n * 10n ** 9n }]
     const withdraws: Array<{ lamports: number; recipient: string; pins: string[] }> = []
-    const deposits: number[] = []
-    const { client, listNotes } = laneClient({ notes, withdrawMs: 8, withdraws, deposits })
+    const { client, listNotes } = laneClient({ notes, withdrawMs: 8, withdraws })
     const engine = new PayrollEngine(laneDeps(client, listNotes))
     const receipt = await engine.run(
       req({
@@ -680,10 +513,10 @@ describe("PayrollEngine lanes", () => {
         ],
       }),
     )
-    expect(receipt.summary).toEqual({ sent: 2, failed: 0, total: 2 })
-    expect(withdraws).toHaveLength(2)
-    expect(deposits).toHaveLength(1)
-    expect(deposits[0]).toBeGreaterThan(4n * 10n ** 9n)
+    expect(receipt.entries[0].status).toBe("sent")
+    expect(receipt.entries[1].status).toBe("failed")
+    expect(receipt.entries[1].error).toMatch(/insufficient/)
+    expect(withdraws).toHaveLength(1)
   })
 
   it("reserves a two-note pair when no single note covers the payout", async () => {
@@ -769,15 +602,11 @@ describe("PayrollEngine lanes", () => {
     expect(withdraws).toHaveLength(2)
   })
 
-  it("rescues an underfunded vault with deposits and never merges what it cannot afford", async () => {
-    // 1 SOL of notes vs a 5 SOL row: merging is pointless while the total
-    // (even after the funding top-up) first cannot cover the row — the engine
-    // skips the merge chain, tops the vault with one shared deposit, and pays
+  it("skips merging when the vault total cannot cover the row at all", async () => {
     const notes = [{ id: "mid", amount: 1n * 10n ** 9n }]
     const withdraws: Array<{ lamports: number; recipient: string; pins: string[] }> = []
     const merges: Array<{ net: bigint; pins: string[] }> = []
-    const deposits: number[] = []
-    const { client, listNotes } = laneClient({ notes, withdrawMs: 5, withdraws, merges, deposits })
+    const { client, listNotes } = laneClient({ notes, withdrawMs: 5, withdraws, merges })
     const engine = new PayrollEngine(laneDeps(client, listNotes))
     const receipt = await engine.run(
       req({
@@ -785,12 +614,10 @@ describe("PayrollEngine lanes", () => {
         entries: [{ address: "A".repeat(32), amountHuman: "5" }],
       }),
     )
-    expect(receipt.entries[0].status).toBe("sent")
+    expect(receipt.entries[0].status).toBe("failed")
+    expect(receipt.entries[0].error).toMatch(/insufficient/)
     expect(merges).toHaveLength(0)
-    expect(withdraws).toHaveLength(1)
-    // funding tops the vault to the run total, and the top note + residual
-    // then pair-cover the row — no mid-run top-up needed at this size
-    expect(deposits).toHaveLength(1)
+    expect(withdraws).toHaveLength(0)
   })
 
   it("splits the funding note 1->2->4->8 before paying so lanes stop serializing", async () => {
