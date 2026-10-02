@@ -111,7 +111,7 @@ export function EmployerApp() {
         <div className="flex items-center justify-between gap-2 lg:sticky lg:top-6 lg:flex-col lg:items-stretch lg:gap-1">
           <div className="hidden lg:block">
             <div className="mb-4 flex items-center gap-2">
-              <img src="/favicon.svg" alt="" className="size-6 rounded-md" />
+              <img src="/charon-mark.png" alt="Charon" className="size-7 rounded-md" />
               <p className="h-display text-lg">Charon Pay</p>
             </div>
           </div>
