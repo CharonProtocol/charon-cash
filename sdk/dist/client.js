@@ -814,7 +814,15 @@ export class PrivacyCashClient {
      * backend enforces the equality; nothing is actually paid to it at ext=0).
      */
     async transferNoteInternal(args) {
-        const keys = await fetchRecipientKeys(args.recipient);
+        // Self-transfers (note consolidation) resolve keys from the locally
+        // derived identity — no registry enrollment needed, and the keys are
+        // identical to the registered ones since both come from SIGN_MESSAGE.
+        const keys = args.recipient.equals(this.publicKey)
+            ? {
+                notePubkey: this.utxoKeypair.pubkey.toString(),
+                encPubkey: Buffer.from(this.enc.getReceivePublicKey()).toString("hex"),
+            }
+            : await fetchRecipientKeys(args.recipient);
         if (!keys) {
             throw new Error(`recipient ${args.recipient.toBase58()} has not enabled private receiving`);
         }

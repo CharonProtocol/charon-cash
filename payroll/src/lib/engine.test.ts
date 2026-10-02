@@ -335,6 +335,7 @@ function laneClient(ctl: {
     },
     transferNoteSOL: async (recipient: string, netLamports: number, opts) => {
       const pins = (opts?.inputNotes ?? []).map((p) => p.blinding)
+      await opts?.onSubmitted?.({})
       if (recipient === SELF) {
         if (pins.length !== 2 && pins.length !== 1)
           throw new Error("self transfer must pin one note (split) or two (merge)")

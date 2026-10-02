@@ -59,5 +59,12 @@ export interface RunReceipt {
   merges?: number
   /** Funding-note splits the engine ran up front so lanes prove in parallel. */
   splits?: number
+  /** Mean stage durations across paid rows (reserve / prep / prove+relay / confirm). */
+  timing?: {
+    reserveMs?: number
+    prepMs?: number
+    proveRelayMs?: number
+    confirmMs?: number
+  }
   summary: { sent: number; failed: number; total: number }
 }

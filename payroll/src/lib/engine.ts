@@ -6,6 +6,17 @@ import { planRun } from "./fees"
 import { saveRun } from "./store"
 import type { Asset, EntryStatus, PayrollEntry, RunMode, RunReceipt } from "./types"
 
+export interface RowTiming {
+  /** Waiting for a spendable note reservation (pool contention). */
+  reserveMs?: number
+  /** Recipient keys + merkle proof fetch before proving starts. */
+  prepMs?: number
+  /** Prove + relay POST round-trip (the SDK resolves after both). */
+  proveRelayMs?: number
+  /** Chain confirmation wait. */
+  confirmMs?: number
+}
+
 export interface RowState {
   address: string
   amountHuman: string
@@ -20,6 +31,8 @@ export interface RowState {
   startedAt?: number
   relayedAt?: number
   confirmedAt?: number
+  /** Stage durations for the final run's timing table. */
+  timing?: RowTiming
 }
 
 export interface RunSnapshot {
@@ -67,13 +80,22 @@ export interface EngineClient {
   transferNoteSOL(
     recipient: string,
     netLamports: number,
-    opts?: { relay?: boolean; inputNotes?: Array<{ blinding: string }> },
+    opts?: {
+      relay?: boolean
+      inputNotes?: Array<{ blinding: string }>
+      /** SDK hook fired after prep (recipient keys, merkle proof) but before proving. */
+      onSubmitted?: (info: unknown) => Promise<void> | void
+    },
   ): Promise<{ signature: string; leafIndex: number; commitment: string }>
   transferNoteSPL(
     mint: string,
     recipient: string,
     netRaw: number,
-    opts?: { relay?: boolean; inputNotes?: Array<{ blinding: string }> },
+    opts?: {
+      relay?: boolean
+      inputNotes?: Array<{ blinding: string }>
+      onSubmitted?: (info: unknown) => Promise<void> | void
+    },
   ): Promise<{ signature: string; leafIndex: number; commitment: string }>
   /** Exposed by the SDK client; lets the engine reserve/pin inputs for parallel lanes. */
   readonly publicKey?: PublicKey
@@ -495,8 +517,11 @@ export class PayrollEngine {
         row.status = "proving"
         this.emit("paying", funding?.txSignature)
         let pinned: PinnedNotes | null = null
+        const timing: RowTiming = {}
         try {
+          const reserveStart = this.deps.now()
           pinned = await reserveFor(gross)
+          timing.reserveMs = this.deps.now() - reserveStart
           if (this.cancelled) {
             if (pinned) {
               ledger?.release(pinned)
@@ -522,10 +547,19 @@ export class PayrollEngine {
             // Exact net in the note; the SDK takes its fee from the sender's
             // remaining notes, so no gross solve is needed here.
             const net = Number(planRow.net)
+            let proveStart = this.deps.now()
+            const onSubmitted = async (): Promise<void> => {
+              timing.prepMs = this.deps.now() - reserveStart - (timing.reserveMs ?? 0)
+              proveStart = this.deps.now()
+            }
             const res =
               req.asset.kind === "sol"
-                ? await this.deps.client.transferNoteSOL(row.address, net, pinOpts)
-                : await this.deps.client.transferNoteSPL(req.asset.mint, row.address, net, pinOpts)
+                ? await this.deps.client.transferNoteSOL(row.address, net, { ...pinOpts, onSubmitted })
+                : await this.deps.client.transferNoteSPL(req.asset.mint, row.address, net, {
+                    ...pinOpts,
+                    onSubmitted,
+                  })
+            timing.proveRelayMs = this.deps.now() - proveStart
             sig = res.signature
             row.txSignature = res.signature
             row.noteLeafIndex = res.leafIndex
@@ -542,8 +576,11 @@ export class PayrollEngine {
           row.relayedAt = this.deps.now()
           row.status = "relayed"
           this.emit("paying", funding?.txSignature)
+          const confirmStart = this.deps.now()
           row.status = (await this.deps.confirmSignature(sig)) ? "confirmed" : "confirming"
+          timing.confirmMs = this.deps.now() - confirmStart
           row.confirmedAt = this.deps.now()
+          row.timing = timing
           this.emit("paying", funding?.txSignature)
           if (pinned && ledger) {
             ledger.commitSpent(pinned)
@@ -711,6 +748,7 @@ export class PayrollEngine {
       finishedAt,
       merges: this.merges,
       splits: this.splits || undefined,
+      timing: meanTiming(rows),
       summary: {
         sent: entries.filter((e) => e.status === "sent").length,
         failed: entries.filter((e) => e.status === "failed").length,
@@ -725,6 +763,31 @@ export class PayrollEngine {
 
 export function treeKeyOf(asset: Asset): string {
   return asset.kind === "sol" ? solTreeKey() : splTreeKey(asset.mint)
+}
+
+/** Per-stage means across the rows that completed, for the timing table. */
+function meanTiming(rows: RowState[]): RowTiming | undefined {
+  const sum: Required<RowTiming> = { reserveMs: 0, prepMs: 0, proveRelayMs: 0, confirmMs: 0 }
+  const n: Required<RowTiming> = { reserveMs: 0, prepMs: 0, proveRelayMs: 0, confirmMs: 0 }
+  for (const r of rows) {
+    if (!r.timing) continue
+    for (const k of Object.keys(sum) as Array<keyof RowTiming>) {
+      const v = r.timing[k]
+      if (v !== undefined) {
+        sum[k] += v
+        n[k]++
+      }
+    }
+  }
+  if (n.reserveMs + n.prepMs + n.proveRelayMs + n.confirmMs === 0) return undefined
+  const mean = (k: keyof RowTiming): number | undefined =>
+    n[k] === 0 ? undefined : Math.round(sum[k] / n[k]!)
+  return {
+    reserveMs: mean("reserveMs"),
+    prepMs: mean("prepMs"),
+    proveRelayMs: mean("proveRelayMs"),
+    confirmMs: mean("confirmMs"),
+  }
 }
 
 async function defaultWaitUntilIndexed(treeKey: string, minLeafIndex: number, timeoutMs = 30_000): Promise<void> {
@@ -742,7 +805,7 @@ async function defaultWaitUntilIndexed(treeKey: string, minLeafIndex: number, ti
 }
 
 async function defaultConfirm(sig: string): Promise<boolean> {
-  const conn = new Connection(config.get().rpcUrl, "confirmed")
+  const conn = new Connection(config.confirmRpcUrl(), "confirmed")
   // The relay may broadcast faster than we subscribe; catch already-landed
   // signatures before waiting on the websocket.
   try {
