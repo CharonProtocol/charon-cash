@@ -47,7 +47,7 @@ interface WalletCtx {
 const Ctx = createContext<WalletCtx | null>(null);
 
 const APP_IDENTITY = {
-  name: "Privacy Cash",
+  name: "Charon Pay",
   uri: "https://privacycash.dev",
   icon: undefined as string | undefined,
 };

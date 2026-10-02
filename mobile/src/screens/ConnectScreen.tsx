@@ -15,7 +15,7 @@ export function ConnectScreen({ onOpenSettings }: { onOpenSettings: () => void }
       <Logo size={64} />
 
       <Text style={[typography.micro, { color: theme.accent, marginTop: 22, letterSpacing: 2 }]}>
-        PRIVACY CASH
+        CHARON PAY
       </Text>
       <Text style={[typography.hero, { color: theme.text, marginTop: 8 }]}>
         Send SOL{"\n"}without a trace.

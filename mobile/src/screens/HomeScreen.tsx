@@ -142,7 +142,7 @@ export function HomeScreen({
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
           <Logo size={30} />
-          <Text style={[typography.micro, { color: theme.textSoft, letterSpacing: 1.5 }]}>PRIVACY CASH</Text>
+          <Text style={[typography.micro, { color: theme.textSoft, letterSpacing: 1.5 }]}>CHARON PAY</Text>
         </View>
         <View style={{ flexDirection: "row", gap: 18 }}>
           <Pressable onPress={onOpenSettings} hitSlop={8}>
