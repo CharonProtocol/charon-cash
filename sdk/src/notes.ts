@@ -181,7 +181,25 @@ export function removeStaleNote(
 }
 
 export function getSyncOffset(wallet: PublicKey, treeKey: string): number {
-  return OFFSETS.get(ok(wallet, treeKey)) ?? 0
+  const k = ok(wallet, treeKey)
+  const mem = OFFSETS.get(k)
+  if (mem !== undefined) return mem
+  // Persisted across reloads: a fresh page no longer re-scans the whole tree
+  // (the 580-leaf unlock scan took over a minute). syncNotes guards against
+  // a stored offset beyond the tree in case the indexer was reset.
+  try {
+    const raw = localStorage.getItem(OFFSET_LEGACY_PREFIX + k)
+    if (raw !== null) {
+      const n = Number(raw)
+      if (Number.isFinite(n) && n >= 0) {
+        OFFSETS.set(k, n)
+        return n
+      }
+    }
+  } catch {
+    /* storage unavailable — in-memory only */
+  }
+  return 0
 }
 
 export function setSyncOffset(
@@ -189,11 +207,23 @@ export function setSyncOffset(
   treeKey: string,
   offset: number,
 ): void {
-  OFFSETS.set(ok(wallet, treeKey), offset)
+  const k = ok(wallet, treeKey)
+  OFFSETS.set(k, offset)
+  try {
+    localStorage.setItem(OFFSET_LEGACY_PREFIX + k, String(offset))
+  } catch {
+    /* storage unavailable — in-memory only */
+  }
 }
 
 export function resetSyncOffset(wallet: PublicKey, treeKey: string): void {
-  OFFSETS.delete(ok(wallet, treeKey))
+  const k = ok(wallet, treeKey)
+  OFFSETS.delete(k)
+  try {
+    localStorage.removeItem(OFFSET_LEGACY_PREFIX + k)
+  } catch {
+    /* storage unavailable */
+  }
 }
 
 /**

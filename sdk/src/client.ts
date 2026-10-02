@@ -283,9 +283,23 @@ export class PrivacyCashClient {
 
   /**
    * Scan encrypted outputs from the backend, decrypt ours, upsert notes,
-   * and mark spent via nullifier checks.
+   * and mark spent via nullifier checks. Single-flight: a scan mutates the
+   * note store, and a second scan running mid-transfer made pinned notes
+   * vanish from the spendable set (the third 100-run failed 9 rows this
+   * way) — concurrent callers now queue behind the running scan.
    */
+  private syncQueue: Promise<unknown> = Promise.resolve()
+
   async syncNotes(treeKey: string, fromScratch = false): Promise<SyncResult> {
+    const run = this.syncQueue.then(() => this.syncNotesLocked(treeKey, fromScratch))
+    this.syncQueue = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    return run
+  }
+
+  private async syncNotesLocked(treeKey: string, fromScratch = false): Promise<SyncResult> {
     await this.unlock()
     const enc = this.enc!
     const wasm = this.wasm!
@@ -308,49 +322,62 @@ export class PrivacyCashClient {
     for (;;) {
       if (++pass > 128) break // bounded against a misbehaving server
       const page = await fetchUtxoRange(treeKey, start, start + RANGE_PAGE)
-      for (const row of page.utxos) {
-        scanned++
-        let utxo: Utxo
-        try {
-          const bytes = Buffer.from(row.encryptedOutputHex, "hex")
-          utxo = await enc.decryptUtxo(bytes, wasm)
-        } catch {
-          continue // not ours / garbage
-        }
-        if (utxo.amount.isZero()) continue
+      if (pass === 1 && !fromScratch && page.utxos.length === 0 && page.nextIndex < start) {
+        // stored offset beyond the tree: the indexer was reset (devnet or D1
+        // wipe) — rescan from zero instead of seeing an empty vault
+        start = 0
+        continue
+      }
+      // decrypt + nullifier-check in parallel chunks: the per-note backend
+      // round-trip dominated the scan (~200 serial fetches = the slow unlock)
+      const CHUNK = 16
+      for (let i = 0; i < page.utxos.length; i += CHUNK) {
+        await Promise.all(
+          page.utxos.slice(i, i + CHUNK).map(async (row) => {
+            scanned++
+            let utxo: Utxo
+            try {
+              const bytes = Buffer.from(row.encryptedOutputHex, "hex")
+              utxo = await enc.decryptUtxo(bytes, wasm)
+            } catch {
+              return // not ours / garbage
+            }
+            if (utxo.amount.isZero()) return
 
-        // Prefer leaf index from the indexer (authoritative).
-        utxo.index = row.leafIndex
+            // Prefer leaf index from the indexer (authoritative).
+            utxo.index = row.leafIndex
 
-        const nullifier = await utxo.getNullifier()
-        const spentOnChain = await isNullifierSpent(fieldToHex32(nullifier))
-        if (spentOnChain) {
-          markNoteSpentByIndex(wallet, utxo.mintAddress, utxo.index)
-          spent++
-          continue
-        }
+            const nullifier = await utxo.getNullifier()
+            const spentOnChain = await isNullifierSpent(fieldToHex32(nullifier))
+            if (spentOnChain) {
+              markNoteSpentByIndex(wallet, utxo.mintAddress, utxo.index)
+              spent++
+              return
+            }
 
-        const before = unspentNotes(wallet).some(
-          (n) => n.mintAddress === utxo.mintAddress && n.index === utxo.index,
+            const before = unspentNotes(wallet).some(
+              (n) => n.mintAddress === utxo.mintAddress && n.index === utxo.index,
+            )
+            removeStaleNote(
+              wallet,
+              utxo.mintAddress,
+              utxo.amount.toString(),
+              utxo.blinding.toString(),
+              utxo.index,
+            )
+            upsertNote(wallet, {
+              id: newNoteId(),
+              amount: utxo.amount.toString(),
+              blinding: utxo.blinding.toString(),
+              index: utxo.index,
+              mintAddress: utxo.mintAddress,
+              spent: false,
+              createdAt: Date.now(),
+              depositTx: row.signature,
+            })
+            if (!before) added++
+          }),
         )
-        removeStaleNote(
-          wallet,
-          utxo.mintAddress,
-          utxo.amount.toString(),
-          utxo.blinding.toString(),
-          utxo.index,
-        )
-        upsertNote(wallet, {
-          id: newNoteId(),
-          amount: utxo.amount.toString(),
-          blinding: utxo.blinding.toString(),
-          index: utxo.index,
-          mintAddress: utxo.mintAddress,
-          spent: false,
-          createdAt: Date.now(),
-          depositTx: row.signature,
-        })
-        if (!before) added++
       }
 
       // Advance the cursor to the highest leaf actually returned (+1), never

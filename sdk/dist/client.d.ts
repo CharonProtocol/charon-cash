@@ -85,9 +85,14 @@ export declare class PrivacyCashClient {
     }): Promise<SyncResult>;
     /**
      * Scan encrypted outputs from the backend, decrypt ours, upsert notes,
-     * and mark spent via nullifier checks.
+     * and mark spent via nullifier checks. Single-flight: a scan mutates the
+     * note store, and a second scan running mid-transfer made pinned notes
+     * vanish from the spendable set (the third 100-run failed 9 rows this
+     * way) — concurrent callers now queue behind the running scan.
      */
+    private syncQueue;
     syncNotes(treeKey: string, fromScratch?: boolean): Promise<SyncResult>;
+    private syncNotesLocked;
     /**
      * Recover the true leaf index of a just-landed output note (a deposit, or
      * the change of a transfer). The pre-send `nextLeafIndex` is only a guess:

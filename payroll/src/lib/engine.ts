@@ -528,6 +528,10 @@ export class PayrollEngine {
         this.emit("paying", funding?.txSignature)
         let pinned: PinnedNotes | null = null
         const timing: RowTiming = {}
+        // set the moment the SDK hands the tx to the relay — anything thrown
+        // before this is a pre-broadcast failure and must release the pins
+        // for retry, never be mistaken for a landed payout
+        let submitted = false
         try {
           const reserveStart = this.deps.now()
           pinned = await reserveFor(gross)
@@ -559,6 +563,7 @@ export class PayrollEngine {
             const net = Number(planRow.net)
             let proveStart = this.deps.now()
             const onSubmitted = async (): Promise<void> => {
+              submitted = true
               timing.prepMs = this.deps.now() - reserveStart - (timing.reserveMs ?? 0)
               proveStart = this.deps.now()
             }
@@ -606,7 +611,9 @@ export class PayrollEngine {
           // spendable view, the payout landed — commit them as spent and
           // stop retrying.
           let landed = false
-          if (pinned) {
+          // public mode has no broadcast hook, so the spendable-set heuristic
+          // stays authoritative there; shielded mode knows for sure
+          if (pinned && (submitted || req.mode !== "shielded")) {
             await this.deps.client.refreshNotes().catch(() => {})
             reloadLedger()
             const spendable = new Set(

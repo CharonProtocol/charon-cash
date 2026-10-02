@@ -625,6 +625,34 @@ describe("PayrollEngine lanes", () => {
     expect(new Set(pinned).size).toBe(pinned.length)
   })
 
+  it("retries a pre-broadcast pin miss instead of declaring the payout landed", async () => {
+    // a concurrent scan can make a pinned note temporarily invisible; that
+    // throw happens BEFORE the relay handoff, so the row must retry — not
+    // be written off as "unconfirmed after broadcast" (the third 100-run
+    // lost 9 rows to exactly that)
+    const notes = Array.from({ length: 6 }, (_, i) => ({ id: `n${i}`, amount: 3n * 10n ** 9n }))
+    const withdraws: Array<{ lamports: number; recipient: string; pins: string[] }> = []
+    const { client, listNotes } = laneClient({ notes, withdrawMs: 5, withdraws })
+    const inner = client.transferNoteSOL.bind(client)
+    let threw = false
+    client.transferNoteSOL = async (recipient, net, opts) => {
+      if (!threw) {
+        threw = true
+        throw new Error("pinned note not found in spendable set")
+      }
+      return inner(recipient, net, opts)
+    }
+    const engine = new PayrollEngine(laneDeps(client, listNotes))
+    const receipt = await engine.run(
+      req({
+        vaultRaw: 10n ** 20n,
+        entries: [{ address: "a".repeat(32), amountHuman: "1" }],
+      }),
+    )
+    expect(receipt.summary).toEqual({ sent: 1, failed: 0, total: 1 })
+    expect(withdraws).toHaveLength(1)
+  })
+
   it("cancel() with more rows than lanes marks never-started rows failed-cancelled", async () => {
     const notes = Array.from({ length: 20 }, (_, i) => ({ id: `n${i}`, amount: 10n ** 9n }))
     const withdraws: Array<{ lamports: number; recipient: string; pins: string[] }> = []
