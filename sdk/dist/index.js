@@ -8,5 +8,5 @@ export { fetchRelayerInfo, fetchBlockhash, fetchAltAccount, fetchTreeState, fetc
 export { loadNotes, unspentNotes, saveNote, upsertNote, markNoteSpent, totalBalance, exportNotes, importNotes, clearNotes, newNoteId, getSyncOffset, setSyncOffset, resetSyncOffset, } from "./notes";
 export { encryptNotesBlob, decryptNotesBlob, pushEncryptedNotes, pullEncryptedNotes, } from "./notestore";
 export { setOperatorPassword, getOperatorPassword, verifyOperator, operatorInitialize, operatorInitializeSpl, operatorUpdateConfig, operatorUpdateDepositLimit, operatorUpdateDepositLimitSpl, OperatorError, } from "./admin";
-export { publishRecipientKeys, fetchRecipientKeys } from "./recipients";
+export { publishRecipientKeys, fetchRecipientKeys, fetchRecipientsBatch } from "./recipients";
 export { FIELD_SIZE, MERKLE_TREE_DEPTH, RECEIVE_SIGN_MESSAGE, SIGN_MESSAGE, SOL_TREE_KEY, WRAPPED_SOL_MINT, } from "./constants";

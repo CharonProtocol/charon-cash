@@ -105,7 +105,7 @@ export {
   OperatorError,
   type OperatorResponse,
 } from "./admin"
-export { publishRecipientKeys, fetchRecipientKeys, type RecipientKeys } from "./recipients"
+export { publishRecipientKeys, fetchRecipientKeys, fetchRecipientsBatch, type RecipientKeys } from "./recipients"
 export {
   FIELD_SIZE,
   MERKLE_TREE_DEPTH,

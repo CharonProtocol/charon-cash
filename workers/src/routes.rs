@@ -242,6 +242,23 @@ pub fn router(state: Arc<AppState>) -> Router<'static, Arc<AppState>> {
                 Err(e) => err_json(AppError::internal(format!("sync: {e}"))),
             }
         }))
+        // Public, unauthenticated on-demand sync. Reads no longer sync lazily
+        // on every GET, and the cron only runs once a minute — a client
+        // waiting for a just-broadcast tx to show up in the mirror (split
+        // waves between payout rounds, post-error adjudication) would
+        // otherwise idle for up to a full cron period. Safe to expose: the
+        // sync lock + 2s throttle inside sync_tree_forced bound the work to
+        // exactly what the cron tick would have done anyway.
+        .post_async("/api/indexer/kick", |_req, ctx| Box::pin(async move {
+            let state = state_of(&ctx);
+            match sync::sync_tree_forced(&state).await {
+                Ok(report) => ok_json(&json!({
+                    "processed": report.new_txs,
+                    "walked": report.walked,
+                })),
+                Err(e) => err_json(AppError::internal(format!("sync: {e}"))),
+            }
+        }))
         .get_async("/api/relayer/info", |_req, ctx| Box::pin(async move {
             let state = state_of(&ctx);
             ok_json(&relayer::info(&state))
@@ -551,6 +568,41 @@ pub fn router(state: Arc<AppState>) -> Router<'static, Arc<AppState>> {
                 }
                 Err(e) => err_json(AppError::internal(e)),
             }
+        }))
+        // Registered receive keys for a whole payroll roster in one round
+        // trip; wallets without an enrollment are simply absent from
+        // `results` (the client maps those to null = not enrolled).
+        .post_async("/api/recipients/batch", |mut req, ctx| Box::pin(async move {
+            let state = state_of(&ctx);
+            #[derive(Deserialize)]
+            struct BatchRecipientsRequest {
+                wallets: Vec<String>,
+            }
+            let body: BatchRecipientsRequest = match req.json().await {
+                Ok(b) => b,
+                Err(e) => return err_json(AppError::bad_request("INVALID_JSON", format!("{e}"))),
+            };
+            if body.wallets.len() > 500 {
+                return err_json(AppError::bad_request(
+                    "TOO_MANY_WALLETS",
+                    "batch is capped at 500 wallets",
+                ));
+            }
+            let wallets: Vec<String> = body.wallets.into_iter().collect::<Vec<_>>();
+            let mut found: Vec<(String, String, String)> = Vec::new();
+            for chunk in wallets.chunks(90) {
+                match state.store.recipients_many(chunk).await {
+                    Ok(rows) => found.extend(rows),
+                    Err(e) => return err_json(AppError::internal(e)),
+                }
+            }
+            let results: Vec<serde_json::Value> = found
+                .into_iter()
+                .map(|(wallet, note_pubkey, enc_pubkey)| {
+                    json!({ "wallet": wallet, "note_pubkey": note_pubkey, "enc_pubkey": enc_pubkey })
+                })
+                .collect();
+            ok_json(&json!({ "results": results }))
         }))
         .post_async("/api/relayer/initialize", |req, ctx| Box::pin(async move {
             let state = state_of(&ctx);

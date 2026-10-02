@@ -14,6 +14,6 @@ export { loadNotes, unspentNotes, saveNote, upsertNote, markNoteSpent, totalBala
 export type { Note } from "./notes";
 export { encryptNotesBlob, decryptNotesBlob, pushEncryptedNotes, pullEncryptedNotes, } from "./notestore";
 export { setOperatorPassword, getOperatorPassword, verifyOperator, operatorInitialize, operatorInitializeSpl, operatorUpdateConfig, operatorUpdateDepositLimit, operatorUpdateDepositLimitSpl, OperatorError, type OperatorResponse, } from "./admin";
-export { publishRecipientKeys, fetchRecipientKeys, type RecipientKeys } from "./recipients";
+export { publishRecipientKeys, fetchRecipientKeys, fetchRecipientsBatch, type RecipientKeys } from "./recipients";
 export { FIELD_SIZE, MERKLE_TREE_DEPTH, RECEIVE_SIGN_MESSAGE, SIGN_MESSAGE, SOL_TREE_KEY, WRAPPED_SOL_MINT, } from "./constants";
 //# sourceMappingURL=index.d.ts.map

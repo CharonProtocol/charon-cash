@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useWallet } from "@solana/wallet-adapter-react"
 import { toast } from "sonner"
 import { ArrowRight, History, Play, Settings, Users, Wallet } from "lucide-react"
@@ -38,6 +38,35 @@ export function EmployerApp() {
   // Kept so a stopped/crashed run's failed rows can be retried without the
   // receipt (snapshots don't carry asset/mode/fileHash).
   const lastRun = useRef<{ asset: Asset; mode: RunMode; fileHash: string } | null>(null)
+
+  // Long quiet phases (lane fan-out, indexer catch-up, post-error
+  // adjudication) must never look like a hang: surface the engine's own
+  // status sentence as a toast whenever it changes, and warn when a live run
+  // has gone a full minute without any snapshot update at all.
+  const lastActivity = useRef(Date.now())
+  const lastStatus = useRef<string | undefined>(undefined)
+  const phase = snapshot?.phase
+  const status = snapshot?.status
+  useEffect(() => {
+    if (!snapshot) return
+    lastActivity.current = Date.now()
+    if (status && status !== lastStatus.current) {
+      lastStatus.current = status
+      toast.info(status, { duration: 8000 })
+    }
+  }, [snapshot, status])
+  useEffect(() => {
+    if (phase !== "funding" && phase !== "paying") return
+    const t = setInterval(() => {
+      if (Date.now() - lastActivity.current <= 60_000) return
+      toast.warning(
+        `Still working — nothing new for over a minute.${status ? ` Last step: ${status}` : ""}`,
+        { duration: 10000 },
+      )
+      lastActivity.current = Date.now()
+    }, 15_000)
+    return () => clearInterval(t)
+  }, [phase, status])
 
   const startRun = useCallback(
     async (

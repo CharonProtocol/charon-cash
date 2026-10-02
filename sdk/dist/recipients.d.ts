@@ -17,4 +17,12 @@ export interface RecipientKeys {
 export declare function publishRecipientKeys(signer: Signer): Promise<RecipientKeys>;
 /** Registered receive keys for a wallet, or null when the wallet has not enrolled. */
 export declare function fetchRecipientKeys(wallet: PublicKey | string): Promise<RecipientKeys | null>;
+/**
+ * Registered receive keys for many wallets in as few round trips as possible
+ * (one POST per 90 wallets). Missing entries mean "not enrolled" — same
+ * contract as fetchRecipientKeys returning null. Order of `wallets` is not
+ * preserved in the result; use the returned Map. Falls back to per-wallet
+ * fetches against backends without the batch endpoint.
+ */
+export declare function fetchRecipientsBatch(wallets: Array<PublicKey | string>): Promise<Map<string, RecipientKeys | null>>;
 //# sourceMappingURL=recipients.d.ts.map

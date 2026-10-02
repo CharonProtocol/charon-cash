@@ -84,6 +84,30 @@ export declare class PrivacyCashClient {
         fromScratch?: boolean;
     }): Promise<SyncResult>;
     /**
+     * Nullifiers (32-byte hex) for saved notes, derived under the unlocked
+     * keypair. A caller that lost track of a broadcast (relay answered but the
+     * follow-up threw) polls these to learn whether the spend actually landed
+     * before attempting any retry. Notes whose index is only a guess (freshly
+     * saved change notes) yield a wrong nullifier — those are simply never
+     * reported spent, which is the safe direction.
+     */
+    nullifiersForNotes(notes: Array<{
+        amount: string;
+        blinding: string;
+        index: number;
+        mintAddress?: string;
+    }>): Promise<string[]>;
+    /**
+     * Adjudication for a transfer that threw after the relay accepted it: look
+     * up the named notes (by blinding, across spent AND unspent storage) and
+     * return the spending tx signature if any of their nullifiers is already
+     * recorded. Resolves in one batch call when the mirror has caught up;
+     * callers poll with a short interval until it returns non-null or they
+     * give up. Notes whose stored index is a guess (pending change notes)
+     * hash to a nullifier that can never match — the safe direction.
+     */
+    signatureIfSpent(blindings: string[]): Promise<string | null>;
+    /**
      * Scan encrypted outputs from the backend, decrypt ours, upsert notes,
      * and mark spent via nullifier checks. Single-flight: a scan mutates the
      * note store, and a second scan running mid-transfer made pinned notes

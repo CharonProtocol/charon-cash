@@ -1,5 +1,12 @@
 import { Connection, type PublicKey } from "@solana/web3.js"
-import { fetchTreeState, solTreeKey, splTreeKey, unspentNotes, WRAPPED_SOL_MINT } from "privacy-cash-sdk"
+import {
+  fetchTreeState,
+  getBackendUrl,
+  solTreeKey,
+  splTreeKey,
+  unspentNotes,
+  WRAPPED_SOL_MINT,
+} from "privacy-cash-sdk"
 
 import { config } from "./config"
 import { planRun } from "./fees"
@@ -44,6 +51,12 @@ export interface RunSnapshot {
   fundedAt?: number
   /** Funding-note splits run so lanes prove in parallel. */
   splits?: number
+  /**
+   * One human sentence about the slowest current activity (lane fan-out,
+   * indexer catch-up, post-error adjudication). The UI surfaces it as a
+   * toast so a quiet minute never looks like a hang.
+   */
+  status?: string
 }
 
 export interface RunRequest {
@@ -97,6 +110,8 @@ export interface EngineClient {
       onSubmitted?: (info: unknown) => Promise<void> | void
     },
   ): Promise<{ signature: string; leafIndex: number; commitment: string }>
+  /** SDK adjudication: spending signature if any of these notes is already spent. */
+  signatureIfSpent?(blindings: string[]): Promise<string | null>
   /** Exposed by the SDK client; lets the engine reserve/pin inputs for parallel lanes. */
   readonly publicKey?: PublicKey
 }
@@ -241,6 +256,8 @@ class NoteLedger {
 export class PayrollEngine {
   private cancelled = false
   private emit: (phase: RunSnapshot["phase"], depositSig?: string) => void = () => {}
+  private setStatus: (status: string | undefined) => void = () => {}
+  private statusRef: string | undefined = undefined
   private startedAt = 0
   private fundedAt?: number
   private merges = 0
@@ -258,6 +275,7 @@ export class PayrollEngine {
     this.fundedAt = undefined
     this.merges = 0
     this.splits = 0
+    this.statusRef = undefined
     const decimals = req.asset.kind === "sol" ? 9 : req.asset.decimals
     const plan = planRun(req.entries, decimals, req.bps, req.vaultRaw, {
       mode: req.mode,
@@ -271,7 +289,9 @@ export class PayrollEngine {
       status: "queued" as EntryStatus,
       attempts: 0,
     }))
-    this.emit = (phase, depositSig) =>
+    let currentPhase: RunSnapshot["phase"] = "funding"
+    this.emit = (phase, depositSig) => {
+      currentPhase = phase
       onUpdate?.({
         phase,
         rows: rows.map((r) => ({ ...r })),
@@ -279,7 +299,16 @@ export class PayrollEngine {
         startedAt: this.startedAt,
         fundedAt: this.fundedAt,
         splits: this.splits,
+        status: this.statusRef,
       })
+    }
+    // Status is held outside the emit closure so any code path can update the
+    // current activity and re-emit the same phase without rebuilding rows.
+    this.setStatus = (status) => {
+      if (this.statusRef === status) return
+      this.statusRef = status
+      this.emit(currentPhase)
+    }
 
     await this.deps.client.init()
     await this.deps.client.unlock()
@@ -605,22 +634,35 @@ export class PayrollEngine {
           void scheduleRefresh()
           return
         } catch (e) {
+          const msg = (e as Error).message
           // A throw after broadcast must never free the pinned notes for a
-          // retry: they may already be spent on-chain, and re-reserving
-          // would pay this row twice. If the pinned notes vanished from the
-          // spendable view, the payout landed — commit them as spent and
-          // stop retrying.
+          // retry until we know they are not spent on-chain: the relayer
+          // refuses a retry for ~60s anyway (in-flight guard), so spend that
+          // window adjudicating — poll the pinned notes' nullifiers and, if
+          // one is spent, the payout landed and carries the real signature.
+          // Holding the pins through the poll also stops a racing row from
+          // re-reserving the same notes and reporting a phantom success (the
+          // run whose UI counted 98 paid while the chain held 73 payouts).
           let landed = false
-          // public mode has no broadcast hook, so the spendable-set heuristic
-          // stays authoritative there; shielded mode knows for sure
           if (pinned && (submitted || req.mode !== "shielded")) {
-            await this.deps.client.refreshNotes().catch(() => {})
-            reloadLedger()
-            const spendable = new Set(
-              (this.deps.listNotes?.(req.asset) ?? []).map((n) => n.blinding),
-            )
-            landed = pinned.blindings.every((b) => !spendable.has(b))
+            if (req.mode === "shielded" && this.deps.client.signatureIfSpent) {
+              this.setStatus("Verifying whether the payout already reached the chain…")
+              const sig = await this.deps.client.signatureIfSpent(pinned.blindings).catch(() => null)
+              if (sig) {
+                landed = true
+                row.txSignature = sig
+              }
+            }
+            if (!landed) {
+              await this.deps.client.refreshNotes().catch(() => {})
+              reloadLedger()
+              const spendable = new Set(
+                (this.deps.listNotes?.(req.asset) ?? []).map((n) => n.blinding),
+              )
+              landed = pinned.blindings.every((b) => !spendable.has(b))
+            }
           }
+          this.setStatus(undefined)
           if (pinned && ledger) {
             if (landed) ledger.commitSpent(pinned)
             else ledger.release(pinned)
@@ -628,11 +670,25 @@ export class PayrollEngine {
             pinned = null
           }
           if (landed) {
-            row.error = `unconfirmed after broadcast: ${(e as Error).message}`
+            if (row.txSignature) {
+              row.error = undefined
+              row.relayedAt = this.deps.now()
+              row.status = "relayed"
+              this.emit("paying", funding?.txSignature)
+              const confirmStart = this.deps.now()
+              row.status = (await this.deps.confirmSignature(row.txSignature)) ? "confirmed" : "confirming"
+              timing.confirmMs = (timing.confirmMs ?? 0) + this.deps.now() - confirmStart
+              row.confirmedAt = this.deps.now()
+              row.timing = timing
+              this.emit("paying", funding?.txSignature)
+              void scheduleRefresh()
+              return
+            }
+            row.error = `unconfirmed after broadcast: ${msg}`
             row.status = "confirming"
             return
           }
-          row.error = (e as Error).message
+          row.error = msg
           if (attempt === ATTEMPTS) row.status = "failed"
           else await this.deps.sleep(500 * 2 ** (attempt - 1))
         }
@@ -669,6 +725,9 @@ export class PayrollEngine {
           return half >= maxGross && half > feeOf(half)
         })
         if (splittable.length === 0) return
+        this.setStatus(
+          `Building ${target} payout lanes: splitting note ${laneWorthy.length + 1} of ${target} (proof ~5s each)…`,
+        )
         await Promise.all(
           splittable.map(async (n) => {
             const half = (n.amount - feeOf(n.amount)) / 2n
@@ -684,6 +743,9 @@ export class PayrollEngine {
                       inputNotes: [{ blinding: n.blinding }],
                     })
               this.splits++
+              this.setStatus(
+                `Waiting for the chain to index split ${this.splits}… (a fresh payout lane)`,
+              )
               await this.deps.waitUntilIndexed(treeKeyOf(req.asset), res.leafIndex)
             } catch {
               /* best-effort: the run continues with fewer, larger notes */
@@ -693,10 +755,12 @@ export class PayrollEngine {
         await this.deps.client.refreshNotes().catch(() => {})
         reloadLedger()
       }
+      this.setStatus(undefined)
     }
 
     // Fan the funding note out before lanes start claiming pieces of it.
     await splitForLanes()
+    this.setStatus(undefined)
     this.emit("paying", funding?.txSignature)
     let next = 0
     // Widest rows first: greedy consumption fragments the change pool and the
@@ -779,6 +843,7 @@ export class PayrollEngine {
       },
     }
     saveRun(receipt)
+    this.statusRef = undefined
     this.emit(phase, funding?.txSignature)
     return receipt
   }
@@ -814,14 +879,25 @@ function meanTiming(rows: RowState[]): RowTiming | undefined {
 }
 
 async function defaultWaitUntilIndexed(treeKey: string, minLeafIndex: number, timeoutMs = 30_000): Promise<void> {
+  const backend = getBackendUrl()
   const deadline = Date.now() + timeoutMs
+  let last: number | null = null
   while (Date.now() < deadline) {
+    let next: number | null = null
     try {
       const st = await fetchTreeState(treeKey)
       if (st.nextLeafIndex > minLeafIndex) return
+      next = st.nextLeafIndex
     } catch {
       /* transient indexer hiccup — retry */
     }
+    // Reads are sync-free and the backend cron only walks the chain once a
+    // minute: when the mirror stops advancing, kick it instead of idling out
+    // (the split fan-out paid ~80s per run waiting for the cron tick).
+    if (backend && next !== null && next === last) {
+      fetch(`${backend}/api/indexer/kick`, { method: "POST" }).catch(() => {})
+    }
+    last = next
     await new Promise((r) => setTimeout(r, 300))
   }
   throw new Error(`merkle tree did not index leaf ${minLeafIndex} within ${timeoutMs}ms`)

@@ -148,6 +148,65 @@ export class PrivacyCashClient {
         return { scanned, added, spent };
     }
     /**
+     * Nullifiers (32-byte hex) for saved notes, derived under the unlocked
+     * keypair. A caller that lost track of a broadcast (relay answered but the
+     * follow-up threw) polls these to learn whether the spend actually landed
+     * before attempting any retry. Notes whose index is only a guess (freshly
+     * saved change notes) yield a wrong nullifier — those are simply never
+     * reported spent, which is the safe direction.
+     */
+    async nullifiersForNotes(notes) {
+        await this.unlock();
+        const out = [];
+        for (const n of notes) {
+            const utxo = new Utxo({
+                wasm: this.wasm,
+                amount: n.amount,
+                blinding: n.blinding,
+                keypair: this.utxoKeypair,
+                index: n.index,
+                ...(n.mintAddress ? { mintAddress: n.mintAddress } : {}),
+            });
+            out.push(fieldToHex32(await utxo.getNullifier()));
+        }
+        return out;
+    }
+    /**
+     * Adjudication for a transfer that threw after the relay accepted it: look
+     * up the named notes (by blinding, across spent AND unspent storage) and
+     * return the spending tx signature if any of their nullifiers is already
+     * recorded. Resolves in one batch call when the mirror has caught up;
+     * callers poll with a short interval until it returns non-null or they
+     * give up. Notes whose stored index is a guess (pending change notes)
+     * hash to a nullifier that can never match — the safe direction.
+     */
+    async signatureIfSpent(blindings) {
+        await this.unlock();
+        const picked = loadNotes(this.publicKey).filter((n) => blindings.includes(n.blinding));
+        if (picked.length === 0)
+            return null;
+        const hashes = await this.nullifiersForNotes(picked.map((n) => ({
+            amount: n.amount,
+            blinding: n.blinding,
+            index: n.index,
+            mintAddress: n.mintAddress,
+        })));
+        let flags;
+        try {
+            flags = await nullifiersSpent(hashes);
+        }
+        catch {
+            flags = await Promise.all(hashes.map((h) => isNullifierSpent(h)));
+        }
+        for (let i = 0; i < hashes.length; i++) {
+            if (!flags[i])
+                continue;
+            const info = await nullifierInfo(hashes[i]).catch(() => null);
+            return info?.signature ?? null;
+        }
+        return null;
+    }
+    /**
      * Scan encrypted outputs from the backend, decrypt ours, upsert notes,
      * and mark spent via nullifier checks. Single-flight: a scan mutates the
      * note store, and a second scan running mid-transfer made pinned notes

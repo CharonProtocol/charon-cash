@@ -284,9 +284,17 @@ export async function waitForLeafIndex(treeKey, minLeafIndex, opts = {}) {
     const deadline = Date.now() + timeoutMs;
     let last = null;
     while (Date.now() < deadline) {
+        const prev = last?.nextLeafIndex;
         last = await fetchTreeState(treeKey);
         if (last.nextLeafIndex > minLeafIndex)
             return last;
+        if (opts.kick && last.nextLeafIndex === prev) {
+            // The mirror is stalled: reads are sync-free and the cron only walks
+            // the chain once a minute, so ask the indexer to sync now instead of
+            // idling out the waiting caller (the split fan-out paid up to 80s
+            // here per wave). The backend throttle bounds repeat kicks.
+            await postJson("/api/indexer/kick", {}).catch(() => { });
+        }
         await sleep(intervalMs);
     }
     throw new Error(`indexer timeout waiting for leaf ${minLeafIndex} on tree ${treeKey}` +

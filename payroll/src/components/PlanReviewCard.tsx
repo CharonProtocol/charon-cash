@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { rawToHuman, shortHash } from "@/lib/format"
 import { validateDecimals } from "@/lib/parse"
-import { fetchRecipientKeys, fetchTreeState, splTreeKey } from "privacy-cash-sdk"
+import { fetchRecipientsBatch, fetchTreeState, splTreeKey } from "privacy-cash-sdk"
 import type { Asset, ParsedFile, RunMode } from "@/lib/types"
 
 const SOL_DECIMALS = 9
@@ -122,14 +122,13 @@ export function PlanReviewCard({
     setChecking(true)
     setCheckError(null)
     try {
-      const unregistered: string[] = []
-      for (const e of parsed.entries) {
-        // fetchRecipientKeys returns null only for a confirmed 404 (not
-        // enrolled); any other failure (backend down, 5xx) must throw so the
-        // treasurer sees "could not verify" instead of a false "not enrolled"
-        const keys = await fetchRecipientKeys(e.address)
-        if (!keys) unregistered.push(e.address)
-      }
+      // One batch round trip per 90 wallets; the batch throws only on a
+      // transport/5xx failure (falling back per-wallet preserves that), so a
+      // null here is still a confirmed "not enrolled".
+      const keys = await fetchRecipientsBatch(parsed.entries.map((e) => e.address))
+      const unregistered = parsed.entries
+        .map((e) => e.address)
+        .filter((a) => !keys.get(a))
       setRecipientCheck({
         total: parsed.entries.length,
         registered: parsed.entries.length - unregistered.length,

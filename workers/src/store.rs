@@ -62,6 +62,13 @@ pub struct RecipientKeyRow {
 }
 
 #[derive(Deserialize)]
+pub struct RecipientWalletKeyRow {
+    pub wallet_pubkey: String,
+    pub note_pubkey: String,
+    pub enc_pubkey: String,
+}
+
+#[derive(Deserialize)]
 pub struct UtxoCheckRow {
     pub tree_key: String,
     pub leaf_index: i64,
@@ -375,6 +382,42 @@ impl Store {
             .await
             .map_err(|e| format!("get_recipient_keys: {e}"))?;
         Ok(row.map(|r| (r.note_pubkey, r.enc_pubkey, r.updated_at)))
+    }
+
+    /// Registered receive keys for many wallets in one query — the payroll
+    /// pre-run "check recipients" pass used to pay a round trip per employee
+    /// (100 × ~0.6s serially). Unregistered wallets are simply absent from
+    /// the result. Caller must keep each batch <= 90 (D1 bind limit is 100).
+    pub async fn recipients_many(
+        &self,
+        wallets: &[String],
+    ) -> Result<Vec<(String, String, String)>, String> {
+        if wallets.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = (1..=wallets.len())
+            .map(|i| format!("?{i}"))
+            .collect();
+        let binds: Vec<B> = wallets.iter().map(|w| s(w)).collect();
+        let res = self
+            .bound(
+                &format!(
+                    "SELECT wallet_pubkey, note_pubkey, enc_pubkey FROM recipient_keys \
+                     WHERE wallet_pubkey IN ({})",
+                    placeholders.join(", ")
+                ),
+                binds,
+            )?
+            .all()
+            .await
+            .map_err(|e| format!("recipients_many: {e}"))?;
+        let rows: Vec<RecipientWalletKeyRow> = res
+            .results::<RecipientWalletKeyRow>()
+            .map_err(|e| format!("recipients_many results: {e}"))?;
+        Ok(rows
+            .into_iter()
+            .map(|r| (r.wallet_pubkey, r.note_pubkey, r.enc_pubkey))
+            .collect())
     }
 
     pub async fn put_recipient_keys(

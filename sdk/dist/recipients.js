@@ -77,3 +77,54 @@ export async function fetchRecipientKeys(wallet) {
     cache.set(key, keys);
     return keys;
 }
+/**
+ * Registered receive keys for many wallets in as few round trips as possible
+ * (one POST per 90 wallets). Missing entries mean "not enrolled" — same
+ * contract as fetchRecipientKeys returning null. Order of `wallets` is not
+ * preserved in the result; use the returned Map. Falls back to per-wallet
+ * fetches against backends without the batch endpoint.
+ */
+export async function fetchRecipientsBatch(wallets) {
+    const keys = wallets.map(b58);
+    const out = new Map();
+    const pending = [];
+    for (const key of keys) {
+        const hit = cache.get(key);
+        if (hit)
+            out.set(key, hit);
+        else {
+            out.set(key, null);
+            pending.push(key);
+        }
+    }
+    if (pending.length === 0)
+        return out;
+    try {
+        const results = [];
+        for (let i = 0; i < pending.length; i += 90) {
+            const res = await fetch(getBackendUrl() + "/api/recipients/batch", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ wallets: pending.slice(i, i + 90) }),
+            });
+            if (!res.ok)
+                throw new Error(`HTTP ${res.status}`);
+            const data = (await res.json());
+            if (!Array.isArray(data.results))
+                throw new Error("malformed recipients batch");
+            results.push(...data.results);
+        }
+        for (const row of results) {
+            const keys2 = { notePubkey: row.note_pubkey, encPubkey: row.enc_pubkey };
+            cache.set(row.wallet, keys2);
+            out.set(row.wallet, keys2);
+        }
+    }
+    catch {
+        // older backend: per-wallet lookups keep the same semantics
+        await Promise.all(pending.map((key) => fetchRecipientKeys(key)));
+        for (const key of pending)
+            out.set(key, cache.get(key) ?? null);
+    }
+    return out;
+}

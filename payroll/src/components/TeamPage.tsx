@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { Check, RefreshCw, Users, X } from "lucide-react"
-import { fetchRecipientKeys } from "privacy-cash-sdk"
+import { fetchRecipientKeys, fetchRecipientsBatch, type RecipientKeys } from "privacy-cash-sdk"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -39,8 +39,15 @@ export function TeamPage({ extraEntries }: { extraEntries?: PayrollEntry[] }) {
     if (rosterNow.length === 0) return
     setChecking(true)
     try {
+      let keyed: Map<string, RecipientKeys | null> | null = null
+      try {
+        keyed = await fetchRecipientsBatch(rosterNow.map((m) => m.address))
+      } catch {
+        keyed = null // fall through to per-wallet
+      }
       const next = await Promise.all(
         rosterNow.map(async (m) => {
+          if (keyed) return { ...m, registered: !!keyed.get(m.address) }
           try {
             const keys = await fetchRecipientKeys(m.address)
             return { ...m, registered: !!keys }

@@ -109,7 +109,9 @@ export interface WaitOpts {
     intervalMs?: number;
 }
 /** Poll until `next_leaf_index > minLeafIndex` (i.e. leaves through minLeafIndex exist). */
-export declare function waitForLeafIndex(treeKey: string, minLeafIndex: number, opts?: WaitOpts): Promise<TreeState>;
+export declare function waitForLeafIndex(treeKey: string, minLeafIndex: number, opts?: WaitOpts & {
+    kick?: boolean;
+}): Promise<TreeState>;
 /** Poll until an encrypted output hex appears in the indexer. */
 export declare function waitForEncryptedOutput(encryptedHex: string, treeKey?: string, opts?: WaitOpts): Promise<UtxoCheckResult>;
 export declare function solTreeKey(): string;

@@ -165,6 +165,82 @@ describe("PayrollEngine", () => {
     expect(receipt.entries.every((e) => e.status === "confirming")).toBe(true)
   })
 
+  it("adjudicates a thrown-after-broadcast shielded payout by its nullifier and confirms it", async () => {
+    // The relayer accepted the broadcast, then the post-relay step threw with
+    // the in-flight error. The pinned notes are spent on-chain — the engine
+    // must resolve the real signature via signatureIfSpent instead of
+    // retrying into the in-flight guard or freeing the notes for a re-spend.
+    const { client: base } = mockClient({ fails: new Map() })
+    const client: EngineClient = {
+      ...base,
+      transferNoteSOL: async (_recipient, _net, opts) => {
+        await opts?.onSubmitted?.({})
+        throw new Error(
+          "a withdrawal for one of these nullifiers is already being processed",
+        )
+      },
+      signatureIfSpent: async (blindings) => (blindings.length ? "LANDED-SIG" : null),
+    }
+    const notes = [1, 2, 3].map((i) => ({
+      id: `n${i}`,
+      amount: (2n * 10n ** 9n).toString(),
+      blinding: `blind-${i}`,
+    }))
+    const engine = new PayrollEngine({
+      client,
+      listNotes: () => notes,
+      waitUntilIndexed: async () => {},
+      confirmSignature: async () => true,
+      now: () => 1,
+      newId: () => "run1",
+      sleep: async () => {},
+    })
+    const receipt = await engine.run(req({ vaultRaw: 10n ** 18n, mode: "shielded" }))
+    expect(receipt.summary.sent).toBe(3)
+    expect(receipt.entries.every((e) => e.status === "sent")).toBe(true)
+    expect(receipt.entries.every((e) => e.txSignature === "LANDED-SIG")).toBe(true)
+    expect(receipt.entries.every((e) => e.attempts === 1)).toBe(true)
+    expect(receipt.entries.every((e) => e.error === undefined)).toBe(true)
+  })
+
+  it("releases pins and retries when adjudication finds nothing on-chain", async () => {
+    const { client: base } = mockClient({ fails: new Map() })
+    let polled = 0
+    const client: EngineClient = {
+      ...base,
+      transferNoteSOL: async (_recipient, _net, opts) => {
+        await opts?.onSubmitted?.({})
+        throw new Error(
+          "a withdrawal for one of these nullifiers is already being processed",
+        )
+      },
+      signatureIfSpent: async () => {
+        polled++
+        return null
+      },
+    }
+    const notes = [1, 2, 3].map((i) => ({
+      id: `n${i}`,
+      amount: (2n * 10n ** 9n).toString(),
+      blinding: `blind-${i}`,
+    }))
+    const engine = new PayrollEngine({
+      client,
+      listNotes: () => notes,
+      waitUntilIndexed: async () => {},
+      confirmSignature: async () => true,
+      now: () => 1,
+      newId: () => "run1",
+      sleep: async () => {},
+    })
+    const receipt = await engine.run(req({ vaultRaw: 10n ** 18n, mode: "shielded" }))
+    // not landed anywhere: the row fails after its attempts like before,
+    // and adjudication ran for every attempt (never skipped silently)
+    expect(receipt.entries.every((e) => e.status === "failed")).toBe(true)
+    expect(receipt.entries.every((e) => e.attempts === 3)).toBe(true)
+    expect(polled).toBe(9)
+  })
+
   it("cancel() stops between entries and leaves the rest failed-cancelled", async () => {
     const { client, calls } = mockClient({ fails: new Map(), slow: 10 })
     const engine = new PayrollEngine(deps(client))
