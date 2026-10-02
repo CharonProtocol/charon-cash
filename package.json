@@ -1,0 +1,5 @@
+{
+  "name": "privacy-cash",
+  "private": true,
+  "workspaces": ["sdk", "frontend"]
+}

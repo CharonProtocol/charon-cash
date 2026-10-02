@@ -3,8 +3,10 @@ resolver = "2"
 members = [
     "programs/privacy-cash",
 ]
-# The QEDGen model crate and fuzz harness are standalone workspaces.
-exclude = ["verification"]
+# The QEDGen model crate and fuzz harness are standalone workspaces. `backend`
+# has no lockfile and pulls sqlx/postgres, so it stays out of the `--locked`
+# workspace CI builds.
+exclude = ["verification", "backend"]
 
 [profile.dev]
 # Important for wasmer + rust-probestack issues

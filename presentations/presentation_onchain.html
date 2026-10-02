@@ -1,0 +1,825 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Privacy Cash · on-chain program</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --paper:#ffffff;
+    --panel:#f5f6f8;
+    --panel-2:#eef0f4;
+    --line:#e4e7ec;
+    --line-2:#d4d8e0;
+    --ink:#0e1116;
+    --body:#3f4757;
+    --mute:#868f9e;
+    --accent:#5b54e6;
+    --accent-soft:#ecebfc;
+    --c-program:#111827;
+    --c-indexer:#0e7c86;
+    --c-relayer:#5b54e6;
+    --c-sdk:#b45309;
+    --c-data:#424a57;
+    --c-chain:#6b7280;
+    --c-admin:#7c3aed;
+    --f-display:"Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --f-body:"IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --f-mono:"IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --maxw:1140px;
+    --radius:14px;
+    --shadow:0 1px 2px rgba(16,20,28,.04), 0 10px 30px rgba(16,20,28,.06);
+  }
+
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--f-body);
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+
+  /* ---------- deck / slides ---------- */
+  .deck{position:fixed; inset:0; overflow:hidden}
+  .slide{
+    position:absolute; inset:0;
+    display:flex; align-items:safe center; justify-content:safe center;
+    padding:clamp(28px,5vw,72px) clamp(24px,6vw,84px) clamp(58px,7vw,84px);
+    opacity:0; visibility:hidden; transform:translateY(10px);
+    transition:opacity .42s ease, transform .42s ease, visibility .42s;
+    overflow:auto;
+  }
+  .slide.is-active{opacity:1; visibility:visible; transform:none}
+  .slide__inner{width:100%; max-width:var(--maxw); margin:auto}
+
+  /* ---------- typography ---------- */
+  .eyebrow{
+    font-family:var(--f-mono); font-size:.74rem; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--mute);
+    display:inline-flex; align-items:center; gap:.6em; margin:0 0 1.1rem;
+  }
+  .eyebrow::before{content:""; width:7px; height:7px; border-radius:2px; background:var(--accent)}
+  .h1{font-family:var(--f-display); font-weight:700; line-height:1.02; letter-spacing:-.02em;
+      font-size:clamp(2.7rem,6.4vw,5rem); margin:0}
+  .h2{font-family:var(--f-display); font-weight:600; line-height:1.06; letter-spacing:-.015em;
+      font-size:clamp(1.9rem,3.8vw,3.05rem); margin:0 0 1.1rem}
+  .h3{font-family:var(--f-display); font-weight:600; font-size:clamp(1.15rem,1.7vw,1.4rem); margin:0 0 .5rem}
+  .lead{font-size:clamp(1.05rem,1.55vw,1.32rem); line-height:1.5; color:var(--body); margin:0; max-width:60ch}
+  .body{font-size:clamp(.98rem,1.2vw,1.1rem); line-height:1.55; color:var(--body); margin:0}
+  .body + .body{margin-top:.7rem}
+  .mute{color:var(--mute)}
+  .mono{font-family:var(--f-mono)}
+  .accent{color:var(--accent)}
+  .tight p{margin:0}
+
+  /* ---------- layout helpers ---------- */
+  .stack{display:flex; flex-direction:column; gap:1rem}
+  .row{display:flex; gap:1.1rem; flex-wrap:wrap; align-items:flex-start}
+  .grid-2{display:grid; grid-template-columns:1.05fr .95fr; gap:clamp(24px,4vw,56px); align-items:center}
+  .grid-2top{display:grid; grid-template-columns:1fr 1fr; gap:clamp(24px,4vw,48px); align-items:start}
+  .grid-3{display:grid; grid-template-columns:repeat(3,1fr); gap:16px}
+  .col{display:flex; flex-direction:column; gap:.55rem}
+  .footnote{font-family:var(--f-mono); font-size:.76rem; color:var(--mute); margin-top:1.4rem; line-height:1.5}
+
+  /* ---------- component chips ---------- */
+  .chip{
+    display:inline-flex; align-items:center; gap:.5em;
+    font-family:var(--f-mono); font-size:.72rem; letter-spacing:.05em;
+    text-transform:uppercase; color:var(--body);
+    background:var(--panel); border:1px solid var(--line);
+    padding:.4em .8em; border-radius:999px; white-space:nowrap;
+  }
+  .chip::before{content:""; width:8px; height:8px; border-radius:2px; background:var(--cc,var(--accent))}
+  .chip--program{--cc:var(--c-program)}
+  .chip--indexer{--cc:var(--c-indexer)}
+  .chip--relayer{--cc:var(--c-relayer)}
+  .chip--sdk{--cc:var(--c-sdk)}
+  .chip--data{--cc:var(--c-data)}
+  .chip--chain{--cc:var(--c-chain)}
+  .chip--admin{--cc:var(--c-admin)}
+  .chips{display:flex; flex-wrap:wrap; gap:.5rem}
+
+  /* ---------- cards ---------- */
+  .cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(215px,1fr)); gap:14px}
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    padding:16px 18px; box-shadow:var(--shadow);
+  }
+  .card h4{
+    font-family:var(--f-mono); font-weight:500; font-size:.84rem; margin:0 0 .4rem;
+    color:var(--cc,var(--ink)); display:flex; align-items:center; gap:.5em;
+  }
+  .card h4::before{content:""; width:7px;height:7px;border-radius:2px;background:var(--cc,var(--accent))}
+  .card p{margin:0; color:var(--body); font-size:.92rem; line-height:1.5}
+  .card small{color:var(--mute); font-family:var(--f-mono); font-size:.72rem; display:block; margin-top:.45rem}
+
+  /* ---------- numbered steps (real sequences only) ---------- */
+  .steps{list-style:none; counter-reset:step; margin:0; padding:0; display:grid; gap:10px}
+  .steps li{
+    counter-increment:step; display:grid; grid-template-columns:auto 1fr; gap:16px; align-items:start;
+    padding:12px 16px; background:var(--panel); border:1px solid var(--line); border-radius:12px;
+  }
+  .steps li::before{
+    content:counter(step,decimal-leading-zero);
+    font-family:var(--f-mono); font-weight:500; color:var(--accent);
+    font-size:.95rem; padding-top:1px;
+  }
+  .steps li b{font-weight:600; color:var(--ink)}
+  .steps li span{color:var(--body); font-size:.94rem; line-height:1.5}
+  .steps li code{font-family:var(--f-mono); font-size:.86rem; color:var(--ink)}
+
+  /* entrance for steps */
+  .slide.is-active .steps li{animation:rise .5s both}
+  .slide.is-active .steps li:nth-child(1){animation-delay:.06s}
+  .slide.is-active .steps li:nth-child(2){animation-delay:.12s}
+  .slide.is-active .steps li:nth-child(3){animation-delay:.18s}
+  .slide.is-active .steps li:nth-child(4){animation-delay:.24s}
+  .slide.is-active .steps li:nth-child(5){animation-delay:.30s}
+  .slide.is-active .steps li:nth-child(6){animation-delay:.36s}
+  .slide.is-active .steps li:nth-child(7){animation-delay:.42s}
+  .slide.is-active .steps li:nth-child(8){animation-delay:.48s}
+  .slide.is-active .steps li:nth-child(9){animation-delay:.54s}
+  .slide.is-active .steps li:nth-child(10){animation-delay:.60s}
+  .slide.is-active .steps li:nth-child(11){animation-delay:.66s}
+  @keyframes rise{from{opacity:0; transform:translateY(9px)} to{opacity:1; transform:none}}
+
+  /* ---------- mini flow (horizontal nodes + arrows) ---------- */
+  .flow{display:flex; align-items:stretch; gap:0; flex-wrap:wrap; margin-top:.4rem}
+  .flow .fnode{
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:11px 15px; min-width:120px; position:relative;
+  }
+  .flow .fnode h5{margin:0; font-family:var(--f-mono); font-size:.82rem; font-weight:500; color:var(--cc,var(--ink)); display:flex; align-items:center; gap:.45em}
+  .flow .fnode h5::before{content:"";width:7px;height:7px;border-radius:2px;background:var(--cc,var(--accent))}
+  .flow .fnode p{margin:.25rem 0 0; font-size:.78rem; color:var(--mute); line-height:1.4}
+  .flow .farrow{
+    align-self:center; padding:0 8px; font-family:var(--f-mono); font-size:.72rem;
+    color:var(--mute); text-align:center; line-height:1.3; position:relative;
+  }
+  .flow .farrow::before{content:"→"; display:block; font-size:1.15rem; color:var(--line-2); margin-bottom:1px}
+  .flow .farrow.dash::before{content:"⇢"}
+
+  /* ---------- public/private tags ---------- */
+  .tag{
+    display:inline-flex; align-items:center; gap:.4em; font-family:var(--f-mono); font-size:.72rem;
+    padding:.28em .6em; border-radius:7px; border:1px solid var(--line);
+  }
+  .tag--pub{border-color:#c9c5fb; color:var(--accent); background:var(--accent-soft)}
+  .tag--priv{border-style:dashed; border-color:var(--line-2); color:var(--mute); background:transparent}
+  .tag--err{border-color:#f3c8c2; color:#b42318; background:#fef3f2}
+  .taglist{display:flex; flex-wrap:wrap; gap:.5rem; align-items:center}
+
+  /* ---------- table ---------- */
+  .tbl{width:100%; border-collapse:collapse; font-size:.94rem}
+  .tbl th,.tbl td{text-align:left; padding:10px 12px; border-bottom:1px solid var(--line)}
+  .tbl th{font-family:var(--f-mono); text-transform:uppercase; font-size:.7rem; letter-spacing:.07em; color:var(--mute); font-weight:500}
+  .tbl td code{font-family:var(--f-mono); font-size:.86rem; color:var(--ink)}
+  .tbl tr.user td{background:var(--accent-soft)}
+  .tbl tr.user td code{color:var(--accent); font-weight:500}
+  .tbl tr.setup td{background:#f3fbfb}
+  .tbl tr.admin td{background:#f6f2fd}
+  .tbl .role{font-family:var(--f-mono); font-size:.7rem; color:var(--mute); text-transform:uppercase; letter-spacing:.05em}
+  .tbl .disc{font-family:var(--f-mono); color:var(--mute); width:1%}
+
+  /* ---------- key/value rows ---------- */
+  .kv{display:grid; grid-template-columns:auto 1fr; gap:6px 18px; font-size:.92rem}
+  .kv dt{font-family:var(--f-mono); color:var(--mute); font-size:.8rem; padding-top:1px}
+  .kv dd{margin:0; color:var(--body); font-family:var(--f-mono); font-size:.82rem}
+
+  /* ---------- code block ---------- */
+  .codeblk{
+    background:#0e1116; color:#e6e8ec; border-radius:12px; padding:14px 16px;
+    font-family:var(--f-mono); font-size:.8rem; line-height:1.6; overflow-x:auto;
+    white-space:pre; box-shadow:var(--shadow);
+  }
+  .codeblk .cm{color:#7c8593}
+  .codeblk .kw{color:#b9a6ff}
+  .codeblk .fn{color:#7fd1d6}
+  .codeblk .st{color:#e0b97a}
+  .codeblk .er{color:#ff9d8a}
+
+  /* ---------- diagram + legend ---------- */
+  .diagram{width:100%; height:auto; display:block}
+  .slide.is-active .diagram{animation:fade .55s both}
+  @keyframes fade{from{opacity:0} to{opacity:1}}
+  .legend{display:flex; flex-wrap:wrap; gap:1.1rem; margin-top:.9rem; font-family:var(--f-mono); font-size:.74rem; color:var(--mute)}
+  .legend span{display:inline-flex; align-items:center; gap:.45em}
+  .legend i{display:inline-block; width:22px; height:0; border-top:2px solid var(--line-2)}
+  .legend i.dash{border-top-style:dashed}
+  .legend .sw{width:9px;height:9px;border-radius:2px;border-top:0}
+
+  /* ---------- chrome: progress, counter, brand, nav ---------- */
+  .progress{position:fixed; top:0; left:0; height:3px; background:var(--accent); z-index:20; transition:width .4s ease}
+  .brand{position:fixed; top:18px; left:clamp(20px,5vw,40px); z-index:15;
+         display:flex; align-items:center; gap:.55rem; font-family:var(--f-mono);
+         font-size:.7rem; letter-spacing:.12em; text-transform:uppercase; color:var(--mute)}
+  .decklinks{position:fixed; top:18px; right:clamp(20px,5vw,40px); z-index:15;
+             display:flex; gap:.9rem; font-family:var(--f-mono); font-size:.7rem; letter-spacing:.04em}
+  .decklinks a{color:var(--mute); text-decoration:none}
+  .decklinks a:hover{color:var(--accent)}
+  .counter{position:fixed; bottom:18px; right:clamp(20px,5vw,40px); z-index:15;
+           font-family:var(--f-mono); font-size:.74rem; color:var(--mute); letter-spacing:.06em}
+  .counter b{color:var(--ink); font-weight:500}
+  .hint{position:fixed; bottom:18px; left:clamp(20px,5vw,40px); z-index:15;
+        font-family:var(--f-mono); font-size:.7rem; color:var(--mute)}
+  .nav{position:fixed; bottom:16px; left:50%; transform:translateX(-50%); z-index:15;
+       display:flex; gap:6px; background:var(--paper); border:1px solid var(--line);
+       padding:5px; border-radius:999px; box-shadow:var(--shadow)}
+  .nav button{
+    border:0; background:transparent; width:34px; height:30px; border-radius:999px; cursor:pointer;
+    color:var(--body); font-family:var(--f-mono); font-size:.85rem; transition:background .15s, color .15s;
+  }
+  .nav button:hover{background:var(--panel); color:var(--ink)}
+  .nav .dots{display:flex; align-items:center; gap:5px; padding:0 8px}
+  .nav .dots i{width:6px;height:6px;border-radius:50%;background:var(--line-2);transition:background .2s,transform .2s;cursor:pointer;display:block}
+  .nav .dots i.on{background:var(--accent); transform:scale(1.25)}
+
+  /* title-slide hero */
+  .hero{width:100%; max-width:440px; margin:0 auto}
+
+  /* responsive */
+  @media (max-width:880px){
+    .grid-2,.grid-2top{grid-template-columns:1fr}
+    .grid-3{grid-template-columns:1fr}
+    .brand,.hint,.decklinks{display:none}
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none !important; transition:none !important}
+  }
+</style>
+</head>
+<body>
+
+<div class="brand">
+  <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+    <g fill="none" stroke="#5b54e6" stroke-width="1.6">
+      <path d="M12 3 V9 M12 9 L6 14 M12 9 L18 14 M6 14 L3 20 M6 14 L9 20 M18 14 L15 20 M18 14 L21 20"/>
+    </g>
+    <g fill="#5b54e6"><circle cx="12" cy="3" r="1.8"/><circle cx="6" cy="14" r="1.5"/><circle cx="18" cy="14" r="1.5"/></g>
+    <g fill="#d4d8e0"><circle cx="3" cy="20" r="1.3"/><circle cx="9" cy="20" r="1.3"/><circle cx="15" cy="20" r="1.3"/><circle cx="21" cy="20" r="1.3"/></g>
+  </svg>
+  Privacy&nbsp;Cash&nbsp;·&nbsp;on-chain
+</div>
+
+<div class="decklinks">
+  <a href="flow_onchain.html">animated flows ↗</a>
+  <a href="presentation.html">system deck ↗</a>
+</div>
+
+<div class="progress" id="progress"></div>
+
+<main class="deck" id="deck">
+
+  <!-- 1 · TITLE -->
+  <section class="slide is-active" aria-label="Title">
+    <div class="slide__inner">
+      <div class="grid-2">
+        <div class="col">
+          <p class="eyebrow">The on-chain program &middot; a deep dive</p>
+          <h1 class="h1">On-chain<br/>program</h1>
+          <p class="lead" style="margin-top:1.2rem">A Pinocchio program &mdash; not Anchor &mdash; holding a height-26 Poseidon Merkle tree of commitments, an existential nullifier set, and a Groth16 verifier over BN254. Seven instructions; every private move is a 2-input / 2-output UTXO transaction.</p>
+          <div class="chips" style="margin-top:1.5rem">
+            <span class="chip chip--program">Pinocchio</span>
+            <span class="chip chip--relayer">Groth16 / BN254</span>
+            <span class="chip chip--data">Poseidon tree</span>
+            <span class="chip chip--sdk">7 instructions</span>
+          </div>
+        </div>
+        <div>
+          <svg class="hero" viewBox="0 0 440 320" role="img" aria-label="A single instruction byte dispatching to seven program handlers, with Transact highlighted">
+            <!-- input byte -->
+            <g>
+              <rect x="24" y="138" width="96" height="44" rx="10" fill="#f5f6f8" stroke="#e4e7ec"/>
+              <rect x="24" y="138" width="4" height="44" rx="2" fill="#111827"/>
+              <text x="72" y="159" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="13" fill="#0e1116">instruction</text>
+              <text x="72" y="174" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#868f9e">data[0]</text>
+            </g>
+            <!-- connectors -->
+            <g stroke="#e4e7ec" stroke-width="1.5" fill="none">
+              <path d="M120 160 H168"/>
+              <path d="M168 160 V40 M168 160 V80 M168 160 V120 M168 160 V200 M168 160 V240 M168 160 V260 M168 160 V280"/>
+              <path d="M168 40 H210 M168 80 H210 M168 120 H210 M168 200 H210 M168 240 H210 M168 260 H210 M168 280 H210"/>
+            </g>
+            <!-- highlighted line to Transact -->
+            <path d="M168 160 V120 H210" stroke="#5b54e6" stroke-width="2.2" fill="none"/>
+            <path d="M120 160 H168" stroke="#5b54e6" stroke-width="2.2" fill="none"/>
+            <!-- handler chips -->
+            <g font-family="IBM Plex Mono, monospace" font-size="10.5">
+              <g><rect x="210" y="28" width="206" height="24" rx="7" fill="#f5f6f8" stroke="#e4e7ec"/><text x="222" y="44" fill="#3f4757"><tspan fill="#868f9e">0 </tspan>Initialize</text></g>
+              <g><rect x="210" y="68" width="206" height="24" rx="7" fill="#f5f6f8" stroke="#e4e7ec"/><text x="222" y="84" fill="#3f4757"><tspan fill="#868f9e">1 </tspan>InitializeTreeForSpl</text></g>
+              <g><rect x="210" y="108" width="206" height="24" rx="7" fill="#ecebfc" stroke="#c9c5fb"/><text x="222" y="124" fill="#5b54e6"><tspan>2 </tspan>Transact &middot; SOL</text></g>
+              <g><rect x="210" y="188" width="206" height="24" rx="7" fill="#f5f6f8" stroke="#e4e7ec"/><text x="222" y="204" fill="#3f4757"><tspan fill="#868f9e">3 </tspan>TransactSpl</text></g>
+              <g><rect x="210" y="228" width="206" height="24" rx="7" fill="#f5f6f8" stroke="#e4e7ec"/><text x="222" y="244" fill="#3f4757"><tspan fill="#868f9e">4 </tspan>UpdateGlobalConfig</text></g>
+              <g><rect x="210" y="248" width="206" height="24" rx="7" fill="#f5f6f8" stroke="#e4e7ec"/><text x="222" y="264" fill="#3f4757"><tspan fill="#868f9e">5 </tspan>UpdateDepositLimit</text></g>
+              <g><rect x="210" y="268" width="206" height="24" rx="7" fill="#f5f6f8" stroke="#e4e7ec"/><text x="222" y="284" fill="#3f4757"><tspan fill="#868f9e">6 </tspan>UpdateDepositLimitForSpl</text></g>
+            </g>
+            <text x="220" y="20" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="#868f9e">7 handlers &middot; one-byte discriminator</text>
+          </svg>
+          <p class="footnote" style="text-align:center">The first byte of every instruction selects the handler. <span class="accent mono">Transact</span> (2) and <span class="mono">TransactSpl</span> (3) are the entire user path.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 · AT A GLANCE -->
+  <section class="slide" aria-label="At a glance">
+    <div class="slide__inner">
+      <p class="eyebrow">At a glance</p>
+      <h2 class="h2">Pinocchio. One byte dispatches seven paths.</h2>
+      <p class="lead" style="margin-bottom:1.4rem">Zero-copy <span class="mono">#[repr(C)]</span> Pod structs (bytemuck, no Anchor discriminators). The entrypoint splits the first byte off <span class="mono">instruction_data</span> and matches it to a handler &mdash; or rejects with <span class="mono">InvalidInstructionData</span>.</p>
+
+      <div class="grid-2top">
+        <div class="codeblk">
+<span class="cm">// programs/privacy-cash/src/lib.rs</span>
+<span class="kw">let</span> (disc, data) = split_first(instruction_data)?;
+<span class="kw">match</span> PrivacyCashInstructions::try_from(disc)? {
+  Initialize                       =&gt; process_initialize(data, ..),
+  InitializeTreeAccountForSplToken =&gt; process_initialize_spl(data, ..),
+  Transact                         =&gt; process_transact(data, ..),
+  TransactSpl                      =&gt; process_transact_spl(data, ..),
+  UpdateGlobalConfig               =&gt; process_update_global_config(..),
+  UpdateDepositLimit               =&gt; update_deposit_limit(..),
+  UpdateDepositLimitForSpl         =&gt; update_deposit_limit_spl(..),
+}</div>
+        <div class="col">
+          <div class="card">
+            <h4 style="--cc:var(--c-program)">declare_id!</h4>
+            <p>Program ID <span class="mono">5Gcq…UJ9P</span> is baked in at compile time. Account ownership is checked against <span class="mono">crate::ID</span> on every PDA.</p>
+          </div>
+          <div class="card">
+            <h4 style="--cc:var(--c-relayer)">No self-emit of compute budget</h4>
+            <p>The program never sets its own CU limit. The client must prepend <span class="mono">SetComputeUnitLimit</span> &mdash; Groth16 verification is the dominant cost.</p>
+          </div>
+          <div class="card">
+            <h4 style="--cc:var(--c-data)">Validation is imperative</h4>
+            <p>No <span class="mono">#[derive(Accounts)]</span>. Accounts are positionally destructured and checked by hand with <span class="mono">verify_*</span> helpers.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 · ACCOUNTS & PDAs -->
+  <section class="slide" aria-label="On-chain accounts and PDAs">
+    <div class="slide__inner">
+      <p class="eyebrow">State on-chain</p>
+      <h2 class="h2">Four account types &middot; five PDA seeds</h2>
+      <p class="lead" style="margin-bottom:1.2rem">Everything the program persists is one of four small Pod accounts, each a PDA.</p>
+
+      <div class="cards" style="margin-bottom:1rem">
+        <div class="card">
+          <h4 style="--cc:var(--c-admin)">GlobalConfig</h4>
+          <p>One singleton. Holds <span class="mono">authority</span> and the fee schedule.</p>
+          <small>deposit_fee_rate=0 &middot; withdrawal_fee_rate=25 bps &middot; fee_error_margin=500 bps</small>
+        </div>
+        <div class="card">
+          <h4 style="--cc:var(--c-data)">MerkleTreeAccount</h4>
+          <p>The tree: <span class="mono">subtrees[26]</span> frontier, <span class="mono">root_history[100]</span>, <span class="mono">next_index</span>, <span class="mono">max_deposit_amount</span>.</p>
+          <small>One for SOL; one per SPL mint.</small>
+        </div>
+        <div class="card">
+          <h4 style="--cc:var(--c-indexer)">TreeTokenAccount</h4>
+          <p>The SOL vault PDA &mdash; physically holds deposited lamports. Withdrawals/fees adjust it via <span class="mono">set_lamports</span>.</p>
+          <small>seed: <span class="mono">"tree_token"</span>. SPL uses a real ATA instead.</small>
+        </div>
+        <div class="card">
+          <h4 style="--cc:var(--c-relayer)">NullifierAccount</h4>
+          <p>A 1-byte account storing only <span class="mono">bump</span>. <span class="accent">Existence = spent.</span> Created fresh on each spend.</p>
+          <small>A constellation of rent-exempt PDAs, not a bitmap.</small>
+        </div>
+      </div>
+
+      <table class="tbl">
+        <thead><tr><th>PDA</th><th>Seed layout</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td><code>global_config</code></td><td><code>["global_config", bump]</code></td><td class="role">singleton</td></tr>
+          <tr><td><code>merkle_tree</code> (SOL)</td><td><code>["merkle_tree", bump]</code></td><td class="role">the SOL pool tree</td></tr>
+          <tr><td><code>merkle_tree</code> (SPL)</td><td><code>["merkle_tree", mint, bump]</code></td><td class="role">one tree per mint</td></tr>
+          <tr><td><code>tree_token</code></td><td><code>["tree_token", bump]</code></td><td class="role">SOL vault</td></tr>
+          <tr class="user"><td><code>nullifier0 / nullifier1</code></td><td><code>["nullifier{0,1}", nullifier_hash, bump]</code></td><td class="role">spent marker</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 4 · INSTRUCTION MAP -->
+  <section class="slide" aria-label="Instruction map">
+    <div class="slide__inner">
+      <p class="eyebrow"><span class="chip chip--program" style="padding:.2em .6em">main</span></p>
+      <h2 class="h2">Seven instructions</h2>
+      <p class="lead" style="margin-bottom:1.2rem">Two setup, two user, three admin. The user deposit/withdraw path is a single instruction pair.</p>
+
+      <table class="tbl">
+        <thead><tr><th class="disc">#</th><th>Instruction</th><th>What it does</th><th>Accounts</th><th>Who</th></tr></thead>
+        <tbody>
+          <tr class="setup"><td class="disc">0</td><td><code>Initialize</code></td><td>Boot the SOL tree + vault + global config; default fees</td><td>5</td><td class="role">setup</td></tr>
+          <tr class="setup"><td class="disc">1</td><td><code>InitializeTreeAccountForSplToken</code></td><td>Create a per-mint tree (USDC, USDT&hellip;)</td><td>5</td><td class="role">setup</td></tr>
+          <tr class="user"><td class="disc">2</td><td><code>Transact</code></td><td>Deposit / withdraw / transfer SOL (sign of ext_amount)</td><td>11</td><td class="role">user path</td></tr>
+          <tr class="user"><td class="disc">3</td><td><code>TransactSpl</code></td><td>Deposit / withdraw / transfer an SPL token</td><td>16</td><td class="role">user path</td></tr>
+          <tr class="admin"><td class="disc">4</td><td><code>UpdateGlobalConfig</code></td><td>Set fee rates via bitmask (deposit / withdraw / margin)</td><td>2</td><td class="role">admin</td></tr>
+          <tr class="admin"><td class="disc">5</td><td><code>UpdateDepositLimit</code></td><td>Cap the max SOL deposit</td><td>2</td><td class="role">admin</td></tr>
+          <tr class="admin"><td class="disc">6</td><td><code>UpdateDepositLimitForSpl</code></td><td>Cap the max deposit for a mint</td><td>3</td><td class="role">admin</td></tr>
+        </tbody>
+      </table>
+      <p class="footnote">The sign of <span class="mono accent">ext_amount</span> inside <span class="mono">Transact</span> / <span class="mono">TransactSpl</span> picks the behavior: <span class="mono">&gt;0</span> deposit, <span class="mono">&lt;0</span> withdraw, <span class="mono">==0</span> a fully private internal transfer.</p>
+    </div>
+  </section>
+
+  <!-- 5 · THE TRANSACT PRIMITIVE -->
+  <section class="slide" aria-label="The Transact primitive">
+    <div class="slide__inner">
+      <p class="eyebrow">The core primitive</p>
+      <h2 class="h2">One instruction. Three behaviors.</h2>
+      <p class="lead" style="margin-bottom:1.3rem"><span class="mono accent">Transact</span> is a single 2-input / 2-output UTXO move. Nothing about the instruction name says &ldquo;deposit&rdquo; or &ldquo;withdraw&rdquo; &mdash; only the sign of <span class="mono">ext_amount</span> does.</p>
+
+      <div class="grid-3">
+        <div class="card">
+          <h4 style="--cc:var(--c-indexer)">ext_amount &gt; 0 &middot; deposit</h4>
+          <p>The signer pays the vault. Two fresh output commitments are appended to the tree. You leave with an encrypted note.</p>
+        </div>
+        <div class="card">
+          <h4 style="--cc:var(--c-relayer)">ext_amount &lt; 0 &middot; withdraw</h4>
+          <p>The vault pays a recipient + fee. Two input nullifiers are marked spent. The leaf you spend is never named.</p>
+        </div>
+        <div class="card">
+          <h4 style="--cc:var(--c-data)">ext_amount == 0 &middot; transfer</h4>
+          <p>A fully private swap or split inside the pool. No public value moves (only an optional fee). <span class="mono">validate_fee</span> is a no-op.</p>
+        </div>
+      </div>
+
+      <div class="grid-2top" style="margin-top:1.3rem">
+        <div class="codeblk">
+<span class="cm">// state/transact.rs — the public signals of every proof</span>
+<span class="kw">pub struct</span> Proof {
+  a: [u8; 64], b: [u8; 128], c: [u8; 64],  <span class="cm">// BN254 points</span>
+  root, public_amount, ext_data_hash,       <span class="cm">// 32 each</span>
+  input_nullifiers: [[u8;32]; 2],
+  output_commitments: [[u8;32]; 2],
+}
+<span class="kw">pub struct</span> ExtDataMinified {
+  <span class="kw">pub</span> ext_amount: <span class="fn">i64</span>,   <span class="cm">// the sign is everything</span>
+  <span class="kw">pub</span> fee: <span class="fn">u64</span>,
+}</div>
+        <div class="taglist" style="align-items:flex-start">
+          <div class="col">
+            <span class="tag tag--pub">2 inputs (nullified)</span>
+            <span class="tag tag--pub">2 outputs (committed)</span>
+            <span class="tag tag--priv">amounts &middot; keys &middot; blinding &middot; path</span>
+            <p class="footnote" style="margin-top:.6rem">Conservation is enforced in the field: <span class="mono">public_amount = ext_amount &minus; fee</span> (deposit) or <span class="mono">&minus;(|ext_amount| + fee)</span> (withdraw).</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 · THE FIVE GATES -->
+  <section class="slide" aria-label="The five gates">
+    <div class="slide__inner">
+      <p class="eyebrow">Security core</p>
+      <h2 class="h2">Five checks gate every Transact</h2>
+      <p class="lead" style="margin-bottom:1.3rem">All five run <span class="accent">before a single lamport or token moves</span>. Order matters &mdash; cheap state checks first, the pairing last.</p>
+
+      <div class="cards">
+        <div class="card">
+          <h4 style="--cc:var(--c-data)">01 &middot; root in history</h4>
+          <p><span class="mono">is_known_root(root)</span> &mdash; the proof&rsquo;s root must be one of the last 100 roots. Tolerates finality &amp; reorgs.</p>
+          <small>else <span class="mono">UnknownRoot (5)</span></small>
+        </div>
+        <div class="card">
+          <h4 style="--cc:var(--c-relayer)">02 &middot; ext_data hash</h4>
+          <p>Recompute <span class="mono">SHA-256</span> over recipient, ext_amount, enc. outputs, fee, fee_recipient, mint &mdash; must equal the proof&rsquo;s hash.</p>
+          <small>else <span class="mono">ExtDataHashMismatch (6)</span></small>
+        </div>
+        <div class="card">
+          <h4 style="--cc:var(--c-relayer)">03 &middot; public amount</h4>
+          <p>Recompute <span class="mono">public_amount</span> from ext_amount &amp; fee in BN254 Fr arithmetic; compare to the proof.</p>
+          <small>else <span class="mono">InvalidPublicAmountData (7)</span></small>
+        </div>
+        <div class="card">
+          <h4 style="--cc:var(--c-relayer)">04 &middot; fee bounds</h4>
+          <p><span class="mono">fee &ge; |ext_amount| &middot; rate &middot; (1 &minus; margin)</span> against the configured deposit or withdrawal rate.</p>
+          <small>else <span class="mono">InvalidFeeAmount (11)</span></small>
+        </div>
+        <div class="card">
+          <h4 style="--cc:var(--c-program)">05 &middot; Groth16 verify</h4>
+          <p>The pairing check over 7 public inputs: root, public_amount, ext_data_hash, 2 nullifiers, 2 commitments.</p>
+          <small>else <span class="mono">InvalidProof (14)</span></small>
+        </div>
+      </div>
+      <p class="footnote">Plus the double-spend guard (next slide): the two input nullifiers are <span class="mono">init</span>&rsquo;d as PDAs <em>before</em> these gates even run &mdash; so a replay of the same proof can&rsquo;t reach the pairing.</p>
+    </div>
+  </section>
+
+  <!-- 7 · DEPOSIT SOL -->
+  <section class="slide" aria-label="Transact deposit SOL">
+    <div class="slide__inner">
+      <p class="eyebrow">Transact &middot; <span class="mono">ext_amount &gt; 0</span> &middot; deposit SOL</p>
+      <h2 class="h2">Deposit &mdash; signer pays the vault</h2>
+
+      <ol class="steps">
+        <li><span><b>Load &amp; validate</b> &mdash; <span class="mono">verify_signer(signer)</span>, parse <span class="mono">TransactArgs</span>, check the tree / vault / config are initialized and their PDAs rederive.</span></li>
+        <li><span><b>Cross-tree guard</b> &mdash; <span class="mono">verify_cross_nullifier(nullifier2, nullifier3)</span>: each must be empty or foreign-owned, blocking reuse on another tree.</span></li>
+        <li><span><b>Mark the two input nullifiers spent</b> &mdash; <span class="mono">init_nullifier_account</span> for nullifier0 &amp; nullifier1 <em>before any value moves</em>. A replay hits <span class="mono">AccountAlreadyInitialized</span>.</span></li>
+        <li><span><b>Root membership</b> &mdash; <span class="mono">is_known_root(root)</span>, else <span class="mono">UnknownRoot</span>.</span></li>
+        <li><span><b>ext_data hash</b>, <b>public amount</b>, <b>fee bounds</b> &mdash; recompute all three and compare to the proof.</span></li>
+        <li><span><b>Groth16 verify</b> &mdash; the pairing over the 7 public inputs, else <span class="mono">InvalidProof</span>.</span></li>
+        <li><span><b>Deposit cap</b> &mdash; <span class="mono">ext_amount &le; max_deposit_amount</span>, else <span class="mono">DepositLimitExceeded</span> (1000 SOL default).</span></li>
+        <li><span><b>Move SOL</b> &mdash; CPI <span class="mono">system::Transfer { signer &rarr; tree_token_account }</span> for <span class="mono">ext_amount</span>.</span></li>
+        <li><span><b>Append both leaves</b> &mdash; <span class="mono">MerkleTree::append</span> for each output commitment; the new root enters the 100-root ring.</span></li>
+      </ol>
+
+      <div class="flow" style="margin-top:1.2rem">
+        <div class="fnode" style="--cc:var(--c-program)"><h5>signer</h5><p>pays ext_amount</p></div>
+        <div class="farrow">system::Transfer</div>
+        <div class="fnode" style="--cc:var(--c-indexer)"><h5>SOL vault</h5><p>escrows lamports</p></div>
+        <div class="farrow dash">append</div>
+        <div class="fnode" style="--cc:var(--c-data)"><h5>tree</h5><p>+2 commitment leaves</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 · WITHDRAW SOL -->
+  <section class="slide" aria-label="Transact withdraw SOL">
+    <div class="slide__inner">
+      <p class="eyebrow">Transact &middot; <span class="mono">ext_amount &lt; 0</span> &middot; withdraw SOL</p>
+      <h2 class="h2">Withdraw &mdash; the vault pays out</h2>
+      <p class="body mute" style="margin-bottom:1rem">Steps 1&ndash;6 are identical to the deposit (load &rarr; nullifier guard &rarr; nullifier init &rarr; root &rarr; hashes/amount/fee &rarr; proof). The branch diverges here:</p>
+
+      <ol class="steps">
+        <li><span><b>Solvency check</b> &mdash; <span class="mono">total = |ext_amount| + fee + rent_exempt_minimum</span>; require <span class="mono">vault.lamports &ge; total</span>, else <span class="mono">InsufficientFundsForWithdrawal (9)</span>.</span></li>
+        <li><span><b>Pay the recipient</b> &mdash; direct <span class="mono">set_lamports</span>: vault <span class="mono">&minus;= |ext_amount|</span>, recipient <span class="mono">+= |ext_amount|</span>. No CPI &mdash; the program owns the vault PDA, the runtime holds the sum invariant.</span></li>
+        <li><span><b>Pay the fee</b> (if <span class="mono">fee &gt; 0</span>) &mdash; <span class="mono">set_lamports</span> vault <span class="mono">&minus;= fee</span>, fee_recipient <span class="mono">+= fee</span>.</span></li>
+        <li><span><b>Append both output leaves</b> &mdash; the change note(s) re-enter the tree; new root rotates into history.</span></li>
+      </ol>
+
+      <div class="flow" style="margin-top:1.2rem">
+        <div class="fnode" style="--cc:var(--c-indexer)"><h5>SOL vault</h5><p>holds the pool</p></div>
+        <div class="farrow">set_lamports</div>
+        <div class="fnode" style="--cc:var(--c-relayer)"><h5>recipient</h5><p>+ |ext_amount|</p></div>
+        <div class="farrow">+ fee</div>
+        <div class="fnode" style="--cc:var(--c-admin)"><h5>fee_recipient</h5><p>+ fee</p></div>
+        <div class="farrow dash">append</div>
+        <div class="fnode" style="--cc:var(--c-data)"><h5>tree</h5><p>+2 leaves</p></div>
+      </div>
+      <p class="footnote">The recipient and fee_recipient addresses come from the <span class="accent">on-chain accounts passed in</span> &mdash; not from the instruction data. They&rsquo;re bound into the proof via the ext_data hash, so they can&rsquo;t be swapped after the fact.</p>
+    </div>
+  </section>
+
+  <!-- 9 · TRANSACT SPL -->
+  <section class="slide" aria-label="TransactSpl">
+    <div class="slide__inner">
+      <p class="eyebrow">TransactSpl &middot; the SPL path</p>
+      <h2 class="h2">Same proof, real token accounts</h2>
+      <p class="lead" style="margin-bottom:1.2rem">The five gates are identical. What changes is the tree keying and the value movement &mdash; it goes through SPL token accounts, signed by PDAs.</p>
+
+      <div class="grid-2top">
+        <div class="col">
+          <div class="card">
+            <h4 style="--cc:var(--c-data)">Per-mint tree</h4>
+            <p>The tree PDA is <span class="mono">["merkle_tree", mint, bump]</span> &mdash; every SPL token gets its own frontier, root history, and deposit cap.</p>
+          </div>
+          <div class="card">
+            <h4 style="--cc:var(--c-sdk)">16 accounts, validated by hand</h4>
+            <p>Mint, the signer&rsquo;s token account (checked <span class="mono">owner == signer &amp;&amp; mint == mint</span>), recipient &amp; fee-recipient ATAs, the <span class="mono">tree_ata</span>, token &amp; ATA programs.</p>
+          </div>
+          <div class="card">
+            <h4 style="--cc:var(--c-admin)">global_config owns the vault</h4>
+            <p>The <span class="mono">tree_ata</span>&rsquo;s authority is the <span class="mono">global_config</span> PDA. Every outflow is a <span class="mono">TokenTransfer</span> signed by that PDA.</p>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card">
+            <h4 style="--cc:var(--c-indexer)">Deposit &mdash; into the pool</h4>
+            <p><span class="mono">CreateIdempotent</span> the <span class="mono">tree_ata</span> (signer pays rent, no-op if it exists), then <span class="mono">TokenTransfer signer_ata &rarr; tree_ata</span> signed by the signer.</p>
+          </div>
+          <div class="card">
+            <h4 style="--cc:var(--c-relayer)">Withdraw &mdash; out of the pool</h4>
+            <p><span class="mono">TokenTransfer tree_ata &rarr; recipient_token_account</span> signed by <span class="mono">global_config</span>; the fee transfer is identical. No rent-exempt precheck &mdash; the token program rejects an over-spend.</p>
+          </div>
+          <div class="card">
+            <h4 style="--cc:var(--c-program)">Reentrancy-proof</h4>
+            <p>Nullifier PDAs are <span class="mono">init</span>&rsquo;d <em>before</em> any token transfer &mdash; the documented reason a callback can&rsquo;t double-spend mid-flight.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10 · PROOF & TREE INTERNALS -->
+  <section class="slide" aria-label="Proof and tree internals">
+    <div class="slide__inner">
+      <p class="eyebrow">Under the hood</p>
+      <h2 class="h2">Groth16 verifier &amp; the Poseidon tree</h2>
+      <div class="grid-2top" style="margin-top:.4rem">
+        <div class="col">
+          <div class="card">
+            <h4 style="--cc:var(--c-relayer)">Groth16 over BN254</h4>
+            <p>The verifying key is a compile-time <span class="mono">const</span>, not an account. <span class="mono">verify_proof</span> deserializes A as a G1 point (on-curve check), <span class="accent">negates</span> it, endianness-swaps, then drives the <span class="mono">alt_bn128</span> precompiles.</p>
+          </div>
+          <div class="card">
+            <h4 style="--cc:var(--c-relayer)">The pairing, concretely</h4>
+            <p><span class="mono">prepare_inputs</span>: 7&times; G1-scalar-mul + 7&times; G1-add. Then one <span class="mono">alt_bn128_pairing_be</span> over 4 pairs: <span class="mono">(&minus;A,B),(IC,&gamma;),(C,&delta;),(&alpha;,&beta;)</span>. Pass iff result is 1.</p>
+          </div>
+          <div class="card">
+            <h4 style="--cc:var(--c-data)">7 public inputs (in order)</h4>
+            <p><span class="mono">root, public_amount, ext_data_hash, nullifier0, nullifier1, out_commit0, out_commit1</span>. Everything else is private witness.</p>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card">
+            <h4 style="--cc:var(--c-data)">Incremental Poseidon tree</h4>
+            <p>Height 26 &rarr; 2<sup>26</sup> leaves. Hashing is a 2-to-1 <span class="mono">Poseidon</span> via the <span class="mono">sol_poseidon</span> syscall (BN254, big-endian, Circom params). Commitments are inserted <em>directly as leaves</em> &mdash; no per-leaf hash.</p>
+          </div>
+          <div class="card">
+            <h4 style="--cc:var(--c-data)">Filled-subtree frontier</h4>
+            <p>Only <span class="mono">subtrees[26]</span> is stored &mdash; not every leaf. Zero-hash siblings come from a precomputed constant. <span class="mono">append()</span> walks 26 levels and rotates the root.</p>
+          </div>
+          <div class="card">
+            <h4 style="--cc:var(--c-data)">100-root ring buffer</h4>
+            <p><span class="mono">root_history[100]</span> holds recent roots; <span class="mono">is_known_root</span> scans it once and rejects the all-zero root. No events &mdash; leaf index is read from <span class="mono">next_index</span>.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 11 · EXT DATA & HASH -->
+  <section class="slide" aria-label="ext_data and the hash">
+    <div class="slide__inner">
+      <p class="eyebrow">The binding</p>
+      <h2 class="h2">ext_data &mdash; how the proof is pinned to reality</h2>
+      <p class="lead" style="margin-bottom:1.2rem">The instruction carries only <span class="mono">ExtDataMinified</span> &mdash; the two fields not already in the account list. The program reassembles the full payload from the live accounts and hashes it.</p>
+
+      <div class="grid-2top">
+        <div class="codeblk">
+<span class="cm">// utils.rs — SHA-256, not Poseidon</span>
+calculated = sha256(
+  recipient      <span class="cm">// 32 — from the account</span>
+  || ext_amount.le(8)
+  || u32.le(enc1.len) || enc1
+  || u32.le(enc2.len) || enc2
+  || fee.le(8)
+  || fee_recipient <span class="cm">// 32 — from the account</span>
+  || mint_address  <span class="cm">// SOL_ADDRESS for the SOL path</span>
+);
+
+<span class="cm">// field-element compare (the subtle part)</span>
+Fr::<span class="fn">from_le_bytes</span>(calculated)
+  == Fr::<span class="fn">from_be_bytes</span>(proof.ext_data_hash)</div>
+        <div class="col">
+          <div class="card">
+            <h4 style="--cc:var(--c-relayer)">Why it exists</h4>
+            <p>Recipient, fee_recipient and mint <span class="accent">cannot be circuit public inputs</span> (too many). Instead they&rsquo;re committed via this hash, which <em>is</em> a public input.</p>
+          </div>
+          <div class="card">
+            <h4 style="--cc:var(--c-program)">What it prevents</h4>
+            <p>Swap the recipient, redirect the fee, change the amount, or switch mints &mdash; the recomputed hash no longer matches the proof, so the proof is void. A withdrawal can&rsquo;t be redirected.</p>
+          </div>
+          <div class="card">
+            <h4 style="--cc:var(--c-data)">The endianness trap</h4>
+            <p>Solana SHA-256 is little-endian; the circuit reads field elements big-endian. The prover must encode the digest big-endian, or the on-chain compare silently fails.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 12 · NULLIFIERS -->
+  <section class="slide" aria-label="Nullifiers and double-spend">
+    <div class="slide__inner">
+      <p class="eyebrow">Double-spend defense</p>
+      <h2 class="h2">Nullifiers &mdash; existence is spending</h2>
+      <p class="lead" style="margin-bottom:1.2rem">A nullifier is spent <span class="accent">if and only if its PDA account exists</span>. The program never stores a value &mdash; it creates the account.</p>
+
+      <div class="grid-2top">
+        <div class="col">
+          <div class="card">
+            <h4 style="--cc:var(--c-relayer)">Same-tree: init before move</h4>
+            <p><span class="mono">nullifier0</span> &amp; <span class="mono">nullifier1</span> are <span class="mono">init</span>&rsquo;d via <span class="mono">system::CreateAccount</span> <em>before</em> any value moves. Spend the same proof twice and the second <span class="mono">CreateAccount</span> fails with <span class="mono">AccountAlreadyInitialized</span>.</p>
+          </div>
+          <div class="card">
+            <h4 style="--cc:var(--c-data)">Cross-tree: the swapped-prefix guard</h4>
+            <p><span class="mono">nullifier2</span> / <span class="mono">nullifier3</span> re-derive the same hashes under the <em>other</em> seed prefix. <span class="mono">verify_cross_nullifier</span> fails if either is program-owned &amp; non-empty &mdash; closing the slot-swap loophole.</p>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card">
+            <h4 style="--cc:var(--c-program)">One-way by construction</h4>
+            <p>The nullifier is a Poseidon digest of the note&rsquo;s secret. Spending reveals it, but it can&rsquo;t be inverted back to the leaf or your spending key &mdash; it&rsquo;s the <em>only</em> on-chain link between a withdraw and a deposit.</p>
+          </div>
+          <div class="card">
+            <h4 style="--cc:var(--c-sdk)">Structurally reentrancy-proof</h4>
+            <p>Because nullifier accounts exist before the token transfer begins, a malicious CPI mid-transfer cannot double-spend the same note &mdash; the second init is already doomed.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 13 · CONFIG, LIMITS & RECAP -->
+  <section class="slide" aria-label="Config limits and recap">
+    <div class="slide__inner">
+      <p class="eyebrow"><span class="chip chip--admin" style="padding:.2em .6em">admin</span></p>
+      <h2 class="h2">Config &amp; limits &mdash; then the guarantees</h2>
+
+      <div class="grid-2top" style="margin-bottom:1.2rem">
+        <div class="card">
+          <h4 style="--cc:var(--c-admin)">UpdateGlobalConfig</h4>
+          <p>A bitmask (<span class="mono">VALID_MASK = 7</span>) selects which rate to write: deposit (1), withdrawal (2), margin (4). Each must be &le; 10 000 bps, and <span class="mono">verify_authority</span> must pass.</p>
+        </div>
+        <div class="card">
+          <h4 style="--cc:var(--c-admin)">UpdateDepositLimit(&hellip;ForSpl)</h4>
+          <p>Sets <span class="mono">max_deposit_amount</span> on the SOL tree, or a per-mint tree (PDA re-derived with the mint). Authority-gated; no admin allowlist is compiled in today.</p>
+        </div>
+      </div>
+
+      <div class="cards">
+        <div class="card"><h4 style="--cc:var(--c-relayer)">Gates before value</h4><p>Root, ext_data hash, public amount, fee bounds and the pairing all pass <em>before</em> a lamport or token moves.</p></div>
+        <div class="card"><h4 style="--cc:var(--c-relayer)">Double-spend impossible</h4><p>Nullifier PDAs are created up front; a replay dies at <span class="mono">CreateAccount</span>, never at the pairing.</p></div>
+        <div class="card"><h4 style="--cc:var(--c-indexer)">Funds can&rsquo;t be redirected</h4><p>Recipient &amp; fee are on-chain accounts bound into the proof via the ext_data hash.</p></div>
+        <div class="card"><h4 style="--cc:var(--c-data)">Vault stays solvent</h4><p>SOL withdrawals must leave the rent-exempt floor; SPL over-spends fail inside the token program.</p></div>
+        <div class="card"><h4 style="--cc:var(--c-program)">No trusted submitter</h4><p>Whoever signs only pays gas &amp; rent &mdash; the proof, not the signer, authorizes the move.</p></div>
+      </div>
+      <p class="footnote" style="margin-top:1.6rem; font-size:.9rem">See the step-by-step animation &mdash; <a href="flow_onchain.html" class="accent">flow_onchain.html</a>. Questions?</p>
+    </div>
+  </section>
+
+</main>
+
+<nav class="nav" id="nav" aria-label="Slide navigation">
+  <button id="prev" title="Previous (←)" aria-label="Previous">‹</button>
+  <div class="dots" id="dots"></div>
+  <button id="next" title="Next (→)" aria-label="Next">›</button>
+</nav>
+
+<div class="counter" id="counter"><b id="cur">1</b> / <span id="tot">13</span></div>
+<div class="hint">← → navigate &middot; F fullscreen</div>
+
+<script>
+  (function(){
+    var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+    var total = slides.length;
+    var idx = 0;
+    var dotsEl = document.getElementById('dots');
+    var curEl = document.getElementById('cur');
+    var totEl = document.getElementById('tot');
+    var progress = document.getElementById('progress');
+
+    totEl.textContent = total;
+
+    slides.forEach(function(s, i){
+      var d = document.createElement('i');
+      d.setAttribute('role','button');
+      d.setAttribute('tabindex','0');
+      d.setAttribute('aria-label','Slide ' + (i+1));
+      d.addEventListener('click', function(){ go(i); });
+      dotsEl.appendChild(d);
+    });
+    var dots = Array.prototype.slice.call(dotsEl.children);
+
+    function render(){
+      slides.forEach(function(s,i){ s.classList.toggle('is-active', i===idx); });
+      dots.forEach(function(d,i){ d.classList.toggle('on', i===idx); });
+      curEl.textContent = idx+1;
+      progress.style.width = ((idx+1)/total*100) + '%';
+    }
+    function go(i){ idx = Math.max(0, Math.min(total-1, i)); render(); }
+    function next(){ go(idx+1); }
+    function prev(){ go(idx-1); }
+
+    document.getElementById('next').addEventListener('click', next);
+    document.getElementById('prev').addEventListener('click', prev);
+
+    document.addEventListener('keydown', function(e){
+      var k = e.key;
+      if(k==='ArrowRight' || k==='PageDown' || k===' '){ e.preventDefault(); next(); }
+      else if(k==='ArrowLeft' || k==='PageUp'){ e.preventDefault(); prev(); }
+      else if(k==='Home'){ e.preventDefault(); go(0); }
+      else if(k==='End'){ e.preventDefault(); go(total-1); }
+      else if(k==='f' || k==='F'){
+        if(!document.fullscreenElement){ document.documentElement.requestFullscreen(); }
+        else { document.exitFullscreen(); }
+      }
+    });
+
+    var sx=0, sy=0;
+    document.addEventListener('touchstart', function(e){ sx=e.touches[0].clientX; sy=e.touches[0].clientY; }, {passive:true});
+    document.addEventListener('touchend', function(e){
+      var dx=e.changedTouches[0].clientX-sx, dy=e.changedTouches[0].clientY-sy;
+      if(Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)){ dx<0 ? next() : prev(); }
+    }, {passive:true});
+
+    var h = parseInt((location.hash||'').replace('#',''),10);
+    if(!isNaN(h) && h>=1 && h<=total){ idx = h-1; }
+    render();
+  })();
+</script>
+</body>
+</html>

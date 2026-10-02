@@ -1,0 +1,49 @@
+[package]
+name = "privacy-cash-backend"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+# Runtime + HTTP
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time"] }
+axum = "0.8"
+tower-http = { version = "0.6", features = ["cors", "trace","request-id"] }
+futures = "0.3"
+
+# Serde
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Postgres via SQLx
+sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls-ring", "postgres", "migrate"] }
+
+# Solana types + relayer (signing, tx, rpc). sdk 4.0.1 is the umbrella for the 4.x family.
+solana-sdk = "4.0.1"
+bincode = "1"
+
+# Merkle / field-arithmetic — must match the on-chain program exactly.
+light-hasher = "4.0.0"
+ark-bn254 = "0.5"
+ark-ff = "0.5"
+
+# Yellowstone gRPC (live tx stream — replaces RPC poll)
+yellowstone-grpc-client = "13.2.1"
+yellowstone-grpc-proto = { version = "12.5.0", features = ["tonic"] }
+
+# Encoding for ix data / note lookups
+bs58 = "0.5"
+hex = "0.4"
+base64 = "0.22"
+
+# Config / errors / logs
+dotenvy = "0.15"
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+
+rs-merkle-tree = {git = "https://github.com/Cheapstar/rs-merkle-tree.git", features = ["rocksdb_store_v2"]}
+rocksdb = { version = "0.24" }
+uuid = { version = "1.25.0", features = ["v4"] }
+chrono = "0.4.45"
+num-bigint = "=0.4.8"
