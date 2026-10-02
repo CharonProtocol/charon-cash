@@ -109,12 +109,6 @@ export function EmployerApp() {
       {/* Sidebar nav (top tab bar on phones) */}
       <aside className="lg:w-52 lg:flex-none">
         <div className="flex items-center justify-between gap-2 lg:sticky lg:top-6 lg:flex-col lg:items-stretch lg:gap-1">
-          <div className="hidden lg:block">
-            <div className="mb-4 flex items-center gap-2">
-              <img src="/charon-mark.png" alt="Charon" className="size-7 rounded-md" />
-              <p className="h-display text-lg">Charon Pay</p>
-            </div>
-          </div>
           {(
             [
               ["payroll", "Payroll", Play],

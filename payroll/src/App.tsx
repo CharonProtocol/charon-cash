@@ -49,9 +49,7 @@ export default function App() {
             onClick={() => go("landing")}
             aria-label="Back to landing"
           >
-            <div className="flex size-7 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
-              P
-            </div>
+            <img src="/charon-mark.png" alt="" className="size-7 rounded-md" />
             <span className="hidden font-semibold tracking-tight sm:inline">Charon Pay</span>
           </button>
           <div className="flex items-center gap-2">
