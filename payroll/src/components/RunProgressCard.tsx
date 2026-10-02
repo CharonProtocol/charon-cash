@@ -63,14 +63,21 @@ function initials(memo: string | undefined, address: string) {
   return fromMemo || shortHash(address, 2, 0).toUpperCase()
 }
 
-function Row({ status, address, memo, sig, error, noteLeafIndex }: {
+function Row({ status, address, memo, sig, error, noteLeafIndex, noteCommitment, startedAt, confirmedAt, nowMs }: {
   status: EntryStatus
   address: string
   memo?: string
   sig?: string
   error?: string
   noteLeafIndex?: number
+  noteCommitment?: string
+  startedAt?: number
+  confirmedAt?: number
+  nowMs?: number
 }) {
+  const inFlight = status === "proving" || status === "relayed" || status === "confirming"
+  const doneMs = confirmedAt !== undefined && startedAt !== undefined ? confirmedAt - startedAt : undefined
+  const liveMs = inFlight && startedAt !== undefined && nowMs !== undefined ? Math.max(0, nowMs - startedAt) : undefined
   return (
     <div className="flex items-center gap-3 rounded-xl bg-secondary/70 px-3 py-2.5">
       <span className="flex size-7 flex-none items-center justify-center rounded-full bg-card text-[11px] font-semibold text-muted-foreground">
@@ -83,6 +90,7 @@ function Row({ status, address, memo, sig, error, noteLeafIndex }: {
         <span className="block truncate font-mono text-[11px] text-muted-foreground">
           {shortHash(address, 6, 4)}
           {noteLeafIndex !== undefined && ` · note @ leaf ${noteLeafIndex}`}
+          {noteCommitment && ` · ${shortHash(noteCommitment, 6, 4)}`}
         </span>
         {error && (
           <span className="mt-0.5 block break-words font-mono text-[11px] text-destructive">
@@ -102,6 +110,11 @@ function Row({ status, address, memo, sig, error, noteLeafIndex }: {
           </a>
         )}
       </span>
+      {(doneMs !== undefined || liveMs !== undefined) && (
+        <span className="flex-none font-mono text-[11px] tabular-nums text-muted-foreground">
+          {doneMs !== undefined ? fmtTime(doneMs / 1000) : `${fmtTime(liveMs!)}…`}
+        </span>
+      )}
       <StatusChip status={status} />
     </div>
   )
@@ -159,6 +172,113 @@ function Stat({ label, value, pulse }: { label: string; value: string; pulse?: b
   )
 }
 
+/** Re-renders once a second while `active`, so in-flight rows can show live elapsed. */
+function useTick(active: boolean): number {
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    if (!active) return
+    const t = setInterval(() => setTick((n) => n + 1), 1000)
+    return () => clearInterval(t)
+  }, [active])
+  return Date.now()
+}
+
+function TimelineStep({ n, label, detail, right, state }: {
+  n: number
+  label: string
+  detail: string
+  right: string
+  state: "done" | "active" | "pending"
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        className={`flex size-6 flex-none items-center justify-center rounded-full border text-[11px] font-semibold ${
+          state === "done"
+            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+            : state === "active"
+              ? "border-primary/50 bg-primary/10 text-primary"
+              : "border-border bg-secondary text-muted-foreground"
+        }`}
+      >
+        {state === "done" ? <Check className="size-3" /> : n}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-xs font-medium">{label}</span>
+        <span className="block truncate text-[11px] text-muted-foreground">{detail}</span>
+      </span>
+      <span className="flex-none font-mono text-xs tabular-nums">{right}</span>
+    </div>
+  )
+}
+
+/** End-of-run (and live) step timeline: deposit → payouts → total. */
+function RunTimeline({
+  fundingDeposited,
+  awaitingSig,
+  depositMs,
+  payoutsSpanMs,
+  meanMs,
+  fastestMs,
+  slowestMs,
+  totalMs,
+  merges,
+  sent,
+  total,
+  phase,
+}: {
+  fundingDeposited: boolean
+  awaitingSig?: boolean
+  depositMs?: number
+  payoutsSpanMs?: number
+  meanMs?: number
+  fastestMs?: number
+  slowestMs?: number
+  totalMs?: number
+  merges?: number
+  sent: number
+  total: number
+  phase: RunSnapshot["phase"] | undefined
+}) {
+  const paying = phase === "paying"
+  return (
+    <div className="space-y-2 rounded-xl border bg-card/50 p-3">
+      {fundingDeposited && (
+        <TimelineStep
+          n={1}
+          state={depositMs !== undefined ? "done" : "active"}
+          label="Sign & deposit"
+          detail={awaitingSig ? "approve the signature in your wallet" : "one signature funded the vault"}
+          right={depositMs !== undefined ? fmtTime(depositMs / 1000) : awaitingSig ? "waiting…" : "confirming…"}
+        />
+      )}
+      <TimelineStep
+        n={fundingDeposited ? 2 : 1}
+        state={totalMs !== undefined ? "done" : paying || phase === "funding" ? "active" : "pending"}
+        label="Private payouts"
+        detail={
+          `${sent}/${total} paid` +
+          (meanMs !== undefined ? ` · mean ${fmtTime(meanMs / 1000)}` : "") +
+          (fastestMs !== undefined && slowestMs !== undefined
+            ? ` · range ${fmtTime(fastestMs / 1000)}–${fmtTime(slowestMs / 1000)}`
+            : "") +
+          (merges !== undefined && merges > 0 ? ` · ${merges} note merge${merges === 1 ? "" : "s"}` : "")
+        }
+        right={payoutsSpanMs !== undefined ? fmtTime(payoutsSpanMs / 1000) : "—"}
+      />
+      {totalMs !== undefined && (
+        <TimelineStep
+          n={fundingDeposited ? 3 : 2}
+          state="done"
+          label="Run complete"
+          detail="from your deposit signature to the last payout confirming"
+          right={fmtTime(totalMs / 1000)}
+        />
+      )}
+    </div>
+  )
+}
+
 function CountChips({ rows }: { rows: Array<{ status: string }> }) {
   const count = (m: (s: string) => boolean) => rows.filter((r) => m(r.status)).length
   const chips: Array<[number, string, string]> = [
@@ -207,6 +327,36 @@ export function RunProgressCard({
   const pct = rows.length ? Math.round((sent / rows.length) * 100) : 0
   const running = !done && !aborted
 
+  // ---- timing roll-up (old receipts without timestamps simply show no timeline) ----
+  const nowMs = useTick(running)
+  const startedAt = receipt?.startedAt ?? snapshot?.startedAt
+  const fundedAt = receipt?.fundedAt ?? snapshot?.fundedAt
+  const finishedAt = receipt?.finishedAt
+  const endMs = finishedAt ?? (running ? nowMs : undefined)
+  const depositMs = startedAt !== undefined && fundedAt !== undefined ? fundedAt - startedAt : undefined
+  const timed = rows.filter((r) => r.startedAt !== undefined) as Array<{
+    startedAt: number
+    confirmedAt?: number
+    status: string
+  }>
+  const payoutStart = timed.length ? Math.min(...timed.map((r) => r.startedAt)) : undefined
+  const payoutEnd =
+    payoutStart !== undefined
+      ? Math.max(...timed.map((r) => r.confirmedAt ?? (running || aborted ? nowMs : r.startedAt)))
+      : undefined
+  const payoutsSpanMs = payoutStart !== undefined && payoutEnd !== undefined ? payoutEnd - payoutStart : undefined
+  const durations = timed
+    .filter((r) => r.confirmedAt !== undefined)
+    .map((r) => r.confirmedAt! - r.startedAt)
+    .sort((a, b) => a - b)
+  const meanMs = durations.length ? Math.round(durations.reduce((s, d) => s + d, 0) / durations.length) : undefined
+  const fastestMs = durations[0]
+  const slowestMs = durations[durations.length - 1]
+  const totalMs = startedAt !== undefined && endMs !== undefined ? endMs - startedAt : undefined
+  const showTimeline = startedAt !== undefined && (running || done || aborted)
+  const fundingDeposited =
+    (receipt?.funding ?? null) != null || snapshot?.depositSig !== undefined || snapshot?.phase === "funding"
+
   const title = done
     ? `Run ${receipt!.summary.sent}/${receipt!.summary.total} sent`
     : aborted
@@ -233,6 +383,22 @@ export function RunProgressCard({
         </div>
         {running && <LiveStats sent={sent} total={rows.length} failed={failed} />}
         <CountChips rows={rows} />
+        {showTimeline && (
+          <RunTimeline
+            fundingDeposited={fundingDeposited}
+            awaitingSig={running && snapshot?.phase === "funding" && !fundedAt}
+            depositMs={depositMs}
+            payoutsSpanMs={payoutsSpanMs}
+            meanMs={meanMs}
+            fastestMs={fastestMs}
+            slowestMs={slowestMs}
+            totalMs={totalMs}
+            merges={receipt?.merges}
+            sent={sent}
+            total={rows.length}
+            phase={snapshot?.phase}
+          />
+        )}
         {aborted && (
           <div className="flex items-start gap-2 rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-600 dark:text-rose-400">
             <Square className="mt-0.5 size-3 flex-none" />
@@ -255,6 +421,10 @@ export function RunProgressCard({
               sig={r.txSignature}
               error={r.error}
               noteLeafIndex={r.noteLeafIndex}
+              noteCommitment={r.noteCommitment}
+              startedAt={r.startedAt}
+              confirmedAt={r.confirmedAt}
+              nowMs={nowMs}
             />
           ))}
         </div>

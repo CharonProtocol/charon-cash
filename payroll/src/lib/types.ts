@@ -36,6 +36,10 @@ export interface ReceiptEntry {
   noteLeafIndex?: number
   /** Shielded mode only: commitment of the recipient's note (hex). */
   noteCommitment?: string
+  /** Epoch ms: prove/relay began for this row, relay accepted it, chain confirmed. */
+  startedAt?: number
+  relayedAt?: number
+  confirmedAt?: number
 }
 
 export interface RunReceipt {
@@ -46,6 +50,12 @@ export interface RunReceipt {
   mode: RunMode
   totalPlanned: bigint
   entries: ReceiptEntry[]
-  funding?: { depositedRaw: bigint; txSignature: string } | null
+  funding?: { depositedRaw: bigint; txSignature: string; depositedAt?: number } | null
+  /** Epoch ms the run started, the deposit confirmed, and the last row settled. */
+  startedAt?: number
+  fundedAt?: number
+  finishedAt?: number
+  /** Fragment-merge self-transfers the engine ran to keep rows payable. */
+  merges?: number
   summary: { sent: number; failed: number; total: number }
 }

@@ -37,6 +37,17 @@ function rowStatus(e: RunReceipt["entries"][number]): RowStatus {
   return "pending"
 }
 
+function fmtDur(ms: number): string {
+  const s = ms / 1000
+  const m = Math.floor(s / 60)
+  const r = Math.round(s % 60)
+  return m > 0 ? `${m}m ${r.toString().padStart(2, "0")}s` : `${r}s`
+}
+
+function runDuration(r: RunReceipt): number | null {
+  return r.startedAt !== undefined && r.finishedAt !== undefined ? r.finishedAt - r.startedAt : null
+}
+
 export function HistoryPage({ onResumeFailed }: { onResumeFailed: (r: RunReceipt) => void }) {
   const runs = listRuns()
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -101,6 +112,7 @@ export function HistoryPage({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
                   {r.summary.failed > 0 && ` · ${r.summary.failed} failed`}
                   {" · "}
                   {r.mode === "shielded" ? "private" : "public"}
+                  {runDuration(r) !== null && ` · ${fmtDur(runDuration(r)!)}`}
                 </span>
               </button>
             ))}
@@ -116,6 +128,10 @@ export function HistoryPage({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
                 </CardTitle>
                 <CardDescription>
                   {new Date(selected.createdAt).toLocaleString()} · {selected.asset.kind === "sol" ? "SOL" : "SPL"} · {selected.mode === "shielded" ? "private notes" : "direct"}
+                  {runDuration(selected) !== null && ` · full run ${fmtDur(runDuration(selected)!)}`}
+                  {selected.fundedAt !== undefined && selected.startedAt !== undefined &&
+                    ` · deposit ${fmtDur(selected.fundedAt - selected.startedAt)}`}
+                  {(selected.merges ?? 0) > 0 && ` · ${selected.merges} note merges`}
                 </CardDescription>
               </div>
               <div className="flex gap-1.5">
@@ -140,29 +156,42 @@ export function HistoryPage({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
                       <th className="px-3 py-2 font-medium">Name</th>
                       <th className="px-3 py-2 font-medium">To</th>
                       <th className="px-3 py-2 font-medium">Amount</th>
+                      <th className="hidden px-3 py-2 font-medium sm:table-cell">Took</th>
                       <th className="px-3 py-2 font-medium">Status</th>
-                      <th className="px-3 py-2 font-medium">Tx</th>
+                      <th className="px-3 py-2 font-medium">Proof</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
                     {selected.entries.map((e) => {
                       const st = rowStatus(e)
+                      const took = e.startedAt !== undefined && e.confirmedAt !== undefined
+                        ? fmtDur(e.confirmedAt - e.startedAt)
+                        : null
                       return (
                         <tr key={e.address} className="bg-card">
                           <td className="px-3 py-2 font-medium">{e.memo ?? "—"}</td>
                           <td className="px-3 py-2 font-mono text-muted-foreground">{shortHash(e.address, 5, 4)}</td>
                           <td className="px-3 py-2 font-mono">{e.amountHuman}</td>
+                          <td className="hidden px-3 py-2 font-mono text-muted-foreground sm:table-cell">{took ?? "—"}</td>
                           <td className="px-3 py-2"><StatusChip status={st} /></td>
                           <td className="px-3 py-2">
                             {e.txSignature ? (
-                              <a
-                                className="inline-flex items-center gap-1 font-mono text-muted-foreground hover:text-foreground"
-                                href={explorerTxUrl(e.txSignature)}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                {shortHash(e.txSignature, 5, 4)}
-                              </a>
+                              <div className="flex flex-col gap-0.5">
+                                <a
+                                  className="inline-flex items-center gap-1 font-mono text-muted-foreground hover:text-foreground"
+                                  href={explorerTxUrl(e.txSignature)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  {shortHash(e.txSignature, 5, 4)}
+                                </a>
+                                {e.noteLeafIndex !== undefined && (
+                                  <span className="font-mono text-[10px] text-muted-foreground">
+                                    note @ leaf {e.noteLeafIndex}
+                                    {e.noteCommitment && ` · ${shortHash(e.noteCommitment, 5, 4)}`}
+                                  </span>
+                                )}
+                              </div>
                             ) : (
                               <span className="text-destructive" title={e.error}>{st === "failed" ? "—" : "…"}</span>
                             )}

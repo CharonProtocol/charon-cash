@@ -19,6 +19,13 @@ export function HistoryCard({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
 
   if (runs.length === 0) return null
 
+  const fmtDur = (ms: number) => {
+    const s = ms / 1000
+    const m = Math.floor(s / 60)
+    const r = Math.round(s % 60)
+    return m > 0 ? `${m}m ${r.toString().padStart(2, "0")}s` : `${r}s`
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -41,13 +48,28 @@ export function HistoryCard({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
                 {r.asset.kind === "sol" ? "SOL" : "SPL"}
                 {r.mode === "shielded" && " · private"} · {r.summary.sent}/{r.summary.total} sent
                 {r.summary.failed > 0 && ` · ${r.summary.failed} failed`}
+                {r.startedAt !== undefined && r.finishedAt !== undefined &&
+                  ` · ${fmtDur(r.finishedAt - r.startedAt)}`}
               </span>
             </button>
             {openId === r.id && (
               <div className="space-y-2 border-t px-3 py-2">
+                {r.startedAt !== undefined && r.finishedAt !== undefined && (
+                  <p className="text-[11px] text-muted-foreground">
+                    full run {fmtDur(r.finishedAt - r.startedAt)}
+                    {r.fundedAt !== undefined && r.startedAt !== undefined &&
+                      ` · deposit ${fmtDur(r.fundedAt - r.startedAt)}`}
+                    {(r.merges ?? 0) > 0 && ` · ${r.merges} note merges`}
+                  </p>
+                )}
                 {r.entries.map((e) => (
                   <div key={e.address} className="flex items-center justify-between gap-2 text-xs">
-                    <span className="font-mono">{shortHash(e.address, 6, 4)} · {e.amountHuman}</span>
+                    <span className="font-mono">
+                      {shortHash(e.address, 6, 4)} · {e.amountHuman}
+                      {e.startedAt !== undefined && e.confirmedAt !== undefined && (
+                        <span className="ml-1 text-muted-foreground">({fmtDur(e.confirmedAt - e.startedAt)})</span>
+                      )}
+                    </span>
                     <span className="inline-flex items-center gap-2">
                       {e.noteLeafIndex !== undefined && (
                         <span className="font-mono text-muted-foreground">note @ leaf {e.noteLeafIndex}</span>

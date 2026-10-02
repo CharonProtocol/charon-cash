@@ -16,12 +16,19 @@ export interface RowState {
   attempts: number
   noteLeafIndex?: number
   noteCommitment?: string
+  /** Epoch ms: first attempt began, relay accepted the payout, chain confirmed. */
+  startedAt?: number
+  relayedAt?: number
+  confirmedAt?: number
 }
 
 export interface RunSnapshot {
   phase: "funding" | "paying" | "settled" | "aborted"
   rows: RowState[]
   depositSig?: string
+  /** Epoch ms the run began; fundedAt lands once the deposit confirms. */
+  startedAt: number
+  fundedAt?: number
 }
 
 export interface RunRequest {
@@ -183,6 +190,9 @@ class NoteLedger {
 export class PayrollEngine {
   private cancelled = false
   private emit: (phase: RunSnapshot["phase"], depositSig?: string) => void = () => {}
+  private startedAt = 0
+  private fundedAt?: number
+  private merges = 0
 
   constructor(private deps: EngineDeps) {}
 
@@ -192,6 +202,9 @@ export class PayrollEngine {
 
   async run(req: RunRequest, onUpdate?: (s: RunSnapshot) => void): Promise<RunReceipt> {
     this.cancelled = false
+    this.startedAt = this.deps.now()
+    this.fundedAt = undefined
+    this.merges = 0
     const decimals = req.asset.kind === "sol" ? 9 : req.asset.decimals
     const plan = planRun(req.entries, decimals, req.bps, req.vaultRaw, {
       mode: req.mode,
@@ -206,7 +219,13 @@ export class PayrollEngine {
       attempts: 0,
     }))
     this.emit = (phase, depositSig) =>
-      onUpdate?.({ phase, rows: rows.map((r) => ({ ...r })), depositSig })
+      onUpdate?.({
+        phase,
+        rows: rows.map((r) => ({ ...r })),
+        depositSig,
+        startedAt: this.startedAt,
+        fundedAt: this.fundedAt,
+      })
 
     await this.deps.client.init()
     await this.deps.client.unlock()
@@ -232,7 +251,8 @@ export class PayrollEngine {
         lastLeaf = dep.leafIndex
         await this.deps.waitUntilIndexed(treeKeyOf(req.asset), lastLeaf)
         await this.deps.client.refreshNotes()
-        funding = { depositedRaw: plan.shortfall, txSignature: firstSig ?? "" }
+        this.fundedAt = this.deps.now()
+        funding = { depositedRaw: plan.shortfall, txSignature: firstSig ?? "", depositedAt: this.fundedAt }
         this.emit("funding", firstSig)
       } catch (e) {
         for (const r of rows) {
@@ -314,6 +334,7 @@ export class PayrollEngine {
           for (let i = 0; i < 4; i++) net = merged - feeOf(net)
           if (net + feeOf(net) > merged) net = merged - feeOf(net)
           if (net <= 0n) return
+          this.merges++
           const pins = {
             relay: true as const,
             inputNotes: [{ blinding: free[0].blinding }, { blinding: free[1].blinding }],
@@ -393,6 +414,7 @@ export class PayrollEngine {
           return
         }
         row.attempts = attempt
+        if (!row.startedAt) row.startedAt = this.deps.now()
         row.status = "proving"
         this.emit("paying", funding?.txSignature)
         let pinned: PinnedNotes | null = null
@@ -440,9 +462,11 @@ export class PayrollEngine {
             row.txSignature = res.signature
           }
           row.error = undefined
+          row.relayedAt = this.deps.now()
           row.status = "relayed"
           this.emit("paying", funding?.txSignature)
           row.status = (await this.deps.confirmSignature(sig)) ? "confirmed" : "confirming"
+          row.confirmedAt = this.deps.now()
           this.emit("paying", funding?.txSignature)
           if (pinned && ledger) {
             ledger.commitSpent(pinned)
@@ -539,7 +563,11 @@ export class PayrollEngine {
       attempts: r.attempts,
       noteLeafIndex: r.noteLeafIndex,
       noteCommitment: r.noteCommitment,
+      startedAt: r.startedAt,
+      relayedAt: r.relayedAt,
+      confirmedAt: r.confirmedAt,
     }))
+    const finishedAt = this.deps.now()
     const receipt: RunReceipt = {
       id: this.deps.newId(),
       createdAt: this.deps.now(),
@@ -549,6 +577,10 @@ export class PayrollEngine {
       totalPlanned,
       entries,
       funding,
+      startedAt: this.startedAt,
+      fundedAt: this.fundedAt,
+      finishedAt,
+      merges: this.merges,
       summary: {
         sent: entries.filter((e) => e.status === "sent").length,
         failed: entries.filter((e) => e.status === "failed").length,

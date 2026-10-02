@@ -49,7 +49,7 @@ export function EmployerApp() {
       if (!client || !entries || !fileHash || bps === null) return
       lastRun.current = { asset, mode, fileHash }
       setReceipt(null)
-      setSnapshot({ phase: "funding", rows: entries.map((e) => ({ ...e, status: "queued" as const, attempts: 0 })) })
+      setSnapshot({ phase: "funding", rows: entries.map((e) => ({ ...e, status: "queued" as const, attempts: 0 })), startedAt: Date.now() })
       const engine = createEngine(client)
       engineRef.current = engine
       try {
@@ -189,15 +189,21 @@ export function EmployerApp() {
           <p className="text-sm text-muted-foreground">Unlocking vault… (approve the signature request)</p>
         ) : (
           <>
-            <UploadCard onParsed={setParsed} />
-            <PlanReviewCard
-              parsed={parsed}
-              bps={bps}
-              minTransferFee={minTransferFee}
-              vaultSolRaw={vaultSolRaw}
-              disabled={!ready}
-              onRun={(asset, mode) => startRun(asset, undefined, undefined, mode)}
-            />
+            {/* A live run owns the page: upload + review hide the moment the
+                run starts and only come back on "New run". */}
+            {!snapshot && (
+              <>
+                <UploadCard onParsed={setParsed} />
+                <PlanReviewCard
+                  parsed={parsed}
+                  bps={bps}
+                  minTransferFee={minTransferFee}
+                  vaultSolRaw={vaultSolRaw}
+                  disabled={!ready}
+                  onRun={(asset, mode) => startRun(asset, undefined, undefined, mode)}
+                />
+              </>
+            )}
             <RunProgressCard
               snapshot={snapshot}
               receipt={receipt}
