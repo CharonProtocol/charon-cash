@@ -253,6 +253,7 @@ function laneClient(ctl: {
   withdrawMs: number
   withdraws: Array<{ lamports: number; recipient: string; pins: string[] }>
   merges?: Array<{ net: bigint; pins: string[] }>
+  splits?: Array<{ net: bigint; pins: string[] }>
 }) {
   const SELF = "11111111111111111111111111111111"
   let changeSeq = 0
@@ -299,13 +300,26 @@ function laneClient(ctl: {
     transferNoteSOL: async (recipient: string, netLamports: number, opts) => {
       const pins = (opts?.inputNotes ?? []).map((p) => p.blinding)
       if (recipient === SELF) {
-        if (pins.length !== 2) throw new Error("merge must pin exactly two notes")
+        if (pins.length !== 2 && pins.length !== 1)
+          throw new Error("self transfer must pin one note (split) or two (merge)")
         let held = 0n
         for (const b of pins) {
           const i = ctl.notes.findIndex((n) => n.id === b)
           if (i < 0) throw new Error("pinned note vanished")
           held += ctl.notes[i].amount
           ctl.notes.splice(i, 1)
+        }
+        if (pins.length === 1) {
+          // split: the recipient note and the change note both land in the
+          // vault, so one note comes back as two
+          const fee = (BigInt(netLamports) * 25n + 9_999n) / 10_000n
+          const change = held - BigInt(netLamports) - fee
+          ctl.splits?.push({ net: BigInt(netLamports), pins })
+          if (change > 0n) ctl.notes.push({ id: `change${changeSeq}`, amount: change })
+          changeSeq++
+          ctl.notes.push({ id: `split${changeSeq}`, amount: BigInt(netLamports) })
+          changeSeq++
+          return { signature: `SPLIT-${changeSeq}`, leafIndex: 80 + changeSeq, commitment: `0xs${changeSeq}` }
         }
         const fee = (held * 25n + 9_999n) / 10_000n
         const merged = { id: `merged${changeSeq}`, amount: held - fee }
@@ -491,6 +505,54 @@ describe("PayrollEngine lanes", () => {
     expect(receipt.entries[0].error).toMatch(/insufficient/)
     expect(merges).toHaveLength(0)
     expect(withdraws).toHaveLength(0)
+  })
+
+  it("splits the funding note 1->2->4->8 before paying so lanes stop serializing", async () => {
+    // one big note + 12 rows: without the fan-out every payout queues on the
+    // same change chain; the engine splits it to lane width first, and every
+    // split half stays far above the widest row so no merge ever follows
+    const notes = [{ id: "big", amount: 100n * 10n ** 9n }]
+    const withdraws: Array<{ lamports: number; recipient: string; pins: string[] }> = []
+    const splits: Array<{ net: bigint; pins: string[] }> = []
+    const { client, listNotes } = laneClient({ notes, withdrawMs: 5, withdraws, splits })
+    const engine = new PayrollEngine(laneDeps(client, listNotes))
+    const receipt = await engine.run(
+      req({
+        vaultRaw: 10n ** 20n,
+        entries: Array.from({ length: 12 }, (_, i) => ({
+          address: String(i).repeat(32),
+          amountHuman: "1",
+        })),
+      }),
+    )
+    // 1->2->4->8: seven gasless self-transfers fan the note out to lane width
+    expect(splits).toHaveLength(7)
+    expect(splits.every((s) => s.pins.length === 1)).toBe(true)
+    expect(receipt.splits).toBe(7)
+    expect(receipt.summary).toEqual({ sent: 12, failed: 0, total: 12 })
+    // payouts still ran on distinct pins — no note ever fed two lanes
+    const pinned = withdraws.flatMap((w) => w.pins)
+    expect(new Set(pinned).size).toBe(pinned.length)
+  })
+
+  it("skips the split fan-out for short runs (below the 10-row threshold)", async () => {
+    const notes = [{ id: "big", amount: 100n * 10n ** 9n }]
+    const withdraws: Array<{ lamports: number; recipient: string; pins: string[] }> = []
+    const splits: Array<{ net: bigint; pins: string[] }> = []
+    const { client, listNotes } = laneClient({ notes, withdrawMs: 5, withdraws, splits })
+    const engine = new PayrollEngine(laneDeps(client, listNotes))
+    const receipt = await engine.run(
+      req({
+        vaultRaw: 10n ** 20n,
+        entries: Array.from({ length: 9 }, (_, i) => ({
+          address: String(i).repeat(32),
+          amountHuman: "1",
+        })),
+      }),
+    )
+    expect(splits).toHaveLength(0)
+    expect(receipt.splits).toBeUndefined()
+    expect(receipt.summary).toEqual({ sent: 9, failed: 0, total: 9 })
   })
 
   it("cancel() with more rows than lanes marks never-started rows failed-cancelled", async () => {

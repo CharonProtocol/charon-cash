@@ -223,6 +223,7 @@ function RunTimeline({
   slowestMs,
   totalMs,
   merges,
+  splits,
   sent,
   total,
   phase,
@@ -236,6 +237,7 @@ function RunTimeline({
   slowestMs?: number
   totalMs?: number
   merges?: number
+  splits?: number
   sent: number
   total: number
   phase: RunSnapshot["phase"] | undefined
@@ -262,7 +264,8 @@ function RunTimeline({
           (fastestMs !== undefined && slowestMs !== undefined
             ? ` · range ${fmtTime(fastestMs / 1000)}–${fmtTime(slowestMs / 1000)}`
             : "") +
-          (merges !== undefined && merges > 0 ? ` · ${merges} note merge${merges === 1 ? "" : "s"}` : "")
+          (merges !== undefined && merges > 0 ? ` · ${merges} note merge${merges === 1 ? "" : "s"}` : "") +
+          (splits !== undefined && splits > 0 ? ` · ${splits} lane split${splits === 1 ? "" : "s"}` : "")
         }
         right={payoutsSpanMs !== undefined ? fmtTime(payoutsSpanMs / 1000) : "—"}
       />
@@ -394,6 +397,7 @@ export function RunProgressCard({
             slowestMs={slowestMs}
             totalMs={totalMs}
             merges={receipt?.merges}
+            splits={receipt?.splits ?? snapshot?.splits}
             sent={sent}
             total={rows.length}
             phase={snapshot?.phase}

@@ -57,5 +57,7 @@ export interface RunReceipt {
   finishedAt?: number
   /** Fragment-merge self-transfers the engine ran to keep rows payable. */
   merges?: number
+  /** Funding-note splits the engine ran up front so lanes prove in parallel. */
+  splits?: number
   summary: { sent: number; failed: number; total: number }
 }

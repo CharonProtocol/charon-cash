@@ -29,6 +29,8 @@ export interface RunSnapshot {
   /** Epoch ms the run began; fundedAt lands once the deposit confirms. */
   startedAt: number
   fundedAt?: number
+  /** Funding-note splits run so lanes prove in parallel. */
+  splits?: number
 }
 
 export interface RunRequest {
@@ -103,6 +105,9 @@ const LANES = 8
 const RESERVE_POLL_MS = 350
 const RESERVE_WAIT_CAP_MS = 120_000
 const REFRESH_MIN_GAP_MS = 1_500
+// Below this many rows the split fan-out costs more than the serialization it
+// removes, so short runs pay straight through the change chain.
+const SPLIT_MIN_ROWS = 10
 
 /** Notes pinned for an in-flight payout; released on failure, dropped on success. */
 interface PinnedNotes {
@@ -217,6 +222,7 @@ export class PayrollEngine {
   private startedAt = 0
   private fundedAt?: number
   private merges = 0
+  private splits = 0
 
   constructor(private deps: EngineDeps) {}
 
@@ -229,6 +235,7 @@ export class PayrollEngine {
     this.startedAt = this.deps.now()
     this.fundedAt = undefined
     this.merges = 0
+    this.splits = 0
     const decimals = req.asset.kind === "sol" ? 9 : req.asset.decimals
     const plan = planRun(req.entries, decimals, req.bps, req.vaultRaw, {
       mode: req.mode,
@@ -249,6 +256,7 @@ export class PayrollEngine {
         depositSig,
         startedAt: this.startedAt,
         fundedAt: this.fundedAt,
+        splits: this.splits,
       })
 
     await this.deps.client.init()
@@ -554,6 +562,58 @@ export class PayrollEngine {
       }
     }
 
+    /**
+     * Lane fan-out: right after the single funding signature the vault is one
+     * big note, so payout lanes serialize on its change chain (~8s per hop —
+     * the measured 5-row run). Split notes with gasless self-transfers
+     * (relayer-signed, still zero wallet signatures) until there are about
+     * `lanes` spendable notes, then rows prove truly in parallel.
+     */
+    const splitForLanes = async (): Promise<void> => {
+      if (!ledger || !selfAddress || plan.rows.length < SPLIT_MIN_ROWS) return
+      const target = Math.min(Math.max(1, req.lanes ?? LANES), LANES, plan.rows.length)
+      for (let wave = 0; wave < 4 && !this.cancelled; wave++) {
+        const free = ledger
+          .freeNotes()
+          .sort((a, b) => (a.amount > b.amount ? -1 : a.amount < b.amount ? 1 : 0))
+        if (free.length >= target) return
+        // never split below the widest row: every note the fan-out produces
+        // must still pay any single payout alone, otherwise the splits would
+        // just buy a merge chain (a proof + tx each) instead of lanes
+        const maxGross = plan.rows.reduce((m, r) => (r.gross > m ? r.gross : m), 0n)
+        const splittable = free.filter((n) => {
+          const half = (n.amount - feeOf(n.amount)) / 2n
+          return half >= maxGross && half > feeOf(half)
+        })
+        if (splittable.length === 0) return
+        await Promise.all(
+          splittable.map(async (n) => {
+            const half = (n.amount - feeOf(n.amount)) / 2n
+            try {
+              const res =
+                req.asset.kind === "sol"
+                  ? await this.deps.client.transferNoteSOL(selfAddress, Number(half), {
+                      relay: true as const,
+                      inputNotes: [{ blinding: n.blinding }],
+                    })
+                  : await this.deps.client.transferNoteSPL(req.asset.mint, selfAddress, Number(half), {
+                      relay: true as const,
+                      inputNotes: [{ blinding: n.blinding }],
+                    })
+              this.splits++
+              await this.deps.waitUntilIndexed(treeKeyOf(req.asset), res.leafIndex)
+            } catch {
+              /* best-effort: the run continues with fewer, larger notes */
+            }
+          }),
+        )
+        await this.deps.client.refreshNotes().catch(() => {})
+        reloadLedger()
+      }
+    }
+
+    // Fan the funding note out before lanes start claiming pieces of it.
+    await splitForLanes()
     this.emit("paying", funding?.txSignature)
     let next = 0
     // Widest rows first: greedy consumption fragments the change pool and the
@@ -627,6 +687,7 @@ export class PayrollEngine {
       fundedAt: this.fundedAt,
       finishedAt,
       merges: this.merges,
+      splits: this.splits || undefined,
       summary: {
         sent: entries.filter((e) => e.status === "sent").length,
         failed: entries.filter((e) => e.status === "failed").length,
