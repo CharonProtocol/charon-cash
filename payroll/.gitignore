@@ -9,3 +9,5 @@ demo/
 !.dev.vars.example
 .env*
 !.env.example
+.local-recipients.json
+.env.local.prod

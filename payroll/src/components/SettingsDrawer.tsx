@@ -10,9 +10,9 @@ const PRESETS = {
   local: {
     label: "Local simnet",
     icon: Monitor,
-    backendUrl: "http://127.0.0.1:8787",
+    backendUrl: "http://127.0.0.1:8080",
     rpcUrl: "http://127.0.0.1:8899",
-    hint: "surfpool + local wrangler relayer (see payroll/README.md)",
+    hint: "surfpool + local backend shim (./run.sh)",
   },
   devnet: {
     label: "Devnet",

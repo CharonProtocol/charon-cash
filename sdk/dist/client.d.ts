@@ -82,6 +82,7 @@ export declare class PrivacyCashClient {
     /** Unlock + rescan + persist. Powers the UI "Load notes" action. */
     refreshNotes(opts?: {
         fromScratch?: boolean;
+        recheckSpent?: boolean;
     }): Promise<SyncResult>;
     /**
      * Nullifiers (32-byte hex) for saved notes, derived under the unlocked
@@ -115,6 +116,9 @@ export declare class PrivacyCashClient {
      * way) — concurrent callers now queue behind the running scan.
      */
     private syncQueue;
+    private lastSyncDoneAt;
+    private lastSpentRecheckAt;
+    private syncForSpend;
     syncNotes(treeKey: string, fromScratch?: boolean): Promise<SyncResult>;
     private syncNotesLocked;
     /**

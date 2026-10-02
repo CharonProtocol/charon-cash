@@ -144,6 +144,51 @@ export class PrivacyCashClient {
             added += r.added;
             spent += r.spent;
         }
+        if (!opts?.fromScratch && (opts?.recheckSpent || Date.now() - this.lastSpentRecheckAt > 15_000)) {
+            this.lastSpentRecheckAt = Date.now();
+            // The incremental scan only re-checks nullifiers for leaves it just
+            // decrypted, so a note spent on-chain by a cancelled run's landed-but-
+            // unadjudicated payout would stay spendable locally forever — the
+            // phantom balance that under-sized the next run's deposit. One batch
+            // call re-checks every unspent note. Ambient refreshes pay this at
+            // most once per 15s (deriving N nullifiers is real CPU on big vaults
+            // and it starved the provers mid-run); `recheckSpent` forces it for
+            // run-start verification.
+            // Bounded to the 64 biggest notes: deriving a nullifier per note is
+            // real CPU on vaults grown by repeated runs, and a phantom that can
+            // under-size a deposit materially is by definition a big one. The
+            // engine's mid-run top-up backstops any smaller residue.
+            const mine = unspentNotes(this.publicKey)
+                .slice()
+                .sort((a, b) => Number(b.amount) - Number(a.amount))
+                .slice(0, 64);
+            if (mine.length > 0) {
+                try {
+                    const hashes = await this.nullifiersForNotes(mine.map((n) => ({
+                        amount: n.amount,
+                        blinding: n.blinding,
+                        index: n.index,
+                        mintAddress: n.mintAddress,
+                    })));
+                    let flags;
+                    try {
+                        flags = await nullifiersSpent(hashes);
+                    }
+                    catch {
+                        flags = await Promise.all(hashes.map((h) => isNullifierSpent(h)));
+                    }
+                    for (let i = 0; i < mine.length; i++) {
+                        if (flags[i]) {
+                            markNoteSpentByIndex(this.publicKey, mine[i].mintAddress, mine[i].index);
+                            spent++;
+                        }
+                    }
+                }
+                catch {
+                    // spent-status re-check is best-effort; the scan result stands
+                }
+            }
+        }
         await this.persistNotes().catch(() => { });
         return { scanned, added, spent };
     }
@@ -214,6 +259,20 @@ export class PrivacyCashClient {
      * way) — concurrent callers now queue behind the running scan.
      */
     syncQueue = Promise.resolve();
+    // Completion time of the last sync per tree, plus the pre-spend sync
+    // guard: every parallel lane used to queue behind the single-flight sync
+    // before building its tx (12 lanes × scan time ≈ the measured 6s prep per
+    // payout). One sync per 1.5s window is fresh enough — the pin check still
+    // validates against the live set, and the NULLIFIER_SPENT error paths
+    // still force a fromScratch rescan.
+    lastSyncDoneAt = new Map();
+    // The 15s gate for refreshNotes' spent-status re-check (see refreshNotes).
+    lastSpentRecheckAt = 0;
+    async syncForSpend(treeKey) {
+        if (Date.now() - (this.lastSyncDoneAt.get(treeKey) ?? 0) > 1_500) {
+            await this.syncNotes(treeKey).catch(() => { });
+        }
+    }
     async syncNotes(treeKey, fromScratch = false) {
         const run = this.syncQueue.then(() => this.syncNotesLocked(treeKey, fromScratch));
         this.syncQueue = run.then(() => undefined, () => undefined);
@@ -319,6 +378,7 @@ export class PrivacyCashClient {
             lastScannedTo = scannedTo;
             start = nextStart;
         }
+        this.lastSyncDoneAt.set(treeKey, Date.now());
         return { scanned, added, spent };
     }
     /**
@@ -438,7 +498,7 @@ export class PrivacyCashClient {
     }
     async withdrawSOL(grossLamports, recipient, opts) {
         await this.unlock();
-        await this.syncNotes(SOL_TREE_KEY).catch(() => { });
+        await this.syncForSpend(SOL_TREE_KEY);
         try {
             return await this.withdrawInternal({
                 treeKey: SOL_TREE_KEY,
@@ -466,7 +526,7 @@ export class PrivacyCashClient {
      */
     async transferNoteSOL(recipient, netLamports, opts) {
         await this.unlock();
-        await this.syncNotes(SOL_TREE_KEY).catch(() => { });
+        await this.syncForSpend(SOL_TREE_KEY);
         return this.transferNoteInternal({
             treeKey: SOL_TREE_KEY,
             mintAddress: WRAPPED_SOL_MINT,
@@ -483,7 +543,7 @@ export class PrivacyCashClient {
     async transferNoteSPL(mint, recipient, netRaw, opts) {
         await this.unlock();
         const mintPk = toPubkey(mint);
-        await this.syncNotes(mintPk.toBase58()).catch(() => { });
+        await this.syncForSpend(mintPk.toBase58());
         return this.transferNoteInternal({
             treeKey: mintPk.toBase58(),
             mintAddress: mintPk.toBase58(),
@@ -596,7 +656,7 @@ export class PrivacyCashClient {
         await this.unlock();
         const mintPk = toPubkey(mint);
         const mintStr = mintPk.toBase58();
-        await this.syncNotes(mintStr).catch(() => { });
+        await this.syncForSpend(mintStr);
         try {
             return await this.withdrawInternal({
                 treeKey: mintStr,
@@ -772,12 +832,11 @@ export class PrivacyCashClient {
         let nextLeafIndex = 0;
         let inputPathElements = [];
         for (let round = 0;; round++) {
-            const real = [];
-            for (const u of inputs) {
-                if (u.amount.gt(new BN(0))) {
-                    real.push(await fetchMerkleProof(args.treeKey, u.index));
-                }
-            }
+            // both paths in one round trip: serial fetches added a full extra
+            // proof latency to every pair-row's prep
+            const real = await Promise.all(inputs
+                .filter((u) => u.amount.gt(new BN(0)))
+                .map((u) => fetchMerkleProof(args.treeKey, u.index)));
             if (real.length > 0 && new Set(real.map((p) => p.root)).size === 1) {
                 root = real[0].root;
                 nextLeafIndex = real[0].nextLeafIndex;
@@ -1011,12 +1070,11 @@ export class PrivacyCashClient {
         let nextLeafIndex = 0;
         let inputPathElements = [];
         for (let round = 0;; round++) {
-            const real = [];
-            for (const u of inputs) {
-                if (u.amount.gt(new BN(0))) {
-                    real.push(await fetchMerkleProof(args.treeKey, u.index));
-                }
-            }
+            // both paths in one round trip: serial fetches added a full extra
+            // proof latency to every pair-row's prep
+            const real = await Promise.all(inputs
+                .filter((u) => u.amount.gt(new BN(0)))
+                .map((u) => fetchMerkleProof(args.treeKey, u.index)));
             if (real.length > 0 && new Set(real.map((p) => p.root)).size === 1) {
                 root = real[0].root;
                 nextLeafIndex = real[0].nextLeafIndex;

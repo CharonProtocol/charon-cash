@@ -3,7 +3,7 @@
 // account + global config, commitments/nullifiers by scanning the program's tx
 // history. Also signs setup/config ixs (initialize, initialize-spl, update-*).
 // Serves the same routes the client SDK + admin cards call. Run: bun scripts/backend-shim.mjs
-import { readFileSync } from "node:fs"
+import { readFileSync, existsSync } from "node:fs"
 import path from "node:path"
 import { homedir } from "node:os"
 
@@ -45,6 +45,22 @@ const ALT_ADDRESS = process.env.ALT_ADDRESS ?? readDotEnv().VITE_ALT_ADDRESS ?? 
 
 const conn = new Connection(RPC, "confirmed")
 const payer = Keypair.fromSecretKey(Buffer.from(JSON.parse(readFileSync(idJson, "utf8"))))
+
+// Recipient registry: in-memory, optionally seeded from a JSON file
+// (wallet -> {note_pubkey, enc_pubkey}) so test employees can be enrolled
+// without running the employee app. Enrollments via PUT are additive.
+const recipients = new Map()
+try {
+  const rf = process.env.RECIPIENTS_FILE
+  if (rf && existsSync(rf)) {
+    for (const [w, k] of Object.entries(JSON.parse(readFileSync(rf, "utf8")))) {
+      recipients.set(w, k)
+    }
+    console.log(`loaded ${recipients.size} recipients from ${rf}`)
+  }
+} catch (e) {
+  console.error("recipients seed load failed:", e.message)
+}
 const wasm = await WasmFactory.getInstance()
 
 const dec2hex = (dec) => "0x" + BigInt(dec).toString(16).padStart(64, "0")
@@ -118,7 +134,8 @@ if (!(await conn.getAccountInfo(solTree))) {
 // ---- index: scan program tx history -> commitments / encrypted outputs / nullifiers ----
 /** @type {{ treeKey: string, leafIndex: number, commitment: string, encryptedHex: string, signature: string, slot: number }[]} */
 let utxos = []
-let nullifiers = new Set()
+/** hex nullifier -> spending tx signature */
+let nullifiers = new Map()
 let lastSlot = 0
 let lastSig = null
 /** @type {Map<string, import('privacy-cash-sdk').LocalMirror>} */
@@ -150,7 +167,7 @@ async function rescan() {
   lastSig = sigs[0]?.signature ?? lastSig
   const ordered = sigs.filter((s) => !s.err).reverse()
   const newUtxos = []
-  const newNulls = new Set()
+  const newNulls = new Map()
   const perTree = new Map() // treeKey -> commitment decimals[]
 
   for (const s of ordered) {
@@ -215,8 +232,8 @@ async function rescan() {
         signature: s.signature,
         slot: s.slot,
       })
-      newNulls.add(Buffer.from(args.subarray(352, 384)).toString("hex"))
-      newNulls.add(Buffer.from(args.subarray(384, 416)).toString("hex"))
+      newNulls.set(Buffer.from(args.subarray(352, 384)).toString("hex"), s.signature)
+      newNulls.set(Buffer.from(args.subarray(384, 416)).toString("hex"), s.signature)
     }
   }
 
@@ -324,7 +341,10 @@ Bun.serve({
         const treeKey = decodeURIComponent(mp[1])
         const pr = await proofFor(treeKey, Number(mp[2]))
         if (!pr) return json({ error: { code: "LEAF_NOT_FOUND", message: "leaf not indexed yet" } }, 404)
-        return json(pr)
+        // the SDK's convergence loop needs the snapshot root + next index
+        // alongside the path (all from the same tree state)
+        const st = await readTreeState(conn, PROGRAM, treeKey)
+        return json({ ...pr, root: dec2hexU(st.root), next_leaf_index: st.nextLeafIndex })
       }
 
       if (p === "/api/utxos/range" && method === "GET") {
@@ -377,13 +397,48 @@ Bun.serve({
       if (n) {
         const hex = n[1].replace(/^0x/i, "")
         let spent = nullifiers.has(hex)
+        let signature = nullifiers.get(hex) ?? null
         if (!spent) {
           const h = Buffer.from(hex, "hex")
           const [p0] = PublicKey.findProgramAddressSync([Buffer.from("nullifier0"), h], PROGRAM)
           const [p1] = PublicKey.findProgramAddressSync([Buffer.from("nullifier1"), h], PROGRAM)
           spent = !!(await conn.getAccountInfo(p0)) || !!(await conn.getAccountInfo(p1))
         }
-        return json({ nullifier: hex, spent })
+        return json({ nullifier: hex, spent, signature })
+      }
+      if (p === "/api/nullifiers/batch" && method === "POST") {
+        let body = {}
+        try { const text = await req.text(); if (text.trim()) body = JSON.parse(text) } catch { }
+        const hashes = Array.isArray(body.hashes) ? body.hashes : []
+        return json({ results: hashes.map((raw) => {
+          const hex = String(raw).replace(/^0x/i, "")
+          return { hash: hex, spent: nullifiers.has(hex), signature: nullifiers.get(hex) ?? null }
+        }) })
+      }
+      if (p === "/api/indexer/kick" && method === "POST") {
+        const n0 = utxos.length
+        await rescan()
+        return json({ processed: utxos.length - n0, walked: 1 })
+      }
+
+      // ---- recipient registry (in-memory, optional seed file) ----
+      const rk = p.match(/^\/api\/recipients\/([^/]+)$/)
+      if (rk && method === "GET") {
+        const hit = recipients.get(decodeURIComponent(rk[1]))
+        if (!hit) return json({ error: { code: "NOT_FOUND", message: "wallet has not enrolled" } }, 404)
+        return json(hit)
+      }
+      if (p === "/api/recipients" && method === "PUT") {
+        let body = {}
+        try { const text = await req.text(); if (text.trim()) body = JSON.parse(text) } catch { }
+        const wallet = String(body.wallet || "")
+        const note = String(body.note_pubkey || "")
+        const enc = String(body.enc_pubkey || "")
+        if (!wallet || !note || !enc) {
+          return json({ error: { code: "BAD_REQUEST", message: "wallet, note_pubkey, enc_pubkey required" } }, 400)
+        }
+        recipients.set(wallet, { note_pubkey: note, enc_pubkey: enc })
+        return json({ ok: true })
       }
 
       // ---- relay endpoints the backend-only client SDK calls ----
@@ -403,6 +458,14 @@ Bun.serve({
       if (method === "POST") {
         let body = {}
         try { const text = await req.text(); if (text.trim()) body = JSON.parse(text) } catch { }
+
+        if (p === "/api/recipients/batch") {
+          const wallets = Array.isArray(body.wallets) ? body.wallets.map(String) : []
+          const results = wallets
+            .filter((w) => recipients.has(w))
+            .map((w) => ({ wallet: w, ...recipients.get(w) }))
+          return json({ results })
+        }
 
         // Deposit path: client wallet-signed VersionedTransaction hex → broadcast
         if (p === "/api/relayer/submit") {
