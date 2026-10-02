@@ -176,6 +176,30 @@ class NoteLedger {
     }
   }
 
+  /**
+   * Pin the two largest free notes for a merge self-transfer. Unlike
+   * tryReserve (largest covering gross), a merge always consumes the two
+   * biggest fragments, so it must claim them explicitly or a racing payout
+   * lane could reserve the same notes mid-merge.
+   */
+  reserveTopPair(): { pins: PinnedNotes; amounts: [bigint, bigint] } | null {
+    const free = [...this.free.values()].sort((a, b) =>
+      a.amount > b.amount ? -1 : a.amount < b.amount ? 1 : 0,
+    )
+    const a = free[0]
+    const b = free[1]
+    if (!a || !b) return null
+    this.free.delete(a.id)
+    this.free.delete(b.id)
+    this.reserved.add(a.id)
+    this.reserved.add(b.id)
+    this.busy++
+    return {
+      pins: { ids: [a.id, b.id], blindings: [a.blinding, b.blinding] },
+      amounts: [a.amount, b.amount],
+    }
+  }
+
   freeNotes(): Array<{ amount: bigint; blinding: string }> {
     return [...this.free.values()].map((n) => ({ amount: n.amount, blinding: n.blinding }))
   }
@@ -313,7 +337,9 @@ export class PayrollEngine {
      * total balance covers a row but no note or pair does, merge the two
      * largest fragments into one fresh note (a self transfer, still relayer
      * signed — no wallet popup) until something fits. Single-flight: waiting
-     * lanes share one merge chain and re-poll after it lands.
+     * lanes share one merge chain and re-poll after it lands — a chain sized
+     * for a smaller row may not cover a bigger one, so the caller re-checks
+     * and starts another chain if needed.
      */
     let consolidating: Promise<void> | null = null
     const consolidateFor = (gross: bigint): Promise<void> => {
@@ -328,22 +354,40 @@ export class PayrollEngine {
           if (top && top.amount >= gross) return
           if (top && free[1] && top.amount + free[1].amount >= gross) return
           if (free.length < 2) return
-          const merged = free[0].amount + free[1].amount
+          const pair = ledger.reserveTopPair()
+          if (!pair) return
+          const merged = pair.amounts[0] + pair.amounts[1]
           // solve net + fee(net) == merged so the merge leaves no dust change
           let net = merged
           for (let i = 0; i < 4; i++) net = merged - feeOf(net)
           if (net + feeOf(net) > merged) net = merged - feeOf(net)
-          if (net <= 0n) return
-          this.merges++
-          const pins = {
-            relay: true as const,
-            inputNotes: [{ blinding: free[0].blinding }, { blinding: free[1].blinding }],
+          if (net <= 0n) {
+            ledger.release(pair.pins)
+            ledger.busy--
+            return
           }
-          const res =
-            req.asset.kind === "sol"
-              ? await this.deps.client.transferNoteSOL(selfAddress, Number(net), pins)
-              : await this.deps.client.transferNoteSPL(req.asset.mint, selfAddress, Number(net), pins)
-          await this.deps.waitUntilIndexed(treeKeyOf(req.asset), res.leafIndex)
+          this.merges++
+          try {
+            const res =
+              req.asset.kind === "sol"
+                ? await this.deps.client.transferNoteSOL(selfAddress, Number(net), {
+                    relay: true as const,
+                    inputNotes: pair.pins.blindings.map((blinding) => ({ blinding })),
+                  })
+                : await this.deps.client.transferNoteSPL(req.asset.mint, selfAddress, Number(net), {
+                    relay: true as const,
+                    inputNotes: pair.pins.blindings.map((blinding) => ({ blinding })),
+                  })
+            await this.deps.waitUntilIndexed(treeKeyOf(req.asset), res.leafIndex)
+            ledger.commitSpent(pair.pins)
+          } catch (e) {
+            // notes went nowhere conclusive — give them back and let the
+            // caller's reserve loop decide (it rescans before retrying)
+            ledger.release(pair.pins)
+            throw e
+          } finally {
+            ledger.busy--
+          }
           await this.deps.client.refreshNotes().catch(() => {})
           reloadLedger()
         }
@@ -363,7 +407,7 @@ export class PayrollEngine {
       if (!ledger) return null
       const deadline = this.deps.now() + RESERVE_WAIT_CAP_MS
       let scannedFinal = false
-      let consolidated = false
+      let mergeRounds = 0
       for (;;) {
         const pinned = ledger.tryReserve(gross)
         if (pinned) {
@@ -389,9 +433,11 @@ export class PayrollEngine {
             continue
           }
           // the balance is there but fragmented past the 2-input circuit
-          // limit — merge fragments into a fresh note and try once more
-          if (!consolidated && ledger.totalFree() >= gross) {
-            consolidated = true
+          // limit — merge fragments into fresh notes and try again. A shared
+          // chain may have been sized for a smaller row, so keep starting new
+          // chains (bounded) while the vault total could still cover gross.
+          if (mergeRounds < 8 && ledger.totalFree() >= gross) {
+            mergeRounds++
             await consolidateFor(gross)
             continue
           }

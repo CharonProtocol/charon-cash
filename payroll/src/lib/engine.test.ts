@@ -435,6 +435,46 @@ describe("PayrollEngine lanes", () => {
     expect(withdraws).toHaveLength(1)
   })
 
+  it("chains merges across 4+ equal fragments until a pair fits", async () => {
+    // 1+1+1+1 SOL vs a 3.5 SOL row: no pair covers it, so the engine merges
+    // the two largest repeatedly (1+1 -> ~2, then ~2+1 -> ~3) until the merged
+    // note + a leftover fragment fit the 2-input circuit
+    const notes = Array.from({ length: 4 }, (_, i) => ({ id: `frag${i}`, amount: 1n * 10n ** 9n }))
+    const withdraws: Array<{ lamports: number; recipient: string; pins: string[] }> = []
+    const merges: Array<{ net: bigint; pins: string[] }> = []
+    const { client, listNotes } = laneClient({ notes, withdrawMs: 5, withdraws, merges })
+    const engine = new PayrollEngine(laneDeps(client, listNotes))
+    const receipt = await engine.run(
+      req({
+        vaultRaw: 10n ** 20n,
+        entries: [{ address: "A".repeat(32), amountHuman: "3.5" }],
+      }),
+    )
+    expect(receipt.summary).toEqual({ sent: 1, failed: 0, total: 1 })
+    expect(merges).toHaveLength(2)
+    expect(withdraws).toHaveLength(1)
+  })
+
+  it("recovers a heavily fragmented vault across several rows (6 fragments, 2 payouts)", async () => {
+    const notes = Array.from({ length: 6 }, (_, i) => ({ id: `frag${i}`, amount: 1n * 10n ** 9n }))
+    const withdraws: Array<{ lamports: number; recipient: string; pins: string[] }> = []
+    const merges: Array<{ net: bigint; pins: string[] }> = []
+    const { client, listNotes } = laneClient({ notes, withdrawMs: 5, withdraws, merges })
+    const engine = new PayrollEngine(laneDeps(client, listNotes))
+    const receipt = await engine.run(
+      req({
+        vaultRaw: 10n ** 20n,
+        entries: [
+          { address: "A".repeat(32), amountHuman: "3.5" },
+          { address: "B".repeat(32), amountHuman: "2" },
+        ],
+      }),
+    )
+    expect(receipt.summary).toEqual({ sent: 2, failed: 0, total: 2 })
+    expect(merges.length).toBeGreaterThanOrEqual(2)
+    expect(withdraws).toHaveLength(2)
+  })
+
   it("skips merging when the vault total cannot cover the row at all", async () => {
     const notes = [{ id: "mid", amount: 1n * 10n ** 9n }]
     const withdraws: Array<{ lamports: number; recipient: string; pins: string[] }> = []
