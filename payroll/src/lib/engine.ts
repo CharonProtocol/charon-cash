@@ -76,7 +76,7 @@ export interface RunRequest {
 export interface EngineClient {
   init(): Promise<void>
   unlock(): Promise<void>
-  refreshNotes(opts?: { fromScratch?: boolean }): Promise<unknown>
+  refreshNotes(opts?: { fromScratch?: boolean; recheckSpent?: boolean }): Promise<unknown>
   depositSOL(lamports: number): Promise<{ signature: string; leafIndex: number }>
   depositSPL(mint: string, raw: number | string): Promise<{ signature: string; leafIndex: number }>
   withdrawSOL(
@@ -296,6 +296,10 @@ export class PayrollEngine {
     }))
     let currentPhase: RunSnapshot["phase"] = "funding"
     this.emit = (phase, depositSig) => {
+      // Once cancelled, never show a running phase again: the engine winds
+      // in-flight rows down asynchronously, and letting "paying" resurrect
+      // after the user hit cancel made the button look dead.
+      if (this.cancelled && phase !== "settled") phase = "aborted"
       currentPhase = phase
       onUpdate?.({
         phase,
@@ -354,7 +358,7 @@ export class PayrollEngine {
         // run. The refresh below is best-effort anyway; reserveFor's gated
         // heal and the mid-run top-up cover whatever it misses.
         void gatedKick()
-        await this.deps.client.refreshNotes()
+        await this.deps.client.refreshNotes({ recheckSpent: true })
         vaultRaw = this.deps.listNotes(req.asset).reduce((s, n) => s + BigInt(n.amount), 0n)
       } catch {
         // keep the caller's estimate — the mid-run top-up below still backstops it
@@ -366,30 +370,18 @@ export class PayrollEngine {
       minTransferFee: req.asset.kind === "sol" ? req.minTransferFee : 0,
     }
     let plan = planRun(req.entries, decimals, req.bps, vaultRaw, planOpts)
-    // Fragmented-vault fast path: leftover fragments from earlier runs can
-    // cover the total while no single note AND no pair fits the widest row —
-    // every payout then pays through merge txs (mean 20s/row, ~4min per 100
-    // rows no matter the lane count). Pairs are fine (the 2-input circuit
-    // pays them directly, no merge tx), so this fires only past that. One
-    // fresh deposit restores the single-note fast path the first runs
-    // enjoyed: the old fragments stay in the vault untouched, and the run
-    // rides change chains exactly like a first deposit. Full-size runs only
-    // (the same bar as the lane fan-out): for a short run a gasless merge
-    // beats another wallet prompt.
-    if (this.deps.listNotes && plan.shortfall === 0n && plan.rows.length >= SPLIT_MIN_ROWS) {
-      const amounts = this.deps
-        .listNotes(req.asset)
-        .map((n) => BigInt(n.amount))
-        .sort((a, b) => (a > b ? -1 : a < b ? 1 : 0))
-      const maxGross = plan.rows.reduce((m, r) => (r.gross > m ? r.gross : m), 0n)
-      const single = amounts[0] >= maxGross
-      const pair = amounts.length >= 2 && amounts[0] + amounts[1] >= maxGross
-      if (!single && !pair) {
-        this.setStatus(
-          "Vault notes are too fragmented to pay through directly — one fresh deposit will fund this run…",
-        )
-        plan = planRun(req.entries, decimals, req.bps, 0n, planOpts)
-      }
+    // Fresh-deposit fast path: EVERY full run pays from one fresh deposit.
+    // Payouts leave a change note each, so a vault fragments by design —
+    // paying from the leftovers degrades run over run (26/min on a fresh
+    // deposit, 10/min on the next run through merge chains). Planning
+    // against an empty vault makes funding deposit the full amount: the run
+    // rides change chains exactly like a first deposit, every time. The
+    // leftover notes stay in the vault as spendable money. Full-size runs
+    // only (the same bar as the lane fan-out): for a short run a gasless
+    // merge beats another wallet prompt.
+    if (this.deps.listNotes && plan.rows.length >= SPLIT_MIN_ROWS) {
+      this.setStatus("Paying this run from one fresh deposit — leftover vault notes stay spendable…")
+      plan = planRun(req.entries, decimals, req.bps, 0n, planOpts)
     }
 
     const feeFloorBig = BigInt(req.asset.kind === "sol" ? (req.minTransferFee ?? 0) : 0)

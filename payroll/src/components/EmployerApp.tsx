@@ -232,7 +232,11 @@ export function EmployerApp() {
             <RunProgressCard
               snapshot={snapshot}
               receipt={receipt}
-              onCancel={() => engineRef.current?.cancel()}
+              onCancel={() => {
+                toast.info("Cancelling — in-flight payouts finish, no new ones start…")
+                setSnapshot((s) => (s && s.phase !== "settled" ? { ...s, phase: "aborted" } : s))
+                engineRef.current?.cancel()
+              }}
               onDone={() => { setSnapshot(null); setReceipt(null); setParsed(null) }}
               onResumeFailed={() => receipt && resumeFailed(receipt)}
               onResumeSnapshot={resumeAbortedSnapshot}

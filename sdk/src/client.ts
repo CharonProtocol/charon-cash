@@ -256,7 +256,7 @@ export class PrivacyCashClient {
   }
 
   /** Unlock + rescan + persist. Powers the UI "Load notes" action. */
-  async refreshNotes(opts?: { fromScratch?: boolean }): Promise<SyncResult> {
+  async refreshNotes(opts?: { fromScratch?: boolean; recheckSpent?: boolean }): Promise<SyncResult> {
     await this.unlock()
     // Scan the SOL tree plus every supported mint's tree: a recipient of a
     // shielded SPL transfer has no local hint about the mint, so discovery
@@ -278,14 +278,24 @@ export class PrivacyCashClient {
       added += r.added
       spent += r.spent
     }
-    if (!opts?.fromScratch) {
+    if (!opts?.fromScratch && (opts?.recheckSpent || Date.now() - this.lastSpentRecheckAt > 15_000)) {
+      this.lastSpentRecheckAt = Date.now()
       // The incremental scan only re-checks nullifiers for leaves it just
       // decrypted, so a note spent on-chain by a cancelled run's landed-but-
       // unadjudicated payout would stay spendable locally forever — the
       // phantom balance that under-sized the next run's deposit. One batch
-      // call re-checks every unspent note; a fromScratch rescan already
-      // covers this (and costs ~90s), so it skips the extra round trip.
+      // call re-checks every unspent note. Ambient refreshes pay this at
+      // most once per 15s (deriving N nullifiers is real CPU on big vaults
+      // and it starved the provers mid-run); `recheckSpent` forces it for
+      // run-start verification.
+      // Bounded to the 64 biggest notes: deriving a nullifier per note is
+      // real CPU on vaults grown by repeated runs, and a phantom that can
+      // under-size a deposit materially is by definition a big one. The
+      // engine's mid-run top-up backstops any smaller residue.
       const mine = unspentNotes(this.publicKey)
+        .slice()
+        .sort((a, b) => Number(b.amount) - Number(a.amount))
+        .slice(0, 64)
       if (mine.length > 0) {
         try {
           const hashes = await this.nullifiersForNotes(
@@ -394,6 +404,23 @@ export class PrivacyCashClient {
    * way) — concurrent callers now queue behind the running scan.
    */
   private syncQueue: Promise<unknown> = Promise.resolve()
+
+  // Completion time of the last sync per tree, plus the pre-spend sync
+  // guard: every parallel lane used to queue behind the single-flight sync
+  // before building its tx (12 lanes × scan time ≈ the measured 6s prep per
+  // payout). One sync per 1.5s window is fresh enough — the pin check still
+  // validates against the live set, and the NULLIFIER_SPENT error paths
+  // still force a fromScratch rescan.
+  private lastSyncDoneAt = new Map<string, number>()
+
+  // The 15s gate for refreshNotes' spent-status re-check (see refreshNotes).
+  private lastSpentRecheckAt = 0
+
+  private async syncForSpend(treeKey: string): Promise<void> {
+    if (Date.now() - (this.lastSyncDoneAt.get(treeKey) ?? 0) > 1_500) {
+      await this.syncNotes(treeKey).catch(() => {})
+    }
+  }
 
   async syncNotes(treeKey: string, fromScratch = false): Promise<SyncResult> {
     const run = this.syncQueue.then(() => this.syncNotesLocked(treeKey, fromScratch))
@@ -517,6 +544,7 @@ export class PrivacyCashClient {
       start = nextStart
     }
 
+    this.lastSyncDoneAt.set(treeKey, Date.now())
     return { scanned, added, spent }
   }
 
@@ -662,7 +690,7 @@ export class PrivacyCashClient {
     opts?: { relay?: boolean; inputNotes?: Array<{ blinding: string }> },
   ): Promise<WithdrawResult> {
     await this.unlock()
-    await this.syncNotes(SOL_TREE_KEY).catch(() => { })
+    await this.syncForSpend(SOL_TREE_KEY)
     try {
       return await this.withdrawInternal({
         treeKey: SOL_TREE_KEY,
@@ -699,7 +727,7 @@ export class PrivacyCashClient {
     },
   ): Promise<WithdrawResult & { leafIndex: number; commitment: string }> {
     await this.unlock()
-    await this.syncNotes(SOL_TREE_KEY).catch(() => { })
+    await this.syncForSpend(SOL_TREE_KEY)
     return this.transferNoteInternal({
       treeKey: SOL_TREE_KEY,
       mintAddress: WRAPPED_SOL_MINT,
@@ -727,7 +755,7 @@ export class PrivacyCashClient {
   ): Promise<WithdrawResult & { leafIndex: number; commitment: string }> {
     await this.unlock()
     const mintPk = toPubkey(mint)
-    await this.syncNotes(mintPk.toBase58()).catch(() => { })
+    await this.syncForSpend(mintPk.toBase58())
     return this.transferNoteInternal({
       treeKey: mintPk.toBase58(),
       mintAddress: mintPk.toBase58(),
@@ -866,7 +894,7 @@ export class PrivacyCashClient {
     await this.unlock()
     const mintPk = toPubkey(mint)
     const mintStr = mintPk.toBase58()
-    await this.syncNotes(mintStr).catch(() => { })
+    await this.syncForSpend(mintStr)
     try {
       return await this.withdrawInternal({
         treeKey: mintStr,
@@ -1090,12 +1118,13 @@ export class PrivacyCashClient {
     let nextLeafIndex = 0
     let inputPathElements: string[][] = []
     for (let round = 0; ; round++) {
-      const real: MerkleProof[] = []
-      for (const u of inputs) {
-        if (u.amount.gt(new BN(0))) {
-          real.push(await fetchMerkleProof(args.treeKey, u.index))
-        }
-      }
+      // both paths in one round trip: serial fetches added a full extra
+      // proof latency to every pair-row's prep
+      const real: MerkleProof[] = await Promise.all(
+        inputs
+          .filter((u) => u.amount.gt(new BN(0)))
+          .map((u) => fetchMerkleProof(args.treeKey, u.index)),
+      )
       if (real.length > 0 && new Set(real.map((p) => p.root)).size === 1) {
         root = real[0].root
         nextLeafIndex = real[0].nextLeafIndex
@@ -1380,12 +1409,13 @@ export class PrivacyCashClient {
     let nextLeafIndex = 0
     let inputPathElements: string[][] = []
     for (let round = 0; ; round++) {
-      const real: MerkleProof[] = []
-      for (const u of inputs) {
-        if (u.amount.gt(new BN(0))) {
-          real.push(await fetchMerkleProof(args.treeKey, u.index))
-        }
-      }
+      // both paths in one round trip: serial fetches added a full extra
+      // proof latency to every pair-row's prep
+      const real: MerkleProof[] = await Promise.all(
+        inputs
+          .filter((u) => u.amount.gt(new BN(0)))
+          .map((u) => fetchMerkleProof(args.treeKey, u.index)),
+      )
       if (real.length > 0 && new Set(real.map((p) => p.root)).size === 1) {
         root = real[0].root
         nextLeafIndex = real[0].nextLeafIndex
