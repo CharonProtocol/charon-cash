@@ -143,6 +143,14 @@ const ATTEMPTS = 3
 const LANES = 8
 const RESERVE_POLL_MS = 350
 const RESERVE_WAIT_CAP_MS = 120_000
+// A thrown-after-broadcast payout is adjudicated by polling its nullifiers:
+// the relayer's in-flight guard holds ~60s while the first submit is still
+// proving and the nullifier mirror syncs lazily, so a single immediate check
+// reads "not landed" for a payout that lands a minute later (rows reported
+// failed while the money arrived). 24 polls × 5s ≈ a two-minute window —
+// past the guard's TTL a retry is safe again too.
+export const ADJUDICATE_POLLS = 24
+const ADJUDICATE_POLL_MS = 5_000
 const REFRESH_MIN_GAP_MS = 1_500
 // Below this many rows the split fan-out costs more than the serialization it
 // removes, so short runs pay straight through the change chain.
@@ -710,6 +718,16 @@ export class PayrollEngine {
           return
         } catch (e) {
           const msg = (e as Error).message
+          // A pinned note can vanish from the SDK's live spendable set
+          // between the ledger reload and the tx build (a landing lane's
+          // scan marks notes spent mid-flight). Heal the set with one full
+          // rescan before the retry — otherwise every attempt re-pins the
+          // same missing blinding and burns out ("pinned note not found"
+          // failed whole rows this way while hitting the run's speed).
+          if (!submitted && /pinned note not found|pinned notes hold /.test(msg)) {
+            await this.deps.client.refreshNotes({ fromScratch: true }).catch(() => {})
+            reloadLedger()
+          }
           // A throw after broadcast must never free the pinned notes for a
           // retry until we know they are not spent on-chain: the relayer
           // refuses a retry for ~60s anyway (in-flight guard), so spend that
@@ -722,10 +740,16 @@ export class PayrollEngine {
           if (pinned && (submitted || req.mode !== "shielded")) {
             if (req.mode === "shielded" && this.deps.client.signatureIfSpent) {
               this.setStatus("Verifying whether the payout already reached the chain…")
-              const sig = await this.deps.client.signatureIfSpent(pinned.blindings).catch(() => null)
-              if (sig) {
-                landed = true
-                row.txSignature = sig
+              for (let poll = 0; poll < ADJUDICATE_POLLS; poll++) {
+                const sig = await this.deps.client.signatureIfSpent(pinned.blindings).catch(() => null)
+                if (sig) {
+                  landed = true
+                  row.txSignature = sig
+                  break
+                }
+                if (this.cancelled || poll === ADJUDICATE_POLLS - 1) break
+                await this.deps.kickIndexer?.().catch(() => {})
+                await this.deps.sleep(ADJUDICATE_POLL_MS)
               }
             }
             if (!landed) {

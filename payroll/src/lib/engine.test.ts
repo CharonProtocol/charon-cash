@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { PublicKey } from "@solana/web3.js"
-import { PayrollEngine, type EngineClient, type RunRequest, type RunSnapshot } from "./engine"
+import { PayrollEngine, ADJUDICATE_POLLS, type EngineClient, type RunRequest, type RunSnapshot } from "./engine"
 import type { Asset, PayrollEntry } from "./types"
 
 const E: PayrollEntry[] = [
@@ -33,12 +33,14 @@ function mockClient(ctl: Ctl) {
     transfers: [] as Array<[number, string]>,
     splMints: [] as string[],
     refreshes: 0,
+    fromScratches: 0,
   }
   const client: EngineClient = {
     init: async () => {},
     unlock: async () => {},
-    refreshNotes: async () => {
+    refreshNotes: async (opts?: { fromScratch?: boolean }) => {
       calls.refreshes++
+      if (opts?.fromScratch) calls.fromScratches++
     },
     depositSOL: async (lamports: number) => {
       if (ctl.rejectDeposit) throw ctl.rejectDeposit
@@ -235,10 +237,84 @@ describe("PayrollEngine", () => {
     })
     const receipt = await engine.run(req({ vaultRaw: 10n ** 18n, mode: "shielded" }))
     // not landed anywhere: the row fails after its attempts like before,
-    // and adjudication ran for every attempt (never skipped silently)
+    // and adjudication polled its full window on every attempt (never
+    // skipped silently)
     expect(receipt.entries.every((e) => e.status === "failed")).toBe(true)
     expect(receipt.entries.every((e) => e.attempts === 3)).toBe(true)
-    expect(polled).toBe(9)
+    expect(polled).toBe(9 * ADJUDICATE_POLLS)
+  })
+
+  it("keeps polling a thrown-after-broadcast payout (with indexer kicks) until the chain shows it", async () => {
+    // The relayer holds retries for ~60s while the first submit is still
+    // proving and the nullifier mirror syncs lazily — the row must wait the
+    // window out, kicking the indexer, instead of reporting a failure for
+    // money that lands a minute later.
+    const { client: base } = mockClient({ fails: new Map() })
+    let polls = 0
+    let kicks = 0
+    const client: EngineClient = {
+      ...base,
+      transferNoteSOL: async (_recipient, _net, opts) => {
+        await opts?.onSubmitted?.({})
+        throw new Error(
+          "a withdrawal for one of these nullifiers is already being processed",
+        )
+      },
+      signatureIfSpent: async () => {
+        polls++
+        return polls % 3 === 0 ? "POLL-SIG" : null
+      },
+    }
+    const notes = [1, 2, 3].map((i) => ({
+      id: `n${i}`,
+      amount: (2n * 10n ** 9n).toString(),
+      blinding: `blind-${i}`,
+    }))
+    const engine = new PayrollEngine({
+      client,
+      listNotes: () => notes,
+      waitUntilIndexed: async () => {},
+      confirmSignature: async () => true,
+      kickIndexer: async () => {
+        kicks++
+      },
+      now: () => 1,
+      newId: () => "run1",
+      sleep: async () => {},
+    })
+    const receipt = await engine.run(req({ vaultRaw: 10n ** 18n, mode: "shielded" }))
+    expect(receipt.summary).toEqual({ sent: 3, failed: 0, total: 3 })
+    expect(receipt.entries.every((e) => e.status === "sent")).toBe(true)
+    expect(receipt.entries.every((e) => e.txSignature === "POLL-SIG")).toBe(true)
+    expect(receipt.entries.every((e) => e.attempts === 1)).toBe(true)
+    expect(kicks).toBeGreaterThanOrEqual(1)
+  })
+
+  it("heals the spendable set when a pinned note vanishes before broadcast", async () => {
+    // A landing lane's scan can drop a pinned blinding from the SDK's live
+    // set between the ledger reload and the tx build. The engine must rescan
+    // (fromScratch) so the retry re-resolves from a healed set, instead of
+    // re-pinning the same missing blinding until the attempts burn out.
+    const { client: base, calls } = mockClient({ fails: new Map() })
+    let vanish = true
+    const client: EngineClient = {
+      ...base,
+      transferNoteSOL: async (recipient, net, opts) => {
+        if (vanish) {
+          vanish = false
+          throw new Error("pinned note not found in spendable set")
+        }
+        return base.transferNoteSOL(recipient, net, opts)
+      },
+    }
+    const engine = new PayrollEngine(deps(client))
+    const receipt = await engine.run(req({ vaultRaw: 10n ** 18n, mode: "shielded" }))
+    expect(receipt.summary).toEqual({ sent: 3, failed: 0, total: 3 })
+    expect(receipt.entries.every((e) => e.status === "sent")).toBe(true)
+    expect(receipt.entries.filter((e) => e.attempts === 2)).toHaveLength(1)
+    // exactly one full rescan: the heal (this vault covers the run, so no
+    // reserve-time heal fired either)
+    expect(calls.fromScratches).toBe(1)
   })
 
   it("cancel() stops between entries and leaves the rest failed-cancelled", async () => {
