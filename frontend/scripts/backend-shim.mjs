@@ -592,8 +592,10 @@ async function ensureSplAlt(mint) {
 
 async function relayWithdraw(body) {
   const kind = String(body.kind || "").toLowerCase()
-  if (Number(body.ext_amount) >= 0) {
-    throw new Error("relayer only handles withdrawals (ext_amount must be negative)")
+  // ext < 0: public withdrawal (SOL moves to the recipient). ext == 0:
+  // shielded note transfer (payroll payouts — nothing public moves).
+  if (Number(body.ext_amount) > 0) {
+    throw new Error("relayer only handles withdrawals and shielded transfers (ext_amount must be <= 0)")
   }
   const proof = {
     proofA: [...hexToBuf(body.proof_a)],
