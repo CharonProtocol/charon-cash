@@ -168,6 +168,16 @@ class NoteLedger {
       this.free.delete(id)
     }
   }
+
+  freeNotes(): Array<{ amount: bigint; blinding: string }> {
+    return [...this.free.values()].map((n) => ({ amount: n.amount, blinding: n.blinding }))
+  }
+
+  totalFree(): bigint {
+    let sum = 0n
+    for (const n of this.free.values()) sum += n.amount
+    return sum
+  }
 }
 
 export class PayrollEngine {
@@ -236,6 +246,14 @@ export class PayrollEngine {
     const ledger = this.deps.listNotes ? new NoteLedger() : null
     if (ledger && this.deps.listNotes) ledger.reload(this.deps.listNotes(req.asset))
 
+    const selfAddress = this.deps.client.publicKey?.toBase58()
+    const feeFloorBig = BigInt(req.asset.kind === "sol" ? (req.minTransferFee ?? 0) : 0)
+    const bpsBig = BigInt(req.bps)
+    const feeOf = (net: bigint): bigint => {
+      const f = (net * bpsBig + 9_999n) / 10_000n
+      return f < feeFloorBig ? feeFloorBig : f
+    }
+
     let lastRefreshAt = 0
     let lastFromScratchAt = 0
     let refreshInFlight: Promise<void> | null = null
@@ -271,6 +289,50 @@ export class PayrollEngine {
     }
 
     /**
+     * The circuit accepts at most 2 input notes per proof, so when the vault's
+     * total balance covers a row but no note or pair does, merge the two
+     * largest fragments into one fresh note (a self transfer, still relayer
+     * signed — no wallet popup) until something fits. Single-flight: waiting
+     * lanes share one merge chain and re-poll after it lands.
+     */
+    let consolidating: Promise<void> | null = null
+    const consolidateFor = (gross: bigint): Promise<void> => {
+      if (consolidating) return consolidating
+      consolidating = (async () => {
+        if (!ledger || !selfAddress) return
+        for (let merges = 0; merges < 8; merges++) {
+          const free = ledger.freeNotes().sort((a, b) =>
+            a.amount > b.amount ? -1 : a.amount < b.amount ? 1 : 0,
+          )
+          const top = free[0]
+          if (top && top.amount >= gross) return
+          if (top && free[1] && top.amount + free[1].amount >= gross) return
+          if (free.length < 2) return
+          const merged = free[0].amount + free[1].amount
+          // solve net + fee(net) == merged so the merge leaves no dust change
+          let net = merged
+          for (let i = 0; i < 4; i++) net = merged - feeOf(net)
+          if (net + feeOf(net) > merged) net = merged - feeOf(net)
+          if (net <= 0n) return
+          const pins = {
+            relay: true as const,
+            inputNotes: [{ blinding: free[0].blinding }, { blinding: free[1].blinding }],
+          }
+          const res =
+            req.asset.kind === "sol"
+              ? await this.deps.client.transferNoteSOL(selfAddress, Number(net), pins)
+              : await this.deps.client.transferNoteSPL(req.asset.mint, selfAddress, Number(net), pins)
+          await this.deps.waitUntilIndexed(treeKeyOf(req.asset), res.leafIndex)
+          await this.deps.client.refreshNotes().catch(() => {})
+          reloadLedger()
+        }
+      })().finally(() => {
+        consolidating = null
+      })
+      return consolidating
+    }
+
+    /**
      * Pin enough free notes for one payout. Waits while other lanes hold the
      * only fitting notes (change notes flow back constantly); when nothing
      * fits and no lane is busy, one forced scan runs before conceding the
@@ -280,6 +342,7 @@ export class PayrollEngine {
       if (!ledger) return null
       const deadline = this.deps.now() + RESERVE_WAIT_CAP_MS
       let scannedFinal = false
+      let consolidated = false
       for (;;) {
         const pinned = ledger.tryReserve(gross)
         if (pinned) {
@@ -302,6 +365,13 @@ export class PayrollEngine {
             lastFromScratchAt = this.deps.now()
             await this.deps.client.refreshNotes({ fromScratch: true }).catch(() => {})
             reloadLedger()
+            continue
+          }
+          // the balance is there but fragmented past the 2-input circuit
+          // limit — merge fragments into a fresh note and try once more
+          if (!consolidated && ledger.totalFree() >= gross) {
+            consolidated = true
+            await consolidateFor(gross)
             continue
           }
           return null
@@ -338,8 +408,11 @@ export class PayrollEngine {
             return
           }
           if (!pinned && ledger) {
+            const total = ledger.totalFree()
             row.status = "failed"
-            row.error = `insufficient private balance: no free note covers ${gross.toString()}`
+            row.error =
+              `insufficient private balance: no free note covers ${gross.toString()} ` +
+              `(vault has ${total.toString()} across ${ledger.freeNotes().length} notes)`
             return
           }
           const pinOpts = pinned
@@ -413,11 +486,19 @@ export class PayrollEngine {
 
     this.emit("paying", funding?.txSignature)
     let next = 0
+    // Widest rows first: greedy consumption fragments the change pool and the
+    // circuit caps a proof at 2 inputs, so paying the largest rows while big
+    // notes still exist keeps the tail rows payable without merge round-trips.
+    const order = plan.rows
+      .map((r, i) => ({ gross: r.gross, i }))
+      .sort((a, b) => (a.gross > b.gross ? -1 : a.gross < b.gross ? 1 : 0))
+      .map((o) => o.i)
     const worker = async (): Promise<void> => {
       for (;;) {
         if (this.cancelled) return
-        const i = next++
-        if (i >= rows.length) return
+        const k = next++
+        if (k >= order.length) return
+        const i = order[k]
         await payOne(rows[i], plan.rows[i])
       }
     }

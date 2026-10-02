@@ -198,7 +198,7 @@ export function PlanReviewCard({
             </div>
             <p className="text-xs text-muted-foreground">
               {mode === "shielded"
-                ? "Each employee gets an encrypted note — amount and name stay private. Your wallet signs ONE deposit to fund the vault; every payout after that is built and broadcast by the backend — zero signatures per payout."
+                ? "Each employee gets an encrypted note — amount and name stay private. Your wallet signs ONE deposit to fund the vault; every payout after that is built and broadcast by the backend — zero signatures per payout. If vault notes are too fragmented for a payout, they're merged into a fresh note automatically (still no extra signatures)."
                 : "Sends SOL straight from your wallet to each address. Fast, but amount + recipient are PUBLIC on-chain. Your wallet signs each payout."}
             </p>
           </div>

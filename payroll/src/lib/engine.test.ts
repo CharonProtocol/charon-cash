@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { PublicKey } from "@solana/web3.js"
 import { PayrollEngine, type EngineClient, type RunRequest, type RunSnapshot } from "./engine"
 import type { Asset, PayrollEntry } from "./types"
 
@@ -171,7 +172,8 @@ describe("PayrollEngine", () => {
     setTimeout(() => engine.cancel(), 15)
     const receipt = await p
     const statuses = receipt.entries.map((e) => e.status)
-    expect(statuses[statuses.length - 1]).toBe("failed")
+    // widest-first: the smallest row (entries[0]) is the one left unstarted
+    expect(statuses[0]).toBe("failed")
     expect(receipt.entries.find((e) => e.error === "cancelled")?.status).toBe("failed")
     expect(calls.withdraws.length).toBeLessThan(3)
   })
@@ -182,14 +184,15 @@ describe("PayrollEngine", () => {
     const receipt = await engine.run(req({ vaultRaw: 10n ** 18n, mode: "shielded" }))
     expect(calls.withdraws).toHaveLength(0)
     expect(calls.transfers).toHaveLength(3)
-    // 1, 2, 3 SOL at 9 decimals: net is the exact file amount, not gross
-    expect(calls.transfers.map((t) => t[0])).toEqual([1_000_000_000, 2_000_000_000, 3_000_000_000])
-    expect(calls.transfers.map((t) => t[1])).toEqual(E.map((e) => e.address))
+    // 1, 2, 3 SOL at 9 decimals: net is the exact file amount, not gross;
+    // rows pay widest-first, so the 3 SOL row goes out first
+    expect(calls.transfers.map((t) => t[0])).toEqual([3_000_000_000, 2_000_000_000, 1_000_000_000])
+    expect(calls.transfers.map((t) => t[1])).toEqual([...E].reverse().map((e) => e.address))
     expect(receipt.mode).toBe("shielded")
     expect(receipt.summary).toEqual({ sent: 3, failed: 0, total: 3 })
     expect(receipt.entries.every((e) => e.noteLeafIndex !== undefined)).toBe(true)
     expect(receipt.entries.every((e) => typeof e.noteCommitment === "string")).toBe(true)
-    expect(receipt.entries.map((e) => e.noteLeafIndex)).toEqual([51, 52, 53])
+    expect(receipt.entries.map((e) => e.noteLeafIndex)).toEqual([53, 52, 51])
   })
 
   it("shielded SPL pays NET via transferNoteSPL with the mint", async () => {
@@ -204,8 +207,8 @@ describe("PayrollEngine", () => {
     )
     expect(calls.withdraws).toHaveLength(0)
     expect(calls.transfers).toHaveLength(3)
-    // 6 decimals: 1, 2, 3 tokens -> 1e6, 2e6, 3e6 raw
-    expect(calls.transfers.map((t) => t[0])).toEqual([1_000_000, 2_000_000, 3_000_000])
+    // 6 decimals: 1, 2, 3 tokens -> 1e6, 2e6, 3e6 raw; widest row first
+    expect(calls.transfers.map((t) => t[0])).toEqual([3_000_000, 2_000_000, 1_000_000])
     // every row must be paid on the run's mint, not a stale/default one
     expect(calls.splMints).toEqual(Array(3).fill("Mint111111111111111111111111111111111111111"))
     expect(receipt.mode).toBe("shielded")
@@ -249,15 +252,41 @@ function laneClient(ctl: {
   notes: Array<{ id: string; amount: bigint }>
   withdrawMs: number
   withdraws: Array<{ lamports: number; recipient: string; pins: string[] }>
+  merges?: Array<{ net: bigint; pins: string[] }>
 }) {
+  const SELF = "11111111111111111111111111111111"
   let changeSeq = 0
   const inFlight = new Set<string>()
   const refreshes = { n: 0 }
   const listNotes = () =>
     ctl.notes.map((n) => ({ id: n.id, amount: n.amount.toString(), blinding: n.id }))
+  const payout = async (lamports: number, recipient: string, pins: string[]) => {
+    for (const b of pins) {
+      if (inFlight.has(b)) throw new Error(`OVERLAP: ${b} pinned by two lanes`)
+      inFlight.add(b)
+    }
+    try {
+      await new Promise((r) => setTimeout(r, ctl.withdrawMs))
+      let held = 0n
+      for (const b of pins) {
+        const i = ctl.notes.findIndex((n) => n.id === b)
+        if (i < 0) throw new Error("pinned note vanished")
+        held += ctl.notes[i].amount
+        ctl.notes.splice(i, 1)
+      }
+      if (held < BigInt(lamports)) throw new Error(`pinned ${held} < gross ${lamports}`)
+      const change = held - BigInt(lamports)
+      if (change > 0n) ctl.notes.push({ id: `change${changeSeq}`, amount: change })
+      changeSeq++
+      ctl.withdraws.push({ lamports, recipient, pins })
+    } finally {
+      for (const b of pins) inFlight.delete(b)
+    }
+  }
   const client: EngineClient = {
     init: async () => {},
     unlock: async () => {},
+    publicKey: new PublicKey("11111111111111111111111111111111"),
     refreshNotes: async () => {
       refreshes.n++
     },
@@ -267,14 +296,10 @@ function laneClient(ctl: {
     depositSPL: async () => {
       throw new Error("lane tests pre-fund the vault")
     },
-    withdrawSOL: async (lamports: number, recipient: string, opts) => {
+    transferNoteSOL: async (recipient: string, netLamports: number, opts) => {
       const pins = (opts?.inputNotes ?? []).map((p) => p.blinding)
-      for (const b of pins) {
-        if (inFlight.has(b)) throw new Error(`OVERLAP: ${b} pinned by two lanes`)
-        inFlight.add(b)
-      }
-      try {
-        await new Promise((r) => setTimeout(r, ctl.withdrawMs))
+      if (recipient === SELF) {
+        if (pins.length !== 2) throw new Error("merge must pin exactly two notes")
         let held = 0n
         for (const b of pins) {
           const i = ctl.notes.findIndex((n) => n.id === b)
@@ -282,23 +307,29 @@ function laneClient(ctl: {
           held += ctl.notes[i].amount
           ctl.notes.splice(i, 1)
         }
-        if (held < BigInt(lamports)) throw new Error(`pinned ${held} < gross ${lamports}`)
-        const change = held - BigInt(lamports)
-        if (change > 0n) ctl.notes.push({ id: `change${changeSeq}`, amount: change })
+        const fee = (held * 25n + 9_999n) / 10_000n
+        const merged = { id: `merged${changeSeq}`, amount: held - fee }
         changeSeq++
-        ctl.withdraws.push({ lamports, recipient, pins })
-        return { signature: `SIG-${recipient[0]}` }
-      } finally {
-        for (const b of pins) inFlight.delete(b)
+        ctl.notes.push(merged)
+        ctl.merges?.push({ net: merged.amount, pins })
+        return { signature: `MERGE-${changeSeq}`, leafIndex: 90 + changeSeq, commitment: `0xm${changeSeq}` }
+      }
+      await payout(netLamports, recipient, pins)
+      return {
+        signature: `NOTE-${recipient[0]}`,
+        leafIndex: 50 + ctl.withdraws.length,
+        commitment: `0xcommit${ctl.withdraws.length}`,
       }
     },
-    withdrawSPL: async () => {
-      throw new Error("not used")
-    },
-    transferNoteSOL: async () => {
-      throw new Error("not used")
-    },
     transferNoteSPL: async () => {
+      throw new Error("not used")
+    },
+    withdrawSOL: async (lamports: number, recipient: string, opts) => {
+      const pins = (opts?.inputNotes ?? []).map((p) => p.blinding)
+      await payout(lamports, recipient, pins)
+      return { signature: `SIG-${recipient[0]}` }
+    },
+    withdrawSPL: async () => {
       throw new Error("not used")
     },
   }
@@ -377,6 +408,49 @@ describe("PayrollEngine lanes", () => {
     )
     expect(receipt.summary).toEqual({ sent: 1, failed: 0, total: 1 })
     expect(withdraws[0].pins.sort()).toEqual(["four", "three"])
+  })
+
+  it("merges fragments into a fresh note when no pair covers the row", async () => {
+    // 3 + 1 + 1 SOL: the total covers a 4.5 SOL payout but the widest pair is
+    // 4 SOL < 4.51125 gross — the engine must merge two fragments to self,
+    // then pay from the merged note + leftover
+    const notes = [
+      { id: "three", amount: 3n * 10n ** 9n },
+      { id: "one", amount: 1n * 10n ** 9n },
+      { id: "oneb", amount: 1n * 10n ** 9n },
+    ]
+    const withdraws: Array<{ lamports: number; recipient: string; pins: string[] }> = []
+    const merges: Array<{ net: bigint; pins: string[] }> = []
+    const { client, listNotes } = laneClient({ notes, withdrawMs: 5, withdraws, merges })
+    const engine = new PayrollEngine(laneDeps(client, listNotes))
+    const receipt = await engine.run(
+      req({
+        vaultRaw: 10n ** 20n,
+        entries: [{ address: "A".repeat(32), amountHuman: "4.5" }],
+      }),
+    )
+    expect(receipt.summary).toEqual({ sent: 1, failed: 0, total: 1 })
+    expect(merges).toHaveLength(1)
+    expect(merges[0].pins.sort()).toEqual(["one", "three"])
+    expect(withdraws).toHaveLength(1)
+  })
+
+  it("skips merging when the vault total cannot cover the row at all", async () => {
+    const notes = [{ id: "mid", amount: 1n * 10n ** 9n }]
+    const withdraws: Array<{ lamports: number; recipient: string; pins: string[] }> = []
+    const merges: Array<{ net: bigint; pins: string[] }> = []
+    const { client, listNotes } = laneClient({ notes, withdrawMs: 5, withdraws, merges })
+    const engine = new PayrollEngine(laneDeps(client, listNotes))
+    const receipt = await engine.run(
+      req({
+        vaultRaw: 10n ** 20n,
+        entries: [{ address: "A".repeat(32), amountHuman: "5" }],
+      }),
+    )
+    expect(receipt.entries[0].status).toBe("failed")
+    expect(receipt.entries[0].error).toMatch(/insufficient/)
+    expect(merges).toHaveLength(0)
+    expect(withdraws).toHaveLength(0)
   })
 
   it("cancel() with more rows than lanes marks never-started rows failed-cancelled", async () => {
