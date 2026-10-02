@@ -349,18 +349,48 @@ export class PayrollEngine {
     if (this.deps.listNotes && !this.cancelled) {
       try {
         this.setStatus("Verifying the private vault balance from the chain…")
-        await gatedKick()
+        // fire, never await: the kick runs a FULL backend sync and blocks
+        // ~90s on a grown tree — that was the 1.5-minute hold before every
+        // run. The refresh below is best-effort anyway; reserveFor's gated
+        // heal and the mid-run top-up cover whatever it misses.
+        void gatedKick()
         await this.deps.client.refreshNotes()
         vaultRaw = this.deps.listNotes(req.asset).reduce((s, n) => s + BigInt(n.amount), 0n)
       } catch {
         // keep the caller's estimate — the mid-run top-up below still backstops it
       }
     }
-    const plan = planRun(req.entries, decimals, req.bps, vaultRaw, {
+    const planOpts = {
       mode: req.mode,
       // the floor is SOL-denominated; token raw units never pay it
       minTransferFee: req.asset.kind === "sol" ? req.minTransferFee : 0,
-    })
+    }
+    let plan = planRun(req.entries, decimals, req.bps, vaultRaw, planOpts)
+    // Fragmented-vault fast path: leftover fragments from earlier runs can
+    // cover the total while no single note AND no pair fits the widest row —
+    // every payout then pays through merge txs (mean 20s/row, ~4min per 100
+    // rows no matter the lane count). Pairs are fine (the 2-input circuit
+    // pays them directly, no merge tx), so this fires only past that. One
+    // fresh deposit restores the single-note fast path the first runs
+    // enjoyed: the old fragments stay in the vault untouched, and the run
+    // rides change chains exactly like a first deposit. Full-size runs only
+    // (the same bar as the lane fan-out): for a short run a gasless merge
+    // beats another wallet prompt.
+    if (this.deps.listNotes && plan.shortfall === 0n && plan.rows.length >= SPLIT_MIN_ROWS) {
+      const amounts = this.deps
+        .listNotes(req.asset)
+        .map((n) => BigInt(n.amount))
+        .sort((a, b) => (a > b ? -1 : a < b ? 1 : 0))
+      const maxGross = plan.rows.reduce((m, r) => (r.gross > m ? r.gross : m), 0n)
+      const single = amounts[0] >= maxGross
+      const pair = amounts.length >= 2 && amounts[0] + amounts[1] >= maxGross
+      if (!single && !pair) {
+        this.setStatus(
+          "Vault notes are too fragmented to pay through directly — one fresh deposit will fund this run…",
+        )
+        plan = planRun(req.entries, decimals, req.bps, 0n, planOpts)
+      }
+    }
 
     const feeFloorBig = BigInt(req.asset.kind === "sol" ? (req.minTransferFee ?? 0) : 0)
     const bpsBig = BigInt(req.bps)

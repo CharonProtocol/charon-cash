@@ -575,6 +575,40 @@ function laneDeps(client: EngineClient, listNotes: () => ReturnType<ReturnType<t
 }
 
 describe("PayrollEngine lanes", () => {
+  it("pays a fragmented vault from one fresh deposit instead of merging fragments", async () => {
+    // 28 fragments of 0.45 SOL cover the run's total (12.6 SOL) but neither
+    // a single nor even a pair fits the widest row (1.01 SOL gross): paying
+    // directly would merge fragments for every row (the measured ~4min per
+    // 100 rows regardless of lanes). One fresh full deposit restores the
+    // single-note fast path; fragments stay put.
+    const notes = Array.from({ length: 28 }, (_, i) => ({ id: `f${i}`, amount: 450_000_000n }))
+    const withdraws: Array<{ lamports: number; recipient: string; pins: string[] }> = []
+    const merges: Array<{ net: bigint; pins: string[] }> = []
+    const splits: Array<{ net: bigint; pins: string[] }> = []
+    const deposits: number[] = []
+    const { client, listNotes } = laneClient({ notes, withdrawMs: 5, withdraws, merges, splits, deposits })
+    const engine = new PayrollEngine(laneDeps(client, listNotes))
+    const receipt = await engine.run(
+      req({
+        entries: Array.from({ length: 12 }, (_, i) => ({
+          address: String.fromCharCode(97 + i).repeat(32),
+          amountHuman: "1",
+        })),
+        vaultRaw: 0n,
+        mode: "shielded",
+        lanes: 8,
+      }),
+    )
+    expect(receipt.summary).toEqual({ sent: 12, failed: 0, total: 12 })
+    // one fresh full deposit (total + margin + fan-out budget) — not the
+    // zero shortfall the covering-but-fragmented vault would suggest
+    expect(deposits).toHaveLength(1)
+    expect(deposits[0]).toBeGreaterThan(12_140_000_000)
+    // the fan-out ran from the fresh note, and merge chains stayed rare
+    expect(splits.length).toBeGreaterThanOrEqual(2)
+    expect(merges.length).toBeLessThanOrEqual(3)
+  })
+
   it("one big note feeds 8 rows through change-note handoffs with zero pin overlap", async () => {
     const notes = [{ id: "big", amount: 100n * 10n ** 9n }]
     const withdraws: Array<{ lamports: number; recipient: string; pins: string[] }> = []
