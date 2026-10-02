@@ -1,14 +1,40 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, ScrollView, Pressable, KeyboardAvoidingView, Platform } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { View, Text, ScrollView, Pressable, KeyboardAvoidingView, Platform, Animated } from "react-native";
 import { useBridge } from "../bridge/BridgeContext";
 import { useWallet } from "../wallet/WalletProvider";
 import { useApp } from "../store";
 import { Button, Card, Field, MonoText, ErrorBanner, Pill } from "../ui/components";
+import { FadeIn } from "../ui/FadeIn";
 import { theme, typography } from "../ui/theme";
 import { fetchSolBalance, fetchSplBalance, fetchMintDecimals } from "../lib/solana";
 import type { TransferResult } from "../lib/rpc";
 
 const B58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
+/** Success badge: springs in with a pop instead of just appearing. */
+function SuccessBadge() {
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.spring(v, {
+      toValue: 1,
+      friction: 5,
+      tension: 120,
+      useNativeDriver: true,
+    }).start();
+  }, [v]);
+  return (
+    <Animated.View
+      style={{
+        width: 64, height: 64, borderRadius: 32,
+        backgroundColor: theme.accentSoft, alignItems: "center", justifyContent: "center",
+        transform: [{ scale: v }],
+        opacity: v.interpolate({ inputRange: [0, 1], outputRange: [0, 1] }),
+      }}
+    >
+      <Text style={{ fontSize: 32 }}>OK</Text>
+    </Animated.View>
+  );
+}
 
 // Format an integer-raw amount (lamports for SOL, base units for SPL) at the
 // given decimals into a human string.
@@ -146,38 +172,33 @@ export function TransferScreen({ onDone }: { onDone: () => void }) {
   if (result) {
     return (
       <ScrollView style={{ flex: 1, backgroundColor: theme.bg }} contentContainerStyle={{ flexGrow: 1, padding: 24, paddingTop: 16, justifyContent: "center" }}>
-        <View style={{ alignItems: "center", marginBottom: 28 }}>
-          <View
-            style={{
-              width: 64, height: 64, borderRadius: 32,
-              backgroundColor: theme.accentSoft, alignItems: "center", justifyContent: "center",
-            }}
-          >
-            <Text style={{ fontSize: 32 }}>OK</Text>
+        <FadeIn>
+          <View style={{ alignItems: "center", marginBottom: 28 }}>
+            <SuccessBadge />
+            <Text style={[typography.title, { color: theme.text, marginTop: 16 }]}>
+              Sent privately
+            </Text>
+            <Text style={[typography.body, { color: theme.textSoft, marginTop: 6, textAlign: "center" }]}>
+              {fmtRaw(result.recipientLamports, decimals)} {unit} delivered to the recipient.
+            </Text>
           </View>
-          <Text style={[typography.title, { color: theme.text, marginTop: 16 }]}>
-            Sent privately
-          </Text>
-          <Text style={[typography.body, { color: theme.textSoft, marginTop: 6, textAlign: "center" }]}>
-            {fmtRaw(result.recipientLamports, decimals)} {unit} delivered to the recipient.
-          </Text>
-        </View>
-        <Card style={{ gap: 10 }}>
-          <Row label="Signature">
-            <MonoText>{result.signature.slice(0, 10)}...{result.signature.slice(-6)}</MonoText>
-          </Row>
-          <Row label="Fee">
-            <Text style={[typography.body, { color: theme.text }]}>{fmtRaw(result.feeLamports, decimals)} {unit}</Text>
-          </Row>
-          {result.nullifiers?.length ? (
-            <Row label="Nullifiers">
-              <MonoText>{result.nullifiers.length} spent</MonoText>
+          <Card style={{ gap: 10 }}>
+            <Row label="Signature">
+              <MonoText>{result.signature.slice(0, 10)}...{result.signature.slice(-6)}</MonoText>
             </Row>
-          ) : null}
-        </Card>
-        <View style={{ marginTop: 24 }}>
-          <Button title="Done" onPress={onDone} />
-        </View>
+            <Row label="Fee">
+              <Text style={[typography.body, { color: theme.text }]}>{fmtRaw(result.feeLamports, decimals)} {unit}</Text>
+            </Row>
+            {result.nullifiers?.length ? (
+              <Row label="Nullifiers">
+                <MonoText>{result.nullifiers.length} spent</MonoText>
+              </Row>
+            ) : null}
+          </Card>
+          <View style={{ marginTop: 24 }}>
+            <Button title="Done" onPress={onDone} />
+          </View>
+        </FadeIn>
       </ScrollView>
     );
   }
@@ -192,23 +213,27 @@ export function TransferScreen({ onDone }: { onDone: () => void }) {
           <Text style={[typography.small, { color: theme.textMuted }]}>{"< Back"}</Text>
         </Pressable>
 
-        <Text style={[typography.title, { color: theme.text }]}>Send</Text>
-        <Text style={[typography.body, { color: theme.textSoft, marginTop: 8 }]}>
-          {mode === "wallet"
-            ? "Deposit fresh from your wallet, then withdraw to the recipient. The deposit stays unlinked to the recipient via ZK."
-            : "Spend your shielded notes to pay an address. Relayed gaslessly -- the source note stays unlinkable."}
-        </Text>
+        <FadeIn>
+          <Text style={[typography.title, { color: theme.text }]}>Send</Text>
+          <Text style={[typography.body, { color: theme.textSoft, marginTop: 8 }]}>
+            {mode === "wallet"
+              ? "Deposit fresh from your wallet, then withdraw to the recipient. The deposit stays unlinked to the recipient via ZK."
+              : "Spend your shielded notes to pay an address. Relayed gaslessly -- the source note stays unlinkable."}
+          </Text>
+        </FadeIn>
 
         {/* Token toggle */}
-        <Segmented
-          style={{ marginTop: 20 }}
-          options={[
-            { value: "sol", label: "SOL" },
-            { value: "spl", label: "SPL" },
-          ]}
-          value={token}
-          onChange={(v) => setToken(v as Token)}
-        />
+        <FadeIn delay={70}>
+          <Segmented
+            style={{ marginTop: 20 }}
+            options={[
+              { value: "sol", label: "SOL" },
+              { value: "spl", label: "SPL" },
+            ]}
+            value={token}
+            onChange={(v) => setToken(v as Token)}
+          />
+        </FadeIn>
 
         {token === "spl" ? (
           <Field
@@ -221,17 +246,20 @@ export function TransferScreen({ onDone }: { onDone: () => void }) {
         ) : null}
 
         {/* Source toggle: deposit-and-send (from wallet) vs spend shielded */}
-        <Segmented
-          style={{ marginTop: token === "spl" ? 0 : 20 }}
-          options={[
-            { value: "wallet", label: "From wallet" },
-            { value: "shielded", label: "From shielded" },
-          ]}
-          value={mode}
-          onChange={(v) => setMode(v as Mode)}
-        />
+        <FadeIn delay={120}>
+          <Segmented
+            style={{ marginTop: token === "spl" ? 0 : 20 }}
+            options={[
+              { value: "wallet", label: "From wallet" },
+              { value: "shielded", label: "From shielded" },
+            ]}
+            value={mode}
+            onChange={(v) => setMode(v as Mode)}
+          />
+        </FadeIn>
 
-        <View style={{ marginTop: 20 }}>
+        <FadeIn delay={170}>
+          <View style={{ marginTop: 20 }}>
           {error ? <ErrorBanner message={error} onDismiss={() => setError(null)} /> : null}
 
           <Field
@@ -298,11 +326,14 @@ export function TransferScreen({ onDone }: { onDone: () => void }) {
               {phase}
             </Text>
           ) : null}
-        </View>
+          </View>
+        </FadeIn>
 
-        <View style={{ marginTop: 24 }}>
-          <Pill tone="muted">zero-knowledge - groth16 - bn254</Pill>
-        </View>
+        <FadeIn delay={220}>
+          <View style={{ marginTop: 24 }}>
+            <Pill tone="muted">zero-knowledge - groth16 - bn254</Pill>
+          </View>
+        </FadeIn>
       </ScrollView>
     </KeyboardAvoidingView>
   );

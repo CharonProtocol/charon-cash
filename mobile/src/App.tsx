@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Dimensions } from "react-native";
+import { View, Dimensions, Animated } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
@@ -15,6 +15,28 @@ import { theme } from "./ui/theme";
 import type { BridgeMethod } from "./lib/rpc";
 
 type Nav = "home" | "transfer" | "sendnote" | "settings";
+
+/** Fade + slide wrapper re-mounted on every nav change, so screens glide. */
+function ScreenTransition({ navKey, children }: { navKey: string; children: React.ReactNode }) {
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    v.setValue(0);
+    Animated.timing(v, {
+      toValue: 1,
+      duration: 240,
+      easing: (t) => 1 - Math.pow(1 - t, 3),
+      useNativeDriver: true,
+    }).start();
+  }, [navKey, v]);
+  return (
+    <Animated.View
+      key={navKey}
+      style={{ flex: 1, opacity: v, transform: [{ translateY: v.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }] }}
+    >
+      {children}
+    </Animated.View>
+  );
+}
 
 function Root() {
   const { connected } = useWallet();
@@ -60,7 +82,7 @@ function Root() {
         paddingBottom: Math.max(insets.bottom, 16),
       }}
     >
-      {screen}
+      <ScreenTransition navKey={(connected ? "in:" : "out:") + nav}>{screen}</ScreenTransition>
     </View>
   );
 }

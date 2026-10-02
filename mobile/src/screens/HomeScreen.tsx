@@ -4,6 +4,7 @@ import { useWallet } from "../wallet/WalletProvider";
 import { useBridge } from "../bridge/BridgeContext";
 import { useApp } from "../store";
 import { Button, Card, MonoText, Pill, ErrorBanner } from "../ui/components";
+import { FadeIn } from "../ui/FadeIn";
 import { Logo } from "../ui/Logo";
 import { theme, typography } from "../ui/theme";
 import type { BalanceResult, DiagResult, NoteLike, RefreshResult } from "../lib/rpc";
@@ -154,31 +155,35 @@ export function HomeScreen({
       </View>
 
       <View style={{ flex: 1, justifyContent: "center" }}>
-        <Text style={[typography.micro, { color: theme.textMuted }]}>
-          Shielded balance
-        </Text>
-        <View style={{ flexDirection: "row", alignItems: "baseline", marginTop: 6 }}>
-          <Text style={[typography.hero, { color: theme.text, fontSize: 52 }]}>{fmtSol(balanceLamports)}</Text>
-          <Text style={[typography.h2, { color: theme.textSoft, marginLeft: 10 }]}>SOL</Text>
-        </View>
-        <MonoText style={{ marginTop: 10 }}>
-          {address ? address.slice(0, 6) + "..." + address.slice(-6) : ""}
-        </MonoText>
-        <View
-          style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginTop: 14,
-          }}
-        >
-          <Text style={[typography.small, { color: theme.textMuted }]}>
-            Wallet (deposit funds)
+        <FadeIn>
+          <Text style={[typography.micro, { color: theme.textMuted }]}>
+            Shielded balance
           </Text>
-          <Text style={[typography.body, { color: theme.textSoft }]}>
-            {fmtSol(publicBalanceLamports)} SOL
-          </Text>
-        </View>
+          <View style={{ flexDirection: "row", alignItems: "baseline", marginTop: 6 }}>
+            <Text style={[typography.hero, { color: theme.text, fontSize: 52 }]}>{fmtSol(balanceLamports)}</Text>
+            <Text style={[typography.h2, { color: theme.textSoft, marginLeft: 10 }]}>SOL</Text>
+          </View>
+          <MonoText style={{ marginTop: 10 }}>
+            {address ? address.slice(0, 6) + "..." + address.slice(-6) : ""}
+          </MonoText>
+        </FadeIn>
+        <FadeIn delay={90}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginTop: 14,
+            }}
+          >
+            <Text style={[typography.small, { color: theme.textMuted }]}>
+              Wallet (deposit funds)
+            </Text>
+            <Text style={[typography.body, { color: theme.textSoft }]}>
+              {fmtSol(publicBalanceLamports)} SOL
+            </Text>
+          </View>
+        </FadeIn>
 
         {!webcrypto && bridgeReady ? (
           <View style={{ marginTop: 20 }}>
@@ -194,14 +199,22 @@ export function HomeScreen({
       </View>
 
       <View style={{ gap: 10 }}>
-        <Button title="Send private transfer" onPress={onSend} subtitle="to any address  -  gasless via relayer" />
-        <Button title="Send payment note" onPress={onSendNote} subtitle="share a redeemable note" variant="ghost" />
-        <Button title={busy ? busyLabel || "Working..." : "Refresh balance"} variant="ghost" onPress={refresh} loading={busy} />
+        <FadeIn delay={140}>
+          <Button title="Send private transfer" onPress={onSend} subtitle="to any address  -  gasless via relayer" />
+        </FadeIn>
+        <FadeIn delay={200}>
+          <Button title="Send payment note" onPress={onSendNote} subtitle="share a redeemable note" variant="ghost" />
+        </FadeIn>
+        <FadeIn delay={260}>
+          <Button title={busy ? busyLabel || "Working..." : "Refresh balance"} variant="ghost" onPress={refresh} loading={busy} />
+        </FadeIn>
       </View>
 
-      <Text style={[typography.micro, { color: theme.textMuted, marginTop: 24, marginBottom: 10 }]}>
-        Shielded notes ({unspent.length})
-      </Text>
+      <FadeIn delay={320}>
+        <Text style={[typography.micro, { color: theme.textMuted, marginTop: 24, marginBottom: 10 }]}>
+          Shielded notes ({unspent.length})
+        </Text>
+      </FadeIn>
       <View>
         {unspent.length === 0 ? (
           <Card>
