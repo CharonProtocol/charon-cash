@@ -135,6 +135,8 @@ export interface EngineDeps {
    * run stays sequential (no reservation).
    */
   listNotes?(asset: Asset): NoteRef[]
+  /** Forces one indexer sync so plan-time balance reads see fresh leaves. Optional: tests omit it and no network call is made. */
+  kickIndexer?(): Promise<void>
 }
 
 const ATTEMPTS = 3
@@ -277,11 +279,6 @@ export class PayrollEngine {
     this.splits = 0
     this.statusRef = undefined
     const decimals = req.asset.kind === "sol" ? 9 : req.asset.decimals
-    const plan = planRun(req.entries, decimals, req.bps, req.vaultRaw, {
-      mode: req.mode,
-      // the floor is SOL-denominated; token raw units never pay it
-      minTransferFee: req.asset.kind === "sol" ? req.minTransferFee : 0,
-    })
     const rows: RowState[] = req.entries.map((e) => ({
       address: e.address,
       amountHuman: e.amountHuman,
@@ -312,6 +309,30 @@ export class PayrollEngine {
 
     await this.deps.client.init()
     await this.deps.client.unlock()
+
+    // Verify the vault from the chain before planning. The caller's
+    // pre-unlock total can hold phantom notes (spent on-chain by a cancelled
+    // earlier run but never marked spent locally), which under-quotes the
+    // deposit and let the vault run dry mid-run — 17 rows died with
+    // "insufficient private balance" in the measured 100-row run because of
+    // exactly that. A fresh scan re-derives ownership from the chain's own
+    // leaf set, so the deposit is sized against real money.
+    let vaultRaw = req.vaultRaw
+    if (this.deps.listNotes) {
+      try {
+        this.setStatus("Verifying the private vault balance from the chain…")
+        await this.deps.kickIndexer?.().catch(() => {})
+        await this.deps.client.refreshNotes({ fromScratch: true })
+        vaultRaw = this.deps.listNotes(req.asset).reduce((s, n) => s + BigInt(n.amount), 0n)
+      } catch {
+        // keep the caller's estimate — the mid-run top-up below still backstops it
+      }
+    }
+    const plan = planRun(req.entries, decimals, req.bps, vaultRaw, {
+      mode: req.mode,
+      // the floor is SOL-denominated; token raw units never pay it
+      minTransferFee: req.asset.kind === "sol" ? req.minTransferFee : 0,
+    })
 
     const feeFloorBig = BigInt(req.asset.kind === "sol" ? (req.minTransferFee ?? 0) : 0)
     const bpsBig = BigInt(req.bps)
@@ -543,6 +564,57 @@ export class PayrollEngine {
       }
     }
 
+    /**
+     * Last-resort funding recovery when the note pool cannot cover a row: one
+     * full rescan (the "missing" money may be an unseen change note), then —
+     * if the vault is genuinely short — a single top-up deposit sized to
+     * everything still owed, shared by all starving lanes via the in-flight
+     * promise. Rows must never silently strand on a dry vault again (17 died
+     * that way in the measured run); one wallet signature mid-run is the
+     * price of guaranteeing it.
+     */
+    let topUpInFlight: Promise<boolean> | null = null
+    let topUpsUsed = 0
+    const ensureTopUp = async (gross: bigint): Promise<boolean> => {
+      if (!ledger || topUpsUsed >= 1) return false
+      if (topUpInFlight) return topUpInFlight
+      topUpInFlight = (async () => {
+        try {
+          await this.deps.client.refreshNotes({ fromScratch: true }).catch(() => {})
+          reloadLedger()
+          if (ledger.totalFree() >= gross) return true
+          topUpsUsed++
+          const owed = plan.rows.reduce(
+            (s, r, i) =>
+              rows[i].status === "confirmed" || rows[i].status === "relayed" || rows[i].status === "confirming"
+                ? s
+                : s + r.gross,
+            0n,
+          )
+          const amount = Number(owed + plan.margin + 120_000n)
+          if (amount <= 0 || !Number.isSafeInteger(amount)) return false
+          this.setStatus(
+            `Vault ran dry — signing one top-up deposit of ${(amount / 1e9).toFixed(4)} SOL to finish the run…`,
+          )
+          const dep =
+            req.asset.kind === "sol"
+              ? await this.deps.client.depositSOL(amount)
+              : await this.deps.client.depositSPL(req.asset.mint, amount)
+          await this.deps.waitUntilIndexed(treeKeyOf(req.asset), dep.leafIndex)
+          await this.deps.client.refreshNotes().catch(() => {})
+          reloadLedger()
+          return true
+        } catch {
+          // a rejected wallet popup (or dead RPC) is not a payout failure —
+          // concede and let the row report the honest balance error
+          return false
+        } finally {
+          topUpInFlight = null
+        }
+      })()
+      return topUpInFlight
+    }
+
     const payOne = async (row: RowState, planRow: (typeof plan.rows)[number]): Promise<void> => {
       const gross = planRow.gross
       for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
@@ -573,6 +645,9 @@ export class PayrollEngine {
             row.status = "failed"
             row.error = "cancelled"
             return
+          }
+          if (!pinned && ledger && (await ensureTopUp(gross))) {
+            pinned = await reserveFor(gross)
           }
           if (!pinned && ledger) {
             const total = ledger.totalFree()
@@ -943,6 +1018,8 @@ export function createEngine(client: EngineClient): PayrollEngine {
           .map((n) => ({ id: n.id, amount: n.amount, blinding: n.blinding }))
       : undefined,
     waitUntilIndexed: defaultWaitUntilIndexed,
+    kickIndexer: () =>
+      fetch(`${getBackendUrl()}/api/indexer/kick`, { method: "POST" }).then(() => undefined),
     confirmSignature: defaultConfirm,
     now: () => Date.now(),
     newId: () =>

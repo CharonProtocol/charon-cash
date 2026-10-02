@@ -366,6 +366,7 @@ function laneClient(ctl: {
   withdraws: Array<{ lamports: number; recipient: string; pins: string[] }>
   merges?: Array<{ net: bigint; pins: string[] }>
   splits?: Array<{ net: bigint; pins: string[] }>
+  deposits?: number[]
 }) {
   const SELF = "11111111111111111111111111111111"
   let changeSeq = 0
@@ -403,11 +404,17 @@ function laneClient(ctl: {
     refreshNotes: async () => {
       refreshes.n++
     },
-    depositSOL: async () => {
-      throw new Error("lane tests pre-fund the vault")
+    // deposits mint a fresh spendable note — the contract the plan-time
+    // funding and the mid-run top-up both rely on
+    depositSOL: async (lamports: number) => {
+      ctl.deposits?.push(lamports)
+      ctl.notes.push({ id: `dep${changeSeq++}`, amount: BigInt(lamports) })
+      return { signature: `DEP-${changeSeq}`, leafIndex: 70 + changeSeq, commitment: `0xd${changeSeq}` }
     },
-    depositSPL: async () => {
-      throw new Error("lane tests pre-fund the vault")
+    depositSPL: async (_m: string, raw: number) => {
+      ctl.deposits?.push(raw)
+      ctl.notes.push({ id: `dep${changeSeq++}`, amount: BigInt(raw) })
+      return { signature: `DEP-${changeSeq}`, leafIndex: 70 + changeSeq, commitment: `0xd${changeSeq}` }
     },
     transferNoteSOL: async (recipient: string, netLamports: number, opts) => {
       const pins = (opts?.inputNotes ?? []).map((p) => p.blinding)
@@ -499,10 +506,15 @@ describe("PayrollEngine lanes", () => {
     expect(new Set(pinned).size).toBe(pinned.length)
   })
 
-  it("fails a row as insufficient when no note (or change note) can ever cover it", async () => {
+  it("tops the verified vault up at funding when the notes cannot cover the run", async () => {
+    // 6 SOL of notes vs two 5 SOL rows: the verified balance (not the
+    // caller's optimistic estimate) shows the gap, so funding deposits the
+    // difference and both rows pay — trusting the raw estimate instead is
+    // what dry-killed the second row in the measured run
     const notes = [{ id: "mid", amount: 6n * 10n ** 9n }]
     const withdraws: Array<{ lamports: number; recipient: string; pins: string[] }> = []
-    const { client, listNotes } = laneClient({ notes, withdrawMs: 8, withdraws })
+    const deposits: number[] = []
+    const { client, listNotes } = laneClient({ notes, withdrawMs: 8, withdraws, deposits })
     const engine = new PayrollEngine(laneDeps(client, listNotes))
     const receipt = await engine.run(
       req({
@@ -513,10 +525,10 @@ describe("PayrollEngine lanes", () => {
         ],
       }),
     )
-    expect(receipt.entries[0].status).toBe("sent")
-    expect(receipt.entries[1].status).toBe("failed")
-    expect(receipt.entries[1].error).toMatch(/insufficient/)
-    expect(withdraws).toHaveLength(1)
+    expect(receipt.summary).toEqual({ sent: 2, failed: 0, total: 2 })
+    expect(withdraws).toHaveLength(2)
+    expect(deposits).toHaveLength(1)
+    expect(deposits[0]).toBeGreaterThan(4n * 10n ** 9n)
   })
 
   it("reserves a two-note pair when no single note covers the payout", async () => {
@@ -602,11 +614,15 @@ describe("PayrollEngine lanes", () => {
     expect(withdraws).toHaveLength(2)
   })
 
-  it("skips merging when the vault total cannot cover the row at all", async () => {
+  it("rescues an underfunded vault with deposits and never merges what it cannot afford", async () => {
+    // 1 SOL of notes vs a 5 SOL row: merging is pointless while the total
+    // (even after the funding top-up) first cannot cover the row — the engine
+    // skips the merge chain, tops the vault with one shared deposit, and pays
     const notes = [{ id: "mid", amount: 1n * 10n ** 9n }]
     const withdraws: Array<{ lamports: number; recipient: string; pins: string[] }> = []
     const merges: Array<{ net: bigint; pins: string[] }> = []
-    const { client, listNotes } = laneClient({ notes, withdrawMs: 5, withdraws, merges })
+    const deposits: number[] = []
+    const { client, listNotes } = laneClient({ notes, withdrawMs: 5, withdraws, merges, deposits })
     const engine = new PayrollEngine(laneDeps(client, listNotes))
     const receipt = await engine.run(
       req({
@@ -614,10 +630,67 @@ describe("PayrollEngine lanes", () => {
         entries: [{ address: "A".repeat(32), amountHuman: "5" }],
       }),
     )
-    expect(receipt.entries[0].status).toBe("failed")
-    expect(receipt.entries[0].error).toMatch(/insufficient/)
+    expect(receipt.entries[0].status).toBe("sent")
     expect(merges).toHaveLength(0)
-    expect(withdraws).toHaveLength(0)
+    expect(withdraws).toHaveLength(1)
+    // funding tops the vault to the run total, and the top note + residual
+    // then pair-cover the row — no mid-run top-up needed at this size
+    expect(deposits).toHaveLength(1)
+  })
+
+  it("still fails honestly when the top-up deposit is rejected", async () => {
+    // The measured run's terminal state: funding sizes slightly short
+    // (3.03 SOL of notes vs a 3.04 SOL need), two rows pay, the third hits a
+    // dry vault — and when the wallet refuses the one top-up deposit, that
+    // row must fail with the honest balance error instead of hanging or
+    // lying. The first deposit call is the funding signature; every later
+    // call is the mid-run top-up being rejected.
+    let idc = 0
+    let leaf = 40
+    const mk = (amount: bigint) => ({ id: `n${++idc}`, amount: amount.toString(), blinding: `b${idc}` })
+    const notesArr = [mk(1050n * 10n ** 6n), mk(1050n * 10n ** 6n), mk(930n * 10n ** 6n)]
+    let funding = 0
+    let rejections = 0
+    const { client: base } = mockClient({ fails: new Map() })
+    const feeOf = (x: bigint) => (x * 100n) / 10_000n
+    const client: EngineClient = {
+      ...base,
+      publicKey: new PublicKey("11111111111111111111111111111111"),
+      refreshNotes: async () => {},
+      depositSOL: async () => {
+        if (funding++ === 0) return { signature: "FUND", leafIndex: 39 }
+        rejections++
+        throw new Error("user rejected the top-up")
+      },
+      transferNoteSOL: async (_recipient, netLamports, opts) => {
+        const amt = BigInt(netLamports)
+        const b = opts?.inputNotes?.[0]?.blinding
+        const i = notesArr.findIndex((n) => n.blinding === b)
+        if (i < 0) throw new Error("mock: pinned input not found")
+        const input = BigInt(notesArr[i].amount)
+        notesArr.splice(i, 1)
+        const change = input - amt - feeOf(amt)
+        if (change > 0n) notesArr.push(mk(change))
+        return { signature: `S${++leaf}`, leafIndex: leaf, commitment: `c${leaf}` }
+      },
+    }
+    const engine = new PayrollEngine({
+      client,
+      listNotes: () => notesArr,
+      waitUntilIndexed: async () => {},
+      confirmSignature: async () => true,
+      now: () => 1,
+      newId: () => "run1",
+      sleep: async () => {},
+    })
+    const receipt = await engine.run(req({ vaultRaw: 0n, mode: "shielded" }))
+    // 1 funding signature + 1 rejected mid-run top-up
+    expect(funding).toBe(2)
+    expect(receipt.entries[0].status).toBe("sent")
+    expect(receipt.entries[1].status).toBe("sent")
+    expect(receipt.entries[2].status).toBe("failed")
+    expect(receipt.entries[2].error).toMatch(/insufficient/)
+    expect(rejections).toBe(1)
   })
 
   it("splits the funding note 1->2->4->8 before paying so lanes stop serializing", async () => {
