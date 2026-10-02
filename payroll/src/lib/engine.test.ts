@@ -270,6 +270,10 @@ describe("PayrollEngine", () => {
       amount: (2n * 10n ** 9n).toString(),
       blinding: `blind-${i}`,
     }))
+    // the kick gate is clock-based (min 20s between kicks), so drive a fake
+    // clock through sleep — kicks then fire once per gate window while the
+    // rows keep polling every 5s
+    let clock = 0
     const engine = new PayrollEngine({
       client,
       listNotes: () => notes,
@@ -278,9 +282,11 @@ describe("PayrollEngine", () => {
       kickIndexer: async () => {
         kicks++
       },
-      now: () => 1,
+      now: () => clock,
       newId: () => "run1",
-      sleep: async () => {},
+      sleep: async (ms) => {
+        clock += ms
+      },
     })
     const receipt = await engine.run(req({ vaultRaw: 10n ** 18n, mode: "shielded" }))
     expect(receipt.summary).toEqual({ sent: 3, failed: 0, total: 3 })
@@ -290,18 +296,27 @@ describe("PayrollEngine", () => {
     expect(kicks).toBeGreaterThanOrEqual(1)
   })
 
-  it("heals the spendable set when a pinned note vanishes before broadcast", async () => {
+  it("re-syncs quickly when a pinned note vanishes before broadcast (never a full rescan)", async () => {
     // A landing lane's scan can drop a pinned blinding from the SDK's live
-    // set between the ledger reload and the tx build. The engine must rescan
-    // (fromScratch) so the retry re-resolves from a healed set, instead of
-    // re-pinning the same missing blinding until the attempts burn out.
+    // set between the ledger reload and the tx build. The engine must run a
+    // fast regular sync so the retry re-resolves from a current set — a
+    // fromScratch rescan here costs ~90s per hit and with more lanes the
+    // heals themselves caused the next round of vanishes (the 5-lane run
+    // collapsed to 7/min).
     const { client: base, calls } = mockClient({ fails: new Map() })
     let vanish = true
+    let refreshes = 0
+    let refreshesAtThrow = -1
     const client: EngineClient = {
       ...base,
+      refreshNotes: async (opts?: { fromScratch?: boolean }) => {
+        refreshes++
+        return base.refreshNotes(opts)
+      },
       transferNoteSOL: async (recipient, net, opts) => {
         if (vanish) {
           vanish = false
+          refreshesAtThrow = refreshes
           throw new Error("pinned note not found in spendable set")
         }
         return base.transferNoteSOL(recipient, net, opts)
@@ -312,9 +327,9 @@ describe("PayrollEngine", () => {
     expect(receipt.summary).toEqual({ sent: 3, failed: 0, total: 3 })
     expect(receipt.entries.every((e) => e.status === "sent")).toBe(true)
     expect(receipt.entries.filter((e) => e.attempts === 2)).toHaveLength(1)
-    // exactly one full rescan: the heal (this vault covers the run, so no
-    // reserve-time heal fired either)
-    expect(calls.fromScratches).toBe(1)
+    // the heal ran after the throw, and it was a regular sync — no 90s rescan
+    expect(refreshes).toBeGreaterThan(refreshesAtThrow)
+    expect(calls.fromScratches).toBe(0)
   })
 
   it("cancel() stops between entries and leaves the rest failed-cancelled", async () => {

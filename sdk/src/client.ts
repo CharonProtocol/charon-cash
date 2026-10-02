@@ -278,6 +278,41 @@ export class PrivacyCashClient {
       added += r.added
       spent += r.spent
     }
+    if (!opts?.fromScratch) {
+      // The incremental scan only re-checks nullifiers for leaves it just
+      // decrypted, so a note spent on-chain by a cancelled run's landed-but-
+      // unadjudicated payout would stay spendable locally forever — the
+      // phantom balance that under-sized the next run's deposit. One batch
+      // call re-checks every unspent note; a fromScratch rescan already
+      // covers this (and costs ~90s), so it skips the extra round trip.
+      const mine = unspentNotes(this.publicKey)
+      if (mine.length > 0) {
+        try {
+          const hashes = await this.nullifiersForNotes(
+            mine.map((n) => ({
+              amount: n.amount,
+              blinding: n.blinding,
+              index: n.index,
+              mintAddress: n.mintAddress,
+            })),
+          )
+          let flags: boolean[]
+          try {
+            flags = await nullifiersSpent(hashes)
+          } catch {
+            flags = await Promise.all(hashes.map((h) => isNullifierSpent(h)))
+          }
+          for (let i = 0; i < mine.length; i++) {
+            if (flags[i]) {
+              markNoteSpentByIndex(this.publicKey, mine[i].mintAddress, mine[i].index)
+              spent++
+            }
+          }
+        } catch {
+          // spent-status re-check is best-effort; the scan result stands
+        }
+      }
+    }
     await this.persistNotes().catch(() => {})
     return { scanned, added, spent }
   }

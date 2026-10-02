@@ -147,9 +147,9 @@ const RESERVE_WAIT_CAP_MS = 120_000
 // the relayer's in-flight guard holds ~60s while the first submit is still
 // proving and the nullifier mirror syncs lazily, so a single immediate check
 // reads "not landed" for a payout that lands a minute later (rows reported
-// failed while the money arrived). 24 polls × 5s ≈ a two-minute window —
-// past the guard's TTL a retry is safe again too.
-export const ADJUDICATE_POLLS = 24
+// failed while the money arrived). The window matches the guard's TTL — past
+// it a retry is safe again.
+export const ADJUDICATE_POLLS = 12
 const ADJUDICATE_POLL_MS = 5_000
 const REFRESH_MIN_GAP_MS = 1_500
 // Below this many rows the split fan-out costs more than the serialization it
@@ -314,6 +314,25 @@ export class PayrollEngine {
       this.statusRef = status
       this.emit(currentPhase)
     }
+    // One shared indexer kick at a time, at most one per 20s across all
+    // lanes: a per-row kick every 5s during an adjudication storm pinned the
+    // backend's sync lock and starved the relayer (28/min collapsed to 7/min
+    // on a 5-lane run).
+    let kickInFlight: Promise<void> | null = null
+    let lastKickAt = 0
+    const gatedKick = (): Promise<void> => {
+      if (!this.deps.kickIndexer) return Promise.resolve()
+      if (this.deps.now() - lastKickAt < 20_000) return Promise.resolve()
+      if (kickInFlight) return kickInFlight
+      lastKickAt = this.deps.now()
+      kickInFlight = this.deps
+        .kickIndexer()
+        .catch(() => {})
+        .finally(() => {
+          kickInFlight = null
+        })
+      return kickInFlight
+    }
 
     await this.deps.client.init()
     await this.deps.client.unlock()
@@ -323,14 +342,15 @@ export class PayrollEngine {
     // earlier run but never marked spent locally), which under-quotes the
     // deposit and let the vault run dry mid-run — 17 rows died with
     // "insufficient private balance" in the measured 100-row run because of
-    // exactly that. A fresh scan re-derives ownership from the chain's own
-    // leaf set, so the deposit is sized against real money.
+    // exactly that. A regular refresh + the SDK's nullifier re-check cleans
+    // phantoms in seconds; a fromScratch rescan here cost ~90s of start lag
+    // on every run, so it is reserved for reserveFor's gated heal.
     let vaultRaw = req.vaultRaw
-    if (this.deps.listNotes) {
+    if (this.deps.listNotes && !this.cancelled) {
       try {
         this.setStatus("Verifying the private vault balance from the chain…")
-        await this.deps.kickIndexer?.().catch(() => {})
-        await this.deps.client.refreshNotes({ fromScratch: true })
+        await gatedKick()
+        await this.deps.client.refreshNotes()
         vaultRaw = this.deps.listNotes(req.asset).reduce((s, n) => s + BigInt(n.amount), 0n)
       } catch {
         // keep the caller's estimate — the mid-run top-up below still backstops it
@@ -720,12 +740,15 @@ export class PayrollEngine {
           const msg = (e as Error).message
           // A pinned note can vanish from the SDK's live spendable set
           // between the ledger reload and the tx build (a landing lane's
-          // scan marks notes spent mid-flight). Heal the set with one full
-          // rescan before the retry — otherwise every attempt re-pins the
-          // same missing blinding and burns out ("pinned note not found"
-          // failed whole rows this way while hitting the run's speed).
+          // scan marks notes spent mid-flight). Re-sync before the retry so
+          // it re-resolves from a current set — but a REGULAR sync only: a
+          // fromScratch rescan here costs ~90s per hit and floods the
+          // backend, and with more lanes the heals themselves caused the
+          // next round of vanishes (the 5-lane run collapsed to 7/min).
+          // If the note is genuinely spent, reserveFor's gated full rescan
+          // is the one that finds out.
           if (!submitted && /pinned note not found|pinned notes hold /.test(msg)) {
-            await this.deps.client.refreshNotes({ fromScratch: true }).catch(() => {})
+            await this.deps.client.refreshNotes().catch(() => {})
             reloadLedger()
           }
           // A throw after broadcast must never free the pinned notes for a
@@ -748,7 +771,7 @@ export class PayrollEngine {
                   break
                 }
                 if (this.cancelled || poll === ADJUDICATE_POLLS - 1) break
-                await this.deps.kickIndexer?.().catch(() => {})
+                await gatedKick()
                 await this.deps.sleep(ADJUDICATE_POLL_MS)
               }
             }
