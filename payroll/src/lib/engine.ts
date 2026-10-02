@@ -100,7 +100,7 @@ export interface EngineDeps {
 
 const ATTEMPTS = 3
 const LANES = 8
-const RESERVE_POLL_MS = 800
+const RESERVE_POLL_MS = 350
 const RESERVE_WAIT_CAP_MS = 120_000
 const REFRESH_MIN_GAP_MS = 1_500
 
