@@ -2,6 +2,10 @@ name = "privacy-cash-relayer"
 main = "build/worker/shim.mjs"
 compatibility_date = "2026-08-16"
 
+# Keep the D1 mirror fresh between relays: read routes no longer sync lazily.
+[triggers]
+crons = ["* * * * *"]
+
 [build]
 command = "worker-build --release"
 

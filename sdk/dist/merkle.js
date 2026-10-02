@@ -135,6 +135,28 @@ async function getJson(path) {
     }
     return data;
 }
+async function postJson(path, body) {
+    const res = await fetch(getBackendUrl() + path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    let data = null;
+    if (text) {
+        try {
+            data = JSON.parse(text);
+        }
+        catch {
+            data = text;
+        }
+    }
+    if (!res.ok) {
+        const err = data?.error;
+        throw new Error(err?.message ?? `HTTP ${res.status}`);
+    }
+    return data;
+}
 export async function fetchRelayerInfo() {
     const r = await getJson("/api/relayer/info");
     return {
@@ -189,6 +211,26 @@ export async function isNullifierSpent(hashHex) {
     catch {
         return false;
     }
+}
+/**
+ * Spent flags for many nullifiers in as few calls as possible: one batch
+ * request per 90 (the scan otherwise paid a round trip per note — the slow
+ * unlock and slow in-run sync passes). Input order is preserved.
+ */
+export async function nullifiersSpent(hashHexes) {
+    const out = [];
+    for (let i = 0; i < hashHexes.length; i += 90) {
+        const r = await postJson("/api/nullifiers/batch", {
+            hashes: hashHexes.slice(i, i + 90),
+        });
+        const results = r.results;
+        if (!Array.isArray(results) || results.length !== hashHexes.slice(i, i + 90).length) {
+            throw new Error("nullifier batch returned a mismatched result set");
+        }
+        for (const item of results)
+            out.push(!!item.spent);
+    }
+    return out;
 }
 /** Spent flag plus the spending tx signature, when the relayer recorded one. */
 export async function nullifierInfo(hashHex) {

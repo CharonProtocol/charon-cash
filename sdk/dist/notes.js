@@ -97,13 +97,47 @@ export function removeStaleNote(wallet, mintAddress, amount, blinding, keepIndex
         persist(wallet, filtered);
 }
 export function getSyncOffset(wallet, treeKey) {
-    return OFFSETS.get(ok(wallet, treeKey)) ?? 0;
+    const k = ok(wallet, treeKey);
+    const mem = OFFSETS.get(k);
+    if (mem !== undefined)
+        return mem;
+    // Persisted across reloads: a fresh page no longer re-scans the whole tree
+    // (the 580-leaf unlock scan took over a minute). syncNotes guards against
+    // a stored offset beyond the tree in case the indexer was reset.
+    try {
+        const raw = localStorage.getItem(OFFSET_LEGACY_PREFIX + k);
+        if (raw !== null) {
+            const n = Number(raw);
+            if (Number.isFinite(n) && n >= 0) {
+                OFFSETS.set(k, n);
+                return n;
+            }
+        }
+    }
+    catch {
+        /* storage unavailable — in-memory only */
+    }
+    return 0;
 }
 export function setSyncOffset(wallet, treeKey, offset) {
-    OFFSETS.set(ok(wallet, treeKey), offset);
+    const k = ok(wallet, treeKey);
+    OFFSETS.set(k, offset);
+    try {
+        localStorage.setItem(OFFSET_LEGACY_PREFIX + k, String(offset));
+    }
+    catch {
+        /* storage unavailable — in-memory only */
+    }
 }
 export function resetSyncOffset(wallet, treeKey) {
-    OFFSETS.delete(ok(wallet, treeKey));
+    const k = ok(wallet, treeKey);
+    OFFSETS.delete(k);
+    try {
+        localStorage.removeItem(OFFSET_LEGACY_PREFIX + k);
+    }
+    catch {
+        /* storage unavailable */
+    }
 }
 /**
  * Read any pre-migration plaintext notes left in localStorage by older builds.
@@ -124,9 +158,11 @@ export function readLegacyNotes(wallet) {
     }
 }
 /**
- * Remove every legacy localStorage key for this wallet (plaintext notes + sync
- * offsets). Idempotent; safe to call on every unlock. Ensures no spending
- * secret lingers on disk after the migration to encrypted-DB-only storage.
+ * Remove the legacy plaintext notes key for this wallet. Idempotent; safe to
+ * call on every unlock. The sync offset is deliberately NOT purged: it is a
+ * plain integer cursor with no secret material, and deleting it here forced a
+ * full-tree rescan on every unlock (the multi-minute unlock). A stale offset
+ * is handled by syncNotes's indexer-reset guard instead.
  */
 export function purgeLegacyStorage(wallet) {
     if (typeof localStorage === "undefined")
@@ -134,17 +170,6 @@ export function purgeLegacyStorage(wallet) {
     const w = wk(wallet);
     try {
         localStorage.removeItem(NOTES_LEGACY_PREFIX + w);
-        const notesPrefix = NOTES_LEGACY_PREFIX + w;
-        const offsetPrefix = OFFSET_LEGACY_PREFIX + w + ":";
-        const toRemove = [];
-        for (let i = 0; i < localStorage.length; i++) {
-            const k = localStorage.key(i);
-            if (k && (k === notesPrefix || k.startsWith(offsetPrefix))) {
-                toRemove.push(k);
-            }
-        }
-        for (const k of toRemove)
-            localStorage.removeItem(k);
     }
     catch {
         /* localStorage may be unavailable (private mode); nothing to purge */

@@ -40,3 +40,22 @@ async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     };
     routes::router(state).run(req, env).await
 }
+
+/// Cron tick (every minute, wrangler.toml `[triggers]`): keeps the D1 mirror
+/// current while no relays are flowing, so reads — which no longer pay for a
+/// lazy sync — still see recently landed deposits after an idle period.
+#[event(scheduled)]
+async fn scheduled(_event: ScheduledEvent, env: Env, ctx: ScheduleContext) {
+    let state = match STATE.get_or_init(|| state::AppState::from_env(&env).map(Arc::new)) {
+        Ok(s) => Arc::clone(s),
+        Err(e) => {
+            console_error!("env init failed (scheduled): {e}");
+            return;
+        }
+    };
+    ctx.wait_until(async move {
+        if let Err(e) = sync::sync_tree_forced(&state).await {
+            console_warn!("scheduled sync failed: {e}");
+        }
+    })
+}

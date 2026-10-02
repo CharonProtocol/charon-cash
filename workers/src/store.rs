@@ -34,6 +34,12 @@ pub struct SigRow {
 }
 
 #[derive(Deserialize)]
+pub struct NullifierSigRow {
+    pub nullifier_hex: String,
+    pub signature: String,
+}
+
+#[derive(Deserialize)]
 pub struct UtxoRangeRow {
     pub leaf_index: i64,
     pub commitment_hex: String,
@@ -247,6 +253,42 @@ impl Store {
             .await
             .map_err(|e| format!("nullifier_spent_by: {e}"))?;
         Ok(row.map(|r| r.signature))
+    }
+
+    /// Spent signatures for many nullifiers in one query — the unlock scan
+    /// checks hundreds of nullifiers per pass and per-note lookups made every
+    /// pass pay a round trip per note. Missing hexes are simply absent.
+    /// Caller must keep each batch <= 90 (D1 bind limit is 100).
+    pub async fn nullifiers_spent(
+        &self,
+        nullifier_hexes: &[String],
+    ) -> Result<Vec<(String, String)>, String> {
+        if nullifier_hexes.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = (1..=nullifier_hexes.len())
+            .map(|i| format!("?{i}"))
+            .collect();
+        let binds: Vec<B> = nullifier_hexes.iter().map(|h| s(h)).collect();
+        let res = self
+            .bound(
+                &format!(
+                    "SELECT nullifier_hex, signature FROM nullifiers \
+                     WHERE nullifier_hex IN ({})",
+                    placeholders.join(", ")
+                ),
+                binds,
+            )?
+            .all()
+            .await
+            .map_err(|e| format!("nullifiers_spent: {e}"))?;
+        let rows: Vec<NullifierSigRow> = res
+            .results::<NullifierSigRow>()
+            .map_err(|e| format!("nullifiers_spent results: {e}"))?;
+        Ok(rows
+            .into_iter()
+            .map(|r| (r.nullifier_hex, r.signature))
+            .collect())
     }
 
     pub async fn utxos_range(

@@ -37,6 +37,7 @@ import {
   fetchUtxoRange,
   fieldToHex32,
   isNullifierSpent,
+  nullifiersSpent,
   nullifierInfo,
   submitTransaction,
   relayWithdraw,
@@ -328,56 +329,71 @@ export class PrivacyCashClient {
         start = 0
         continue
       }
-      // decrypt + nullifier-check in parallel chunks: the per-note backend
-      // round-trip dominated the scan (~200 serial fetches = the slow unlock)
-      const CHUNK = 16
+      // Decrypt in parallel CPU-only chunks (no backend round trips), check
+      // spent status for the whole page in one batch call, then apply. The
+      // per-note lookup version paid a round trip per note — that plus the
+      // read-path lazy sync was the multi-minute unlock.
+      const CHUNK = 32
+      const found: Array<{
+        row: (typeof page.utxos)[number]
+        utxo: Utxo
+        nullifierHex: string
+      }> = []
       for (let i = 0; i < page.utxos.length; i += CHUNK) {
         await Promise.all(
           page.utxos.slice(i, i + CHUNK).map(async (row) => {
             scanned++
-            let utxo: Utxo
             try {
               const bytes = Buffer.from(row.encryptedOutputHex, "hex")
-              utxo = await enc.decryptUtxo(bytes, wasm)
+              const utxo = await enc.decryptUtxo(bytes, wasm)
+              if (utxo.amount.isZero()) return
+              // Prefer leaf index from the indexer (authoritative).
+              utxo.index = row.leafIndex
+              const nullifier = await utxo.getNullifier()
+              found.push({ row, utxo, nullifierHex: fieldToHex32(nullifier) })
             } catch {
               return // not ours / garbage
             }
-            if (utxo.amount.isZero()) return
-
-            // Prefer leaf index from the indexer (authoritative).
-            utxo.index = row.leafIndex
-
-            const nullifier = await utxo.getNullifier()
-            const spentOnChain = await isNullifierSpent(fieldToHex32(nullifier))
-            if (spentOnChain) {
-              markNoteSpentByIndex(wallet, utxo.mintAddress, utxo.index)
-              spent++
-              return
-            }
-
-            const before = unspentNotes(wallet).some(
-              (n) => n.mintAddress === utxo.mintAddress && n.index === utxo.index,
-            )
-            removeStaleNote(
-              wallet,
-              utxo.mintAddress,
-              utxo.amount.toString(),
-              utxo.blinding.toString(),
-              utxo.index,
-            )
-            upsertNote(wallet, {
-              id: newNoteId(),
-              amount: utxo.amount.toString(),
-              blinding: utxo.blinding.toString(),
-              index: utxo.index,
-              mintAddress: utxo.mintAddress,
-              spent: false,
-              createdAt: Date.now(),
-              depositTx: row.signature,
-            })
-            if (!before) added++
           }),
         )
+      }
+      let spentFlags: boolean[]
+      try {
+        spentFlags = await nullifiersSpent(found.map((f) => f.nullifierHex))
+      } catch {
+        // older backend without the batch endpoint: per-note lookups
+        spentFlags = await Promise.all(
+          found.map((f) => isNullifierSpent(f.nullifierHex)),
+        )
+      }
+      for (let i = 0; i < found.length; i++) {
+        const { row, utxo } = found[i]
+        if (spentFlags[i]) {
+          markNoteSpentByIndex(wallet, utxo.mintAddress, utxo.index)
+          spent++
+          continue
+        }
+        const before = unspentNotes(wallet).some(
+          (n) => n.mintAddress === utxo.mintAddress && n.index === utxo.index,
+        )
+        removeStaleNote(
+          wallet,
+          utxo.mintAddress,
+          utxo.amount.toString(),
+          utxo.blinding.toString(),
+          utxo.index,
+        )
+        upsertNote(wallet, {
+          id: newNoteId(),
+          amount: utxo.amount.toString(),
+          blinding: utxo.blinding.toString(),
+          index: utxo.index,
+          mintAddress: utxo.mintAddress,
+          spent: false,
+          createdAt: Date.now(),
+          depositTx: row.signature,
+        })
+        if (!before) added++
       }
 
       // Advance the cursor to the highest leaf actually returned (+1), never
@@ -1402,22 +1418,27 @@ export class PrivacyCashClient {
     }
 
     for (const n of inputNotes) markNoteSpent(this.publicKey, n.id, signature)
+    // Save the change note immediately with the guessed index and return —
+    // the next sync pass heals the authoritative leaf position (removeStaleNote
+    // drops the guessed-index copy, the indexed one is upserted unpending).
+    // Blocking here on waitForLeafIndex + locateNoteLeaf held each payout lane
+    // 5-10s after the relay had already responded (every poll paying a backend
+    // round trip) while other lanes were still proving — that wait, not the
+    // proof, was the throughput ceiling of the 100-employee runs. A pending
+    // note is excluded from the spendable set, so nothing ever spends it at
+    // the guessed index.
     let changeIndex = nextLeafIndex + 1
     if (change.gt(new BN(0))) {
-      await waitForLeafIndex(args.treeKey, nextLeafIndex + 1).catch(() => { })
-      changeIndex = await this.locateNoteLeaf(args.treeKey, changeIndex, outputs[1])
       saveNote(this.publicKey, {
         id: newNoteId(),
         amount: outputs[1].amount.toString(),
         blinding: outputs[1].blinding.toString(),
-        // guess if locate failed — pending keeps it unspendable until the
-        // next syncNotes scan confirms the true leaf position
-        index: changeIndex >= 0 ? changeIndex : nextLeafIndex + 1,
+        index: changeIndex,
         mintAddress: args.mintAddress,
         spent: false,
         createdAt: Date.now(),
         depositTx: signature,
-        pending: changeIndex < 0,
+        pending: true,
       })
     }
     await this.persistNotes().catch(() => {})

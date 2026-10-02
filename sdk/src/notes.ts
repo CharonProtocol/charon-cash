@@ -244,25 +244,17 @@ export function readLegacyNotes(wallet: PublicKey): Note[] {
 }
 
 /**
- * Remove every legacy localStorage key for this wallet (plaintext notes + sync
- * offsets). Idempotent; safe to call on every unlock. Ensures no spending
- * secret lingers on disk after the migration to encrypted-DB-only storage.
+ * Remove the legacy plaintext notes key for this wallet. Idempotent; safe to
+ * call on every unlock. The sync offset is deliberately NOT purged: it is a
+ * plain integer cursor with no secret material, and deleting it here forced a
+ * full-tree rescan on every unlock (the multi-minute unlock). A stale offset
+ * is handled by syncNotes's indexer-reset guard instead.
  */
 export function purgeLegacyStorage(wallet: PublicKey): void {
   if (typeof localStorage === "undefined") return
   const w = wk(wallet)
   try {
     localStorage.removeItem(NOTES_LEGACY_PREFIX + w)
-    const notesPrefix = NOTES_LEGACY_PREFIX + w
-    const offsetPrefix = OFFSET_LEGACY_PREFIX + w + ":"
-    const toRemove: string[] = []
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i)
-      if (k && (k === notesPrefix || k.startsWith(offsetPrefix))) {
-        toRemove.push(k)
-      }
-    }
-    for (const k of toRemove) localStorage.removeItem(k)
   } catch {
     /* localStorage may be unavailable (private mode); nothing to purge */
   }

@@ -63,9 +63,11 @@ export declare function resetSyncOffset(wallet: PublicKey, treeKey: string): voi
  */
 export declare function readLegacyNotes(wallet: PublicKey): Note[];
 /**
- * Remove every legacy localStorage key for this wallet (plaintext notes + sync
- * offsets). Idempotent; safe to call on every unlock. Ensures no spending
- * secret lingers on disk after the migration to encrypted-DB-only storage.
+ * Remove the legacy plaintext notes key for this wallet. Idempotent; safe to
+ * call on every unlock. The sync offset is deliberately NOT purged: it is a
+ * plain integer cursor with no secret material, and deleting it here forced a
+ * full-tree rescan on every unlock (the multi-minute unlock). A stale offset
+ * is handled by syncNotes's indexer-reset guard instead.
  */
 export declare function purgeLegacyStorage(wallet: PublicKey): void;
 export declare function newNoteId(): string;

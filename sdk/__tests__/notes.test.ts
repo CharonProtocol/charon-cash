@@ -17,6 +17,7 @@ import {
   resetSyncOffset,
   newNoteId,
   readLegacyNotes,
+  purgeLegacyStorage,
   type Note,
 } from "../src/notes"
 import { EncryptionService } from "../src/crypto"
@@ -132,6 +133,15 @@ describe("in-memory note store", () => {
     expect(getSyncOffset(w, "sol")).toBe(42)
     resetSyncOffset(w, "sol")
     expect(getSyncOffset(w, "sol")).toBe(0)
+  })
+
+  it("purging legacy storage keeps the sync offset (it is not a secret)", () => {
+    // unlock() runs purgeLegacyStorage before every sync; deleting the offset
+    // there forced a full-tree rescan on every unlock (the multi-minute
+    // unlock). Only the plaintext notes key may be purged.
+    setSyncOffset(w, "sol", 42)
+    purgeLegacyStorage(w)
+    expect(getSyncOffset(w, "sol")).toBe(42)
   })
 
   it("readLegacyNotes is a no-op outside the browser", () => {

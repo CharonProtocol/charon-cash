@@ -303,9 +303,10 @@ pub fn router(state: Arc<AppState>) -> Router<'static, Arc<AppState>> {
         .get_async("/api/merkle/:tree_key", |_req, ctx| Box::pin(async move {
             let state = state_of(&ctx);
             let tree_key = ctx.param("tree_key").cloned().unwrap_or_default();
-            if let Err(e) = sync::sync_tree(&state).await {
-                worker::console_warn!("merkle state sync skipped: {e}");
-            }
+            // Read-only: serve the D1 mirror directly. The lazy sync that
+            // stood here made every tree read pay a Helius poll (1-3s), which
+            // serialized the engine's merkle-proof fetches; the mirror stays
+            // fresh via the relay path's forced sync and the cron trigger.
             match merkle::state(&state.store, &tree_key).await {
                 Ok(resp) => ok_json(&resp),
                 Err(e) => err_json(e),
@@ -319,9 +320,7 @@ pub fn router(state: Arc<AppState>) -> Router<'static, Arc<AppState>> {
                     Ok(v) => v,
                     Err(e) => return err_json(e),
                 };
-                if let Err(e) = sync::sync_tree(&state).await {
-                    worker::console_warn!("merkle proof sync skipped: {e}");
-                }
+                // Mirror-only read (see the merkle state route note).
                 match merkle::proof(&state.store, &tree_key, leaf_index).await {
                     Ok(resp) => ok_json(&resp),
                     Err(e) => err_json(e),
@@ -335,9 +334,8 @@ pub fn router(state: Arc<AppState>) -> Router<'static, Arc<AppState>> {
                 Ok(b) => b,
                 Err(e) => return err_json(e),
             };
-            if let Err(e) = sync::sync_tree(&state).await {
-                worker::console_warn!("nullifier sync skipped: {e}");
-            }
+            // Mirror-only read: the unlock scan fires hundreds of these; a
+            // lazy sync per call was the multi-minute unlock.
             let spent_by = state
                 .store
                 .nullifier_spent_by(&hex::encode(bytes))
@@ -349,12 +347,69 @@ pub fn router(state: Arc<AppState>) -> Router<'static, Arc<AppState>> {
                 "signature": spent_by,
             }))
         }))
+        .post_async("/api/nullifiers/batch", |mut req, ctx| {
+            Box::pin(async move {
+                #[derive(Deserialize)]
+                struct BatchNullifiersRequest {
+                    hashes: Vec<String>,
+                }
+                #[derive(serde::Serialize)]
+                struct BatchNullifierResult {
+                    nullifier: String,
+                    spent: bool,
+                    #[serde(skip_serializing_if = "Option::is_none")]
+                    signature: Option<String>,
+                }
+                let state = state_of(&ctx);
+                let body: BatchNullifiersRequest = match req.json().await {
+                    Ok(b) => b,
+                    Err(e) => {
+                        return err_json(AppError::bad_request("INVALID_JSON", format!("{e}")))
+                    }
+                };
+                if body.hashes.len() > 500 {
+                    return err_json(AppError::bad_request(
+                        "TOO_MANY_NULLIFIERS",
+                        "batch is capped at 500 nullifiers",
+                    ));
+                }
+                // Parse + normalize every hash first, then one IN query per
+                // 90 (D1 binds cap at 100). Order mirrors the request.
+                let mut normalized: Vec<(String, String)> =
+                    Vec::with_capacity(body.hashes.len());
+                for h in &body.hashes {
+                    match parse_nullifier(h) {
+                        Ok(b) => normalized.push((h.trim().to_string(), hex::encode(b))),
+                        Err(e) => return err_json(e),
+                    }
+                }
+                let mut out: Vec<BatchNullifierResult> = Vec::with_capacity(normalized.len());
+                for chunk in normalized.chunks(90) {
+                    let hexes: Vec<String> = chunk.iter().map(|(_, x)| x.clone()).collect();
+                    let found = match state.store.nullifiers_spent(&hexes).await {
+                        Ok(v) => v,
+                        Err(e) => return err_json(AppError::internal(e)),
+                    };
+                    let map: std::collections::HashMap<&str, &str> =
+                        found.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+                    for (orig, norm) in chunk {
+                        let sig = map.get(norm.as_str()).map(|s| s.to_string());
+                        out.push(BatchNullifierResult {
+                            nullifier: orig.clone(),
+                            spent: sig.is_some(),
+                            signature: sig,
+                        });
+                    }
+                }
+                ok_json(&json!({ "results": out }))
+            })
+        })
         .get_async("/api/utxos/range", |req, ctx| Box::pin(async move {
             let state = state_of(&ctx);
             let url = req.url()?;
-            if let Err(e) = sync::sync_tree(&state).await {
-                worker::console_warn!("utxo sync skipped: {e}");
-            }
+            // Mirror-only read: reserve polls + scan pages hit this route
+            // continuously during a run; a lazy sync per call throttled the
+            // whole engine to the sync's pace.
             match utxos_range(&state, &url).await {
                 Ok(v) => ok_json(&v),
                 Err(e) => err_json(e),
@@ -364,9 +419,7 @@ pub fn router(state: Arc<AppState>) -> Router<'static, Arc<AppState>> {
             let state = state_of(&ctx);
             let hex_out = ctx.param("hex").cloned().unwrap_or_default();
             let url = req.url()?;
-            if let Err(e) = sync::sync_tree(&state).await {
-                worker::console_warn!("utxo sync skipped: {e}");
-            }
+            // Mirror-only read (see utxos/range note).
             match utxo_check(&state, &hex_out, query_param(&url, "tree_key").as_deref()).await {
                 Ok(v) => ok_json(&v),
                 Err(e) => err_json(e),

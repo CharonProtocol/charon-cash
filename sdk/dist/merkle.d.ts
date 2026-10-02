@@ -91,6 +91,12 @@ export declare function fetchAltAccount(address: string): Promise<string | null>
 export declare function fetchTreeState(treeKey: string): Promise<TreeState>;
 export declare function fetchMerkleProof(treeKey: string, leafIndex: number): Promise<MerkleProof>;
 export declare function isNullifierSpent(hashHex: string): Promise<boolean>;
+/**
+ * Spent flags for many nullifiers in as few calls as possible: one batch
+ * request per 90 (the scan otherwise paid a round trip per note — the slow
+ * unlock and slow in-run sync passes). Input order is preserved.
+ */
+export declare function nullifiersSpent(hashHexes: string[]): Promise<boolean[]>;
 /** Spent flag plus the spending tx signature, when the relayer recorded one. */
 export declare function nullifierInfo(hashHex: string): Promise<{
     spent: boolean;
