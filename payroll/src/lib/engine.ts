@@ -262,6 +262,35 @@ export class PayrollEngine {
     await this.deps.client.init()
     await this.deps.client.unlock()
 
+    const feeFloorBig = BigInt(req.asset.kind === "sol" ? (req.minTransferFee ?? 0) : 0)
+    const bpsBig = BigInt(req.bps)
+    const feeOf = (net: bigint): bigint => {
+      const f = (net * bpsBig + 9_999n) / 10_000n
+      return f < feeFloorBig ? feeFloorBig : f
+    }
+    // The lane fan-out pays a relayer fee per split self-transfer; without
+    // budgeting those, the final rows starve by a few tens of thousands of
+    // lamports (the measured 100-run: last row short by 28,482). Simulate the
+    // halving waves on the deposit itself, then pad — the extra stays in the
+    // payer's own vault.
+    const splitBudget = ((): bigint => {
+      if (plan.shortfall === 0n || plan.rows.length < SPLIT_MIN_ROWS) return 0n
+      const target = Math.min(Math.max(1, req.lanes ?? LANES), LANES, plan.rows.length)
+      let notes = [plan.shortfall]
+      let fees = 0n
+      while (notes.length < target && notes.length < 64) {
+        const next: bigint[] = []
+        for (const x of notes) {
+          const pool = x - feeOf(x)
+          const half = pool / 2n
+          fees += feeOf(half)
+          next.push(half, pool - half)
+        }
+        notes = next
+      }
+      return (fees * 3n) / 2n + 20_000n
+    })()
+
     let funding: RunReceipt["funding"] = null
     if (plan.shortfall > 0n) {
       this.emit("funding")
@@ -273,7 +302,7 @@ export class PayrollEngine {
         // replaced stranded rows when fragments couldn't fit a payout.)
         let firstSig: string | undefined
         let lastLeaf = -1
-        const amount = Number(plan.shortfall)
+        const amount = Number(plan.shortfall + splitBudget)
         if (amount <= 0 || !Number.isSafeInteger(amount)) throw new Error("bad deposit size")
         const dep =
           req.asset.kind === "sol"
@@ -284,7 +313,7 @@ export class PayrollEngine {
         await this.deps.waitUntilIndexed(treeKeyOf(req.asset), lastLeaf)
         await this.deps.client.refreshNotes()
         this.fundedAt = this.deps.now()
-        funding = { depositedRaw: plan.shortfall, txSignature: firstSig ?? "", depositedAt: this.fundedAt }
+        funding = { depositedRaw: BigInt(amount), txSignature: firstSig ?? "", depositedAt: this.fundedAt }
         this.emit("funding", firstSig)
       } catch (e) {
         for (const r of rows) {
@@ -299,12 +328,6 @@ export class PayrollEngine {
     if (ledger && this.deps.listNotes) ledger.reload(this.deps.listNotes(req.asset))
 
     const selfAddress = this.deps.client.publicKey?.toBase58()
-    const feeFloorBig = BigInt(req.asset.kind === "sol" ? (req.minTransferFee ?? 0) : 0)
-    const bpsBig = BigInt(req.bps)
-    const feeOf = (net: bigint): bigint => {
-      const f = (net * bpsBig + 9_999n) / 10_000n
-      return f < feeFloorBig ? feeFloorBig : f
-    }
 
     let lastRefreshAt = 0
     let lastFromScratchAt = 0

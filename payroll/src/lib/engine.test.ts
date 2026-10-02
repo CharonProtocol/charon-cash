@@ -242,6 +242,42 @@ describe("PayrollEngine", () => {
     // note big enough for the row — under-depositing would strand it
     expect(calls.deposits).toEqual([520_000])
   })
+
+  it("funding budgets the split fan-out fees when the run will split", async () => {
+    // 12 rows >= SPLIT_MIN_ROWS: the fan-out pays a relayer fee per split, so
+    // the deposit must cover them or the last rows starve (the measured
+    // 100-run failed its final row by 28,482 lamports exactly this way)
+    const { client, calls } = mockClient({ fails: new Map() })
+    const engine = new PayrollEngine(deps(client))
+    await engine.run(
+      req({
+        entries: Array.from({ length: 12 }, (_, i) => ({
+          address: String(i).repeat(32),
+          amountHuman: "1",
+        })),
+        vaultRaw: 0n,
+        mode: "shielded",
+      }),
+    )
+    // replicate the spec: base = 12x(net+fee) + widest-row-fee margin, then
+    // the simulated halving waves down to 8 notes, padded x1.5 + 20k
+    const S = 12n * (10n ** 9n + 10_000_000n) + 10_000_000n
+    const feeOf = (x: bigint): bigint => (x * 100n + 9_999n) / 10_000n
+    let notes = [S]
+    let fees = 0n
+    while (notes.length < 8) {
+      const next: bigint[] = []
+      for (const x of notes) {
+        const pool = x - feeOf(x)
+        const half = pool / 2n
+        fees += feeOf(half)
+        next.push(half, pool - half)
+      }
+      notes = next
+    }
+    expect(calls.deposits).toEqual([Number(S + (fees * 3n) / 2n + 20_000n)])
+    expect(calls.deposits[0]).toBeGreaterThan(Number(S))
+  })
 })
 
 // ---------------------------------------------------------------------------

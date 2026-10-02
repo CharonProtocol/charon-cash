@@ -153,11 +153,13 @@ export interface BrowserProverInfo {
   proves: number
 }
 
-/** Number of prover workers for this machine: all cores, capped at 4 (each
- * prove() saturates a core; the engine lanes and UI need headroom too). */
+/** Number of prover workers for this machine. Each prove() saturates a core.
+ * 8 logical cores (typically 4P+4E on Apple Silicon) get 6: the last two
+ * workers land on efficiency cores and prove slower, but still add aggregate
+ * throughput. Below that, stay conservative — the lanes and UI need headroom. */
 function workerCount(): number {
   const cores = navigator.hardwareConcurrency || 4
-  return Math.max(2, Math.min(4, cores))
+  return Math.max(2, Math.min(cores >= 8 ? 6 : 4, cores))
 }
 
 // Idempotent: fetches artifacts + spawns workers once, then installs the
