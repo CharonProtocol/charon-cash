@@ -275,7 +275,7 @@ describe("PayrollEngine", () => {
       }
       notes = next
     }
-    expect(calls.deposits).toEqual([Number(S + (fees * 3n) / 2n + 20_000n)])
+    expect(calls.deposits).toEqual([Number(S + (fees * 3n) / 2n + 60_000n)])
     expect(calls.deposits[0]).toBeGreaterThan(Number(S))
   })
 })
@@ -590,6 +590,39 @@ describe("PayrollEngine lanes", () => {
     expect(splits).toHaveLength(0)
     expect(receipt.splits).toBeUndefined()
     expect(receipt.summary).toEqual({ sent: 9, failed: 0, total: 9 })
+  })
+
+  it("does not count leftover dust toward the lane target (the 2-lane 100-run bug)", async () => {
+    // six tiny notes from a previous run sat next to the funding note: the
+    // fan-out must ignore them when counting lanes, or it stops one split in
+    // and every payout serializes through a single change chain
+    const notes = [
+      { id: "big", amount: 100n * 10n ** 9n },
+      ...Array.from({ length: 6 }, (_, i) => ({
+        id: `dust${i}`,
+        amount: 150_000n + BigInt(i) * 1_000n,
+      })),
+    ]
+    const withdraws: Array<{ lamports: number; recipient: string; pins: string[] }> = []
+    const splits: Array<{ net: bigint; pins: string[] }> = []
+    const { client, listNotes } = laneClient({ notes, withdrawMs: 5, withdraws, splits })
+    const engine = new PayrollEngine(laneDeps(client, listNotes))
+    const receipt = await engine.run(
+      req({
+        vaultRaw: 10n ** 20n,
+        entries: Array.from({ length: 12 }, (_, i) => ({
+          address: String(i).repeat(32),
+          amountHuman: "1",
+        })),
+      }),
+    )
+    // dust inflates the naive note count to 7, one short of target: the fix
+    // still splits the funding note all the way to lane width
+    expect(splits).toHaveLength(7)
+    expect(receipt.splits).toBe(7)
+    expect(receipt.summary).toEqual({ sent: 12, failed: 0, total: 12 })
+    const pinned = withdraws.flatMap((w) => w.pins)
+    expect(new Set(pinned).size).toBe(pinned.length)
   })
 
   it("cancel() with more rows than lanes marks never-started rows failed-cancelled", async () => {

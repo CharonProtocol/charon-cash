@@ -291,14 +291,22 @@ export class PrivacyCashClient {
     const wasm = this.wasm!
     const wallet = this.publicKey
 
-    let start = fromScratch ? 0 : getSyncOffset(wallet, treeKey)
+    // Keep a small reorder window below the cursor: concurrent transactions
+    // can index out of order, so a leaf can appear in the indexer AFTER the
+    // cursor moved past it — the cursor would then skip it forever and the
+    // money in that note would go invisible (the 100-run stranded ~10M
+    // lamports of change notes this way). Re-scanning 32 leaves per pass is
+    // cheap; upserts are idempotent by leaf index.
+    const SYNC_OVERLAP = 32
+    let start = fromScratch ? 0 : Math.max(0, getSyncOffset(wallet, treeKey) - SYNC_OVERLAP)
     let scanned = 0
     let added = 0
     let spent = 0
-    let prevStart = -1
+    let lastScannedTo = -1
+    let pass = 0
 
-    while (start !== prevStart) {
-      prevStart = start
+    for (;;) {
+      if (++pass > 128) break // bounded against a misbehaving server
       const page = await fetchUtxoRange(treeKey, start, start + RANGE_PAGE)
       for (const row of page.utxos) {
         scanned++
@@ -346,18 +354,20 @@ export class PrivacyCashClient {
       }
 
       // Advance the cursor to the highest leaf actually returned (+1), never
-      // to the tree tip: the server reads next_index after the page snapshot,
-      // so leaves appended mid-scan would sit below the tip and be skipped
-      // forever (the local 210-row runs stranded ~5 change notes this way).
-      // When the tip moved past what we scanned, loop once more from the
-      // water line to pick the tail up; exit when a pass makes no progress.
+      // to the tree tip: leaves appended mid-scan sit below the tip and are
+      // picked up by the next pass instead of being skipped forever.
       const scannedTo = page.utxos.length
         ? page.utxos[page.utxos.length - 1].leafIndex + 1
         : start
       setSyncOffset(wallet, treeKey, scannedTo)
-      if (page.hasMore || page.nextIndex > scannedTo) {
-        start = scannedTo
-      }
+      const caughtUp = !page.hasMore && page.nextIndex <= scannedTo
+      if (caughtUp) break
+      // climb with the reorder window still open
+      const nextStart = Math.max(0, scannedTo - SYNC_OVERLAP)
+      const progressed = scannedTo > lastScannedTo || nextStart > start
+      if (!progressed) break
+      lastScannedTo = scannedTo
+      start = nextStart
     }
 
     return { scanned, added, spent }

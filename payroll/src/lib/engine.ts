@@ -310,7 +310,7 @@ export class PayrollEngine {
         }
         notes = next
       }
-      return (fees * 3n) / 2n + 20_000n
+      return (fees * 3n) / 2n + 60_000n
     })()
 
     let funding: RunReceipt["funding"] = null
@@ -461,6 +461,7 @@ export class PayrollEngine {
       const deadline = this.deps.now() + RESERVE_WAIT_CAP_MS
       let scannedFinal = false
       let mergeRounds = 0
+      let healedOnce = false
       for (;;) {
         const pinned = ledger.tryReserve(gross)
         if (pinned) {
@@ -492,6 +493,15 @@ export class PayrollEngine {
           if (mergeRounds < 8 && ledger.totalFree() >= gross) {
             mergeRounds++
             await consolidateFor(gross)
+            continue
+          }
+          // last resort before conceding: one full rescan (bounded once per
+          // row, not throttled) — a skipped leaf can hide real money from
+          // the cursor view exactly when a row needs it
+          if (!healedOnce) {
+            healedOnce = true
+            await this.deps.client.refreshNotes({ fromScratch: true }).catch(() => {})
+            reloadLedger()
             continue
           }
           return null
@@ -636,11 +646,17 @@ export class PayrollEngine {
         const free = ledger
           .freeNotes()
           .sort((a, b) => (a.amount > b.amount ? -1 : a.amount < b.amount ? 1 : 0))
-        if (free.length >= target) return
         // never split below the widest row: every note the fan-out produces
         // must still pay any single payout alone, otherwise the splits would
         // just buy a merge chain (a proof + tx each) instead of lanes
         const maxGross = plan.rows.reduce((m, r) => (r.gross > m ? r.gross : m), 0n)
+        // only notes that can actually fund a row count toward the lane
+        // target — leftover dust from an earlier run must not make the
+        // fan-out think the lanes already exist (the second 100-run counted
+        // 6 dust notes, split once instead of seven times, and serialized
+        // every payout through a single chain)
+        const laneWorthy = free.filter((n) => n.amount >= maxGross)
+        if (laneWorthy.length >= target) return
         const splittable = free.filter((n) => {
           const half = (n.amount - feeOf(n.amount)) / 2n
           return half >= maxGross && half > feeOf(half)
