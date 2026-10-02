@@ -1,90 +1,33 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { Landing } from "./pages/Landing";
+import "./App.css";
 
-import { NavBar } from "@/components/NavBar";
-import { LandingHero } from "@/components/LandingHero";
-import { UserAppView } from "@/components/UserAppView";
-
-const ROUTES = ["landing", "app", "vault", "explorer", "admin"] as const;
-type Route = (typeof ROUTES)[number];
-
-function readRoute(): Route {
-  const hash = window.location.hash.replace("#", "").toLowerCase();
-  return (ROUTES as readonly string[]).includes(hash)
-    ? (hash as Route)
-    : "landing";
-}
+const Dashboard = lazy(() =>
+  import("./pages/Dashboard").then((module) => ({ default: module.Dashboard })),
+);
 
 export default function App() {
-  const [_, setRefreshKey] = useState(0);
-  const bump = useCallback(() => setRefreshKey((k) => k + 1), []);
-  const [route, setRoute] = useState<Route>(readRoute);
-
-  const handleNavigate = (next: string) => {
-    if (!(ROUTES as readonly string[]).includes(next)) return;
-    setRoute(next as Route);
-    window.location.hash = next;
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
+  const [dashboard, setDashboard] = useState(
+    window.location.hash === "#dashboard",
+  );
   useEffect(() => {
-    const onHashChange = () => setRoute(readRoute());
-    window.addEventListener("hashchange", onHashChange);
-    return () => window.removeEventListener("hashchange", onHashChange);
+    const navigate = () => setDashboard(window.location.hash === "#dashboard");
+    window.addEventListener("hashchange", navigate);
+    return () => window.removeEventListener("hashchange", navigate);
   }, []);
-
-  return (
-    <div className="flex min-h-screen flex-col justify-between bg-background text-foreground">
-      <div>
-        <NavBar
-          currentRoute={route}
-          onNavigate={handleNavigate}
+  return dashboard ? (
+    <Suspense
+      fallback={
+        <div
+          style={{ minHeight: "100svh", background: "white" }}
+          role="status"
+          aria-label="Loading dashboard"
         />
-
-        <main className="mx-auto max-w-7xl px-4 py-6">
-          {route === "landing" && <LandingHero onNavigate={handleNavigate} />}
-          {route === "app" && <UserAppView onChanged={bump} />}
-        </main>
-      </div>
-
-      <footer className="border-t border-border bg-secondary/60 py-6">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 sm:flex-row">
-          <p className="font-mono text-[11px] text-muted-foreground">
-            Privacy Cash · wallet-signed deposits · relayer-signed withdraws
-          </p>
-          <div className="flex items-center gap-4 font-mono text-[11px] text-muted-foreground">
-            <button
-              onClick={() => handleNavigate("landing")}
-              className="hover:text-primary"
-            >
-              Overview
-            </button>
-            <button
-              onClick={() => handleNavigate("app")}
-              className="hover:text-primary"
-            >
-              App
-            </button>
-            <button
-              onClick={() => handleNavigate("vault")}
-              className="hover:text-primary"
-            >
-              Vault
-            </button>
-            <button
-              onClick={() => handleNavigate("explorer")}
-              className="hover:text-primary"
-            >
-              Explorer
-            </button>
-            <button
-              onClick={() => handleNavigate("admin")}
-              className="hover:text-destructive"
-            >
-              Operator
-            </button>
-          </div>
-        </div>
-      </footer>
-    </div>
+      }
+    >
+      <Dashboard />
+    </Suspense>
+  ) : (
+    <Landing />
   );
 }

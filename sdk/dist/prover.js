@@ -1,10 +1,10 @@
 import { groth16 } from "snarkjs";
 import { utils } from "ffjavascript";
 import { CIRCUIT } from "./constants";
-import { SilentPayError, SilentPayErrorCode } from "./error";
-export class ProofGenError extends SilentPayError {
+import { CharonProtocolError, CharonProtocolErrorCode } from "./error";
+export class ProofGenError extends CharonProtocolError {
     constructor(message, options) {
-        super(message, SilentPayErrorCode.PROOF_GENERATION_ERROR, {
+        super(message, CharonProtocolErrorCode.PROOF_GENERATION_ERROR, {
             cause: options?.cause,
         });
         this.name = "ProofGenerationError";

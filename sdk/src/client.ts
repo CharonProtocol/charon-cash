@@ -255,6 +255,7 @@ export class CharonProtocol {
   }
 
   async withdrawSol(amountInLamports: number) {
+    await this.syncUtxos();
     let mintAddress = WRAPPED_SOL_MINT;
 
     // Check if user has utxos to withdraw
@@ -366,9 +367,10 @@ export class CharonProtocol {
     for (let u of requiredutxos) {
       await this.storageService.removeUtxo(u.utxoId);
       let noteSummary = this.utxoByMint.get(inputUtxos[0].mintAddress)!;
-      noteSummary.utxos = noteSummary.utxos.filter((u) => u.utxoId != u.utxoId);
+      noteSummary.utxos = noteSummary.utxos.filter((note) => note.utxoId !== u.utxoId);
     }
 
+    this.recalculateBalances();
     return { signature: txid };
   }
 
@@ -413,27 +415,25 @@ export class CharonProtocol {
               walletPubkey,
               amount: utxo.amount,
             };
-            requiredUtxoSummary.utxos.push(newNote);
+            if (!requiredUtxoSummary.utxos.some(note => note.utxoId === id)) {
+              requiredUtxoSummary.utxos.push(newNote);
+            }
           },
         ),
       );
 
-      this.utxoByMint.forEach((UtxoSummary) => {
-        UtxoSummary.utxos.sort((a, b) => a.amount.sub(b.amount).toNumber());
-
-        let n = UtxoSummary.utxos.length;
-
-        if (n >= 2) {
-          UtxoSummary.maxSingleTxAmount = UtxoSummary.utxos[n - 1].amount.add(
-            UtxoSummary.utxos[n - 2].amount,
-          );
-        } else {
-          UtxoSummary.maxSingleTxAmount = UtxoSummary.utxos[n - 1].amount;
-        }
-      });
+      this.recalculateBalances();
     }
 
-    this.lastLoadedNote += newutxos.length;
+    this.lastLoadedNote = newutxos.reduce((highest, note) => Math.max(highest, note.id ?? 0), this.lastLoadedNote);
+  }
+
+  private recalculateBalances() {
+    this.utxoByMint.forEach(summary => {
+      summary.utxos.sort((a, b) => a.amount.cmp(b.amount));
+      summary.totalAmount = summary.utxos.reduce((total, note) => total.add(note.amount), new BN(0));
+      summary.maxSingleTxAmount = summary.utxos.slice(-2).reduce((total, note) => total.add(note.amount), new BN(0));
+    });
   }
 
   async stopClient() {

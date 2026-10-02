@@ -1,12 +1,12 @@
 import BN from "bn.js";
 import { API_URL } from "./constants";
-import { SilentPayError, SilentPayErrorCode } from "./error";
-export class ApiClientError extends SilentPayError {
+import { CharonProtocolError, CharonProtocolErrorCode } from "./error";
+export class ApiClientError extends CharonProtocolError {
     apiErrorCode;
     details;
     status;
     constructor(apiErrorCode, message, status, details) {
-        super(message, SilentPayErrorCode.API_ERROR);
+        super(message, CharonProtocolErrorCode.API_ERROR);
         this.name = "ApiClientError";
         this.apiErrorCode = apiErrorCode;
         this.status = status;
@@ -62,7 +62,7 @@ async function checkRegistration(pubkey) {
 }
 async function registerUser(info) {
     if (info.viewingkey.length != 32) {
-        throw new SilentPayError("Length of viewing key must be 32", SilentPayErrorCode.INVALID_VIEWING_KEY);
+        throw new CharonProtocolError("Length of viewing key must be 32", CharonProtocolErrorCode.INVALID_VIEWING_KEY);
     }
     const response = await fetch(`${API_URL}/api/registration/`, {
         method: "POST",

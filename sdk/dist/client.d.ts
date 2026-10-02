@@ -16,7 +16,7 @@ type UtxoSummary = {
     totalAmount: BN;
     utxos: UtxoRef[];
 };
-export declare class SilentPay {
+export declare class CharonProtocol {
     private connection;
     publicKey: PublicKey;
     private encryptionService;
@@ -33,7 +33,7 @@ export declare class SilentPay {
     static generateClient({ rpcUrl, owner, }: {
         rpcUrl: string;
         owner: Signer;
-    }): Promise<SilentPay>;
+    }): Promise<CharonProtocol>;
     sendSol(amountInLamports: number, recipientKey: string): Promise<{
         signature: string;
     }>;
@@ -41,6 +41,7 @@ export declare class SilentPay {
         signature: string;
     }>;
     syncUtxos(): Promise<void>;
+    private recalculateBalances;
     stopClient(): Promise<void>;
 }
 export {};

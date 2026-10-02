@@ -1,12 +1,9 @@
-import { createRoot } from "react-dom/client";
-import "./index.css";
-import App from "./App.tsx";
-import { SolanaProviders } from "@/components/WalletProvider";
-import { Toaster } from "@/components/ui/sonner";
+import { createRoot } from 'react-dom/client';
+import { Toaster } from 'sonner';
+import './index.css';
+import App from './App';
+import { SolanaProviders } from './components/WalletProvider';
 
-createRoot(document.getElementById("root")!).render(
-  <SolanaProviders>
-    <App />
-    <Toaster />
-  </SolanaProviders>,
+createRoot(document.getElementById('root')!).render(
+  <SolanaProviders><App /><Toaster theme="dark" richColors position="bottom-right" /></SolanaProviders>,
 );

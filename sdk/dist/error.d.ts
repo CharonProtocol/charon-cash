@@ -1,11 +1,11 @@
-export declare class SilentPayError extends Error {
-    readonly code: SilentPayErrorCode;
-    constructor(message: string, code: SilentPayErrorCode, options?: {
+export declare class CharonProtocolError extends Error {
+    readonly code: CharonProtocolErrorCode;
+    constructor(message: string, code: CharonProtocolErrorCode, options?: {
         cause?: unknown;
         details?: Record<string, unknown>;
     });
 }
-export declare enum SilentPayErrorCode {
+export declare enum CharonProtocolErrorCode {
     INVALID_INPUT = "INVALID_INPUT",
     INVALID_UTXO_COUNT = "INVALID_UTXO_COUNT",
     API_ERROR = "API_ERROR",

@@ -7,7 +7,7 @@
  *     SilentPayLastFetchedIndex : to keep track of the decrypted notes, it shall be sent
  *            while fetching new notes.
  */
-import { SilentPayError } from "./error";
+import { CharonProtocolError } from "./error";
 export type StoredUtxoSchema = {
     id?: number;
     encryptedUtxo: Uint8Array;
@@ -17,7 +17,7 @@ export type IndexWalletSchema = {
     walletPubkey: string;
     index: string;
 };
-export declare class StorageError extends SilentPayError {
+export declare class StorageError extends CharonProtocolError {
     constructor(message: string, options?: {
         cause: unknown;
     });

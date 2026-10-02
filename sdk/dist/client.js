@@ -1,4 +1,4 @@
-import { Connection, } from "@solana/web3.js";
+import { Connection } from "@solana/web3.js";
 import { EncryptionService } from "./encrypt";
 import { StorageService } from "./storage";
 import { Utxo } from "./model/utxo";
@@ -7,10 +7,10 @@ import BN from "bn.js";
 import { DEPOSIT_FEE_RATE, WITHDRAW_FEE_RATE, WRAPPED_SOL_MINT, } from "./constants";
 import { API } from "./api";
 import { transactSol } from "./program";
-import { SilentPayError, SilentPayErrorCode } from "./error";
+import { CharonProtocolError, CharonProtocolErrorCode } from "./error";
 import { loadCircuit } from "./prover";
 export const SIGN_MESSAGE = "Privacy Money account sign in";
-export class SilentPay {
+export class CharonProtocol {
     connection;
     publicKey;
     encryptionService;
@@ -97,9 +97,9 @@ export class SilentPay {
             lastLoadedNote = highestId;
         }
         let connection = new Connection(rpcUrl);
-        let worker = createSilentPayWorker(owner.publicKey.toString(), masterSeed, rpcUrl);
+        let worker = createSharonProtocolWorker(owner.publicKey.toString(), masterSeed, rpcUrl);
         let { zkey, wasm } = await loadCircuit();
-        return new SilentPay({
+        return new CharonProtocol({
             connection,
             publicKey: owner.publicKey,
             signer: owner,
@@ -137,16 +137,17 @@ export class SilentPay {
         return { signature: txid };
     }
     async withdrawSol(amountInLamports) {
+        await this.syncUtxos();
         let mintAddress = WRAPPED_SOL_MINT;
         // Check if user has utxos to withdraw
         let utxosExists = this.utxoByMint.has(mintAddress);
         if (!utxosExists) {
-            throw new SilentPayError("No utxos Exists to Withdraw", SilentPayErrorCode.UTXO_FINISHED);
+            throw new CharonProtocolError("No utxos Exists to Withdraw", CharonProtocolErrorCode.UTXO_FINISHED);
         }
         // if user can withdraw the specified amount
         let UtxoSummary = this.utxoByMint.get(mintAddress);
         if (UtxoSummary.maxSingleTxAmount.lt(new BN(amountInLamports))) {
-            throw new SilentPayError(`You can currently only withdraw equal or less than ${UtxoSummary.maxSingleTxAmount.toNumber()}`, SilentPayErrorCode.WITHDRAWAL_LIMIT);
+            throw new CharonProtocolError(`You can currently only withdraw equal or less than ${UtxoSummary.maxSingleTxAmount.toNumber()}`, CharonProtocolErrorCode.WITHDRAWAL_LIMIT);
         }
         // which utxo to choose when withdrawing
         // least amount one shall be removed
@@ -210,8 +211,9 @@ export class SilentPay {
         for (let u of requiredutxos) {
             await this.storageService.removeUtxo(u.utxoId);
             let noteSummary = this.utxoByMint.get(inputUtxos[0].mintAddress);
-            noteSummary.utxos = noteSummary.utxos.filter((u) => u.utxoId != u.utxoId);
+            noteSummary.utxos = noteSummary.utxos.filter((note) => note.utxoId !== u.utxoId);
         }
+        this.recalculateBalances();
         return { signature: txid };
     }
     async syncUtxos() {
@@ -236,27 +238,27 @@ export class SilentPay {
                     walletPubkey,
                     amount: utxo.amount,
                 };
-                requiredUtxoSummary.utxos.push(newNote);
+                if (!requiredUtxoSummary.utxos.some(note => note.utxoId === id)) {
+                    requiredUtxoSummary.utxos.push(newNote);
+                }
             }));
-            this.utxoByMint.forEach((UtxoSummary) => {
-                UtxoSummary.utxos.sort((a, b) => a.amount.sub(b.amount).toNumber());
-                let n = UtxoSummary.utxos.length;
-                if (n >= 2) {
-                    UtxoSummary.maxSingleTxAmount = UtxoSummary.utxos[n - 1].amount.add(UtxoSummary.utxos[n - 2].amount);
-                }
-                else {
-                    UtxoSummary.maxSingleTxAmount = UtxoSummary.utxos[n - 1].amount;
-                }
-            });
+            this.recalculateBalances();
         }
-        this.lastLoadedNote += newutxos.length;
+        this.lastLoadedNote = newutxos.reduce((highest, note) => Math.max(highest, note.id ?? 0), this.lastLoadedNote);
+    }
+    recalculateBalances() {
+        this.utxoByMint.forEach(summary => {
+            summary.utxos.sort((a, b) => a.amount.cmp(b.amount));
+            summary.totalAmount = summary.utxos.reduce((total, note) => total.add(note.amount), new BN(0));
+            summary.maxSingleTxAmount = summary.utxos.slice(-2).reduce((total, note) => total.add(note.amount), new BN(0));
+        });
     }
     async stopClient() {
         this.worker.terminate();
         this.storageService.stop();
     }
 }
-function createSilentPayWorker(walletPubkey, masterSeed, rpcUrl) {
+function createSharonProtocolWorker(walletPubkey, masterSeed, rpcUrl) {
     const worker = new Worker(new URL("./worker/worker.js", import.meta.url), {
         type: "module",
     });

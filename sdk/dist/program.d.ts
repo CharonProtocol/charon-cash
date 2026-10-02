@@ -3,8 +3,8 @@ import { Connection, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { Utxo } from "./model/utxo";
 import BN from "bn.js";
 import { EncryptionService } from "./encrypt";
-import { SilentPayError } from "./error";
-export declare class ProgramError extends SilentPayError {
+import { CharonProtocolError } from "./error";
+export declare class ProgramError extends CharonProtocolError {
     programErrorCode: ProgramErrorCode | undefined;
     constructor(message: string, programErrorCode?: ProgramErrorCode | undefined, options?: {
         cause: unknown;

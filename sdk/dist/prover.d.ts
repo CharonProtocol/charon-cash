@@ -1,6 +1,6 @@
 import BN from "bn.js";
-import { SilentPayError } from "./error";
-export declare class ProofGenError extends SilentPayError {
+import { CharonProtocolError } from "./error";
+export declare class ProofGenError extends CharonProtocolError {
     constructor(message: string, options?: {
         cause: unknown;
     });

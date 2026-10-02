@@ -1,9 +1,9 @@
-import { SilentPayError } from "./error";
+import { CharonProtocolError } from "./error";
 interface CipherKeypair {
     publicKey: Uint8Array;
     secretKey: Uint8Array;
 }
-export declare class EncryptionError extends SilentPayError {
+export declare class EncryptionError extends CharonProtocolError {
     constructor(message: string, options?: {
         cause: unknown;
     });

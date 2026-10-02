@@ -5,12 +5,12 @@ import { ALT_ADDRESS, FEE_RECIPIENT, FIELD_SIZE, PROGRAM_ID, } from "./constants
 import BN from "bn.js";
 import { bytesToBN, deriveAccounts, getExtDataHash, getMintAddressField, serializeProofAndExtData, } from "./utils";
 import { parseProofToBytesArray, parseToBytesArray, prove, } from "./prover";
-import { SilentPayError, SilentPayErrorCode } from "./error";
+import { CharonProtocolError, CharonProtocolErrorCode } from "./error";
 import { ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress, TOKEN_PROGRAM_ID, } from "@solana/spl-token";
-export class ProgramError extends SilentPayError {
+export class ProgramError extends CharonProtocolError {
     programErrorCode;
     constructor(message, programErrorCode = undefined, options) {
-        super(message, SilentPayErrorCode.PROGRAM_ERROR, {
+        super(message, CharonProtocolErrorCode.PROGRAM_ERROR, {
             cause: options?.cause,
         });
         this.name = "ProgramError";

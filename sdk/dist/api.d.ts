@@ -1,7 +1,7 @@
 import { PublicKey } from "@solana/web3.js";
 import BN from "bn.js";
-import { SilentPayError } from "./error";
-export declare class ApiClientError extends SilentPayError {
+import { CharonProtocolError } from "./error";
+export declare class ApiClientError extends CharonProtocolError {
     apiErrorCode: ApiErrorCode;
     details?: ErrorDetail | null;
     status: number;
