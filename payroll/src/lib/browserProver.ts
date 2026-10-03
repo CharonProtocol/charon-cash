@@ -76,7 +76,7 @@ class BrowserProverPool {
     // MT: fewer workers, each with a slice of the cores (2 workers × 4 on an
     // 8-core machine) — one proof uses its worker's whole slice, so 1-lane
     // latency drops to ~a second while 2 proofs still run in parallel.
-    const count = isolated ? Math.max(2, Math.min(workers, Math.floor(cores / 3))) : workers
+    const count = isolated ? Math.max(1, Math.min(workers, Math.max(1, Math.floor(cores / 3)))) : workers
     this.threadsPerWorker = isolated ? Math.max(2, Math.floor(cores / count)) : 1
     this.mode = isolated ? "mt" : "st"
     const spawns = Array.from({ length: count }, () =>

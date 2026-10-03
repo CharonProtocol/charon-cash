@@ -45,7 +45,7 @@ export function PlanReviewCard({
   const [decimals, setDecimals] = useState<number | null>(null)
   const [mintError, setMintError] = useState<string | null>(null)
   const [mode, setMode] = useState<RunMode>("shielded")
-  const [lanes, setLanes] = useState(8)
+  const [lanes, setLanes] = useState(2)
   const [recipientCheck, setRecipientCheck] = useState<RecipientCheck | null>(null)
   const [checking, setChecking] = useState(false)
   const [checkError, setCheckError] = useState<string | null>(null)
