@@ -3,7 +3,7 @@ interface Keypair {
     secretKey: Uint8Array;
 }
 export declare function generateX25519Keypair(seed?: Uint8Array | string): Promise<Keypair>;
-export declare function generateSharedSecret(client: Keypair, pubKey: Uint8Array): Promise<Uint8Array<ArrayBufferLike> & Uint8Array<ArrayBuffer>>;
+export declare function generateSharedSecret(client: Keypair, pubKey: Uint8Array): Promise<Uint8Array<ArrayBufferLike>>;
 /**
  *
  * @param data
