@@ -45,7 +45,22 @@ export function PlanReviewCard({
   const [decimals, setDecimals] = useState<number | null>(null)
   const [mintError, setMintError] = useState<string | null>(null)
   const [mode, setMode] = useState<RunMode>("shielded")
-  const [lanes, setLanes] = useState(2)
+  // Recommended lanes: small runs pay faster strictly serially (splits cost
+  // more than they save below ~10 rows); big runs overlap chain latency
+  // across chains, capped by the machine's cores. The user can always
+  // override — the recommendation just preselects and is badged below.
+  const cores = navigator.hardwareConcurrency || 4
+  const rowCount = parsed?.entries.length ?? 0
+  const recommendedLanes =
+    rowCount === 0
+      ? 2
+      : rowCount < 10
+        ? 2
+        : rowCount < 50
+          ? 4
+          : Math.min(8, Math.max(4, Math.floor(cores / 2)))
+  const [lanes, setLanes] = useState(recommendedLanes)
+  const [lanesTouched, setLanesTouched] = useState(false)
   const [recipientCheck, setRecipientCheck] = useState<RecipientCheck | null>(null)
   const [checking, setChecking] = useState(false)
   const [checkError, setCheckError] = useState<string | null>(null)
@@ -55,6 +70,12 @@ export function PlanReviewCard({
     setRecipientCheck(null)
     setCheckError(null)
   }, [parsed?.fileHash])
+
+  // A new CSV re-arms the recommendation unless the user picked lanes by hand.
+  useEffect(() => {
+    if (!lanesTouched) setLanes(recommendedLanes)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recommendedLanes])
 
   const asset: Asset | null = useMemo(() => {
     if (kind === "sol") return { kind: "sol" }
@@ -208,15 +229,19 @@ export function PlanReviewCard({
               {[1, 2, 3, 4, 6, 8].map((l) => (
                 <button
                   key={l}
-                  onClick={() => setLanes(l)}
+                  onClick={() => {
+                    setLanes(l)
+                    setLanesTouched(true)
+                  }}
                   className={`rounded-md px-3 py-1 text-xs font-medium ${lanes === l ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
                 >
                   {l}
+                  {l === recommendedLanes && <span className="ml-0.5 text-[9px] opacity-70">rec</span>}
                 </button>
               ))}
             </div>
             <p className="text-xs text-muted-foreground">
-              How many payout chains run at once. More lanes = faster and more CPU; 1 lane pays strictly one-by-one.
+              How many payout chains run at once — picked from this CSV's size and your CPU ({cores} cores). More lanes = faster and more CPU; 1 lane pays strictly one-by-one.
             </p>
           </div>
           {mode === "shielded" && (
