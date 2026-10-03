@@ -577,6 +577,11 @@ export class PayrollEngine {
           // nothing is in flight, so the view is authoritative
           if (!scannedFinal) {
             scannedFinal = true
+            // On prod the mirror syncs lazily (~once/min): the change note
+            // this row needs may exist on-chain but not in the mirror yet —
+            // the 10/min ceiling on the measured 100-row run. Kick the sync
+            // so the refresh below can actually see it.
+            void gatedKick()
             await refreshNow()
             continue
           }

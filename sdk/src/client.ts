@@ -42,6 +42,7 @@ import {
   submitTransaction,
   relayWithdraw,
   waitForLeafIndex,
+  getBackendUrl,
   type MerkleProof,
   type RelayerInfo,
 } from "./merkle"
@@ -927,10 +928,19 @@ export class PrivacyCashClient {
   /** Poll the indexer's next_leaf_index. Never throws — deposit already settled. */
   private async waitForLeaves(treeKey: string, minLeafIndex: number): Promise<void> {
     const deadline = Date.now() + 45_000
+    let prev = -1
     while (Date.now() < deadline) {
       try {
         const st = await fetchTreeState(treeKey)
         if (st.nextLeafIndex > minLeafIndex) return
+        if (st.nextLeafIndex === prev) {
+          // The mirror is lazy (the backend cron walks the chain ~once a
+          // minute): a fresh deposit would idle here for up to a minute —
+          // the measured 46s "Sign & deposit" on every run. Ask the indexer
+          // to sync now; the backend throttle bounds repeat kicks.
+          await fetch(getBackendUrl() + "/api/indexer/kick", { method: "POST" }).catch(() => {})
+        }
+        prev = st.nextLeafIndex
       } catch {
         /* keep polling */
       }

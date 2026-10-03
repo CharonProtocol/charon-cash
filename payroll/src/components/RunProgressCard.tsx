@@ -298,9 +298,10 @@ function RunTimeline({
 function CountChips({ rows }: { rows: Array<{ status: string }> }) {
   const count = (m: (s: string) => boolean) => rows.filter((r) => m(r.status)).length
   const chips: Array<[number, string, string]> = [
-    [count((s) => s === "confirmed" || s === "sent"), "confirmed", "text-emerald-600 dark:text-emerald-400"],
-    [count((s) => s === "proving" || s === "relayed" || s === "confirming"), "in flight", "text-primary"],
-    [count((s) => s === "queued"), "queued", "text-muted-foreground"],
+    [count((s) => s === "confirmed" || s === "sent"), "on chain", "text-emerald-600 dark:text-emerald-400"],
+    [count((s) => s === "proving"), "proving", "text-primary"],
+    [count((s) => s === "relayed" || s === "confirming"), "landing", "text-primary"],
+    [count((s) => s === "queued"), "waiting for lane", "text-muted-foreground"],
     [count((s) => s === "failed"), "failed", "text-rose-600 dark:text-rose-400"],
   ]
   return (
