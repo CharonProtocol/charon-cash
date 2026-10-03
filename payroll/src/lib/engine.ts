@@ -566,6 +566,7 @@ export class PayrollEngine {
       let scannedFinal = false
       let mergeRounds = 0
       let healedOnce = false
+      let lastStallKickAt = 0
       for (;;) {
         const pinned = ledger.tryReserve(gross)
         if (pinned) {
@@ -618,6 +619,14 @@ export class PayrollEngine {
         // other lanes are mid-payout and their change notes are coming; wait
         scannedFinal = false
         if (this.deps.now() > deadline) return null
+        // Kick the sync even with lanes busy: the note this row waits for
+        // belongs to a lane whose tx ALREADY landed — busy stays >0 while
+        // every lane starves on the lazy mirror (the prod 100-row gridlock:
+        // "4 proving, 35 waiting" for minutes). Kick at most every 15s.
+        if (this.deps.now() - lastStallKickAt > 15_000) {
+          lastStallKickAt = this.deps.now()
+          void gatedKick()
+        }
         void scheduleRefresh()
         await this.deps.sleep(RESERVE_POLL_MS)
       }
