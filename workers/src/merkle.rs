@@ -68,12 +68,14 @@ pub async fn load_tree(store: &Store, tree_key: &str) -> Result<TreeData, String
         Some(r) => r,
         None => {
             store
-                .bound(
+                .run_one(
                     "INSERT INTO trees (tree_key, next_index, root_index, root_history_hex) \
-                     VALUES (?1, 0, 0, ?2) ON CONFLICT (tree_key) DO NOTHING",
-                    vec![crate::store::s(tree_key), crate::store::s(init_history_hex())],
-                )?
-                .run()
+                     VALUES ($1, 0, 0, $2) ON CONFLICT (tree_key) DO NOTHING",
+                    vec![
+                        crate::store::s(tree_key),
+                        crate::store::s(init_history_hex()),
+                    ],
+                )
                 .await
                 .map_err(|e| format!("init tree: {e}"))?;
             store.tree_row(tree_key).await?.ok_or("tree row missing after init")?

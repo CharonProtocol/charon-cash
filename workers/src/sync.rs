@@ -225,9 +225,9 @@ pub async fn insert_transact(
 
     let mut stmts = Vec::new();
     for (i, (leaf, enc)) in leaves.iter().zip(&encs).enumerate() {
-        stmts.push(store.bound(
+        stmts.push(crate::store::stmt(
             "INSERT INTO utxos (tree_key, leaf_index, commitment_hex, encrypted_output_hex, \
-             signature, slot, ext_amount, fee) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
+             signature, slot, ext_amount, fee) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) \
              ON CONFLICT (tree_key, leaf_index) DO NOTHING",
             vec![
                 s(tree_key),
@@ -239,44 +239,44 @@ pub async fn insert_transact(
                 n(decoded.ext_amount),
                 n(decoded.fee as i64),
             ],
-        )?);
+        ));
     }
     for nullifier in &decoded.input_nullifiers {
         if *nullifier == [0u8; 32] {
             continue;
         }
-        stmts.push(store.bound(
+        stmts.push(crate::store::stmt(
             "INSERT INTO nullifiers (nullifier_hex, tree_key, signature, slot) \
-             VALUES (?1, ?2, ?3, ?4) ON CONFLICT (nullifier_hex) DO NOTHING",
+             VALUES ($1, $2, $3, $4) ON CONFLICT (nullifier_hex) DO NOTHING",
             vec![s(hex::encode(nullifier)), s(tree_key), s(signature), n(slot as i64)],
-        )?);
+        ));
     }
     let kind_str = match decoded.kind {
         TransactKind::Sol => "sol",
         TransactKind::Spl => "spl",
     };
-    stmts.push(store.bound(
-        "INSERT INTO indexed_txs (signature, slot, tree_key, kind) VALUES (?1, ?2, ?3, ?4) \
+    stmts.push(crate::store::stmt(
+        "INSERT INTO indexed_txs (signature, slot, tree_key, kind) VALUES ($1, $2, $3, $4) \
          ON CONFLICT (signature) DO NOTHING",
         vec![s(signature), n(slot as i64), s(tree_key), s(kind_str)],
-    )?);
+    ));
     let (next_index, root_index, history_hex) = merkle::trees_upsert_values(&data);
-    stmts.push(store.bound(
+    stmts.push(crate::store::stmt(
         "INSERT INTO trees (tree_key, next_index, root_index, root_history_hex) \
-         VALUES (?1, ?2, ?3, ?4) ON CONFLICT (tree_key) DO UPDATE SET \
+         VALUES ($1, $2, $3, $4) ON CONFLICT (tree_key) DO UPDATE SET \
          next_index = excluded.next_index, root_index = excluded.root_index, \
          root_history_hex = excluded.root_history_hex",
         vec![s(tree_key), n(next_index), n(root_index), s(history_hex)],
-    )?);
+    ));
     for level in 0..=crate::accounts::MERKLE_TREE_HEIGHT {
         if data.levels[level].is_empty() {
             continue;
         }
-        stmts.push(store.bound(
-            "INSERT INTO tree_levels (tree_key, level, nodes_hex) VALUES (?1, ?2, ?3) \
+        stmts.push(crate::store::stmt(
+            "INSERT INTO tree_levels (tree_key, level, nodes_hex) VALUES ($1, $2, $3) \
              ON CONFLICT (tree_key, level) DO UPDATE SET nodes_hex = excluded.nodes_hex",
             vec![s(tree_key), n(level as i64), s(merkle::level_row(&data, level))],
-        )?);
+        ));
     }
 
     store.run_batch(stmts).await

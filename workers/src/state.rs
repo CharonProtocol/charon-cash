@@ -6,7 +6,46 @@ use crate::rpc::Rpc;
 use crate::solana::pubkey::Pubkey;
 use crate::solana::sign::Keypair;
 use crate::store::Store;
-use worker::Env;
+use tokio_postgres::Client;
+use worker::{Env, Hyperdrive};
+
+/// Postgres access via the Hyperdrive binding. Holds at most one pooled
+/// client per isolate; every error invalidates it so the next call
+/// reconnects (Neon/Hyperdrive idle closes are routine).
+/// Postgres (Neon) access through the Hyperdrive binding: a fresh pooled
+/// connection per operation, exactly the workers-rs tokio-postgres example's
+/// pattern. Hyperdrive terminates the TLS and pools the origin side.
+pub struct Db {
+    pub hyperdrive: Hyperdrive,
+}
+
+impl Db {
+    pub fn new(hyperdrive: Hyperdrive) -> Self {
+        Db { hyperdrive }
+    }
+
+    pub async fn connect(&self) -> Result<Client, String> {
+        let socket = worker::Socket::builder()
+            .secure_transport(worker::SecureTransport::StartTls)
+            .connect(&self.hyperdrive.host(), self.hyperdrive.port())
+            .map_err(|e| format!("pg socket: {e}"))?;
+        let config = self
+            .hyperdrive
+            .connection_string()
+            .parse::<tokio_postgres::Config>()
+            .map_err(|e| format!("pg config: {e}"))?;
+        let (client, connection) = config
+            .connect_raw(socket, tokio_postgres::NoTls)
+            .await
+            .map_err(|e| format!("pg connect: {e}"))?;
+        wasm_bindgen_futures::spawn_local(async move {
+            if let Err(e) = connection.await {
+                worker::console_error!("pg connection closed: {e}");
+            }
+        });
+        Ok(client)
+    }
+}
 
 pub struct AppState {
     pub rpc: Rpc,
@@ -85,9 +124,10 @@ impl AppState {
 
         let admin_password = env_secret(env, "ADMIN_PASSWORD").filter(|s| !s.is_empty());
 
-        let db = env
-            .d1("DB")
-            .map_err(|e| format!("D1 binding 'DB' missing: {e}"))?;
+        let db = Db::new(
+            env.hyperdrive("HYPERDRIVE")
+                .map_err(|e| format!("HYPERDRIVE binding missing: {e}"))?,
+        );
 
         Ok(AppState {
             rpc: Rpc { url: rpc_url },

@@ -23,8 +23,9 @@ SUPPORTED_MINTS = "HLb8KZXK6sQvPvFqcoGSyVsYB5mGfBGJa2gT9B6G1BkC"
 #   SOLANA_RPC_URL        - JSON-RPC endpoint (devnet: https://api.devnet.solana.com)
 #   ADMIN_PASSWORD        - operator password guarding the mutating admin routes
 
-[[d1_databases]]
-binding = "DB"
-database_name = "privacy-cash"
-database_id = "b49ed277-c011-4156-add3-1e591cfce31f"
-migrations_dir = "migrations"
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "5fe435b90a8642e498541960db85c63b"
+# The ledger mirror is read-after-write critical (insert tree row, then read
+# it back); Hyperdrive's default query cache served stale snapshots.
+caching = false
