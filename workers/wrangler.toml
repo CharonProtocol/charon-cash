@@ -10,7 +10,7 @@ crons = ["* * * * *"]
 command = "worker-build --release"
 
 [vars]
-PROGRAM_ID = "9PpZ9iUSCk6fuv4MvFEkN64hd7kkh28GxGLgSUDRZA9V"
+PROGRAM_ID = "CHvKW5fCPNfikvfHA1cxQL8guoyFGqRvwdr1B3NdNVss"
 RELAYER_FEE_RATE_BPS = "25"
 RELAYER_MIN_TRANSFER_FEE_LAMPORTS = "10000"
 RELAYER_SKIP_PREFLIGHT = "false"
@@ -25,7 +25,7 @@ SUPPORTED_MINTS = "HLb8KZXK6sQvPvFqcoGSyVsYB5mGfBGJa2gT9B6G1BkC"
 
 [[hyperdrive]]
 binding = "HYPERDRIVE"
-id = "5fe435b90a8642e498541960db85c63b"
+id = "2760a35be1424098940518197679f7e3"
 # The ledger mirror is read-after-write critical (insert tree row, then read
 # it back); Hyperdrive's default query cache served stale snapshots.
 caching = false
