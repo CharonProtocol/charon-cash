@@ -132,7 +132,12 @@ export interface PendingTransfer {
 export type OnSubmitted = (pending: PendingTransfer) => void | Promise<void>
 
 const DEPOSIT_FEE = 0
-const RANGE_PAGE = 2_000
+// D1 bills rows READ per page request: a 2000-wide page made every routine
+// sync burn thousands of billed rows for a handful of leaves (the free tier
+// died mid-day after ten 100-row runs). 128 keeps fromScratch scans at the
+// same total reads (leaf count) while the common incremental pass costs
+// almost nothing.
+const RANGE_PAGE = 128
 
 function toPubkey(value: PublicKey | string): PublicKey {
   return value instanceof PublicKey ? value : new PublicKey(value)
