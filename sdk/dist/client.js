@@ -5,14 +5,19 @@ import BN from "bn.js";
 import { envProgramId, FIELD_SIZE, MERKLE_TREE_DEPTH, RECEIVE_SIGN_MESSAGE, SIGN_MESSAGE, SOL_TREE_KEY, WRAPPED_SOL_MINT, } from "./constants";
 import { EncryptionService, Keypair, Utxo, encryptUtxoTo, getExtDataHash, getMintAddressField, } from "./crypto";
 import { fetchRecipientKeys } from "./recipients";
-import { bytesToHex, fetchMerkleProof, fetchRelayerInfo, fetchBlockhash, fetchTreeState, fetchUtxoRange, fieldToHex32, isNullifierSpent, nullifiersSpent, nullifierInfo, submitTransaction, relayWithdraw, waitForLeafIndex, } from "./merkle";
+import { bytesToHex, fetchMerkleProof, fetchRelayerInfo, fetchBlockhash, fetchTreeState, fetchUtxoRange, fieldToHex32, isNullifierSpent, nullifiersSpent, nullifierInfo, submitTransaction, relayWithdraw, waitForLeafIndex, getBackendUrl, } from "./merkle";
 import { clearNotes, exportNotes, getSyncOffset, importNotes, loadNotes, markNoteSpent, newNoteId, purgeLegacyStorage, removeStaleNote, readLegacyNotes, saveNote, setSyncOffset, unspentNotes, upsertNote, markNoteSpentByIndex, } from "./notes";
 import { pushEncryptedNotes, pullEncryptedNotes } from "./notestore";
 import { parseProofToBytesArray, parseToBytesArray, prove } from "./prover";
 import { buildTransactSplTransaction, buildTransactTransaction, } from "./program";
 import { ensureAlt, envAltAddress, splAltAddresses, } from "./alt";
 const DEPOSIT_FEE = 0;
-const RANGE_PAGE = 2_000;
+// D1 bills rows READ per page request: a 2000-wide page made every routine
+// sync burn thousands of billed rows for a handful of leaves (the free tier
+// died mid-day after ten 100-row runs). 128 keeps fromScratch scans at the
+// same total reads (leaf count) while the common incremental pass costs
+// almost nothing.
+const RANGE_PAGE = 128;
 function toPubkey(value) {
     return value instanceof PublicKey ? value : new PublicKey(value);
 }
@@ -687,11 +692,20 @@ export class PrivacyCashClient {
     /** Poll the indexer's next_leaf_index. Never throws — deposit already settled. */
     async waitForLeaves(treeKey, minLeafIndex) {
         const deadline = Date.now() + 45_000;
+        let prev = -1;
         while (Date.now() < deadline) {
             try {
                 const st = await fetchTreeState(treeKey);
                 if (st.nextLeafIndex > minLeafIndex)
                     return;
+                if (st.nextLeafIndex === prev) {
+                    // The mirror is lazy (the backend cron walks the chain ~once a
+                    // minute): a fresh deposit would idle here for up to a minute —
+                    // the measured 46s "Sign & deposit" on every run. Ask the indexer
+                    // to sync now; the backend throttle bounds repeat kicks.
+                    await fetch(getBackendUrl() + "/api/indexer/kick", { method: "POST" }).catch(() => { });
+                }
+                prev = st.nextLeafIndex;
             }
             catch {
                 /* keep polling */
