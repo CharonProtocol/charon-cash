@@ -4,6 +4,7 @@
 // snarkjs. The wasm prove() is synchronous and blocks its worker, so
 // parallelism comes from the pool; size it to the machine's cores.
 import { getBackendUrl, setProver, type ProverOverride } from "privacy-cash-sdk"
+import { compressedToSnarkjs } from "./groth16-decompress"
 
 // Mirrors the snarkjs Proof shape from privacy-cash-sdk/src/prover (the SDK
 // exports ProverOverride but not the Proof type itself).
@@ -80,9 +81,15 @@ class BrowserProverPool {
     this.mode = isolated ? "mt" : "st"
     const spawns = Array.from({ length: count }, () =>
       new Promise<Worker>((resolve, reject) => {
-        const w = new Worker(new URL("./browserProverWorker.ts", import.meta.url), {
-          type: "module",
-        })
+        // MT workers come from a RAW static module (/prover-mt-worker.mjs):
+        // the rayon snippet self-spawns relative to its own URL, which only
+        // resolves for un-bundled files. ST keeps the bundled worker.
+        const w =
+          this.mode === "mt"
+            ? new Worker("/prover-mt-worker.mjs", { type: "module" })
+            : new Worker(new URL("./browserProverWorker.ts", import.meta.url), {
+                type: "module",
+              })
         const onMsg = (m: MessageEvent) => {
           const d = m.data as { type?: string; threads?: number }
           if (d?.type === "ready") {
@@ -134,12 +141,19 @@ class BrowserProverPool {
 
   private run(slot: Slot, e: PendingEntry) {
     const onMsg = (m: MessageEvent) => {
-      const d = m.data as { type?: string; id?: number; error?: string; input?: string; proof?: unknown; publicSignals?: string[] }
+      const d = m.data as { type?: string; id?: number; error?: string; input?: string; proof?: unknown; raw?: { proof_a: string; proof_b: string; proof_c: string; public_signals: string[] }; publicSignals?: string[] }
       if (d?.id !== e.id || (d.type !== "proof" && d.type !== "error")) return
       slot.worker.removeEventListener("message", onMsg)
       this.proveCount++
       this.proveTotalMs += performance.now() - e.startedAt
-      if (d.type === "proof") e.resolve({ proof: d.proof as SnarkjsProof, publicSignals: d.publicSignals ?? [] })
+      if (d.type === "proof") {
+        // The raw MT worker returns the wasm's compressed-hex output; the
+        // bundled ST worker already applies the snarkjs conversion itself.
+        const shaped = d.raw
+          ? compressedToSnarkjs(d.raw)
+          : { proof: d.proof as SnarkjsProof, publicSignals: d.publicSignals ?? [] }
+        e.resolve(shaped)
+      }
       else {
         // Local telemetry: dump the failing witness input to the shim so
         // multi-lane proof failures can be diagnosed offline.
