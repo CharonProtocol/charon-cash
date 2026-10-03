@@ -255,6 +255,20 @@ export function browserProverInfo(): BrowserProverInfo | null {
   return info(pool)
 }
 
+/** Recommended worker count for a run with `lanes` parallel chains: MT
+ * proofs queue through rayon, so more than 2 workers just splits the same
+ * cores thinner. 1 lane → 1 worker with everything; 2+ lanes → up to 2
+ * workers on machines with the cores to feed them; single-threaded pages
+ * keep the per-core pool. */
+export function recommendedWorkers(lanes: number): number {
+  const cores = navigator.hardwareConcurrency || 4
+  const mt =
+    typeof SharedArrayBuffer !== "undefined" &&
+    (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true
+  if (!mt) return workerCount()
+  return Math.max(1, Math.min(lanes, Math.floor(cores / 4), 2))
+}
+
 // Prove directly through the pool (bypasses the SDK's prove()); used by the
 // browser smoke test and any caller that wants raw access.
 export async function proveWithBrowserProver(input: Record<string, unknown>) {

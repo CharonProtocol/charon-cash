@@ -15,7 +15,7 @@ import { UploadCard } from "@/components/UploadCard"
 import { WalletBar } from "@/components/WalletBar"
 import { useConnectWallet } from "@/components/WalletProvider"
 import { usePayrollClient } from "@/hooks/usePayrollClient"
-import { ensureBrowserProver } from "@/lib/browserProver"
+import { ensureBrowserProver, recommendedWorkers } from "@/lib/browserProver"
 import { createEngine, type RunSnapshot } from "@/lib/engine"
 import { failedEntriesOf, storageOk } from "@/lib/store"
 import type { Asset, ParsedFile, RunMode, RunReceipt } from "@/lib/types"
@@ -104,9 +104,11 @@ export function EmployerApp() {
       try {
         // Prove client-side on the wasm-arkworks engine (standard circuit);
         // falls back to in-page snarkjs if the worker pool can't start.
-        // 1 lane → one MT worker with ALL cores (fastest single proof).
+        // The pool shape is dynamic: recommendedWorkers re-inits it when a
+        // run needs a different split (1 lane → 1×all-cores, bigger runs →
+        // up to 2 workers).
         try {
-          const info = await ensureBrowserProver({ workers: lanes === 1 ? 1 : undefined })
+          const info = await ensureBrowserProver({ workers: recommendedWorkers(lanes) })
           toast.info(`Prover: ${info.workers} ${info.mode === "mt" ? "MT" : "ST"} worker${info.workers === 1 ? "" : "s"}${info.mode === "mt" ? ` × ${info.threads} threads` : ""} · run: ${lanes} lane${lanes === 1 ? "" : "s"}`)
         } catch (e) {
           toast.warning(`Browser prover unavailable, using snarkjs: ${(e as Error).message}`)
