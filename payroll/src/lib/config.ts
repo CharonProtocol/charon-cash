@@ -46,7 +46,11 @@ export const config = {
   /** RPC for latency-sensitive calls (confirm), falling back to the base. */
   confirmRpcUrl(): string {
     const { fastRpcUrl, rpcUrl } = read()
-    const url = fastRpcUrl || rpcUrl
+    // The fast RPC is a remote cluster endpoint (e.g. devnet Helius); a
+    // local simnet's signatures can never appear there, so confirming
+    // against it means every payout idles out without its green tick.
+    const local = /^https?:\/\/(localhost|127\.0\.0\.1)/.test(rpcUrl)
+    const url = fastRpcUrl && !local ? fastRpcUrl : rpcUrl
     // The lib derives the websocket host from the endpoint scheme; a wss://
     // Helius URL works for HTTP calls once rewritten to https.
     return url.replace(/^wss:\/\//, "https://").replace(/^ws:\/\//, "http://")

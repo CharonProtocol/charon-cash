@@ -8,12 +8,22 @@ function revive(r: unknown): RunReceipt {
     totalPlanned?: string | bigint
     funding?: { depositedRaw: string | bigint } | null
   }
+  // Old or corrupted localStorage entries must never crash the history list
+  // ("invalid BigInt syntax"): fall back to 0n and let listRuns callers see
+  // the rest of the receipt.
+  const big = (v: unknown): bigint => {
+    try {
+      return BigInt((v ?? 0n) as string | bigint)
+    } catch {
+      return 0n
+    }
+  }
   return {
     ...x,
-    totalPlanned: BigInt(x.totalPlanned as string | bigint),
+    totalPlanned: big(x.totalPlanned),
     funding: x.funding ? {
       ...x.funding,
-      depositedRaw: BigInt(x.funding.depositedRaw as string | bigint)
+      depositedRaw: big(x.funding.depositedRaw)
     } : null
   }
 }

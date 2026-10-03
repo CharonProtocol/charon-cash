@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useWallet } from "@solana/wallet-adapter-react"
 import { toast } from "sonner"
 import { ArrowRight, History, Play, Settings, Users, Wallet } from "lucide-react"
-import { totalBalance } from "privacy-cash-sdk"
+import { getBackendUrl, totalBalance } from "privacy-cash-sdk"
 
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -15,7 +15,7 @@ import { UploadCard } from "@/components/UploadCard"
 import { WalletBar } from "@/components/WalletBar"
 import { useConnectWallet } from "@/components/WalletProvider"
 import { usePayrollClient } from "@/hooks/usePayrollClient"
-import { browserProverInfo, ensureBrowserProver } from "@/lib/browserProver"
+import { ensureBrowserProver } from "@/lib/browserProver"
 import { createEngine, type RunSnapshot } from "@/lib/engine"
 import { failedEntriesOf, storageOk } from "@/lib/store"
 import type { Asset, ParsedFile, RunMode, RunReceipt } from "@/lib/types"
@@ -37,7 +37,7 @@ export function EmployerApp() {
   const engineRef = useRef<{ cancel: () => void } | null>(null)
   // Kept so a stopped/crashed run's failed rows can be retried without the
   // receipt (snapshots don't carry asset/mode/fileHash).
-  const lastRun = useRef<{ asset: Asset; mode: RunMode; fileHash: string } | null>(null)
+  const lastRun = useRef<{ asset: Asset; mode: RunMode; fileHash: string; lanes: number } | null>(null)
 
   // Long quiet phases (lane fan-out, indexer catch-up, post-error
   // adjudication) must never look like a hang: surface the engine's own
@@ -55,6 +55,24 @@ export function EmployerApp() {
       toast.info(status, { duration: 8000 })
     }
   }, [snapshot, status])
+  // Preload the prover pool while the user is still uploading/planning, so
+  // the first Run doesn't pay the cold MT init (artifact fetch + parse +
+  // thread spawn) as a blank minute at the start of the run.
+  useEffect(() => {
+    let alive = true
+    void ensureBrowserProver()
+      .then((info) => {
+        if (alive)
+          toast.success(
+            `Browser prover ready — ${info.workers} ${info.mode === "mt" ? "MT" : "ST"} worker${info.workers === 1 ? "" : "s"}${info.mode === "mt" ? ` × ${info.threads} threads` : ""}`,
+            { duration: 6000 },
+          )
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [])
   useEffect(() => {
     if (phase !== "funding" && phase !== "paying") return
     const t = setInterval(() => {
@@ -74,19 +92,22 @@ export function EmployerApp() {
       entries = parsed?.entries,
       fileHash = parsed?.fileHash,
       mode: RunMode = "public",
+      lanes = 8,
     ) => {
       if (!client || !entries || !fileHash || bps === null) return
-      lastRun.current = { asset, mode, fileHash }
+      lastRun.current = { asset, mode, fileHash, lanes }
       setReceipt(null)
       setSnapshot({ phase: "funding", rows: entries.map((e) => ({ ...e, status: "queued" as const, attempts: 0 })), startedAt: Date.now() })
+      toast.info(`Run started — ${lanes} lane${lanes === 1 ? "" : "s"}, ${entries.length} payout${entries.length === 1 ? "" : "s"}`)
       const engine = createEngine(client)
       engineRef.current = engine
       try {
         // Prove client-side on the wasm-arkworks engine (standard circuit);
         // falls back to in-page snarkjs if the worker pool can't start.
+        // 1 lane → one MT worker with ALL cores (fastest single proof).
         try {
-          const info = await ensureBrowserProver()
-          if (!browserProverInfo()?.proves) toast.success(`Browser prover ready (${info.workers} workers)`)
+          const info = await ensureBrowserProver({ workers: lanes === 1 ? 1 : undefined })
+          toast.info(`Prover: ${info.workers} ${info.mode === "mt" ? "MT" : "ST"} worker${info.workers === 1 ? "" : "s"}${info.mode === "mt" ? ` × ${info.threads} threads` : ""} · run: ${lanes} lane${lanes === 1 ? "" : "s"}`)
         } catch (e) {
           toast.warning(`Browser prover unavailable, using snarkjs: ${(e as Error).message}`)
         }
@@ -96,15 +117,49 @@ export function EmployerApp() {
           vaultRaw = totalBalance(client.publicKey, asset.mint)
         }
         const r = await engine.run(
-          { fileHash, asset, entries, bps, vaultRaw, mode, minTransferFee },
+          { fileHash, asset, entries, bps, vaultRaw, mode, minTransferFee, lanes },
           setSnapshot,
         )
+        // Local telemetry: per-row timing breakdown + failures land in
+        // /tmp/run-telemetry.json so "where the time goes" is always answerable.
+        void fetch(`${getBackendUrl()}/api/debug/run-telemetry`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            at: new Date().toISOString(),
+            mode,
+            lanes,
+            rows: entries.length,
+            summary: r.summary,
+            splits: r.splits,
+            perRow: r.entries.map((e) => ({
+              status: e.status,
+              attempts: e.attempts,
+              error: e.error,
+              timing: e.timing,
+            })),
+          }),
+        }).catch(() => {})
         await refreshVault()
         setReceipt(r)
         if (r.summary.failed > 0) toast.warning(`${r.summary.failed} payout(s) failed — resume available`)
         else toast.success("Payroll run complete")
       } catch (e) {
-        toast.error(`Run crashed: ${(e as Error).message}`)
+        const err = e as Error
+        toast.error(`Run crashed: ${err.message}`)
+        // Local telemetry: crashes land with their stack so failures like
+        // "invalid BigInt syntax" are diagnosable offline.
+        void fetch(`${getBackendUrl()}/api/debug/run-telemetry`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            at: new Date().toISOString(),
+            crash: err.message,
+            stack: (err.stack ?? "").slice(0, 4000),
+            lanes,
+            rows: entries.length,
+          }),
+        }).catch(() => {})
         // Keep the rows on screen and mark the run stopped so the failed
         // ones can be retried; clearing the snapshot would hide the state.
         setSnapshot((s) => (s ? { ...s, phase: "aborted" } : null))
@@ -118,7 +173,7 @@ export function EmployerApp() {
       const entries = failedEntriesOf(r)
       if (!entries.length) return
       setParsed({ entries, fileHash: r.fileHash })
-      startRun(r.asset, entries, r.fileHash, r.mode)
+      startRun(r.asset, entries, r.fileHash, r.mode, lastRun.current?.lanes ?? 8)
     },
     [startRun],
   )
@@ -130,7 +185,7 @@ export function EmployerApp() {
       .filter((r) => r.status === "failed")
       .map((r) => ({ address: r.address, amountHuman: r.amountHuman, memo: r.memo }))
     if (!entries.length) return
-    startRun(cfg.asset, entries, cfg.fileHash, cfg.mode)
+    startRun(cfg.asset, entries, cfg.fileHash, cfg.mode, cfg.lanes ?? 8)
   }, [snapshot, startRun])
 
   return (
@@ -225,7 +280,7 @@ export function EmployerApp() {
                   minTransferFee={minTransferFee}
                   vaultSolRaw={vaultSolRaw}
                   disabled={!ready}
-                  onRun={(asset, mode) => startRun(asset, undefined, undefined, mode)}
+                  onRun={(asset, mode, lanes) => startRun(asset, undefined, undefined, mode, lanes)}
                 />
               </>
             )}

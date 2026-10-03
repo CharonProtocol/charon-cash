@@ -36,7 +36,7 @@ export function PlanReviewCard({
   bps: number | null
   minTransferFee: number
   vaultSolRaw: bigint | null
-  onRun: (asset: Asset, mode: RunMode) => void
+  onRun: (asset: Asset, mode: RunMode, lanes: number) => void
   disabled: boolean
 }) {
   const { connection } = useConnection()
@@ -45,6 +45,7 @@ export function PlanReviewCard({
   const [decimals, setDecimals] = useState<number | null>(null)
   const [mintError, setMintError] = useState<string | null>(null)
   const [mode, setMode] = useState<RunMode>("shielded")
+  const [lanes, setLanes] = useState(8)
   const [recipientCheck, setRecipientCheck] = useState<RecipientCheck | null>(null)
   const [checking, setChecking] = useState(false)
   const [checkError, setCheckError] = useState<string | null>(null)
@@ -201,6 +202,23 @@ export function PlanReviewCard({
                 : "Sent straight from your wallet. Fast, but amounts and recipients are public on-chain, and you sign every payout."}
             </p>
           </div>
+          <div className="space-y-2">
+            <Label>Parallel lanes</Label>
+            <div className="flex gap-1 rounded-lg border p-0.5">
+              {[1, 2, 3, 4, 6, 8].map((l) => (
+                <button
+                  key={l}
+                  onClick={() => setLanes(l)}
+                  className={`rounded-md px-3 py-1 text-xs font-medium ${lanes === l ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              How many payout chains run at once. More lanes = faster and more CPU; 1 lane pays strictly one-by-one.
+            </p>
+          </div>
           {mode === "shielded" && (
             <div className="space-y-2 sm:col-span-2">
               <div className="flex items-center gap-2">
@@ -297,7 +315,7 @@ export function PlanReviewCard({
             if (mode === "shielded") {
               toast.info("Private mode: each employee receives a note only they can spend.")
             }
-            onRun(asset, mode)
+            onRun(asset, mode, lanes)
           }}
         >
           Run payroll

@@ -40,6 +40,13 @@ export interface ReceiptEntry {
   startedAt?: number
   relayedAt?: number
   confirmedAt?: number
+  /** Stage timings (reserve / prep / prove+relay / confirm) in ms. */
+  timing?: {
+    reserveMs?: number
+    prepMs?: number
+    proveRelayMs?: number
+    confirmMs?: number
+  }
 }
 
 export interface RunReceipt {

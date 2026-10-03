@@ -40,7 +40,17 @@ export default defineConfig({
     esbuildOptions: { define: { global: "globalThis" } },
   },
   build: { commonjsOptions: { transformMixedEsModules: true } },
-  server: { host: "0.0.0.0", port: 5174, fs: { allow: [".."] } },
+  server: {
+    host: "0.0.0.0",
+    port: 5174,
+    fs: { allow: [".."] },
+    // Cross-origin isolation: SharedArrayBuffer for the threaded wasm prover
+    // (0.6-0.9s proofs instead of ~3.7s single-threaded).
+    headers: {
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "require-corp",
+    },
+  },
   test: {
     environment: "jsdom",
     globals: true,

@@ -3,7 +3,7 @@
 // account + global config, commitments/nullifiers by scanning the program's tx
 // history. Also signs setup/config ixs (initialize, initialize-spl, update-*).
 // Serves the same routes the client SDK + admin cards call. Run: bun scripts/backend-shim.mjs
-import { readFileSync, existsSync } from "node:fs"
+import { readFileSync, writeFileSync, existsSync } from "node:fs"
 import path from "node:path"
 import { homedir } from "node:os"
 
@@ -138,6 +138,7 @@ let utxos = []
 let nullifiers = new Map()
 let lastSlot = 0
 let lastSig = null
+let lastProcessedSig = null
 /** @type {Map<string, import('privacy-cash-sdk').LocalMirror>} */
 let mirrors = new Map()
 
@@ -165,7 +166,25 @@ async function rescan() {
   const sigs = await conn.getSignaturesForAddress(PROGRAM, { limit: 1000 }, "confirmed")
   lastSlot = sigs[0]?.slot ?? lastSlot
   lastSig = sigs[0]?.signature ?? lastSig
-  const ordered = sigs.filter((s) => !s.err).reverse()
+  // Incremental: fetch only successful signatures newer than the last
+  // processed one. A full-history refetch every tick saturated the RPC as
+  // runs grew (100+ payouts => hundreds of getTransaction calls every 4s)
+  // and stalled leaf indexing — payouts landed but rows could not confirm.
+  const good = sigs.filter((s) => !s.err)
+  let batch = good
+  if (lastProcessedSig) {
+    const idx = good.findIndex((s) => s.signature === lastProcessedSig)
+    if (idx === -1) {
+      // boundary beyond the page (or history gap): rebuild from scratch so
+      // leaves never double or vanish
+      utxos = []
+      nullifiers = new Map()
+      lastProcessedSig = null
+    } else {
+      batch = good.slice(0, idx)
+    }
+  }
+  const ordered = batch.slice().reverse()
   const newUtxos = []
   const newNulls = new Map()
   const perTree = new Map() // treeKey -> commitment decimals[]
@@ -237,24 +256,26 @@ async function rescan() {
     }
   }
 
-  // Recompute leaf indices correctly in order
+  // Append incrementally: continue each tree's leaf numbering, merge
+  // nullifiers, rebuild mirrors from the full commit lists (cheap, in-process).
   const counts = new Map()
-  utxos = newUtxos.map((u) => {
+  for (const u of utxos) counts.set(u.treeKey, (counts.get(u.treeKey) ?? 0) + 1)
+  for (const u of newUtxos) {
     const i = counts.get(u.treeKey) ?? 0
     counts.set(u.treeKey, i + 1)
-    return { ...u, leafIndex: i }
-  })
-  nullifiers = newNulls
+    utxos.push({ ...u, leafIndex: i })
+  }
+  for (const [k, v] of newNulls) nullifiers.set(k, v)
   mirrors = new Map()
-  for (const [tk, commits] of perTree) {
-    // rebuild commit list in leaf order from utxos
+  for (const tk of new Set(utxos.map((u) => u.treeKey))) {
     const orderedCommits = utxos.filter((u) => u.treeKey === tk).map((u) => be(Buffer.from(u.commitment, "hex")).toString())
     mirrors.set(tk, LocalMirror.fromLeaves(wasm, orderedCommits))
   }
+  if (good[0]) lastProcessedSig = good[0].signature
 }
 await rescan()
 console.log(`indexed ${utxos.length} utxos across ${mirrors.size} trees, ${nullifiers.size} nullifiers`)
-setInterval(() => { rescan().catch((e) => console.error("rescan:", e.message)) }, 4000)
+setInterval(() => { rescan().catch((e) => console.error("rescan:", e.message)) }, 2000)
 
 async function proofFor(treeKey, idx) {
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -265,9 +286,16 @@ async function proofFor(treeKey, idx) {
   const m = mirrors.get(treeKey)
   if (!m) return null
   try {
+    // Root and paths MUST come from the same mirror snapshot: the on-chain
+    // tree runs ahead of the mirror between rescans, and mixing an on-chain
+    // root with mirror paths produced internally inconsistent witnesses
+    // under parallel lanes ("wrong root, path" prover errors). A stale-but-
+    // consistent root is still valid on-chain (root history window).
     return {
       path_elements: m.path(idx).map(dec2hex),
       path_indices: Array.from({ length: MERKLE_TREE_DEPTH }, (_, i) => (idx >> i) & 1),
+      root: dec2hex(m.root()),
+      next_leaf_index: utxos.filter((u) => u.treeKey === treeKey).length,
     }
   } catch {
     return null
@@ -287,6 +315,36 @@ Bun.serve({
     }
     try {
       if (p === "/health") return json({ status: "ok" })
+
+      // Local prover telemetry: failing circuit inputs land in
+      // /tmp/prover-failures.json for offline diagnosis.
+      if (p === "/api/debug/prover-failure" && method === "POST") {
+        let body = {}
+        try { const text = await req.text(); if (text.trim()) body = JSON.parse(text) } catch { }
+        try {
+          const arr = existsSync("/tmp/prover-failures.json")
+            ? JSON.parse(readFileSync("/tmp/prover-failures.json", "utf8"))
+            : []
+          arr.push({ at: body.at ?? new Date().toISOString(), error: String(body.error ?? ""), input: body.input ?? "" })
+          while (arr.length > 50) arr.shift()
+          writeFileSync("/tmp/prover-failures.json", JSON.stringify(arr, null, 1))
+        } catch { }
+        return json({ ok: true })
+      }
+      // Local run telemetry: per-row timing breakdown per completed run.
+      if (p === "/api/debug/run-telemetry" && method === "POST") {
+        let body = {}
+        try { const text = await req.text(); if (text.trim()) body = JSON.parse(text) } catch { }
+        try {
+          const arr = existsSync("/tmp/run-telemetry.json")
+            ? JSON.parse(readFileSync("/tmp/run-telemetry.json", "utf8"))
+            : []
+          arr.push(body)
+          while (arr.length > 20) arr.shift()
+          writeFileSync("/tmp/run-telemetry.json", JSON.stringify(arr, null, 1))
+        } catch { }
+        return json({ ok: true })
+      }
 
       if (p === "/indexer/status") return json({ last_signature: lastSig, last_slot: lastSlot, sol_utxo_count: utxos.length })
 
@@ -341,10 +399,8 @@ Bun.serve({
         const treeKey = decodeURIComponent(mp[1])
         const pr = await proofFor(treeKey, Number(mp[2]))
         if (!pr) return json({ error: { code: "LEAF_NOT_FOUND", message: "leaf not indexed yet" } }, 404)
-        // the SDK's convergence loop needs the snapshot root + next index
-        // alongside the path (all from the same tree state)
-        const st = await readTreeState(conn, PROGRAM, treeKey)
-        return json({ ...pr, root: dec2hexU(st.root), next_leaf_index: st.nextLeafIndex })
+        // root + paths come from one mirror snapshot (see proofFor)
+        return json(pr)
       }
 
       if (p === "/api/utxos/range" && method === "GET") {

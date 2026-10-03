@@ -51,6 +51,8 @@ export interface RunSnapshot {
   fundedAt?: number
   /** Funding-note splits run so lanes prove in parallel. */
   splits?: number
+  /** Effective parallel payout chains for this run (min(requested, 8, rows)). */
+  lanes?: number
   /**
    * One human sentence about the slowest current activity (lane fan-out,
    * indexer catch-up, post-error adjudication). The UI surfaces it as a
@@ -272,6 +274,7 @@ export class PayrollEngine {
   private fundedAt?: number
   private merges = 0
   private splits = 0
+  private laneCount = 0
 
   constructor(private deps: EngineDeps) {}
 
@@ -308,6 +311,7 @@ export class PayrollEngine {
         startedAt: this.startedAt,
         fundedAt: this.fundedAt,
         splits: this.splits,
+        lanes: this.laneCount,
         status: this.statusRef,
       })
     }
@@ -924,6 +928,7 @@ export class PayrollEngine {
       }
     }
     const laneCount = ledger ? Math.min(Math.max(1, req.lanes ?? LANES), LANES, rows.length) : 1
+    this.laneCount = laneCount
     await Promise.all(Array.from({ length: laneCount }, () => worker()))
 
     if (this.cancelled) {

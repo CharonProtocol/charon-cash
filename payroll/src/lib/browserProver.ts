@@ -3,7 +3,7 @@
 // client-side on the standard transaction2 circuit -- no server proving, no
 // snarkjs. The wasm prove() is synchronous and blocks its worker, so
 // parallelism comes from the pool; size it to the machine's cores.
-import { setProver, type ProverOverride } from "privacy-cash-sdk"
+import { getBackendUrl, setProver, type ProverOverride } from "privacy-cash-sdk"
 
 // Mirrors the snarkjs Proof shape from privacy-cash-sdk/src/prover (the SDK
 // exports ProverOverride but not the Proof type itself).
@@ -57,20 +57,39 @@ class BrowserProverPool {
   private id = 1
   proveCount = 0
   proveTotalMs = 0
+  mode: "mt" | "st" = "st"
+  threadsPerWorker = 1
+  activeThreads = 0
 
   async start(workers: number): Promise<void> {
     const zkey = await (await fetch("/circuit/transaction2.zkey")).arrayBuffer()
     const graph = await (await fetch("/prover-wasm/transaction2.graph")).arrayBuffer()
-    const spawns = Array.from({ length: workers }, () =>
+    // Threaded build when the page is cross-origin isolated: each mt worker
+    // runs a rayon pool, so fewer workers, each splitting the cores. A proof
+    // then takes 0.6-0.9s on all cores instead of ~3.7s on one — big for
+    // 1-lane latency, on par at high lane counts.
+    const isolated =
+      typeof SharedArrayBuffer !== "undefined" &&
+      (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true
+    const cores = navigator.hardwareConcurrency || 4
+    // MT: fewer workers, each with a slice of the cores (2 workers × 4 on an
+    // 8-core machine) — one proof uses its worker's whole slice, so 1-lane
+    // latency drops to ~a second while 2 proofs still run in parallel.
+    const count = isolated ? Math.max(2, Math.min(workers, Math.floor(cores / 3))) : workers
+    this.threadsPerWorker = isolated ? Math.max(2, Math.floor(cores / count)) : 1
+    this.mode = isolated ? "mt" : "st"
+    const spawns = Array.from({ length: count }, () =>
       new Promise<Worker>((resolve, reject) => {
         const w = new Worker(new URL("./browserProverWorker.ts", import.meta.url), {
           type: "module",
         })
         const onMsg = (m: MessageEvent) => {
-          if ((m.data as { type?: string })?.type === "ready") {
+          const d = m.data as { type?: string; threads?: number }
+          if (d?.type === "ready") {
             w.removeEventListener("message", onMsg)
+            if (d.threads) this.activeThreads += d.threads
             resolve(w)
-          } else if ((m.data as { type?: string })?.type === "fatal") {
+          } else if (d?.type === "fatal") {
             reject(new Error((m.data as { error?: string }).error ?? "prover worker died"))
           }
         }
@@ -81,7 +100,7 @@ class BrowserProverPool {
           { once: true },
         )
         // structured clone gives each worker its own copy of the artifacts
-        w.postMessage({ type: "init", zkey: zkey.slice(0), graph: graph.slice(0) })
+        w.postMessage({ type: "init", zkey: zkey.slice(0), graph: graph.slice(0), mode: this.mode, threads: this.threadsPerWorker })
       }),
     )
     this.slots = (await Promise.all(spawns)).map((worker) => ({ worker, busy: null, pending: [] }))
@@ -115,13 +134,24 @@ class BrowserProverPool {
 
   private run(slot: Slot, e: PendingEntry) {
     const onMsg = (m: MessageEvent) => {
-      const d = m.data as { type?: string; id?: number; error?: string; proof?: unknown; publicSignals?: string[] }
+      const d = m.data as { type?: string; id?: number; error?: string; input?: string; proof?: unknown; publicSignals?: string[] }
       if (d?.id !== e.id || (d.type !== "proof" && d.type !== "error")) return
       slot.worker.removeEventListener("message", onMsg)
       this.proveCount++
       this.proveTotalMs += performance.now() - e.startedAt
       if (d.type === "proof") e.resolve({ proof: d.proof as SnarkjsProof, publicSignals: d.publicSignals ?? [] })
-      else e.reject(new Error(`wasm prover: ${d.error ?? "unknown"}`))
+      else {
+        // Local telemetry: dump the failing witness input to the shim so
+        // multi-lane proof failures can be diagnosed offline.
+        if (d.input) {
+          fetch(`${getBackendUrl()}/api/debug/prover-failure`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ error: d.error ?? "", input: d.input, at: new Date().toISOString() }),
+          }).catch(() => {})
+        }
+        e.reject(new Error(`wasm prover: ${d.error ?? "unknown"}`))
+      }
       const next = slot.pending.shift()
       slot.busy = next ?? null
       if (next) this.run(slot, next)
@@ -151,6 +181,8 @@ export interface BrowserProverInfo {
   workers: number
   avgMs: number
   proves: number
+  mode: "mt" | "st"
+  threads: number
 }
 
 /** Number of prover workers for this machine. Each prove() saturates a core.
@@ -164,14 +196,31 @@ function workerCount(): number {
 
 // Idempotent: fetches artifacts + spawns workers once, then installs the
 // setProver hook. Concurrent callers share the same startup.
-export function ensureBrowserProver(): Promise<BrowserProverInfo> {
+export function ensureBrowserProver(opts?: { workers?: number }): Promise<BrowserProverInfo> {
+  // A run can request a specific pool shape (1 lane → 1 worker with ALL
+  // cores); re-init when the live pool doesn't match.
+  if (pool && opts?.workers !== undefined && pool.size() !== opts.workers) {
+    const restart = pool
+      .stop()
+      .then(() => {
+        pool = null
+        starting = null
+        return ensureBrowserProver(opts)
+      })
+      .finally(() => void restart)
+    return restart
+  }
   if (pool) {
-    return Promise.resolve({ workers: pool.size(), avgMs: pool.avgMs(), proves: pool.proveCount })
+    return Promise.resolve(info(pool))
   }
   if (!starting) {
     starting = (async () => {
       const p = new BrowserProverPool()
-      await p.start(workerCount())
+      // MT default = ONE worker owning all cores (the v2_prover branch's
+      // shape): proofs queue through it at ~0.6-0.9s each regardless of
+      // lanes. ST (non-isolated pages) keeps one worker per core.
+      const mt = typeof SharedArrayBuffer !== "undefined" && (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true
+      await p.start(mt ? 1 : opts?.workers ?? workerCount())
       const override: ProverOverride = (input) => p.prove(input)
       setProver(override)
       pool = p
@@ -180,16 +229,16 @@ export function ensureBrowserProver(): Promise<BrowserProverInfo> {
       starting = null
     })
   }
-  return starting.then(() => ({
-    workers: pool!.size(),
-    avgMs: pool!.avgMs(),
-    proves: pool!.proveCount,
-  }))
+  return starting.then(() => info(pool!))
+}
+
+function info(p: BrowserProverPool): BrowserProverInfo {
+  return { workers: p.size(), avgMs: p.avgMs(), proves: p.proveCount, mode: p.mode, threads: p.activeThreads }
 }
 
 export function browserProverInfo(): BrowserProverInfo | null {
   if (!pool) return null
-  return { workers: pool.size(), avgMs: pool.avgMs(), proves: pool.proveCount }
+  return info(pool)
 }
 
 // Prove directly through the pool (bypasses the SDK's prove()); used by the

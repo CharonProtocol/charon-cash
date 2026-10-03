@@ -224,6 +224,7 @@ function RunTimeline({
   totalMs,
   merges,
   splits,
+  lanes,
   timing,
   sent,
   total,
@@ -239,6 +240,7 @@ function RunTimeline({
   totalMs?: number
   merges?: number
   splits?: number
+  lanes?: number
   timing?: {
     reserveMs?: number
     prepMs?: number
@@ -273,6 +275,7 @@ function RunTimeline({
             : "") +
           (merges !== undefined && merges > 0 ? ` · ${merges} note merge${merges === 1 ? "" : "s"}` : "") +
           (splits !== undefined && splits > 0 ? ` · ${splits} lane split${splits === 1 ? "" : "s"}` : "") +
+          (lanes !== undefined ? ` · ${lanes} lane${lanes === 1 ? "" : "s"} used` : "") +
           (timing
             ? ` · avg/tx: pool ${timing.reserveMs !== undefined ? fmtTime(timing.reserveMs / 1000) : "—"} · prep ${timing.prepMs !== undefined ? fmtTime(timing.prepMs / 1000) : "—"} · prove+relay ${timing.proveRelayMs !== undefined ? fmtTime(timing.proveRelayMs / 1000) : "—"}${browserProverInfo()?.avgMs ? ` (prove ≈ ${(browserProverInfo()!.avgMs! / 1000).toFixed(1)}s)` : ""} · confirm ${timing.confirmMs !== undefined ? fmtTime(timing.confirmMs / 1000) : "—"}`
             : "")
@@ -408,6 +411,7 @@ export function RunProgressCard({
             totalMs={totalMs}
             merges={receipt?.merges}
             splits={receipt?.splits ?? snapshot?.splits}
+            lanes={snapshot?.lanes}
             timing={receipt?.timing}
             sent={sent}
             total={rows.length}
