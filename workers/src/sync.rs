@@ -107,6 +107,18 @@ async fn sync_locked(state: &AppState) -> Result<SyncReport, String> {
     let mut pending: Vec<SigInfo> = all[..pending_end].to_vec();
     pending.reverse();
     pending.sort_by_key(|s| s.slot);
+
+    // Backfill chunking: a full-history pass takes minutes of getTransaction
+    // calls, and the worker dies mid-pass — the cursor (written only at the
+    // end) never advanced, so the walk restarted from zero forever. Cap each
+    // pass to the OLDEST BACKFILL_CHUNK txs and advance the cursor to the
+    // newest one actually processed; repeated syncs chew through history in
+    // bounded, resumable steps.
+    const BACKFILL_CHUNK: usize = 16;
+    let chunk_complete = pending.len() <= BACKFILL_CHUNK;
+    if !chunk_complete {
+        pending.truncate(BACKFILL_CHUNK);
+    }
     let mut i = 0;
     while i < pending.len() {
         let mut j = i + 1;
@@ -148,7 +160,14 @@ async fn sync_locked(state: &AppState) -> Result<SyncReport, String> {
         }
     }
 
-    if let Some(newest) = all.first() {
+    // Advance the cursor to the newest signature this pass actually covered:
+    // the last processed tx when a chunk was cut, otherwise the true newest.
+    let cursor_target = if chunk_complete {
+        all.first()
+    } else {
+        pending.last().or(all.last())
+    };
+    if let Some(newest) = cursor_target {
         state.store.set_cursor(&newest.signature, newest.slot).await?;
     }
 

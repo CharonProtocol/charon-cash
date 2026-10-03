@@ -294,7 +294,7 @@ async function proofFor(treeKey, idx) {
     return {
       path_elements: m.path(idx).map(dec2hex),
       path_indices: Array.from({ length: MERKLE_TREE_DEPTH }, (_, i) => (idx >> i) & 1),
-      root: dec2hex(m.root()),
+      root: dec2hexU(m.root()),
       next_leaf_index: utxos.filter((u) => u.treeKey === treeKey).length,
     }
   } catch {

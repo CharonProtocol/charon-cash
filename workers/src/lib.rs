@@ -17,6 +17,7 @@ mod dto;
 mod error;
 mod instruction;
 mod merkle;
+mod neon;
 mod relayer;
 mod routes;
 mod rpc;
