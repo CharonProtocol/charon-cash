@@ -15,6 +15,7 @@ export function GliderGroup<T extends string>({
   className = "",
   itemClassName = "",
   pillClassName = "",
+  tone = "default",
 }: {
   items: Item<T>[]
   value: T
@@ -22,6 +23,8 @@ export function GliderGroup<T extends string>({
   className?: string
   itemClassName?: string
   pillClassName?: string
+  /** "band" renders for the dark console band (band-ink text, band-2 pill) */
+  tone?: "default" | "band"
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const itemRefs = useRef(new Map<string, HTMLButtonElement>())
@@ -49,7 +52,7 @@ export function GliderGroup<T extends string>({
       {pill && (
         <span
           aria-hidden
-          className={`glider pointer-events-none absolute rounded-md bg-card shadow-sm ${pillClassName}`}
+          className={`glider pointer-events-none absolute rounded-md ${pillClassName || "bg-card shadow-sm"}`}
           style={{ width: pill.w, height: pill.h, transform: `translate(${pill.left}px, ${pill.top}px)` }}
         />
       )}
@@ -62,7 +65,13 @@ export function GliderGroup<T extends string>({
           }}
           onClick={() => onChange?.(it.id)}
           className={`relative z-10 flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
-            value === it.id ? "text-ink" : "text-body-ink hover:text-ink"
+            tone === "band"
+              ? value === it.id
+                ? "text-band-ink"
+                : "text-band-mute hover:text-band-ink"
+              : value === it.id
+                ? "text-ink"
+                : "text-body-ink hover:text-ink"
           } ${itemClassName}`}
         >
           {it.icon}

@@ -1,18 +1,27 @@
 import { useRef, useState } from "react"
 import { toast } from "sonner"
-import { ClipboardPaste, FileUp } from "lucide-react"
+import { ClipboardPaste, FileUp, X } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { CountUp } from "@/components/motion/CountUp"
+import { Ms } from "@/components/motion/ms"
 import { Textarea } from "@/components/ui/textarea"
 import { hashFileBytes, parsePayrollFile } from "@/lib/parse"
 import { shortHash } from "@/lib/format"
 import type { ParsedFile } from "@/lib/types"
 
-export function UploadCard({ onParsed }: { onParsed: (p: ParsedFile | null) => void }) {
+// Controlled: parsed state lives in EmployerApp so the recipient ledger and
+// this card can never disagree after a row removal.
+export function UploadCard({
+  parsed,
+  onParsed,
+}: {
+  parsed: ParsedFile | null
+  onParsed: (p: ParsedFile | null) => void
+}) {
   const [errors, setErrors] = useState<string[]>([])
-  const [parsed, setParsed] = useState<ParsedFile | null>(null)
   const [paste, setPaste] = useState("")
   const [showPaste, setShowPaste] = useState(false)
   const [drag, setDrag] = useState(false)
@@ -21,7 +30,6 @@ export function UploadCard({ onParsed }: { onParsed: (p: ParsedFile | null) => v
   const ingest = async (text: string, bytes?: Uint8Array) => {
     const r = parsePayrollFile(text)
     if (!r.ok) {
-      setParsed(null)
       setErrors(r.errors)
       onParsed(null)
       return
@@ -31,7 +39,6 @@ export function UploadCard({ onParsed }: { onParsed: (p: ParsedFile | null) => v
       : await hashFileBytes(new TextEncoder().encode(text))
     const p: ParsedFile = { entries: r.entries, fileHash }
     setErrors([])
-    setParsed(p)
     onParsed(p)
     toast.success(`Parsed ${r.entries.length} payments`)
   }
@@ -41,16 +48,42 @@ export function UploadCard({ onParsed }: { onParsed: (p: ParsedFile | null) => v
     await ingest(new TextDecoder().decode(bytes), bytes)
   }
 
+  const clear = () => {
+    setErrors([])
+    setPaste("")
+    onParsed(null)
+  }
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <FileUp className="size-4" /> Upload payroll file
-        </CardTitle>
-        <CardDescription>
-          JSON <code>{"{ payments: [{ address, amount, memo }] }"}</code> or CSV with header
-          <code> address,amount,memo</code>. Amounts are what each employee receives.
-        </CardDescription>
+    <Card className="card-lift specular h-fit">
+      <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 space-y-0">
+        <div className="flex items-center gap-3">
+          <span className="flex size-9 flex-none items-center justify-center rounded-lg border border-gold-line bg-gold-soft">
+            <Ms name="view_list" className="text-sm text-gold" />
+          </span>
+          <div>
+            <CardTitle className="h-display text-base font-semibold tracking-tight">
+              Batch Matrix Ingestion
+            </CardTitle>
+            <CardDescription className="mt-0.5 text-xs">
+              CSV with header <code>address,amount,memo</code> or JSON{" "}
+              <code>{"{ payments: [...] }"}</code> — amounts are what each employee receives.
+            </CardDescription>
+          </div>
+        </div>
+        <div className="flex gap-1.5">
+          <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
+            <FileUp className="mr-1 size-3.5" /> CSV Schema
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowPaste((v) => !v)}
+            className={showPaste ? "border border-line bg-panel-2" : ""}
+          >
+            <ClipboardPaste className="mr-1 size-3.5" /> Paste Text
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <input
@@ -79,26 +112,32 @@ export function UploadCard({ onParsed }: { onParsed: (p: ParsedFile | null) => v
             const f = e.dataTransfer.files?.[0]
             if (f) await ingestFile(f)
           }}
-          className={`flex w-full cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed px-6 py-9 text-center outline-none transition-all focus-visible:outline-none ${
+          className={`group flex w-full cursor-pointer flex-col items-center gap-3 rounded-2xl border-2 border-dashed px-6 py-10 text-center outline-none transition-all focus-visible:outline-none ${
             drag
-              ? "border-zinc-950 bg-zinc-50 dark:border-zinc-300 dark:bg-zinc-900"
-              : "border-border hover:border-zinc-400 hover:bg-zinc-50 dark:hover:border-zinc-500 dark:hover:bg-zinc-900"
+              ? "scale-[1.01] border-gold bg-gold-soft"
+              : "border-line hover:border-[color-mix(in_srgb,var(--gold-2)_45%,var(--border))] hover:bg-panel"
           }`}
         >
-          <div className="flex size-12 items-center justify-center rounded-xl bg-primary/10">
-            <FileUp className="size-5 text-primary" />
-          </div>
-          <span className="text-sm font-medium">Drop your payroll file here</span>
-          <span className="text-xs text-muted-foreground">
-            or click to browse — CSV / JSON, up to 200 rows
+          <span className="flex size-14 items-center justify-center rounded-full border border-line bg-panel-2 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:scale-105">
+            <Ms name="cloud_upload" className="text-lg text-gold" />
+          </span>
+          <span className="text-sm font-medium">
+            Click to browse or drag and drop batch ledger
+          </span>
+          <span className="font-mono text-[11px] text-mute">
+            Format: address, amount, memo &nbsp;(.csv · .json · up to 200 rows)
+          </span>
+          <span className="flex flex-wrap justify-center gap-1.5">
+            <span className="tag tag--gold">
+              <Ms name="account_tree" className="text-xs" /> Poseidon native proofs
+            </span>
+            <span className="tag tag--priv">
+              <Ms name="enhanced_encryption" className="text-xs" /> ephemeral keys
+            </span>
           </span>
         </button>
-        {!showPaste ? (
-          <Button variant="ghost" size="sm" onClick={() => setShowPaste(true)}>
-            <ClipboardPaste className="mr-1 size-3.5" /> or paste text instead
-          </Button>
-        ) : (
-          <>
+        {showPaste && (
+          <div className="space-y-2">
             <Textarea
               placeholder="Paste JSON or CSV here…"
               value={paste}
@@ -108,11 +147,11 @@ export function UploadCard({ onParsed }: { onParsed: (p: ParsedFile | null) => v
             <Button variant="outline" disabled={!paste.trim()} onClick={() => ingest(paste)}>
               Parse pasted text
             </Button>
-          </>
+          </div>
         )}
         {errors.length > 0 && (
           <Alert variant="destructive">
-            <AlertTitle>File rejected — fix and re-upload</AlertTitle>
+            <AlertTitle>Batch rejected — fix and re-upload</AlertTitle>
             <AlertDescription>
               <ul className="list-disc pl-4">
                 {errors.slice(0, 12).map((err, i) => (
@@ -124,36 +163,57 @@ export function UploadCard({ onParsed }: { onParsed: (p: ParsedFile | null) => v
           </Alert>
         )}
         {parsed && (
-          <div className="rounded-lg border">
-            <div className="flex items-center justify-between border-b px-3 py-2 text-xs text-muted-foreground">
-              <span>{parsed.entries.length} payments · file {shortHash(parsed.fileHash, 6, 4)}</span>
+          <div className="flex items-center gap-3 rounded-xl border border-ok-line bg-ok-soft/60 px-3.5 py-3">
+            <span className="flex size-9 flex-none items-center justify-center rounded-lg border border-ok-line bg-card">
+              <Ms name="check_circle" className="text-sm text-ok" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-medium">
+                batch file <span className="font-mono text-xs text-mute">{shortHash(parsed.fileHash, 6, 4)}</span>
+              </div>
+              <div className="text-xs text-body-ink">
+                {parsed.entries.length} valid recipients (100% parsed)
+              </div>
             </div>
-            <div className="max-h-56 overflow-y-auto">
-              <div className="-mx-1 overflow-x-auto">
-                <table className="w-full min-w-[420px] text-xs">
-                <thead>
-                  <tr className="text-left text-muted-foreground">
-                    <th className="px-3 py-1.5 font-medium">#</th>
-                    <th className="px-3 py-1.5 font-medium">Address</th>
-                    <th className="px-3 py-1.5 font-medium text-right">Amount</th>
-                    <th className="px-3 py-1.5 font-medium">Memo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {parsed.entries.map((e, i) => (
-                    <tr key={e.address} className="border-t">
-                      <td className="px-3 py-1.5 text-muted-foreground">{i + 1}</td>
-                      <td className="px-3 py-1.5 font-mono">{shortHash(e.address, 6, 4)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono">{e.amountHuman}</td>
-                      <td className="px-3 py-1.5 text-muted-foreground">{e.memo ?? ""}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-                </div>
-            </div>
+            <span className="hidden rounded border border-ok-line bg-card px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider text-ok sm:inline">
+              matrix validated
+            </span>
+            <button
+              type="button"
+              aria-label="Clear batch"
+              onClick={clear}
+              className="flex size-7 flex-none items-center justify-center rounded-md text-mute transition-colors hover:bg-card hover:text-foreground"
+            >
+              <X className="size-4" />
+            </button>
           </div>
         )}
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-xl border border-line bg-panel px-3 py-2.5">
+            <div className="font-mono text-[10px] font-semibold uppercase tracking-wider text-mute">
+              Recipients
+            </div>
+            <div className="stat-number mt-0.5 font-mono text-lg font-semibold tabular-nums">
+              <CountUp to={parsed?.entries.length ?? 0} />
+            </div>
+          </div>
+          <div className="rounded-xl border border-line bg-panel px-3 py-2.5">
+            <div className="font-mono text-[10px] font-semibold uppercase tracking-wider text-mute">
+              Proofs
+            </div>
+            <div className="mt-0.5 truncate text-sm font-medium text-body-ink">
+              Groth16 · 1 / payout
+            </div>
+          </div>
+          <div className="rounded-xl border border-line bg-panel px-3 py-2.5">
+            <div className="font-mono text-[10px] font-semibold uppercase tracking-wider text-mute">
+              Worker gas
+            </div>
+            <div className="mt-0.5 text-sm font-medium text-body-ink">
+              <span className="font-mono">0</span> SOL · subsidized
+            </div>
+          </div>
+        </div>
       </CardContent>
     </Card>
   )

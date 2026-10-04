@@ -45,3 +45,4 @@ docs/
 .commandcode/
 programs/privacy-cash/target/
 programs/privacy-cash/artifacts/circuits/*.ptau
+refs/

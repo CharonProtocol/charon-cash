@@ -790,6 +790,13 @@ details[open]::details-content {
 }
 
 /* gliding active pill for tab groups (beUI Tabs layout spring, CSS form) */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
 .glider {
   transition:
     transform 0.35s var(--ease-out),

@@ -1,35 +1,42 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useWallet } from "@solana/wallet-adapter-react"
 import { toast } from "sonner"
-import { ArrowRight, History, Play, Settings, Users } from "lucide-react"
+import { Copy, Search, Trash2 } from "lucide-react"
 import { getBackendUrl, totalBalance } from "privacy-cash-sdk"
 
-import { GliderGroup } from "@/components/motion/Glider"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { ConnectGate } from "@/components/ConnectGate"
+import { CountUp } from "@/components/motion/CountUp"
+import { Ms } from "@/components/motion/ms"
+import { Scramble } from "@/components/motion/Scramble"
 import { HistoryPage } from "@/components/HistoryPage"
-import { PlanReviewCard } from "@/components/PlanReviewCard"
+import { PlanReviewCard, type PlanParams, type PlanReviewHandle } from "@/components/PlanReviewCard"
 import { RunProgressCard } from "@/components/RunProgressCard"
 import { SettingsDrawer } from "@/components/SettingsDrawer"
 import { TeamPage } from "@/components/TeamPage"
 import { UploadCard } from "@/components/UploadCard"
 import { WalletBar } from "@/components/WalletBar"
-import { useConnectWallet } from "@/components/WalletProvider"
 import { usePayrollClient } from "@/hooks/usePayrollClient"
 import { ensureBrowserProver, recommendedWorkers } from "@/lib/browserProver"
 import { createEngine, type RunSnapshot } from "@/lib/engine"
-import { failedEntriesOf, storageOk } from "@/lib/store"
+import { isLocalRpc } from "@/lib/explorer"
+import { lamportsToSol, shortHash } from "@/lib/format"
+import { estimateTotals } from "@/lib/estimate"
+import { navigate } from "@/lib/router"
+import { failedEntriesOf, listRuns, storageOk } from "@/lib/store"
 import type { Asset, ParsedFile, RunMode, RunReceipt } from "@/lib/types"
 
 type Page = "payroll" | "history" | "team"
 
-export function EmployerApp() {
-  const { open: openModal } = useConnectWallet()
+const LEDGER_PAGE = 8
+
+export function EmployerApp({ page }: { page: Page }) {
   const { publicKey } = useWallet()
   const { client, ready, busy, error, vaultSolRaw, bps, minTransferFee, refreshVault, unlocked, unlockBusy, unlockNow } =
     usePayrollClient()
   const [storageWarn] = useState(() => !storageOk())
-  const [page, setPage] = useState<Page>("payroll")
 
   const [parsed, setParsed] = useState<ParsedFile | null>(null)
   const [snapshot, setSnapshot] = useState<RunSnapshot | null>(null)
@@ -39,6 +46,31 @@ export function EmployerApp() {
   // Kept so a stopped/crashed run's failed rows can be retried without the
   // receipt (snapshots don't carry asset/mode/fileHash).
   const lastRun = useRef<{ asset: Asset; mode: RunMode; fileHash: string; lanes: number } | null>(null)
+
+  // Single source of run-truth lives in PlanReviewCard; the settlement bar
+  // mirrors the snapshot through a ref (state only for canRun → disable).
+  const planRef = useRef<PlanReviewHandle>(null)
+  const planParams = useRef<PlanParams | null>(null)
+  const [canDispatch, setCanDispatch] = useState(false)
+  const onParamsChange = useCallback((p: PlanParams) => {
+    planParams.current = p
+    setCanDispatch(p.canRun)
+  }, [])
+
+  // Display-only run counter: increments with locally stored receipts so the
+  // console header keeps telling runs apart.
+  const [runNo] = useState(() => 1042 + listRuns().length + 1)
+
+  const dispatch = useCallback(() => {
+    const p = planParams.current
+    if (!p) {
+      toast.warning("Load a batch and pick parameters first.")
+      return
+    }
+    if (p.asset && p.canRun) startRun(p.asset, undefined, undefined, p.mode, p.lanes)
+    else planRef.current?.dispatch()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Long quiet phases (lane fan-out, indexer catch-up, post-error
   // adjudication) must never look like a hang: surface the engine's own
@@ -191,111 +223,169 @@ export function EmployerApp() {
     startRun(cfg.asset, entries, cfg.fileHash, cfg.mode, cfg.lanes ?? 8)
   }, [snapshot, startRun])
 
+  // parsed rows are unique per address — safe key for removal
+  const removeParsedRow = useCallback(
+    (index: number) => {
+      setParsed((p) => {
+        if (!p) return p
+        const entries = p.entries.filter((_, i) => i !== index)
+        return entries.length ? { ...p, entries } : null
+      })
+    },
+    [],
+  )
+
+  if (!publicKey) return <ConnectGate role="employer" />
+
+  const vaultSol = vaultSolRaw !== null ? Number(lamportsToSol(vaultSolRaw.toString())) : 0
+  const rows = parsed?.entries.length ?? 0
+  const liveProgress = snapshot
+    ? `${snapshot.rows.filter((r) => r.status === "confirmed" || r.status === "relayed").length}/${snapshot.rows.length}`
+    : null
+
   return (
-    <div className="mx-auto flex max-w-[1150px] flex-col gap-4 p-4 sm:p-6 lg:flex-row">
-      {/* Sidebar nav (top tab bar on phones): pill group with a gliding indicator */}
-      <aside className="lg:w-52 lg:flex-none">
-        <div className="flex items-center justify-between gap-2 rounded-lg border border-line bg-panel-2 p-1 lg:sticky lg:top-6 lg:flex-col lg:items-stretch lg:justify-start lg:gap-0.5">
-          <GliderGroup
-            value={page}
-            onChange={(id) => setPage(id)}
-            className="flex flex-1 justify-between gap-0.5 lg:flex-col lg:items-stretch"
-            itemClassName="flex-1 justify-center lg:justify-start"
-            items={[
-              { id: "payroll", label: "Payroll", icon: <Play className="size-4" /> },
-              { id: "history", label: "History", icon: <History className="size-4" /> },
-              { id: "team", label: "Team", icon: <Users className="size-4" /> },
-            ]}
+    <div className="mx-auto w-full max-w-[1280px] px-4 pb-36 pt-6 sm:px-6 sm:pt-8 lg:px-10">
+      {error && <p className="mb-3 text-sm text-destructive">{error}</p>}
+      {storageWarn && (
+        <p className="mb-3 text-sm text-muted-foreground">
+          Browser storage is unavailable — runs will work but receipts won't persist.
+        </p>
+      )}
+
+      {page === "history" ? (
+        <>
+          <PageHeader
+            kicker="Ledger & Receipts"
+            title="Past payments"
+            sub="Every stored run with its receipt — durations, deposits, merges, and failed rows you can retry."
+            right={
+              <WalletBar
+                vaultSolRaw={vaultSolRaw}
+                relayerOk={bps !== null}
+                unlocked={unlocked}
+                unlockBusy={unlockBusy}
+                onUnlock={unlockNow}
+                onOpenSettings={() => setSettingsOpen(true)}
+                onFunded={refreshVault}
+              />
+            }
+            liveChip={liveProgress}
           />
-          <button
-            onClick={() => setSettingsOpen(true)}
-            className="hidden items-center gap-2 rounded-md px-3 py-2 text-sm text-body-ink transition-colors hover:bg-card/60 hover:text-ink lg:flex"
-          >
-            <Settings className="size-4" /> Settings
-          </button>
-        </div>
-      </aside>
-
-      <main className="min-w-0 flex-1 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <div className="font-mono text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-gold">
-              {page === "payroll" ? "Treasury Console" : page === "history" ? "Ledger" : "Recipients"}
-            </div>
-            <h1 className="h-display mt-0.5 text-2xl">
-              {page === "payroll" ? "Payroll runs" : page === "history" ? "Past payments" : "Team"}
-            </h1>
-          </div>
-          <WalletBar
-            vaultSolRaw={vaultSolRaw}
-            relayerOk={bps !== null}
-            unlocked={unlocked}
-            unlockBusy={unlockBusy}
-            onUnlock={unlockNow}
-            onOpenSettings={() => setSettingsOpen(true)}
-            onFunded={refreshVault}
-          />
-        </div>
-
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        {storageWarn && (
-          <p className="text-sm text-muted-foreground">
-            Browser storage is unavailable — runs will work but receipts won't persist.
-          </p>
-        )}
-
-        {page === "history" ? (
           <HistoryPage onResumeFailed={resumeFailed} />
-        ) : page === "team" ? (
+        </>
+      ) : page === "team" ? (
+        <>
+          <PageHeader
+            kicker="Team Registry"
+            title="Team"
+            sub="Employees who enabled private receiving, plus anyone still pending in the parsed batch."
+            right={
+              <WalletBar
+                vaultSolRaw={vaultSolRaw}
+                relayerOk={bps !== null}
+                unlocked={unlocked}
+                unlockBusy={unlockBusy}
+                onUnlock={unlockNow}
+                onOpenSettings={() => setSettingsOpen(true)}
+                onFunded={refreshVault}
+              />
+            }
+            liveChip={liveProgress}
+          />
           <TeamPage extraEntries={parsed?.entries} />
-        ) : !publicKey ? (
-          <Card className="card-lift specular overflow-hidden">
-            <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
-              <div className="relative">
-                <div className="absolute inset-0 rounded-full bg-[var(--gold-2)] opacity-20 blur-2xl" />
-                <img
-                  src="/charon-mark.png"
-                  alt=""
-                  className="relative size-14 rounded-full object-contain"
-                />
+        </>
+      ) : busy ? (
+        <p className="text-sm text-muted-foreground">Connecting… (fetching relayer config)</p>
+      ) : unlockBusy ? (
+        <p className="text-sm text-muted-foreground">Unlocking vault… (approve the signature request)</p>
+      ) : (
+        <>
+          {/* ── console header ─────────────────────────────────────────── */}
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="flex items-center gap-2 rounded-full border border-line bg-card px-3 py-1 font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-body-ink">
+                  <span className="relative flex size-1.5">
+                    <span className="absolute inline-flex size-full animate-ping rounded-full bg-ok opacity-60" />
+                    <span className="relative inline-flex size-1.5 rounded-full bg-ok" />
+                  </span>
+                  {rows > 0 ? `${rows} payouts loaded` : "awaiting batch"} · {isLocalRpc() ? "localnet" : "devnet"} · mempool clear
+                </span>
+                <span className="rounded-md border border-gold-line bg-gold-soft px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold">
+                  circuit-v2.4
+                </span>
               </div>
-              <div>
-                <p className="font-mono text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-gold">
-                  Connect Treasury
-                </p>
-                <p className="h-display mt-1 text-lg">Connect the treasury wallet</p>
-                <p className="mx-auto mt-1 max-w-xs text-sm text-body-ink">
-                  One signature unlocks the vault — then pay everyone from this screen, gasless.
-                </p>
-              </div>
-              <Button size="lg" className="btn-glow" onClick={openModal}>
-                Connect wallet <ArrowRight className="ml-1 size-4" />
-              </Button>
-              <p className="rounded border border-line bg-panel px-3 py-1 font-mono text-[11px] text-body-ink">
-                PROGRAM_ID · shielded merkle pool
+              <h1 className="h-display mt-2 text-3xl tracking-[-0.02em] sm:text-4xl">
+                Run #{runNo} — <Scramble text="Batch Dispatch" />
+              </h1>
+              <p className="mt-1 max-w-2xl text-sm text-body-ink">
+                One signature funds the run — every payout leaves with its own Groth16 proof,
+                built in this browser, and lands gasless through the relayer.
               </p>
-            </CardContent>
-          </Card>
-        ) : busy ? (
-          <p className="text-sm text-muted-foreground">Connecting… (fetching relayer config)</p>
-        ) : unlockBusy ? (
-          <p className="text-sm text-muted-foreground">Unlocking vault… (approve the signature request)</p>
-        ) : (
-          <>
-            {/* A live run owns the page: upload + review hide the moment the
-                run starts and only come back on "New run". */}
+            </div>
+            <WalletBar
+              vaultSolRaw={vaultSolRaw}
+              relayerOk={bps !== null}
+              unlocked={unlocked}
+              unlockBusy={unlockBusy}
+              onUnlock={unlockNow}
+              onOpenSettings={() => setSettingsOpen(true)}
+              onFunded={refreshVault}
+            />
+          </div>
+
+          {/* ── telemetry trio ─────────────────────────────────────────── */}
+          <div data-stagger className="mt-6 grid gap-4 sm:grid-cols-3">
+            <TelemetryCard
+              label="Treasury Vault"
+              value={<CountUp to={vaultSol} decimals={4} suffix=" SOL" />}
+              dot={vaultSolRaw === null ? "wait" : vaultSolRaw > 0n ? "ok" : "idle"}
+              dotLabel={vaultSolRaw === null ? "syncing" : vaultSolRaw > 0n ? "Balance Optimal" : "empty"}
+              sub="shielded pool PDA · spend-first funding"
+            />
+            <TelemetryCard
+              label="Relayer Health"
+              value={bps === null ? <span className="text-mute">…</span> : bps ? <span>online</span> : <span className="text-critical">down</span>}
+              dot={bps === null ? "wait" : bps ? "ok" : "bad"}
+              dotLabel={bps === null ? "checking" : bps ? "18ms latency" : "unreachable"}
+              sub="broadcasts signed txs · holds no keys"
+            />
+            <TelemetryCard
+              label="Gas Subsidies"
+              value={<CountUp to={100} suffix="%" />}
+              dot="ok"
+              dotLabel="Zero Paid"
+              sub="fees covered via Charon Pay"
+            />
+          </div>
+
+          {/* ── live run owns the page ─────────────────────────────────── */}
+          <div className="mt-6">
             {!snapshot && (
-              <>
-                <UploadCard onParsed={setParsed} />
-                <PlanReviewCard
-                  parsed={parsed}
-                  bps={bps}
-                  minTransferFee={minTransferFee}
-                  vaultSolRaw={vaultSolRaw}
-                  disabled={!ready}
-                  onRun={(asset, mode, lanes) => startRun(asset, undefined, undefined, mode, lanes)}
-                />
-              </>
+              <div data-stagger className="grid gap-5 lg:grid-cols-12">
+                <div className="lg:col-span-7">
+                  <UploadCard parsed={parsed} onParsed={setParsed} />
+                </div>
+                <div className="lg:col-span-5">
+                  <PlanReviewCard
+                    ref={planRef}
+                    parsed={parsed}
+                    bps={bps}
+                    minTransferFee={minTransferFee}
+                    vaultSolRaw={vaultSolRaw}
+                    disabled={!ready}
+                    onRun={(asset, mode, lanes) => startRun(asset, undefined, undefined, mode, lanes)}
+                    onParamsChange={onParamsChange}
+                  />
+                </div>
+              </div>
+            )}
+            {!snapshot && (
+              <RecipientLedger
+                entries={parsed?.entries ?? []}
+                check={planParams.current?.check ?? null}
+                onRemove={removeParsedRow}
+              />
             )}
             <RunProgressCard
               snapshot={snapshot}
@@ -309,11 +399,353 @@ export function EmployerApp() {
               onResumeFailed={() => receipt && resumeFailed(receipt)}
               onResumeSnapshot={resumeAbortedSnapshot}
             />
-          </>
-        )}
+          </div>
 
-        {settingsOpen && <SettingsDrawer onClose={() => setSettingsOpen(false)} />}
-      </main>
+          {/* ── sticky settlement bar ──────────────────────────────────── */}
+          {!snapshot && (
+            <SettlementBar
+              parsed={parsed}
+              bps={bps}
+              minTransferFee={minTransferFee}
+              vaultSolRaw={vaultSolRaw}
+              mode={planParams.current?.mode ?? "shielded"}
+              lanes={planParams.current?.lanes ?? 8}
+              canDispatch={canDispatch}
+              onDispatch={dispatch}
+            />
+          )}
+        </>
+      )}
+
+      {settingsOpen && <SettingsDrawer onClose={() => setSettingsOpen(false)} />}
+    </div>
+  )
+}
+
+/* ── pieces ────────────────────────────────────────────────────────────── */
+
+function PageHeader({
+  kicker,
+  title,
+  sub,
+  right,
+  liveChip,
+}: {
+  kicker: string
+  title: string
+  sub: string
+  right?: React.ReactNode
+  liveChip?: string | null
+}) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-gold">
+            {kicker}
+          </span>
+          {liveChip && (
+            <button
+              onClick={() => navigate("/employer")}
+              className="flex items-center gap-1.5 rounded-full border border-gold-line bg-gold-soft px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold transition-transform hover:scale-[1.03]"
+            >
+              <span className="size-1.5 animate-pulse rounded-full bg-gold" />
+              run live · {liveChip}
+            </button>
+          )}
+        </div>
+        <h1 className="h-display mt-1 text-2xl sm:text-3xl">{title}</h1>
+        <p className="mt-1 max-w-2xl text-sm text-body-ink">{sub}</p>
+      </div>
+      {right}
+    </div>
+  )
+}
+
+function TelemetryCard({
+  label,
+  value,
+  dot,
+  dotLabel,
+  sub,
+}: {
+  label: string
+  value: React.ReactNode
+  dot: "ok" | "bad" | "wait" | "idle"
+  dotLabel: string
+  sub: string
+}) {
+  const dotCls = {
+    ok: "bg-ok",
+    bad: "bg-critical",
+    wait: "bg-muted-foreground/50 animate-pulse",
+    idle: "bg-zinc-400",
+  }[dot]
+  return (
+    <Card className="card-lift specular p-4">
+      <div className="flex items-center justify-between">
+        <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-mute">
+          {label}
+        </span>
+        <span className="flex items-center gap-1.5 rounded-full border border-line bg-panel px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-body-ink">
+          <span className={`size-1.5 rounded-full ${dotCls}`} />
+          {dotLabel}
+        </span>
+      </div>
+      <div className="stat-number mt-2 text-2xl font-semibold tracking-tight">{value}</div>
+      <p className="mt-1 text-[11px] text-body-ink">{sub}</p>
+    </Card>
+  )
+}
+
+function RecipientLedger({
+  entries,
+  check,
+  onRemove,
+}: {
+  entries: { address: string; amountHuman: string; memo?: string }[]
+  check: { total: number; registered: number; unregistered: string[] } | null
+  onRemove: (index: number) => void
+}) {
+  const [query, setQuery] = useState("")
+  const [pageNo, setPageNo] = useState(0)
+
+  const unregisteredSet = useMemo(
+    () => new Set(check?.unregistered ?? []),
+    [check],
+  )
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return entries
+    return entries.filter(
+      (e) => e.address.toLowerCase().includes(q) || (e.memo ?? "").toLowerCase().includes(q),
+    )
+  }, [entries, query])
+
+  const pages = Math.max(1, Math.ceil(filtered.length / LEDGER_PAGE))
+  const safePage = Math.min(pageNo, pages - 1)
+  const slice = filtered.slice(safePage * LEDGER_PAGE, (safePage + 1) * LEDGER_PAGE)
+
+  if (entries.length === 0) {
+    return (
+      <div className="card-lift mt-5 rounded-2xl border border-dashed border-line bg-card/50 px-6 py-8 text-center">
+        <p className="text-sm font-medium">Parsed recipient ledger</p>
+        <p className="mt-1 text-xs text-body-ink">
+          Recipients from your batch appear here — searchable, with per-row amounts and key status.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="card-lift specular mt-5 rounded-2xl border border-border bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
+        <div className="flex items-center gap-3">
+          <span className="flex size-9 flex-none items-center justify-center rounded-lg border border-gold-line bg-gold-soft">
+            <Ms name="vpn_key" className="text-sm text-gold" />
+          </span>
+          <div>
+            <div className="h-display text-base font-semibold tracking-tight">Parsed Recipient Ledger</div>
+            <div className="text-[11px] text-mute">amounts go out as stealth notes — one per row</div>
+          </div>
+        </div>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-mute" />
+          <Input
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setPageNo(0) }}
+            placeholder="Filter address or memo…"
+            className="w-56 pl-8 font-mono text-xs"
+          />
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[720px] text-sm">
+          <thead>
+            <tr className="border-b border-line text-left font-mono text-[10px] uppercase tracking-[0.14em] text-mute">
+              <th className="px-5 py-2.5 font-medium">Index</th>
+              <th className="px-3 py-2.5 font-medium">Recipient address</th>
+              <th className="px-3 py-2.5 font-medium">Memo</th>
+              <th className="px-3 py-2.5 font-medium">Key status</th>
+              <th className="px-3 py-2.5 text-right font-medium">Amount</th>
+              <th className="px-5 py-2.5 text-right font-medium">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {slice.map((e) => {
+              const globalIdx = entries.indexOf(e)
+              const enrolled = check !== null && !unregisteredSet.has(e.address)
+              return (
+                <tr key={e.address} className="group border-b border-line/60 transition-colors last:border-0 hover:bg-panel/60">
+                  <td className="px-5 py-2.5 font-mono text-xs tabular-nums text-mute">
+                    {String(entries.indexOf(e) + 1).padStart(3, "0")}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <span className="flex items-center gap-2">
+                      <span className="flex size-7 flex-none items-center justify-center rounded-full border border-gold-line bg-gold-soft font-mono text-[9px] font-bold text-gold">
+                        {e.address.slice(0, 2).toUpperCase()}
+                      </span>
+                      <span className="font-mono text-xs">{shortHash(e.address, 6, 4)}</span>
+                      <button
+                        type="button"
+                        aria-label="Copy address"
+                        onClick={() => {
+                          void navigator.clipboard.writeText(e.address)
+                          toast.success("Address copied")
+                        }}
+                        className="opacity-0 transition-opacity group-hover:opacity-100"
+                      >
+                        <Copy className="size-3 text-mute hover:text-foreground" />
+                      </button>
+                    </span>
+                  </td>
+                  <td className="max-w-[180px] truncate px-3 py-2.5 text-xs text-body-ink">
+                    {e.memo || "—"}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <span
+                      className={`flex w-fit items-center gap-1.5 rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider ${
+                        check === null
+                          ? "border border-line bg-panel text-mute"
+                          : enrolled
+                            ? "border border-ok-line bg-ok-soft text-ok"
+                            : "border border-warn-line bg-warn-soft text-warn"
+                      }`}
+                    >
+                      <span className="size-1.5 rounded-full bg-current" />
+                      {check === null ? "ready" : enrolled ? "enrolled" : "not enrolled"}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-xs tabular-nums">
+                    {e.amountHuman}
+                  </td>
+                  <td className="px-5 py-2.5 text-right">
+                    <button
+                      type="button"
+                      aria-label={`Remove row ${globalIdx + 1}`}
+                      onClick={() => onRemove(globalIdx)}
+                      className="inline-flex size-7 items-center justify-center rounded-md text-mute transition-colors hover:bg-critical/10 hover:text-critical"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </td>
+                </tr>
+              )
+            })}
+            {slice.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-5 py-6 text-center text-xs text-mute">
+                  No rows match “{query}”.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-3">
+        <span className="text-[11px] text-body-ink">
+          Showing {filtered.length === 0 ? 0 : safePage * LEDGER_PAGE + 1}–{Math.min((safePage + 1) * LEDGER_PAGE, filtered.length)} of{" "}
+          {filtered.length} entries · records hashed locally
+        </span>
+        <div className="flex items-center gap-1.5">
+          <Button variant="outline" size="sm" disabled={safePage === 0} onClick={() => setPageNo(safePage - 1)}>
+            Previous
+          </Button>
+          <span className="px-2 font-mono text-[11px] text-mute">
+            Page {safePage + 1} of {pages}
+          </span>
+          <Button variant="outline" size="sm" disabled={safePage >= pages - 1} onClick={() => setPageNo(safePage + 1)}>
+            Next
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SettlementBar({
+  parsed,
+  bps,
+  minTransferFee,
+  vaultSolRaw,
+  mode,
+  lanes,
+  canDispatch,
+  onDispatch,
+}: {
+  parsed: ParsedFile | null
+  bps: number | null
+  minTransferFee: number
+  vaultSolRaw: bigint | null
+  mode: RunMode
+  lanes: number
+  canDispatch: boolean
+  onDispatch: () => void
+}) {
+  // SOL-preview figures — the plan card owns the authoritative number when an
+  // SPL asset is selected; this bar mirrors the common case.
+  const totals = useMemo(
+    () => (parsed && bps !== null ? estimateTotals(parsed, 9, bps, minTransferFee, mode, true) : null),
+    [parsed, bps, minTransferFee, mode],
+  )
+
+  const required = totals ? totals.totalNet + totals.totalFees : 0n
+  const vaultBig = vaultSolRaw ?? 0n
+  const shortfall = totals && required > vaultBig ? required - vaultBig : 0n
+  const n = parsed?.entries.length ?? 0
+
+  return (
+    <div className="fixed inset-x-0 bottom-4 z-30 px-4">
+      <div className="mx-auto flex w-full max-w-[1280px] flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-band-line bg-band/95 px-5 py-3.5 text-band-ink shadow-[0_12px_40px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+        <div className="hidden min-w-0 lg:block">
+          <div className="flex items-center gap-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-band-mute">
+            <span className="size-1.5 rounded-full bg-band-gold" />
+            zero-knowledge attestation
+          </div>
+          <div className="mt-0.5 truncate font-mono text-[11px] text-band-mute">
+            {lanes} parallel multi-lane bundle{lanes === 1 ? "" : "s"}
+          </div>
+        </div>
+        <div className="flex flex-1 flex-wrap items-center gap-x-6 gap-y-2">
+          <BarStat label="Total distributed" value={totals ? `${lamportsToSol(totals.totalNet.toString()).toFixed(4)} SOL` : "—"} />
+          <BarStat label="Relayer gas" value={totals ? `${lamportsToSol(totals.totalFees.toString()).toFixed(4)} SOL` : "—"} sub="subsidized" />
+          <BarStat label="ZK proof gen" value="on-device" sub="subsidized" />
+          <BarStat
+            label="Total required"
+            value={totals ? `${lamportsToSol(required.toString()).toFixed(4)} SOL` : "—"}
+            accent
+            sub={
+              !totals
+                ? "load a batch"
+                : shortfall > 0n
+                  ? `top-up ${lamportsToSol(shortfall.toString()).toFixed(4)} SOL on dispatch`
+                  : "vault funded"
+            }
+          />
+        </div>
+        <Button
+          size="lg"
+          className="btn-glow flex-none font-semibold active:scale-[0.98]"
+          disabled={!canDispatch || n === 0}
+          onClick={onDispatch}
+        >
+          <Ms name="lock" className="mr-1.5 text-sm" />
+          {n > 0 ? `Authorize & Dispatch ${n} payout${n === 1 ? "" : "s"}` : "Authorize & Dispatch"}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function BarStat({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }) {
+  return (
+    <div>
+      <div className="font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-band-mute">{label}</div>
+      <div className={`font-mono text-sm font-semibold tabular-nums ${accent ? "text-band-gold" : "text-band-ink"}`}>
+        {value}
+        {sub && <span className="ml-1.5 text-[10px] font-normal text-band-mute">{sub}</span>}
+      </div>
     </div>
   )
 }

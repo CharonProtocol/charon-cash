@@ -1,6 +1,6 @@
 import { Check, ChevronDown, Code2, Loader2, ShieldCheck } from "lucide-react"
 
-import { useEffect, type CSSProperties, type ReactNode } from "react"
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -218,6 +218,17 @@ function rise(text: string, baseDelay = 0) {
 }
 
 export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => void }) {
+  // The lantern starts lit on every fresh load (?static screenshots render it
+  // already dimmed), then dims once after 2s — it stays off until the user
+  // refreshes, which is the only thing that re-runs this timer.
+  const [lanternLit, setLanternLit] = useState(
+    () => typeof document === "undefined" || !document.documentElement.classList.contains("static"),
+  )
+  useEffect(() => {
+    const t = setTimeout(() => setLanternLit(false), 2000)
+    return () => clearTimeout(t)
+  }, [])
+
   // reveal-on-scroll for every section
   useEffect(() => {
     const els = Array.from(document.querySelectorAll("[data-reveal]"))
@@ -345,14 +356,32 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
             </Button>
           </div>
 
-          {/* hero visual: the ferryman over the live run panel */}
+          {/* hero visual: the ferryman over the live run panel. The lantern
+              starts lit (amber glow) on every fresh load, then dims after 2s
+              and stays off until the next refresh — ?static renders it off. */}
           <div id="demo-preview" className="anim anim-5 relative mt-10 flex w-full max-w-4xl flex-col items-center">
             <div className="relative z-20 -mb-4 size-40 transition-transform duration-700 hover:scale-105 sm:-mb-14 md:size-48">
-              <div className="absolute inset-0 animate-pulse rounded-full bg-[var(--gold-2)] opacity-15 blur-2xl" />
+              <div
+                className={`absolute inset-0 rounded-full bg-[var(--gold-2)] blur-2xl transition-opacity duration-1000 ${
+                  lanternLit ? "animate-pulse opacity-40" : "opacity-15"
+                }`}
+              />
+              {/* off lantern (base layer) */}
               <img
                 src="/charon-mark.png"
                 alt="Charon, the ferryman"
-                className="relative z-10 size-full object-contain drop-shadow-[0_16px_28px_rgba(21,19,15,0.18)]"
+                className="absolute inset-0 size-full object-contain drop-shadow-[0_16px_28px_rgba(21,19,15,0.18)]"
+              />
+              {/* lit lantern: fades out once the 2s lamp timer fires */}
+              <img
+                src="/charon-lit.png"
+                alt=""
+                aria-hidden
+                className={`absolute inset-0 z-10 size-full object-contain transition-opacity duration-[1200ms] ease-out ${
+                  lanternLit
+                    ? "opacity-100 drop-shadow-[0_0_42px_rgba(232,168,66,0.45)]"
+                    : "pointer-events-none opacity-0"
+                }`}
               />
             </div>
 
