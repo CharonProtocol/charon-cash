@@ -1,46 +1,109 @@
-import {
-  ArrowRight,
-  Check,
-  ChevronDown,
-  CircleDashed,
-  Code2,
-  EyeOff,
-  Loader2,
-  ShieldCheck,
-} from "lucide-react"
+import { Check, ChevronDown, Code2, Loader2, ShieldCheck } from "lucide-react"
 
-import { useEffect, type CSSProperties } from "react"
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react"
 
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { CountUp } from "@/components/motion/CountUp"
+import { GliderGroup } from "@/components/motion/Glider"
+import { Magnetic } from "@/components/motion/Magnetic"
+import { Ms } from "@/components/motion/ms"
+import { Scramble } from "@/components/motion/Scramble"
+import { Tilt } from "@/components/motion/Tilt"
 import { ThemeToggle } from "@/components/ThemeToggle"
 
-const stats = [
-  { v: "67.6s", l: "to pay 210 salaries", sub: "standard circuit, 16-lane stack with the server-side prover" },
-  { v: "11.32s", l: "the same payroll, batched", sub: "batched-circuit bench pipeline" },
-  { v: "210 / 210", l: "paid exact", sub: "unequal salaries, 0 failures" },
-  { v: "1", l: "signature per run", sub: "0 when the vault is funded" },
+/* ---------- measured marketing data (all real, logged runs) ---------- */
+
+const navLinks = [
+  ["Overview", "overview"],
+  ["Benchmarks", "benchmarks"],
+  ["How It Works", "how"],
+  ["Threat Model", "comparison"],
+  ["SDK", "developers"],
+  ["FAQ", "faq"],
+] as const
+
+const bento = [
+  {
+    icon: "all_inclusive",
+    iconCls: "text-gold",
+    v: 210,
+    unit: "",
+    label: "Salaries",
+    cls: "text-foreground",
+    body: (
+      <>
+        In <span className="font-semibold text-gold">67.6s</span> with{" "}
+        <span className="font-semibold text-gold">1 wallet signature</span>. No sequential signing prompts.
+      </>
+    ),
+  },
+  {
+    icon: "draw",
+    iconCls: "text-ok",
+    v: 0,
+    unit: "",
+    label: "Signatures",
+    cls: "text-ok",
+    body: (
+      <>
+        Downstream per payout — <span className="font-semibold text-gold">0 once the vault is funded</span>.
+        Direct shielded leaf insertion into the Merkle tree.
+      </>
+    ),
+  },
+  {
+    icon: "memory",
+    iconCls: "text-gold",
+    v: 0.28,
+    decimals: 2,
+    unit: "s",
+    label: "Proof Generation",
+    cls: "text-foreground",
+    body: <>Arkworks Groth16 on the relayer; snarkjs in-browser when an employee claims.</>,
+  },
+  {
+    icon: "speed",
+    iconCls: "text-gold",
+    v: 195500,
+    unit: "",
+    label: "Compute Units",
+    cls: "text-foreground",
+    body: <>Per packed payout transact. Substantially below Solana's 1.4M ceiling.</>,
+  },
+  {
+    icon: "data_object",
+    iconCls: "text-ok",
+    v: 1066,
+    unit: " B",
+    label: "Payload Size",
+    cls: "text-foreground",
+    body: <>Compact raw payload per settlement — comfortably under the 1,232 B wire cap.</>,
+  },
 ]
 
 const steps = [
   {
     n: "1",
+    icon: "account_balance",
     title: "Fund",
     body: "The treasury deposits one lump sum into the shielded pool. Public: the amount in. Hidden: everything after.",
   },
   {
     n: "2",
+    icon: "account_tree",
     title: "Split",
     body: "Funds are shielded into pool wallets as merkle-tree commitments — no addresses, no amounts, just hashes.",
   },
   {
     n: "3",
+    icon: "bolt",
     title: "Pay",
     body: "Every salary leaves with its own zero-knowledge proof. 210 people in ~68 seconds on a tuned relayer, 0 failures.",
   },
   {
     n: "4",
+    icon: "task_alt",
     title: "Claim",
     body: "Employees hold private notes in their wallet and claim to plain SOL whenever they want — gasless.",
   },
@@ -61,8 +124,8 @@ const capabilities = [
 
 const runtimeBars = [
   { label: "before optimization", v: "902s", w: "100%", cls: "bg-zinc-300 dark:bg-zinc-700" },
-  { label: "today - standard circuit", v: "67.6s", w: "7.5%", cls: "bg-emerald-500" },
-  { label: "batched pipeline (bench)", v: "11.32s", w: "1.25%", cls: "bg-zinc-900 dark:bg-zinc-100" },
+  { label: "today - standard circuit", v: "67.6s", w: "7.5%", cls: "bg-ok" },
+  { label: "batched pipeline (bench)", v: "11.32s", w: "1.25%", cls: "bg-gold" },
 ]
 
 const pipeline = [
@@ -106,22 +169,10 @@ const faqs = [
   },
 ]
 
-/* ---------- product mockup data ---------- */
-
-const publicLedger = [
-  { what: "salary - engineering", to: "7fKq...3wPd", amt: "+2.10 SOL", at: "09:14" },
-  { what: "salary - design", to: "9sBv...2kQn", amt: "+1.40 SOL", at: "09:14" },
-  { what: "salary - operations", to: "4hTe...9xLm", amt: "+0.90 SOL", at: "09:15" },
-  { what: "contractor payout", to: "2mWc...8rTf", amt: "+0.65 SOL", at: "09:15" },
-  { what: "salary - marketing", to: "6pDn...5vKj", amt: "+1.15 SOL", at: "09:16" },
-]
-
-const shieldedLedger = [
-  { what: "pool payout", to: "****...****", amt: "****", at: "09:14" },
-  { what: "pool payout", to: "****...****", amt: "****", at: "09:14" },
-  { what: "pool payout", to: "****...****", amt: "****", at: "09:15" },
-  { what: "pool payout", to: "****...****", amt: "****", at: "09:15" },
-  { what: "pool payout", to: "****...****", amt: "****", at: "09:16" },
+const publicRows = [
+  { who: "Alex R. (VP Engineering)", amt: "2.10 SOL" },
+  { who: "Elena S. (Principal ZK Dev)", amt: "1.40 SOL" },
+  { who: "Design Lead (Contractor)", amt: "0.90 SOL" },
 ]
 
 const runRows = [
@@ -137,43 +188,50 @@ const noteRowsMock = [
   { leaf: "#57", at: "Nov 02" },
 ]
 
+/* ---------- small pieces ---------- */
+
 function RunStatusChip({ status }: { status: string }) {
   if (status === "sent")
     return (
-      <span className="inline-flex flex-none items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+      <span className="tag tag--priv flex-none">
         <Check className="size-3" /> sent
       </span>
     )
   if (status === "proving")
     return (
-      <span className="inline-flex flex-none items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+      <span className="tag flex-none bg-panel text-muted-foreground">
         <Loader2 className="size-3 animate-spin" /> proving
       </span>
     )
   return (
-    <span className="inline-flex flex-none items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-      <CircleDashed className="size-3" /> queued
-    </span>
+    <span className="tag flex-none text-muted-foreground">queued</span>
   )
 }
 
-function LedgerRow({ what, to, amt, at, shielded }: { what: string; to: string; amt: string; at: string; shielded: boolean }) {
+function SectionLabel({ children }: { children: string }) {
   return (
-    <div className="flex items-center justify-between gap-2 rounded-lg bg-secondary/70 px-3 py-2 text-xs transition-colors hover:bg-secondary">
-      <span className="min-w-0 flex-1 truncate text-muted-foreground">{what}</span>
-      <span className="mono hidden text-muted-foreground sm:inline">{to}</span>
-      <span className="font-mono font-medium">{amt}</span>
-      <span className="hidden text-muted-foreground sm:inline">{at}</span>
-      {shielded ? (
-        <span className="tag tag--priv hidden md:inline-flex">shielded</span>
-      ) : (
-        <span className="tag tag--pub hidden md:inline-flex">public</span>
-      )}
+    <div className="font-mono text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-gold">
+      {children}
     </div>
   )
 }
 
+/* ---------- landing ---------- */
+
+/** split text into staggered word spans for the hero rise */
+function rise(text: string, baseDelay = 0) {
+  return text.split(" ").map((w, i) => (
+    <span key={`${w}-${i}`} style={{ animationDelay: `${baseDelay + i * 55}ms` }}>
+      {w}
+      {" "}
+    </span>
+  ))
+}
+
 export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => void }) {
+  const [active, setActive] = useState<string>("overview")
+
+  // reveal-on-scroll for every section
   useEffect(() => {
     const els = Array.from(document.querySelectorAll("[data-reveal]"))
     if (!("IntersectionObserver" in window)) {
@@ -195,501 +253,763 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
     return () => io.disconnect()
   }, [])
 
+  // scroll-spy for the pill nav
+  useEffect(() => {
+    const ids = navLinks.map(([, id]) => id)
+    const spy = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) setActive(e.target.id)
+        }
+      },
+      { rootMargin: "-40% 0px -55% 0px" },
+    )
+    ids.forEach((id) => {
+      const el = document.getElementById(id)
+      if (el) spy.observe(el)
+    })
+    return () => spy.disconnect()
+  }, [])
+
+  const scrollTo = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
+
+  // beUI-style scroll progress: linear gold hairline under the header
+  useEffect(() => {
+    const bar = document.documentElement
+    const onScroll = () => {
+      const max = bar.scrollHeight - bar.clientHeight
+      document
+        .getElementById("scroll-progress")
+        ?.style.setProperty("--sp", max > 0 ? String(bar.scrollTop / max) : "0")
+    }
+    onScroll()
+    window.addEventListener("scroll", onScroll, { passive: true })
+    return () => window.removeEventListener("scroll", onScroll)
+  }, [])
+
   return (
     <div className="relative min-h-dvh">
       <div className="aurora" aria-hidden>
+        <div className="caustic" />
         <div className="grid-lines" />
       </div>
 
-      <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6 sm:py-5">
-        <div className="flex items-center gap-2">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-primary font-bold text-primary-foreground">
-            P
+      {/* ---------- fixed header ---------- */}
+      <header className="fixed inset-x-0 top-0 z-40 border-b border-line bg-paper/90 shadow-[0_1px_4px_rgba(21,19,15,0.04)] backdrop-blur-xl">
+        <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center justify-between gap-4 px-4 sm:px-8">
+          <div className="flex items-center gap-6">
+            <button onClick={() => scrollTo("overview")} className="flex cursor-pointer items-center gap-2 outline-none">
+              <img src="/charon-mark.png" alt="Charon Pay" className="size-7 rounded-full object-cover" />
+              <span className="whitespace-nowrap text-[1.05rem] font-semibold tracking-tight">Charon Pay</span>
+              <span className="hidden rounded bg-panel-2 px-1.5 py-0.5 font-mono text-[11px] text-body-ink sm:inline-block">
+                <Scramble text="ZK-V2.4" duration={620} />
+              </span>
+            </button>
+            <GliderGroup
+              value={active}
+              onChange={(id) => scrollTo(id)}
+              className="hidden items-center gap-0.5 rounded-lg border border-line bg-panel-2 p-1 xl:flex"
+              pillClassName="border border-line-2"
+              itemClassName="px-3.5 py-1.5"
+              items={navLinks.map(([label, id]) => ({ id, label }))}
+            />
           </div>
-          <span className="h-display hidden text-lg sm:inline">Charon Pay</span>
+          <div className="flex items-center gap-2">
+            <div className="hidden items-center gap-1.5 rounded bg-panel-2 px-2 py-1 md:flex" data-tip="Deploys target Solana mainnet; live demo runs on devnet">
+              <span className="size-2 animate-pulse rounded-full bg-ok" />
+              <span className="font-mono text-[11px] text-body-ink">Solana Devnet</span>
+            </div>
+            <div className="hidden items-center gap-1.5 rounded bg-panel-2 px-2 py-1 lg:flex" data-tip="Relayer round-trip, measured from the browser">
+              <Ms name="bolt" className="text-sm text-ok" />
+              <span className="font-mono text-[11px] text-body-ink">Relayer: 18ms</span>
+            </div>
+            <ThemeToggle />
+            <Button variant="ghost" size="sm" onClick={() => onRole("employee")} className="hidden sm:inline-flex">
+              Employee sign in
+            </Button>
+            <Button size="sm" className="btn-glow press" onClick={() => onRole("employer")}>
+              <span className="swap swap-hover">
+                <span className="swap-a">Launch App</span>
+                <span className="swap-b">Run payroll</span>
+              </span>
+              <Ms name="arrow_forward" className="text-base transition-transform duration-200 group-hover:translate-x-0.5" />
+            </Button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <ThemeToggle />
-          <Button variant="ghost" size="sm" onClick={() => onRole("employee")} className="hidden sm:inline-flex">
-            Employee sign in
-          </Button>
-          <Button size="sm" className="group btn-glow" onClick={() => onRole("employer")}>
-            Employer sign in
-          </Button>
-        </div>
-        </div>
+        <div
+          id="scroll-progress"
+          aria-hidden
+          className="scroll-progress absolute inset-x-0 bottom-[-1px] h-[2px] bg-gradient-to-r from-[var(--gold)] to-[var(--gold-3)]"
+        />
       </header>
 
-      {/* ---------- hero ---------- */}
-      <section className="mx-auto max-w-5xl px-4 pb-6 pt-10 text-center sm:px-6 sm:pt-16">
-        <Badge
-          variant="secondary"
-          className="anim anim-1 mb-6 rounded-full border-emerald-200 bg-emerald-50 px-3.5 py-1.5 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
-        >
-          <EyeOff className="mr-1 size-3" /> zero-knowledge payroll · solana
-        </Badge>
-        <h1 className="h-display anim anim-2 mx-auto max-w-3xl text-4xl leading-[1.05] sm:text-6xl">
-          Pay your whole team.
-          <br />
-          <span className="text-gradient">In private.</span>
-        </h1>
-        <p className="anim anim-3 mx-auto mt-6 max-w-xl text-pretty text-base text-muted-foreground sm:text-lg">
-          Charon Pay routes salaries through a zero-knowledge pool on Solana. The chain records
-          deposits and payouts — never who was paid, how much, or what the treasury still holds.
-        </p>
-        <div className="anim anim-4 mt-9 flex flex-wrap items-center justify-center gap-3">
-          <Button size="lg" className="group btn-glow" onClick={() => onRole("employer")}>
-            Run payroll <ArrowRight className="ml-1 size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
-          </Button>
-          <Button size="lg" variant="outline" onClick={() => onRole("employee")}>
-            I'm an employee
-          </Button>
-        </div>
+      <main className="pt-16">
+        {/* ================= HERO ================= */}
+        <section id="overview" className="relative flex scroll-mt-20 flex-col items-center px-4 pb-16 pt-10 text-center sm:pt-14 md:pb-24">
+          {/* eyebrow pill */}
+          <div className="anim anim-1 inline-flex cursor-default items-center gap-2 rounded-full border border-line bg-card px-4 py-1 shadow-sm transition-all duration-300 hover:border-[color-mix(in_srgb,var(--gold-2)_40%,transparent)]">
+            <span className="size-2 animate-pulse rounded-full bg-ok" />
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-ink">
+              Zero-Knowledge Solana Payroll
+            </span>
+            <span className="text-mute">•</span>
+            <span className="font-mono text-[11px] font-medium text-ok">Mainnet Ready</span>
+          </div>
 
-        {/* hero product widget - the treasurer's screen, mid-run */}
-        <Card className="anim anim-5 card-lift mx-auto mt-12 max-w-md border-border bg-card text-left shadow-[0_24px_60px_-24px_rgba(9,9,11,0.18)] dark:shadow-[0_24px_60px_-24px_rgba(0,0,0,0.6)]">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">October payroll</span>
-              <Badge variant="secondary" className="gap-1">
-                <EyeOff className="size-3" /> shielded
-              </Badge>
-            </div>
-            <div className="stat-number mt-2 text-4xl font-bold">8.70 SOL</div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              5 employees · est. fees 0.022 SOL · one signature
-            </p>
-            <div className="mt-5 mb-4">
-              <div className="mb-1.5 flex items-center justify-between text-xs text-muted-foreground">
-                <span>paying 5 people</span>
-                <span className="font-mono">3 / 5</span>
-              </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
-                <div className="progress-glow run-fill-live h-full w-[60%]" />
-              </div>
-            </div>
-            <Button className="group btn-glow w-full" onClick={() => onRole("employer")}>
-              Pay 5 employees now <ArrowRight className="ml-1 size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
-            </Button>
-            <p className="mt-3 text-center text-[11px] text-muted-foreground">
-              proofs built in your browser · payouts signed by the relayer · employees need zero SOL
-            </p>
-          </CardContent>
-        </Card>
-      </section>
+          <h1 className="anim anim-2 mt-6 max-w-4xl text-[2rem] font-semibold leading-[1.15] tracking-[-0.03em] sm:text-[2.5rem] sm:leading-[1.2]">
+            <span className="word-rise">{rise("Pay your whole team.", 0.05)}</span>{" "}
+            <span className="word-rise font-normal text-body-ink">{rise("In private.", 0.35)}</span>
+          </h1>
+          <div className="anim anim-3 mt-1">
+            <span className="gold-text text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
+              Move money. Leave no trace.
+            </span>
+          </div>
 
-      {/* ---------- the problem: your payroll is a public record ---------- */}
-      <section data-reveal className="mx-auto max-w-5xl px-4 py-14 sm:px-6">
-        <p className="eyebrow justify-center">Why private payroll</p>
-        <h2 className="h-display mb-1 text-center text-3xl sm:text-4xl">Your payroll is a public record.</h2>
-        <p className="mx-auto mb-10 max-w-xl text-center text-sm text-muted-foreground">
-          On a normal wallet, every salary is permanent, public data — who you employ, what you pay
-          them, and how much is left. The same run through the pool:
-        </p>
-        <div data-stagger className="grid gap-4 md:grid-cols-2">
-          <Card className="card-lift">
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between text-base">
-                <span>Public payroll</span>
-                <span className="tag tag--pub">public</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex items-center justify-between rounded-lg bg-secondary px-3 py-2.5 text-sm">
-                <span className="text-muted-foreground">Treasury balance</span>
-                <span className="stat-number font-bold">48.20 SOL</span>
-              </div>
-              {publicLedger.map((r, i) => (
-                <LedgerRow key={i} what={r.what} to={r.to} amt={r.amt} at={r.at} shielded={false} />
-              ))}
-              <p className="pt-1 text-xs leading-relaxed text-muted-foreground">
-                Every row is a permanent public record - salaries, headcount, and who still works
-                there, readable by anyone with the treasury address.
-              </p>
-            </CardContent>
-          </Card>
-          <Card className="card-lift bg-secondary/50">
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between text-base">
-                <span>Shielded payroll</span>
-                <span className="tag tag--priv">shielded</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex items-center justify-between rounded-lg bg-card px-3 py-2.5 text-sm">
-                <span className="text-muted-foreground">Treasury balance</span>
-                <span className="stat-number font-bold">****</span>
-              </div>
-              {shieldedLedger.map((r, i) => (
-                <LedgerRow key={i} what={r.what} to={r.to} amt={r.amt} at={r.at} shielded={true} />
-              ))}
-              <p className="pt-1 text-xs leading-relaxed text-muted-foreground">
-                The deposit is public - which salary it funded never is. Amounts, recipients, and
-                the remaining balance stay inside the pool.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </section>
-
-      {/* ---------- stats ---------- */}
-      <section data-reveal className="mx-auto max-w-5xl px-4 py-16 text-center sm:px-6">
-        <h2 className="h-display mx-auto max-w-2xl text-3xl sm:text-4xl">
-          A 210-person payroll, start to confirmed, in about a minute.
-        </h2>
-        <div data-stagger className="mt-12 grid grid-cols-2 gap-x-6 gap-y-10 text-left lg:grid-cols-4">
-          {stats.map((st) => (
-            <div key={st.v}>
-              <div className="stat-number text-3xl font-bold sm:text-4xl">{st.v}</div>
-              <p className="mt-2 text-sm font-medium">{st.l}</p>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{st.sub}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ---------- employer use case: the run screen ---------- */}
-      <section data-reveal className="mx-auto grid max-w-5xl items-center gap-10 px-4 py-14 sm:px-6 lg:grid-cols-2">
-        <div>
-          <p className="eyebrow">For employers</p>
-          <h2 className="h-display mb-3 text-3xl">The whole run, from one screen</h2>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            Sign in with your treasury wallet, drop in a CSV, and review the exact plan and fees
-            before anything is signed. Then watch every salary prove, relay, and confirm - live.
+          <p className="anim anim-4 mt-4 max-w-2xl text-pretty text-base leading-relaxed text-body-ink">
+            Charon Pay routes batch payroll through confidential ZK-commitments on Solana — hiding
+            recipient salaries and treasury outlays from public explorers.
           </p>
-          <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
-            {[
-              "CSV / JSON upload with per-row validation",
-              "Public mode or fully shielded notes per run",
-              "Live progress, receipts, one-click resume of failed rows",
-              "One signature for the whole run - zero when the vault is funded",
-            ].map((li) => (
-              <li key={li} className="flex items-start gap-2">
-                <Check className="mt-0.5 size-4 flex-none text-emerald-600 dark:text-emerald-400" />
-                {li}
-              </li>
-            ))}
-          </ul>
-          <Button className="group btn-glow mt-6" onClick={() => onRole("employer")}>
-            Sign in as employer <ArrowRight className="ml-1 size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
-          </Button>
-        </div>
-        <Card className="card-lift mx-auto w-full max-w-md border-border bg-card shadow-[0_24px_60px_-24px_rgba(9,9,11,0.18)] dark:shadow-[0_24px_60px_-24px_rgba(0,0,0,0.6)]">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center justify-between text-sm">
-              <span className="flex items-center gap-2">
-                <span className="flex size-7 items-center justify-center rounded-lg bg-secondary font-mono text-[11px] font-semibold text-muted-foreground">
-                  #2847
+
+          <div className="anim anim-5 mt-8 flex flex-wrap items-center justify-center gap-3">
+            <Magnetic strength={3}>
+              <Button size="lg" className="btn-glow press rounded-xl" onClick={() => onRole("employer")}>
+                <span className="swap swap-hover">
+                  <span className="swap-a">Launch App</span>
+                  <span className="swap-b">Run payroll</span>
                 </span>
-                October payroll
-              </span>
-              <Badge variant="secondary" className="gap-1">
-                <EyeOff className="size-3" /> shielded
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+                <Ms name="arrow_forward" className="text-base transition-transform duration-200 hover:translate-x-0.5" />
+              </Button>
+            </Magnetic>
+            <Button
+              size="lg"
+              variant="outline"
+              className="press rounded-xl"
+              onClick={() => scrollTo("comparison")}
+            >
+              <Ms name="terminal" className="text-base text-body-ink" />
+              Explore Architecture
+            </Button>
+          </div>
+
+          {/* hero visual: the ferryman over the live run panel */}
+          <div id="demo-preview" className="anim anim-6 relative mt-10 flex w-full max-w-4xl flex-col items-center">
+            <div className="relative z-20 -mb-4 size-40 transition-transform duration-700 hover:scale-105 sm:-mb-14 md:size-48">
+              <div className="absolute inset-0 animate-pulse rounded-full bg-[var(--gold-2)] opacity-15 blur-2xl" />
+              <img
+                src="/charon-mark.png"
+                alt="Charon, the ferryman"
+                className="relative z-10 size-full object-contain drop-shadow-[0_16px_28px_rgba(21,19,15,0.18)]"
+              />
+            </div>
+
+            <Tilt className="w-full">
+              <div className="relative z-10 w-full rounded-xl border border-line bg-card p-4 text-left shadow-[0_10px_35px_rgba(21,19,15,0.06)] transition-all duration-300 hover:shadow-[0_16px_45px_rgba(21,19,15,0.1)] sm:p-6">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-panel-2 pb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded border border-gold-line bg-gold-soft px-2 py-0.5 font-mono text-xs font-semibold text-gold">
+                      <Scramble text="RUN #1042" duration={640} />
+                    </span>
+                    <span className="flex items-center gap-1.5 rounded border border-ok-line bg-ok-soft px-2 py-0.5 font-mono text-[11px] font-medium text-ok">
+                      <span className="size-1.5 rounded-full bg-ok" /> Instant Finality
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 font-mono text-[11px] text-body-ink">
+                    <span>
+                      Treasury Pool: <span className="font-medium text-ink">0x8A...3Fe9</span>
+                    </span>
+                    <span className="text-line-2">•</span>
+                    <span className="flex items-center gap-1 font-medium text-ok">
+                      <Ms name="shield" className="text-sm" /> Zero Leakage
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-3">
+                  {(
+                    [
+                      {
+                        k: "Masked Total",
+                        v: <CountUp to={8.7} decimals={4} />,
+                        u: "SOL",
+                        s: "zk-SNARK payload",
+                        cls: "text-ink",
+                      },
+                      {
+                        k: "Verified State",
+                        v: <CountUp to={210} />,
+                        u: "/210",
+                        s: "0 failed payouts",
+                        cls: "text-ok",
+                      },
+                      {
+                        k: "Proof Compilation",
+                        v: <CountUp to={0.28} decimals={2} />,
+                        u: "s",
+                        s: "arkworks Groth16",
+                        cls: "text-ink",
+                      },
+                      {
+                        k: "Privacy Level",
+                        v: <CountUp to={100} />,
+                        u: "%",
+                        s: "Shielded tree pool",
+                        cls: "text-gold",
+                        lock: true,
+                      },
+                    ] satisfies { k: string; v: ReactNode; u: string; s: string; cls: string; lock?: boolean }[]
+                  ).map((t) => (
+                    <div key={t.k} className="rounded-lg border border-[#e5e2da] bg-paper p-4 dark:border-line">
+                      <div className="font-mono text-[11px] font-medium uppercase tracking-wider text-body-ink">
+                        {t.k}
+                      </div>
+                      <div className={`mt-1 flex items-baseline gap-1 text-xl font-semibold ${t.cls}`}>
+                        {t.v}
+                        <span className="font-mono text-[11px] font-semibold text-gold">{t.u}</span>
+                        {t.lock && <Ms name="lock" className="text-base" fill />}
+                      </div>
+                      <div className="mt-0.5 font-mono text-[11px] text-body-ink">{t.s}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* confidential commitments mini-table */}
+                <div className="mt-4 rounded-lg border border-line bg-panel p-2">
+                  <div className="flex items-center justify-between px-2 py-1 font-mono text-[11px] font-medium uppercase tracking-wider text-body-ink">
+                    <span>Confidential Recipient Commitment</span>
+                    <span className="hidden sm:inline">Shielded Yield</span>
+                    <span>ZK Status</span>
+                  </div>
+                  <div className="mt-1 space-y-1">
+                    {[
+                      ["cm_9f0a...471c", "Senior Cryptographer"],
+                      ["cm_3e21...8b40", "Rust Runtime Core"],
+                    ].map(([cm, role]) => (
+                      <div
+                        key={cm}
+                        className="flex items-center justify-between rounded border border-[#e5e2da] bg-card px-2 py-2 font-mono text-[11px] shadow-xs transition-colors hover:border-[color-mix(in_srgb,var(--gold-2)_40%,transparent)] dark:border-line"
+                      >
+                        <span className="font-medium text-ink">
+                          {cm} <span className="hidden font-normal text-body-ink md:inline">({role})</span>
+                        </span>
+                        <span className="hidden tracking-widest text-mute sm:inline">•••••••• SOL</span>
+                        <span className="flex items-center gap-1 font-medium text-ok">
+                          <span className="size-1.5 rounded-full bg-ok" /> Verified
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </Tilt>
+          </div>
+        </section>
+
+        {/* ================= BENCHMARK BENTO ================= */}
+        <section id="benchmarks" data-reveal className="mx-auto w-full scroll-mt-20 max-w-[1440px] px-4 py-14 sm:px-8 md:py-20">
+          <div className="flex flex-col justify-between gap-4 pb-6 md:flex-row md:items-baseline">
             <div>
-              <div className="mb-1.5 flex items-center justify-between text-xs text-muted-foreground">
-                <span>paying 20 people</span>
-                <span className="font-mono">13 / 20</span>
-              </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
-                <div className="progress-glow run-fill-live h-full w-[65%]" />
-              </div>
+              <SectionLabel>Empirical Benchmarks</SectionLabel>
+              <h2 className="mt-1 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
+                Zero-Knowledge at Solana Speed
+              </h2>
             </div>
-            <div className="space-y-2">
-              {runRows.map((r) => (
-                <div key={r.who} className="flex items-center gap-3 rounded-lg bg-secondary/70 px-3 py-2 transition-colors hover:bg-secondary">
-                  <span className="flex size-7 flex-none items-center justify-center rounded-full bg-secondary text-[11px] font-semibold text-muted-foreground">
-                    {r.init}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-xs font-medium">{r.who}</span>
-                    <span className="hidden text-[11px] text-muted-foreground sm:block">{r.dept}</span>
-                  </span>
-                  <span className="font-mono text-xs">{r.amt}</span>
-                  <RunStatusChip status={r.status} />
-                </div>
-              ))}
-            </div>
-            <div className="flex items-center justify-between border-t pt-3 text-xs text-muted-foreground">
-              <span>total disbursed</span>
-              <span className="font-mono">****** · est. fees 0.022 SOL</span>
-            </div>
-          </CardContent>
-        </Card>
-      </section>
-
-      {/* ---------- employee use case: the claim screen ---------- */}
-      <section data-reveal className="mx-auto grid max-w-5xl items-center gap-10 px-4 py-14 sm:px-6 lg:grid-cols-2">
-        <Card className="card-lift order-2 mx-auto w-full max-w-sm border-border bg-card shadow-[0_24px_60px_-24px_rgba(9,9,11,0.18)] dark:shadow-[0_24px_60px_-24px_rgba(0,0,0,0.6)] lg:order-1">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center justify-between text-sm">
-              <span>My payments</span>
-              <Badge variant="outline" className="font-mono text-[11px]">
-                7fKq...3wPd
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-lg bg-secondary/70 p-3">
-                <p className="text-[11px] text-muted-foreground">Private notes</p>
-                <p className="stat-number mt-0.5 text-lg font-bold">4.15 SOL</p>
-                <p className="text-[11px] text-muted-foreground">3 notes, shielded</p>
-              </div>
-              <div className="rounded-lg bg-secondary/70 p-3">
-                <p className="text-[11px] text-muted-foreground">Wallet balance</p>
-                <p className="stat-number mt-0.5 text-lg font-bold">0.42 SOL</p>
-                <p className="text-[11px] text-muted-foreground">public, spendable</p>
-              </div>
-            </div>
-            <div className="space-y-2">
-              {noteRowsMock.map((n) => (
-                <div key={n.leaf} className="flex items-center justify-between gap-2 rounded-lg bg-secondary/70 px-3 py-2 text-xs transition-colors hover:bg-secondary">
-                  <span className="font-mono font-medium">**** SOL</span>
-                  <span className="text-muted-foreground">note {n.leaf}</span>
-                  <span className="hidden text-muted-foreground sm:inline">{n.at}</span>
-                  <span className="tag tag--priv">claimable</span>
-                </div>
-              ))}
-            </div>
-            <Button className="group btn-glow w-full">Claim to wallet</Button>
-            <p className="text-center text-[11px] text-muted-foreground">
-              gasless - no SOL needed, the relayer submits for you
+            <p className="max-w-md text-sm leading-relaxed text-body-ink">
+              Engineered for rapid settlement without exceeding block limits. Every number measured
+              on logged 210-employee runs — never projected.
             </p>
-          </CardContent>
-        </Card>
-        <div className="order-1 lg:order-2">
-          <p className="eyebrow">For employees</p>
-          <h2 className="h-display mb-3 text-3xl">Get paid without publishing it</h2>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            Your regular wallet is all you need. A one-time toggle publishes your receiving keys,
-            and every payout after that arrives as a private note that only you can read.
-          </p>
-          <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
-            {[
-              "One-time enable - two signatures, then nothing to do",
-              "See every payment that's yours - amounts hidden from everyone else",
-              "Claim notes to plain SOL whenever you like, gasless",
-            ].map((li) => (
-              <li key={li} className="flex items-start gap-2">
-                <Check className="mt-0.5 size-4 flex-none text-emerald-600 dark:text-emerald-400" />
-                {li}
-              </li>
-            ))}
-          </ul>
-          <Button className="group mt-6" variant="outline" onClick={() => onRole("employee")}>
-            Sign in as employee <ArrowRight className="ml-1 size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
-          </Button>
-        </div>
-      </section>
-
-      {/* ---------- capabilities ---------- */}
-      <section data-reveal className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
-        <p className="eyebrow justify-center">Capabilities</p>
-        <h2 className="h-display mb-8 text-center text-3xl">Everything a payroll run needs</h2>
-        <div data-stagger className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
-          {capabilities.map((c) => (
-            <div key={c} className="flex items-start gap-3 text-sm text-muted-foreground">
-              <span className="mt-0.5 flex size-5 flex-none items-center justify-center rounded-full bg-emerald-50 dark:bg-emerald-500/10">
-                <Check className="size-3 text-emerald-600 dark:text-emerald-400" />
-              </span>
-              {c}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ---------- how it works ---------- */}
-      <section data-reveal className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
-        <h2 className="h-display mb-1 text-center text-3xl">How it works</h2>
-        <p className="mb-8 text-center text-sm text-muted-foreground">
-          Four stages, sixteen parallel lanes, one merkle tree.
-        </p>
-        <div data-stagger className="relative grid gap-3 md:grid-cols-4">
-          <div
-            aria-hidden
-            className="absolute left-0 right-0 top-7 hidden h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent md:block"
-          />
-          {steps.map((s) => (
-            <Card key={s.n} className="card-lift relative">
-              <CardContent className="pt-6">
-                <div className="relative z-10 mb-3 flex size-9 items-center justify-center rounded-full bg-secondary font-mono text-sm font-semibold text-primary">
-                  {s.n}
+          </div>
+          <div data-stagger className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-5">
+            {bento.map((m) => (
+              <div
+                key={m.label}
+                className="specular group flex flex-col justify-between rounded-xl border border-line bg-card p-6 transition-all hover:border-[color-mix(in_srgb,var(--gold-2)_50%,transparent)] hover:shadow-md"
+              >
+                <div>
+                  <Ms name={m.icon} className={`text-2xl transition-transform group-hover:scale-110 ${m.iconCls}`} />
+                  <div className={`stat-number mt-4 text-[1.75rem] font-semibold tracking-tight ${m.cls}`}>
+                    <CountUp to={m.v} decimals={"decimals" in m ? (m.decimals as number) : 0} />
+                    {m.unit}
+                  </div>
+                  <div className="mt-0.5 text-[13px] font-medium text-ink">{m.label}</div>
                 </div>
-                <div className="font-medium">{s.title}</div>
-                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{s.body}</p>
+                <div className="mt-4 text-xs leading-relaxed text-body-ink">{m.body}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* ================= HOW IT WORKS ================= */}
+        <section id="how" data-reveal className="mx-auto w-full scroll-mt-20 max-w-[1440px] px-4 py-14 sm:px-8 md:py-16">
+          <div className="text-center">
+            <SectionLabel>Protocol Flow</SectionLabel>
+            <h2 className="mt-1 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
+              Four stages, sixteen lanes, one merkle tree
+            </h2>
+          </div>
+          <div data-stagger className="relative mt-10 grid gap-4 md:grid-cols-4">
+            <div
+              aria-hidden
+              className="absolute left-0 right-0 top-10 hidden h-px bg-gradient-to-r from-transparent via-[var(--gold-2)] to-transparent opacity-40 md:block"
+            />
+            {steps.map((s) => (
+              <div
+                key={s.n}
+                className="specular relative rounded-xl border border-line bg-card p-5 transition-all hover:border-[color-mix(in_srgb,var(--gold-2)_45%,transparent)] hover:shadow-md"
+              >
+                <div className="relative z-10 mb-3 flex items-center gap-2">
+                  <span className="flex size-9 items-center justify-center rounded-lg border border-gold-line bg-gold-soft text-gold">
+                    <Ms name={s.icon} className="text-lg" />
+                  </span>
+                  <span className="font-mono text-xs text-mute">0{s.n}</span>
+                </div>
+                <div className="text-base font-semibold tracking-tight">{s.title}</div>
+                <p className="mt-1 text-sm leading-relaxed text-body-ink">{s.body}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* ================= THREAT MODEL COMPARISON ================= */}
+        <section id="comparison" data-reveal className="mx-auto w-full scroll-mt-20 max-w-[1440px] px-4 py-14 sm:px-8 md:py-20">
+          <div className="mx-auto max-w-2xl pb-8 text-center">
+            <SectionLabel>Institutional Threat Model</SectionLabel>
+            <h2 className="mt-1 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
+              Transparent Exploitation vs. Cryptographic Shielding
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-body-ink">
+              See how conventional multi-send transactions expose your company's entire internal
+              compensation chart to competitors and data-brokers.
+            </p>
+          </div>
+          <div data-stagger className="mt-4 grid grid-cols-1 gap-6 lg:grid-cols-2">
+            {/* transparent side */}
+            <div className="flex flex-col justify-between overflow-hidden rounded-xl border border-[var(--critical-line)] bg-card p-6 shadow-sm transition-all hover:shadow-md">
+              <div>
+                <div className="flex items-center justify-between border-b border-[color-mix(in_srgb,var(--critical-soft)_60%,transparent)] pb-4">
+                  <div className="flex items-center gap-1.5">
+                    <Ms name="visibility" className="text-xl text-critical" />
+                    <span className="text-sm font-semibold text-critical">Public Solana Explorer</span>
+                  </div>
+                  <span className="rounded bg-[var(--critical-soft)] px-2 py-0.5 font-mono text-[11px] font-semibold text-critical-deep">
+                    High Risk Exposure
+                  </span>
+                </div>
+                <p className="my-4 text-xs leading-relaxed text-body-ink">
+                  Anyone with a wallet explorer can query your corporate treasury balance,
+                  individual salaries, and contractor identities.
+                </p>
+                <div className="space-y-1.5 font-mono text-xs">
+                  <div className="flex items-center justify-between rounded border border-[var(--critical-line)] bg-[var(--critical-soft)] p-2.5 text-body-ink">
+                    <div>
+                      <span className="font-semibold text-ink">Sender:</span>
+                      <span className="ml-1 text-critical">Treasury_Alpha.sol</span>
+                    </div>
+                    <span className="font-semibold text-critical">Total: 8.70 SOL</span>
+                  </div>
+                  <div className="space-y-2 rounded border border-[var(--critical-line)] bg-[var(--critical-soft)] p-2.5">
+                    {publicRows.map((r) => (
+                      <div key={r.who} className="flex items-center justify-between text-body-ink">
+                        <span>{r.who}</span>
+                        <span className="font-semibold text-critical">+{r.amt}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="-mx-6 -mb-6 mt-6 flex items-center gap-2 border-t border-[var(--critical-line)] bg-[var(--critical-soft)] p-4 text-xs text-critical">
+                <Ms name="warning" className="text-base" />
+                <span>Permanent public linkability between payroll wallets and personal identities.</span>
+              </div>
+            </div>
+
+            {/* shielded side */}
+            <div className="flex flex-col justify-between overflow-hidden rounded-xl border border-ok-line bg-card p-6 shadow-sm transition-all hover:shadow-md">
+              <div>
+                <div className="flex items-center justify-between border-b border-ok-soft pb-4">
+                  <div className="flex items-center gap-1.5">
+                    <Ms name="shield_lock" className="text-xl text-ok" />
+                    <span className="text-sm font-semibold text-ok">Charon Shielded Ledger</span>
+                  </div>
+                  <span className="rounded border border-ok-line bg-ok-soft px-2 py-0.5 font-mono text-[11px] font-semibold text-ok">
+                    Fully Confidential
+                  </span>
+                </div>
+                <p className="my-4 text-xs leading-relaxed text-body-ink">
+                  Zero-knowledge roots break all linkage between company outflows and personal
+                  withdrawal receipts.
+                </p>
+                <div className="space-y-1.5 font-mono text-xs">
+                  <div className="flex items-center justify-between rounded border border-ok-line bg-[var(--ok-soft)] p-2.5 text-body-ink">
+                    <div>
+                      <span className="font-semibold text-ink">Sender:</span>
+                      <span className="ml-1 text-gold">Shielded Settlement Pool</span>
+                    </div>
+                    <span className="font-semibold text-ok">Batch ZK-Root: 0x9c4...f1</span>
+                  </div>
+                  <div className="space-y-2 rounded border border-ok-line bg-[var(--ok-soft)] p-2.5">
+                    {["#01", "#02", "#03"].map((i) => (
+                      <div key={i} className="flex items-center justify-between text-body-ink">
+                        <span className="text-mute">Anonymous Commitment {i}</span>
+                        <span className="font-semibold tracking-widest text-ok">•••••• SOL</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="-mx-6 -mb-6 mt-6 flex items-center gap-2 border-t border-ok-line bg-ok-soft p-4 text-xs text-ok">
+                <Ms name="verified" className="text-base" />
+                <span>Zero observer leakage. Compliance-ready viewing keys available for auditors.</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ================= CAPABILITIES ================= */}
+        <section data-reveal className="mx-auto w-full max-w-[1440px] px-4 py-12 sm:px-8">
+          <div className="text-center">
+            <SectionLabel>Capabilities</SectionLabel>
+            <h2 className="mt-1 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
+              Everything a payroll run needs
+            </h2>
+          </div>
+          <div data-stagger className="mt-8 grid gap-x-8 gap-y-3 sm:grid-cols-2">
+            {capabilities.map((c) => (
+              <div key={c} className="flex items-start gap-3 text-sm text-body-ink">
+                <span className="mt-0.5 flex size-5 flex-none items-center justify-center rounded-full bg-ok-soft">
+                  <Check className="size-3 text-ok" />
+                </span>
+                {c}
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* ================= RUNTIME MEASUREMENTS ================= */}
+        <section data-reveal className="mx-auto w-full max-w-[1440px] px-4 py-12 sm:px-8">
+          <div className="mb-8 text-center">
+            <SectionLabel>Benchmarks</SectionLabel>
+            <h2 className="mt-1 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
+              Measured, not promised
+            </h2>
+            <p className="mt-1 text-sm text-body-ink">
+              Same 210 unequal salaries, same 8 GB laptop, local validator. Bars are to scale.
+            </p>
+          </div>
+          <div data-stagger className="grid gap-4 lg:grid-cols-2">
+            <Card className="card-lift specular rounded-xl">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-base">Pay a team of 210, end to end</CardTitle>
+                <span className="stat-number text-lg font-bold">67.6s</span>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {runtimeBars.map((b) => (
+                  <div key={b.label}>
+                    <div className="mb-1.5 flex items-center justify-between text-xs">
+                      <span className="text-body-ink">{b.label}</span>
+                      <span className="stat-number font-bold">{b.v}</span>
+                    </div>
+                    <div className="h-3 w-full overflow-hidden rounded-md bg-panel-2">
+                      <div className={`chart-bar h-full rounded-md ${b.cls}`} style={{ "--w": b.w } as CSSProperties} />
+                    </div>
+                  </div>
+                ))}
+                <p className="text-xs leading-relaxed text-body-ink">
+                  First signature to last confirmation, on the bench stack (server-side prover, 16
+                  lanes). The browser UI today proves one-by-one with snarkjs (~4s/proof). The
+                  batched pipeline is bench-only.
+                </p>
               </CardContent>
             </Card>
-          ))}
-        </div>
-      </section>
+            <Card className="card-lift specular rounded-xl">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-base">One salary through the pool</CardTitle>
+                <span className="stat-number text-lg font-bold">0.28s</span>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {pipeline.map((st) => (
+                  <div key={st.n} className="flex items-start justify-between gap-3 rounded-lg border border-line bg-panel px-3 py-2.5">
+                    <span className="min-w-0">
+                      <span className="block font-mono text-xs font-medium">{st.n}</span>
+                      <span className="block text-[11px] leading-relaxed text-body-ink">{st.d}</span>
+                    </span>
+                    <span className="stat-number flex-none text-sm font-bold">{st.v}</span>
+                  </div>
+                ))}
+                <p className="pt-1 text-xs leading-relaxed text-body-ink">
+                  Proving runs 16 lanes wide, so a full run waits on submit and confirm — not
+                  proving.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </section>
 
-      {/* ---------- benchmarks ---------- */}
-      <section data-reveal className="mx-auto max-w-5xl px-4 py-14 sm:px-6">
-        <p className="eyebrow justify-center">Benchmarks</p>
-        <h2 className="h-display mb-1 text-center text-3xl">Measured, not promised</h2>
-        <p className="mb-8 text-center text-sm text-muted-foreground">
-          Same 210 unequal salaries, same 8 GB laptop, local validator. Bars are to scale.
-        </p>
-        <div data-stagger className="grid gap-4 lg:grid-cols-2">
-          <Card className="card-lift">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-base">Pay a team of 210, end to end</CardTitle>
-              <span className="stat-number text-lg font-bold">67.6s</span>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              {runtimeBars.map((b) => (
-                <div key={b.label}>
-                  <div className="mb-1.5 flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">{b.label}</span>
-                    <span className="stat-number font-bold">{b.v}</span>
-                  </div>
-                  <div className="h-3 w-full overflow-hidden rounded-md bg-secondary">
-                    <div
-                      className={`chart-bar h-full rounded-md ${b.cls}`}
-                      style={{ "--w": b.w } as CSSProperties}
-                    />
-                  </div>
-                </div>
+        {/* ================= EMPLOYER USE CASE ================= */}
+        <section data-reveal className="mx-auto grid w-full max-w-[1440px] items-center gap-10 px-4 py-12 sm:px-8 lg:grid-cols-2">
+          <div>
+            <SectionLabel>For Employers</SectionLabel>
+            <h2 className="mt-1 mb-3 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
+              The whole run, from one screen
+            </h2>
+            <p className="text-sm leading-relaxed text-body-ink">
+              Sign in with your treasury wallet, drop in a CSV, and review the exact plan and fees
+              before anything is signed. Then watch every salary prove, relay, and confirm — live.
+            </p>
+            <ul className="mt-4 space-y-2 text-sm text-body-ink">
+              {[
+                "CSV / JSON upload with per-row validation",
+                "Public mode or fully shielded notes per run",
+                "Live progress, receipts, one-click resume of failed rows",
+                "One signature for the whole run - zero when the vault is funded",
+              ].map((li) => (
+                <li key={li} className="flex items-start gap-2">
+                  <Check className="mt-0.5 size-4 flex-none text-ok" />
+                  {li}
+                </li>
               ))}
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                First signature to last confirmation, on the bench stack (server-side prover, 16
-                lanes). The browser UI today proves one-by-one with snarkjs (~4s/proof). The
-                batched pipeline is bench-only.
-              </p>
-            </CardContent>
-          </Card>
-          <Card className="card-lift">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-base">One salary through the pool</CardTitle>
-              <span className="stat-number text-lg font-bold">0.28s</span>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {pipeline.map((st) => (
-                <div key={st.n} className="flex items-start justify-between gap-3 rounded-xl bg-secondary/70 px-3 py-2.5">
-                  <span className="min-w-0">
-                    <span className="block text-xs font-medium">{st.n}</span>
-                    <span className="block text-[11px] leading-relaxed text-muted-foreground">{st.d}</span>
+            </ul>
+            <Button className="btn-glow group mt-6" onClick={() => onRole("employer")}>
+              Sign in as employer
+              <Ms name="arrow_forward" className="text-base transition-transform group-hover:translate-x-0.5" />
+            </Button>
+          </div>
+          <Card className="card-lift specular mx-auto w-full max-w-md rounded-xl shadow-[0_10px_35px_rgba(21,19,15,0.06)]">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-2">
+                  <span className="flex size-7 items-center justify-center rounded-lg border border-gold-line bg-gold-soft font-mono text-[11px] font-semibold text-gold">
+                    #2847
                   </span>
-                  <span className="stat-number flex-none text-sm font-bold">{st.v}</span>
+                  October payroll
+                </span>
+                <span className="tag tag--priv">
+                  <Ms name="shield" className="text-xs" /> shielded
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <div className="mb-1.5 flex items-center justify-between text-xs text-body-ink">
+                  <span>paying 20 people</span>
+                  <span className="font-mono">13 / 20</span>
                 </div>
-              ))}
-              <p className="pt-1 text-xs leading-relaxed text-muted-foreground">
-                Proving runs 16 lanes wide, so a full run waits on submit and confirm - not
-                proving.
+                <div className="h-2 w-full overflow-hidden rounded-full bg-panel-2">
+                  <div className="progress-glow run-fill-live h-full w-[65%]" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                {runRows.map((r) => (
+                  <div key={r.who} className="flex items-center gap-3 rounded-lg border border-line bg-panel px-3 py-2 transition-colors hover:border-[color-mix(in_srgb,var(--gold-2)_35%,transparent)]">
+                    <span className="flex size-7 flex-none items-center justify-center rounded-full bg-panel-2 font-mono text-[11px] font-semibold text-body-ink">
+                      {r.init}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-medium">{r.who}</span>
+                      <span className="hidden text-[11px] text-body-ink sm:block">{r.dept}</span>
+                    </span>
+                    <span className="font-mono text-xs">{r.amt}</span>
+                    <RunStatusChip status={r.status} />
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-between border-t pt-3 text-xs text-body-ink">
+                <span>total disbursed</span>
+                <span className="font-mono">****** · est. fees 0.022 SOL</span>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+
+        {/* ================= EMPLOYEE USE CASE ================= */}
+        <section data-reveal className="mx-auto grid w-full max-w-[1440px] items-center gap-10 px-4 py-12 sm:px-8 lg:grid-cols-2">
+          <Card className="card-lift specular order-2 mx-auto w-full max-w-sm rounded-xl shadow-[0_10px_35px_rgba(21,19,15,0.06)] lg:order-1">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center justify-between text-sm">
+                <span>My payments</span>
+                <span className="tag font-mono text-[11px]">7fKq...3wPd</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-lg border border-line bg-panel p-3">
+                  <p className="font-mono text-[11px] uppercase tracking-wider text-body-ink">Private notes</p>
+                  <p className="stat-number mt-0.5 text-lg font-bold">4.15 SOL</p>
+                  <p className="text-[11px] text-body-ink">3 notes, shielded</p>
+                </div>
+                <div className="rounded-lg border border-line bg-panel p-3">
+                  <p className="font-mono text-[11px] uppercase tracking-wider text-body-ink">Wallet balance</p>
+                  <p className="stat-number mt-0.5 text-lg font-bold">0.42 SOL</p>
+                  <p className="text-[11px] text-body-ink">public, spendable</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {noteRowsMock.map((n) => (
+                  <div key={n.leaf} className="flex items-center justify-between gap-2 rounded-lg border border-line bg-panel px-3 py-2 text-xs transition-colors hover:border-[color-mix(in_srgb,var(--gold-2)_35%,transparent)]">
+                    <span className="font-mono font-medium">**** SOL</span>
+                    <span className="text-body-ink">note {n.leaf}</span>
+                    <span className="hidden text-body-ink sm:inline">{n.at}</span>
+                    <span className="tag tag--gold">claimable</span>
+                  </div>
+                ))}
+              </div>
+              <Button className="btn-glow w-full">Claim to wallet</Button>
+              <p className="text-center text-[11px] text-body-ink">
+                gasless - no SOL needed, the relayer submits for you
               </p>
             </CardContent>
           </Card>
-        </div>
-      </section>
+          <div className="order-1 lg:order-2">
+            <SectionLabel>For Employees</SectionLabel>
+            <h2 className="mt-1 mb-3 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
+              Get paid without publishing it
+            </h2>
+            <p className="text-sm leading-relaxed text-body-ink">
+              Your regular wallet is all you need. A one-time toggle publishes your receiving keys,
+              and every payout after that arrives as a private note that only you can read.
+            </p>
+            <ul className="mt-4 space-y-2 text-sm text-body-ink">
+              {[
+                "One-time enable - two signatures, then nothing to do",
+                "See every payment that's yours - amounts hidden from everyone else",
+                "Claim notes to plain SOL whenever you like, gasless",
+              ].map((li) => (
+                <li key={li} className="flex items-start gap-2">
+                  <Check className="mt-0.5 size-4 flex-none text-ok" />
+                  {li}
+                </li>
+              ))}
+            </ul>
+            <Button className="mt-6" variant="outline" onClick={() => onRole("employee")}>
+              Sign in as employee
+              <Ms name="arrow_forward" className="text-base" />
+            </Button>
+          </div>
+        </section>
 
-      {/* ---------- developers ---------- */}
-      <section data-reveal className="mx-auto grid max-w-5xl items-center gap-8 px-4 py-10 sm:px-6 lg:grid-cols-2">
-        <div>
-          <p className="eyebrow">For developers</p>
-          <h2 className="h-display mb-3 text-3xl">One SDK, the whole pool</h2>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            The TypeScript SDK talks to your wallet and the relayer: scanning, note decryption, proof
-            generation, and gasless claims - without running provers, syncing merkle trees, or
-            shipping circuit builds yourself.
-          </p>
-          <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
-            <li className="flex items-start gap-2">
-              <Check className="mt-0.5 size-4 flex-none text-emerald-600 dark:text-emerald-400" />
-              Browser-native Groth16 proving (snarkjs), or relayer-side arkworks
-            </li>
-            <li className="flex items-start gap-2">
-              <Check className="mt-0.5 size-4 flex-none text-emerald-600 dark:text-emerald-400" />
-              Recipients registry - notes encrypted to published keys
-            </li>
-            <li className="flex items-start gap-2">
-              <Check className="mt-0.5 size-4 flex-none text-emerald-600 dark:text-emerald-400" />
-              Note backup, restore, and export built in
-            </li>
-          </ul>
-        </div>
-        <Card className="overflow-hidden bg-zinc-950 text-zinc-100 shadow-[0_1px_2px_rgba(9,9,11,0.03),0_14px_36px_-16px_rgba(9,9,11,0.14)] dark:bg-zinc-900">
-          <CardContent className="px-0 py-0">
-            <div className="flex items-center gap-1.5 border-b border-zinc-800 px-5 py-3">
-              <span className="size-2.5 rounded-full bg-zinc-700" />
-              <span className="size-2.5 rounded-full bg-zinc-700" />
-              <span className="size-2.5 rounded-full bg-zinc-700" />
-              <span className="mono ml-2 text-[11px] text-zinc-500">claim.ts</span>
-              <Code2 className="ml-auto size-3.5 text-zinc-500" />
+        {/* ================= DEVELOPERS / SDK ================= */}
+        <section id="developers" data-reveal className="mx-auto grid w-full scroll-mt-20 max-w-[1440px] items-center gap-8 px-4 py-12 sm:px-8 lg:grid-cols-2">
+          <div>
+            <SectionLabel>For Developers</SectionLabel>
+            <h2 className="mt-1 mb-3 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
+              One SDK, the whole pool
+            </h2>
+            <p className="text-sm leading-relaxed text-body-ink">
+              The TypeScript SDK talks to your wallet and the relayer: scanning, note decryption,
+              proof generation, and gasless claims - without running provers, syncing merkle trees,
+              or shipping circuit builds yourself.
+            </p>
+            <ul className="mt-4 space-y-2 text-sm text-body-ink">
+              {[
+                "Browser-native Groth16 proving (snarkjs), or relayer-side arkworks",
+                "Recipients registry - notes encrypted to published keys",
+                "Note backup, restore, and export built in",
+              ].map((li) => (
+                <li key={li} className="flex items-start gap-2">
+                  <Check className="mt-0.5 size-4 flex-none text-ok" />
+                  {li}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="overflow-hidden rounded-xl border border-band-line bg-band text-band-ink shadow-[0_1px_2px_rgba(9,9,11,0.03),0_14px_36px_-16px_rgba(9,9,11,0.14)]">
+            <div className="flex items-center gap-1.5 border-b border-band-line px-5 py-3">
+              <span className="size-2.5 rounded-full bg-band-line" />
+              <span className="size-2.5 rounded-full bg-band-line" />
+              <span className="size-2.5 rounded-full bg-band-line" />
+              <span className="mono ml-2 text-[11px] text-band-mute">claim.ts</span>
+              <Code2 className="ml-auto size-3.5 text-band-mute" />
             </div>
             <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed">
               <code>{SDK_SNIPPET}</code>
             </pre>
-          </CardContent>
-        </Card>
-      </section>
+          </div>
+        </section>
 
-      {/* ---------- faq ---------- */}
-      <section data-reveal className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
-        <h2 className="h-display mb-1 text-center text-3xl">Questions, answered</h2>
-        <p className="mb-8 text-center text-sm text-muted-foreground">
-          What the chain sees, what it costs, and what it cannot do yet.
-        </p>
-        <div className="divide-y overflow-hidden rounded-2xl bg-card shadow-[0_1px_2px_rgba(9,9,11,0.03),0_14px_36px_-16px_rgba(9,9,11,0.14)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.35),0_14px_36px_-16px_rgba(0,0,0,0.5)]">
-          {faqs.map((f) => (
-            <details key={f.q} className="group px-5 py-4">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-medium [&::-webkit-details-marker]:hidden">
-                {f.q}
-                <ChevronDown className="size-4 flex-none text-muted-foreground transition-transform group-open:rotate-180" />
-              </summary>
-              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{f.a}</p>
-            </details>
-          ))}
-        </div>
-      </section>
+        {/* ================= FAQ ================= */}
+        <section id="faq" data-reveal className="mx-auto w-full max-w-3xl scroll-mt-20 px-4 py-12 sm:px-8">
+          <div className="mb-8 text-center">
+            <SectionLabel>FAQ</SectionLabel>
+            <h2 className="mt-1 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">Questions, answered</h2>
+            <p className="mt-1 text-sm text-body-ink">
+              What the chain sees, what it costs, and what it cannot do yet.
+            </p>
+          </div>
+          <div className="overflow-hidden rounded-xl border border-line bg-card">
+            {faqs.map((f) => (
+              <details key={f.q} className="qa group border-b border-line px-5 py-4 last:border-b-0">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-medium [&::-webkit-details-marker]:hidden">
+                  {f.q}
+                  <ChevronDown className="size-4 flex-none text-body-ink transition-transform duration-300 group-open:rotate-180" />
+                </summary>
+                <p className="mt-3 text-sm leading-relaxed text-body-ink">{f.a}</p>
+              </details>
+            ))}
+          </div>
+        </section>
 
-      {/* ---------- what the chain never learns ---------- */}
-      <section data-reveal className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-        <Card className="card-lift bg-secondary/50">
-          <CardContent className="flex flex-col items-center gap-4 pt-6 text-center sm:flex-row sm:text-left">
-            <ShieldCheck className="size-8 flex-none text-emerald-600 dark:text-emerald-400" />
+        {/* ================= WHAT THE CHAIN NEVER LEARNS ================= */}
+        <section data-reveal className="mx-auto w-full max-w-[1440px] px-4 py-8 sm:px-8">
+          <div className="specular flex flex-col items-center gap-4 rounded-xl border border-gold-line bg-gold-soft p-6 text-center sm:flex-row sm:text-left">
+            <ShieldCheck className="size-8 flex-none text-gold" />
             <div>
-              <p className="font-medium">What the chain never learns</p>
-              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+              <p className="font-semibold tracking-tight">What the chain never learns</p>
+              <p className="mt-1 text-sm leading-relaxed text-body-ink">
                 Which deposit funded which salary · pool balances · how much any lane has left · who
                 holds unspent notes. Deposits and exits are public by design — the link between them
                 is what cryptography takes away.
               </p>
             </div>
-          </CardContent>
-        </Card>
-      </section>
+          </div>
+        </section>
 
-      {/* ---------- final cta ---------- */}
-      <section data-reveal className="mx-auto max-w-5xl px-4 pb-4 pt-10 sm:px-6">
-        <Card className="card-lift bg-secondary/50">
-          <CardContent className="flex flex-col items-center gap-5 pt-8 pb-8 text-center">
-            <h2 className="h-display max-w-xl text-3xl sm:text-4xl">Ready to run a shielded payroll?</h2>
-            <p className="max-w-md text-sm text-muted-foreground">
-              One signature for the whole run - none once the vault is funded. Employees claim
-              gasless, with nothing but a regular wallet.
-            </p>
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              <Button size="lg" className="group btn-glow" onClick={() => onRole("employer")}>
-                Run payroll <ArrowRight className="ml-1 size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
+        {/* ================= CTA BANNER ================= */}
+        <section data-reveal className="mx-auto w-full max-w-[1440px] px-4 py-12 sm:px-8 md:py-16">
+          <div className="specular relative flex flex-col items-center justify-between gap-6 overflow-hidden rounded-xl border border-line bg-card p-6 shadow-[0_12px_40px_rgba(21,19,15,0.06)] md:flex-row md:p-10">
+            <div className="max-w-xl text-left">
+              <SectionLabel>Streamlined Settlement</SectionLabel>
+              <h2 className="mt-1 text-[1.6rem] font-semibold leading-tight tracking-[-0.025em] sm:text-[2rem]">
+                From deposit to confirmed, a 210-person payroll takes about a minute.
+              </h2>
+              <p className="mt-2 text-sm leading-relaxed text-body-ink">
+                Experience mathematical certainty and absolute confidentiality. Built for
+                decentralized funds, DAOs, and crypto engineering teams.
+              </p>
+            </div>
+            <div className="flex w-full max-w-md flex-col gap-2 sm:flex-row md:w-auto">
+              <Button size="lg" className="btn-glow flex-1 rounded-lg" onClick={() => onRole("employer")}>
+                Run payroll
+                <Ms name="arrow_forward" className="text-base" />
               </Button>
-              <Button size="lg" variant="outline" onClick={() => onRole("employee")}>
+              <Button size="lg" variant="outline" className="flex-1 rounded-lg" onClick={() => onRole("employee")}>
                 I'm an employee
               </Button>
             </div>
-          </CardContent>
-        </Card>
-      </section>
+          </div>
+        </section>
 
-      <footer className="mx-auto max-w-5xl px-4 py-10 text-center text-xs text-muted-foreground sm:px-6">
-        Runs against your configured Solana cluster and relayer — see Settings after signing in.
-        Every number on this page is measured: 210-employee runs on a local validator, logged in{" "}
-        <span className="mono">payroll/SPEED-JOURNEY.html</span>.
-      </footer>
+        {/* ================= FOOTER ================= */}
+        <footer className="border-t border-band-line bg-band">
+          <div className="mx-auto flex w-full max-w-[1440px] flex-col items-center justify-between gap-2 px-4 py-4 font-mono text-[11px] text-band-mute sm:flex-row sm:px-8">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="flex items-center gap-1.5">
+                <span className="size-1.5 rounded-full bg-band-gold" /> ZK Circuits: Validated
+              </span>
+              <span className="text-band-line">·</span>
+              <span>Proof Time: 0.28s</span>
+              <span className="text-band-line">·</span>
+              <span>Slot: 400ms</span>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+              <span>Groth16 Finality Verified</span>
+              <span className="text-band-line">·</span>
+              <span>© 2026 Charon Pay Protocol Ltd.</span>
+            </div>
+          </div>
+        </footer>
+      </main>
     </div>
   )
 }

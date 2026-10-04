@@ -9,12 +9,25 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block"
       rel="stylesheet"
     />
     <script>
-      // light by default; dark only when the user picked it (no white flash)
+      // light by default; dark only when the user picked it (no white flash).
+      // ?theme=dark|light / ?role=employer|employee deep-links override and
+      // persist — also how headless screenshots pin a state.
       try {
+        var qs = new URLSearchParams(location.search)
+        var qTheme = qs.get("theme")
+        var qRole = qs.get("role")
+        if (qTheme === "dark" || qTheme === "light") localStorage.setItem("privacy-cash-theme", qTheme)
+        if (qRole === "employer" || qRole === "employee") localStorage.setItem("payroll:role", qRole)
+        else if (qRole === "landing") localStorage.removeItem("payroll:role")
+        if (qs.has("static")) document.documentElement.classList.add("static")
         if (localStorage.getItem("privacy-cash-theme") === "dark")
           document.documentElement.classList.add("dark")
       } catch (e) {}

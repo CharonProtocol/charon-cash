@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react"
 import { useWallet } from "@solana/wallet-adapter-react"
 import { toast } from "sonner"
-import { ArrowRight, Eye, EyeOff, Landmark, RefreshCw, ShieldCheck, Users, Wallet } from "lucide-react"
+import { ArrowRight, Eye, EyeOff, Landmark, RefreshCw, ShieldCheck } from "lucide-react"
 import { publishRecipientKeys } from "privacy-cash-sdk"
 
-import { Badge } from "@/components/ui/badge"
+import { Ms } from "@/components/motion/ms"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -71,26 +71,34 @@ export function EmployeeApp() {
   return (
     <main className="mx-auto max-w-3xl space-y-4 p-4 sm:p-6">
       <div className="flex items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">My payments</h1>
+        <div>
+          <div className="font-mono text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-gold">
+            Shielded Claims
+          </div>
+          <h1 className="h-display mt-0.5 text-2xl">My payments</h1>
+        </div>
         {publicKey && (
-          <Badge variant="outline" className="font-mono">
-            <Wallet className="mr-1 size-3" />
+          <span className="rounded border border-line bg-card px-2 py-1 font-mono text-[11px] text-body-ink">
             {shortHash(publicKey.toBase58())}
-          </Badge>
+          </span>
         )}
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       {!connected ? (
-        <Card className="card-lift border-dashed">
+        <Card className="card-lift specular">
           <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
-            <div className="flex size-16 items-center justify-center rounded-2xl border border-zinc-200 bg-secondary">
-              <Users className="size-7 text-primary" />
+            <div className="relative">
+              <div className="absolute inset-0 rounded-full bg-[var(--gold-2)] opacity-20 blur-2xl" />
+              <img src="/charon-mark.png" alt="" className="relative size-14 rounded-full object-contain" />
             </div>
             <div>
-              <p className="h-display text-lg">Connect your wallet</p>
-              <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
+              <p className="font-mono text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-gold">
+                Private Inbox
+              </p>
+              <p className="h-display mt-1 text-lg">Connect your wallet</p>
+              <p className="mx-auto mt-1 max-w-xs text-sm text-body-ink">
                 See every private payment that's yours — amounts invisible to everyone else.
               </p>
             </div>
@@ -104,20 +112,20 @@ export function EmployeeApp() {
           {registered === false ? "Checking registry…" : "Unlocking… (approve the signature request)"}
         </p>
       ) : registered === null ? null : registered === false ? (
-        <Card>
+        <Card className="card-lift specular">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <ShieldCheck className="size-4 text-primary" />
+              <ShieldCheck className="size-4 text-gold" />
               Enable private receiving
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-body-ink">
               Your employer can pay you with a private note — invisible on-chain — instead of a public
               transfer. One-time setup: approve two signature requests to publish your receiving keys.
               Until then, payouts arrive as normal public SOL transfers.
             </p>
-            <Button onClick={enable} disabled={enabling}>
+            <Button className="btn-glow" onClick={enable} disabled={enabling}>
               {enabling ? "Waiting for signature…" : "Enable private receiving"}
             </Button>
           </CardContent>
@@ -125,40 +133,40 @@ export function EmployeeApp() {
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3">
-            <Card>
+            <Card className="card-lift specular">
               <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                  <EyeOff className="size-4" /> Private notes
+                <CardTitle className="flex items-center gap-2 font-mono text-[11px] font-medium uppercase tracking-wider text-body-ink">
+                  <EyeOff className="size-3.5 text-gold" /> Private notes
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-semibold tabular-nums">
+                <div className="stat-number text-2xl font-semibold tabular-nums text-gold">
                   {noteSolRaw === null ? "—" : `${maxClaimSol.toFixed(4)} SOL`}
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="mt-1 text-xs text-body-ink">
                   {noteRows.length} note{noteRows.length === 1 ? "" : "s"} in the shielded pool
                 </p>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="card-lift specular">
               <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                  <Landmark className="size-4" /> Wallet balance
+                <CardTitle className="flex items-center gap-2 font-mono text-[11px] font-medium uppercase tracking-wider text-body-ink">
+                  <Landmark className="size-3.5" /> Wallet balance
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-semibold tabular-nums">
+                <div className="stat-number text-2xl font-semibold tabular-nums">
                   {walletSolRaw === null ? "—" : `${(walletSolRaw / 1e9).toFixed(4)} SOL`}
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">public, spendable now</p>
+                <p className="mt-1 text-xs text-body-ink">public, spendable now</p>
               </CardContent>
             </Card>
           </div>
 
-          <Card>
+          <Card className="card-lift specular">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-base">
-                <Eye className="mr-2 inline size-4 text-primary" />
+                <Eye className="mr-2 inline size-4 text-gold" />
                 Received payments
               </CardTitle>
               <Button variant="ghost" size="sm" onClick={() => rescan()}>
@@ -167,20 +175,26 @@ export function EmployeeApp() {
             </CardHeader>
             <CardContent>
               {noteRows.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-body-ink">
                   No private notes yet. When your employer runs a shielded payroll, payments appear
                   here after a scan.
                 </p>
               ) : (
                 <div className="space-y-2">
                   {noteRows.map((n) => (
-                    <div key={n.id} className="flex items-center justify-between gap-2 rounded-xl bg-secondary/70 px-3 py-2.5 text-sm">
+                    <div
+                      key={n.id}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-line bg-panel px-3 py-2.5 text-sm transition-colors hover:border-[color-mix(in_srgb,var(--gold-2)_35%,transparent)]"
+                    >
                       <span className="font-mono tabular-nums">
                         {lamportsToSol(BigInt(n.amount).toString()).toFixed(6)} SOL
                       </span>
-                      <span className="font-mono text-xs text-muted-foreground">leaf #{n.index}</span>
-                      <span className="hidden text-xs text-muted-foreground sm:inline">
+                      <span className="font-mono text-xs text-body-ink">leaf #{n.index}</span>
+                      <span className="hidden text-xs text-body-ink sm:inline">
                         {new Date(n.createdAt).toLocaleString()}
+                      </span>
+                      <span className="tag tag--priv">
+                        <Ms name="lock" className="text-xs" /> shielded
                       </span>
                     </div>
                   ))}
@@ -189,7 +203,7 @@ export function EmployeeApp() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="card-lift specular">
             <CardHeader className="pb-2">
               <CardTitle className="text-base">Claim to wallet</CardTitle>
             </CardHeader>
@@ -204,11 +218,11 @@ export function EmployeeApp() {
                 <Button variant="outline" size="sm" onClick={() => setClaimSol(maxClaimSol.toFixed(6))}>
                   Max
                 </Button>
-                <Button onClick={claim} disabled={claiming || gross <= 0n || net <= 0n}>
+                <Button className="btn-glow" onClick={claim} disabled={claiming || gross <= 0n || net <= 0n}>
                   {claiming ? "Claiming…" : "Claim"}
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-body-ink">
                 {gross > 0n
                   ? `receive ${lamportsToSol(net.toString()).toFixed(6)} SOL · relayer fee ${lamportsToSol(fee.toString()).toFixed(6)} SOL`
                   : "Moves notes out of the shielded pool to your public balance."}

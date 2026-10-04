@@ -4,88 +4,154 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * BOT SQUAD - crisp minimalist fintech (light).
- * Pure white canvas, zinc hairlines, obsidian type, black primary actions,
- * emerald = verified, amber = warning, rose = critical, ice blue = protocol.
- * Dark mode is the zinc twin of the same system.
+ * CHARON PAY — "Cryptographic Obsidian"
+ * Swiss typography, cream paper canvas, muted golden-amber telemetry,
+ * hairline boundaries, caustic glow. Obsidian dark = warm stone inversion.
+ * Tokens: refs/DESIGN (1).md + the stitch landing reference.
  */
 :root {
-  --radius: 0.625rem;
+  --radius: 0.75rem;
 
-  /* neutrals */
-  --paper: #ffffff;
-  --panel: #f9fafb;      /* zinc-50 */
-  --panel-2: #f4f4f5;    /* zinc-100 */
-  --line: #e4e4e7;       /* zinc-200 */
-  --line-2: #d4d4d8;     /* zinc-300 */
-  --ink: #09090b;        /* zinc-950 */
-  --body-ink: #3f3f46;   /* zinc-700 */
-  --mute: #71717a;       /* zinc-500 */
-  --accent: #09090b;
-  --accent-soft: #f4f4f5;
+  /* beUI motion tokens (beui.dev/docs/motion-patterns) */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
+  /* neutrals (cream paper ramp) */
+  --paper: #f9f8f5;      /* canvas */
+  --panel: #f4f2ec;      /* panels, rails, table backplates */
+  --panel-2: #eeece6;    /* nav pill, hover tiers */
+  --line: #e2e0d8;       /* structural hairlines */
+  --line-2: #cec6b5;     /* primary perimeters, input edges */
+  --ink: #15130f;        /* headlines, cryptographic values */
+  --ink-soft: #3a3833;
+  --ink-deep: #26241f;
+  --body-ink: #54524b;   /* commentary, supporting attributes */
+  --mute: #979081;       /* footers, delimiters */
+
+  /* golden-amber telemetry */
+  --gold: #73612e;       /* primary anchors, key interactive drivers */
+  --gold-deep: #5f5024;  /* hover */
+  --gold-2: #88763a;
+  --gold-3: #a38f51;
+  --gold-soft: #f5f1e4;  /* gold chip fill */
+  --gold-line: #e8ddbe;  /* gold chip border */
+  --glow: rgba(136, 118, 58, 0.25);
+  --glow-strong: rgba(136, 118, 58, 0.4);
 
   /* functional */
-  --ok: #10b981;         /* emerald-500 */
-  --warn: #f59e0b;       /* amber-500 */
-  --critical: #f43f5e;   /* rose-500 */
-  --protocol: #0284c7;   /* sky-600 */
+  --ok: #196b43;         /* verified, proof status */
+  --ok-hi: #1f8a58;
+  --ok-deep: #196b43;
+  --ok-soft: #eaf5ed;
+  --ok-line: #cbe5d2;
+  --warn: #92610a;
+  --warn-hi: #b57e12;
+  --warn-soft: #faf3df;
+  --warn-line: #ecdcb2;
+  --critical: #b3261e;   /* exposure, failure */
+  --critical-hi: #d3362d;
+  --critical-deep: #b3261e;
+  --critical-soft: #ffdad6;
+  --critical-line: #ffcdc7;
+  --protocol: #485d79;   /* slate-blue informational */
+  --protocol-hi: #5d7392;
+  --protocol-soft: #eef2f7;
+  --protocol-line: #d2e0ee;
+
+  /* console band — the obsidian top bar (near-constant across themes) */
+  --band-bg: #1c1a15;
+  --band-bg-2: #26231c;
+  --band-line: #37342b;
+  --band-ink: #f5f0e7;
+  --band-mute: #a89f8c;
+  --band-gold: #dbc581;
 
   /* shadcn semantic tokens (light) */
-  --background: #ffffff;
-  --foreground: #09090b;
+  --background: #f9f8f5;
+  --foreground: #15130f;
   --card: #ffffff;
-  --card-foreground: #09090b;
+  --card-foreground: #15130f;
   --popover: #ffffff;
-  --popover-foreground: #09090b;
-  --primary: #09090b;
+  --popover-foreground: #15130f;
+  --primary: #73612e;
   --primary-foreground: #ffffff;
-  --secondary: #f4f4f5;
-  --secondary-foreground: #09090b;
-  --muted: #f9fafb;
-  --muted-foreground: #71717a;
-  --accent-2: #f4f4f5;
-  --accent-foreground: #09090b;
-  --destructive: #f43f5e;
-  --border: #e4e4e7;
-  --input: #e4e4e7;
-  --ring: #09090b;
+  --secondary: #f4f2ec;
+  --secondary-foreground: #15130f;
+  --muted: #f4f2ec;
+  --muted-foreground: #54524b;
+  --accent-2: #eeece6;
+  --accent-foreground: #15130f;
+  --destructive: #b3261e;
+  --border: #e2e0d8;
+  --input: #e2e0d8;
+  --ring: #73612e;
 }
 
 .dark {
-  --paper: #09090b;
-  --panel: #131316;
-  --panel-2: #18181b;
-  --line: #27272a;
-  --line-2: #3f3f46;
-  --ink: #fafafa;
-  --body-ink: #d4d4d8;
-  --mute: #a1a1aa;
-  --accent: #fafafa;
-  --accent-soft: #27272a;
+  --paper: #171512;      /* obsidian canvas */
+  --panel: #1e1c17;
+  --panel-2: #26231c;
+  --line: #37342b;
+  --line-2: #4e462e;
+  --ink: #f5f0e7;
+  --ink-soft: #d6cfbf;
+  --ink-deep: #c9c2b0;
+  --body-ink: #b3ab99;
+  --mute: #847c6a;
 
-  --ok: #34d399;
-  --warn: #fbbf24;
-  --critical: #fb7185;
-  --protocol: #38bdf8;
+  --gold: #dbc581;       /* light gold on obsidian */
+  --gold-deep: #c9b068;
+  --gold-2: #e3cf92;
+  --gold-3: #f8e19a;
+  --gold-soft: #2e2917;
+  --gold-line: #55481f;
+  --glow: rgba(219, 197, 129, 0.14);
+  --glow-strong: rgba(219, 197, 129, 0.3);
 
-  --background: #09090b;
-  --foreground: #fafafa;
-  --card: #131316;
-  --card-foreground: #fafafa;
-  --popover: #131316;
-  --popover-foreground: #fafafa;
-  --primary: #fafafa;
-  --primary-foreground: #09090b;
-  --secondary: #1f1f23;
-  --secondary-foreground: #fafafa;
-  --muted: #1f1f23;
-  --muted-foreground: #a1a1aa;
-  --accent-2: #27272a;
-  --accent-foreground: #fafafa;
-  --destructive: #fb7185;
-  --border: #27272a;
-  --input: #27272a;
-  --ring: #fafafa;
+  --ok: #7dd3a4;
+  --ok-hi: #8fddb4;
+  --ok-deep: #8fddb4;
+  --ok-soft: rgba(25, 107, 67, 0.16);
+  --ok-line: rgba(125, 211, 164, 0.28);
+  --warn: #e0b45c;
+  --warn-hi: #ecc57e;
+  --warn-soft: rgba(146, 97, 10, 0.18);
+  --warn-line: rgba(224, 180, 92, 0.3);
+  --critical: #ffb4ab;
+  --critical-hi: #ffc7c0;
+  --critical-deep: #ffb4ab;
+  --critical-soft: rgba(179, 38, 30, 0.18);
+  --critical-line: rgba(255, 180, 171, 0.3);
+  --protocol: #b2c8e8;
+  --protocol-hi: #c4d6f0;
+  --protocol-soft: rgba(72, 93, 121, 0.18);
+  --protocol-line: rgba(178, 200, 232, 0.3);
+
+  --band-bg: #121110;
+  --band-bg-2: #1a1814;
+  --band-line: #2e2b23;
+  --band-ink: #f5f0e7;
+  --band-mute: #948c7a;
+  --band-gold: #dbc581;
+
+  --background: #171512;
+  --foreground: #f5f0e7;
+  --card: #1e1c17;
+  --card-foreground: #f5f0e7;
+  --popover: #1e1c17;
+  --popover-foreground: #f5f0e7;
+  --primary: #dbc581;
+  --primary-foreground: #231b00;
+  --secondary: #26231c;
+  --secondary-foreground: #f5f0e7;
+  --muted: #26231c;
+  --muted-foreground: #b3ab99;
+  --accent-2: #322e24;
+  --accent-foreground: #f5f0e7;
+  --destructive: #ffb4ab;
+  --border: #37342b;
+  --input: #37342b;
+  --ring: #dbc581;
 }
 
 /*
@@ -115,16 +181,106 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --font-display: "Bricolage Grotesque", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-display: "Geist", "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  /* named Cryptographic Obsidian ramp for direct utilities */
+  --color-paper: var(--paper);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-ink: var(--ink);
+  --color-body-ink: var(--body-ink);
+  --color-mute: var(--mute);
+  --color-gold: var(--gold);
+  --color-gold-deep: var(--gold-deep);
+  --color-gold-2: var(--gold-2);
+  --color-gold-3: var(--gold-3);
+  --color-gold-soft: var(--gold-soft);
+  --color-gold-line: var(--gold-line);
+  --color-ok: var(--ok);
+  --color-ok-hi: var(--ok-hi);
+  --color-ok-deep: var(--ok-deep);
+  --color-ok-soft: var(--ok-soft);
+  --color-ok-line: var(--ok-line);
+  --color-warn: var(--warn);
+  --color-warn-hi: var(--warn-hi);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-line: var(--warn-line);
+  --color-critical: var(--critical);
+  --color-critical-hi: var(--critical-hi);
+  --color-critical-deep: var(--critical-deep);
+  --color-critical-soft: var(--critical-soft);
+  --color-critical-line: var(--critical-line);
+  --color-protocol: var(--protocol);
+  --color-protocol-hi: var(--protocol-hi);
+  --color-protocol-soft: var(--protocol-soft);
+  --color-protocol-line: var(--protocol-line);
+  --color-band: var(--band-bg);
+  --color-band-2: var(--band-bg-2);
+  --color-band-line: var(--band-line);
+  --color-band-ink: var(--band-ink);
+  --color-band-mute: var(--band-mute);
+  --color-band-gold: var(--band-gold);
+
+  /* Re-map the tailwind palette shades used across the app onto theme tokens.
+   * Every status chip / zinc neutral in every page follows the theme with no
+   * per-component edits (the paired dark: variants resolve to the same vars). */
+  --color-zinc-50: var(--panel);
+  --color-zinc-100: var(--panel-2);
+  --color-zinc-200: var(--line);
+  --color-zinc-300: var(--line-2);
+  --color-zinc-400: var(--mute);
+  --color-zinc-500: var(--mute);
+  --color-zinc-600: var(--body-ink);
+  --color-zinc-700: var(--body-ink);
+  --color-zinc-800: var(--ink-soft);
+  --color-zinc-900: var(--ink-deep);
+  --color-zinc-950: var(--ink);
+
+  --color-emerald-50: var(--ok-soft);
+  --color-emerald-100: var(--ok-soft);
+  --color-emerald-200: var(--ok-line);
+  --color-emerald-300: var(--ok-hi);
+  --color-emerald-400: var(--ok-hi);
+  --color-emerald-500: var(--ok);
+  --color-emerald-600: var(--ok);
+  --color-emerald-700: var(--ok-deep);
+
+  --color-rose-50: var(--critical-soft);
+  --color-rose-100: var(--critical-soft);
+  --color-rose-200: var(--critical-line);
+  --color-rose-300: var(--critical-hi);
+  --color-rose-400: var(--critical-hi);
+  --color-rose-500: var(--critical);
+  --color-rose-600: var(--critical);
+  --color-rose-700: var(--critical-deep);
+
+  --color-amber-50: var(--warn-soft);
+  --color-amber-100: var(--warn-soft);
+  --color-amber-200: var(--warn-line);
+  --color-amber-300: var(--warn-hi);
+  --color-amber-400: var(--warn-hi);
+  --color-amber-500: var(--warn);
+  --color-amber-600: var(--warn);
+  --color-amber-700: var(--warn);
+
+  --color-sky-50: var(--protocol-soft);
+  --color-sky-100: var(--protocol-soft);
+  --color-sky-200: var(--protocol-line);
+  --color-sky-300: var(--protocol-hi);
+  --color-sky-500: var(--protocol);
+  --color-sky-600: var(--protocol);
+  --color-sky-700: var(--protocol);
 }
 
 body {
   background-color: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
-  font-feature-settings: "cv11", "ss01";
+  letter-spacing: -0.005em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -142,13 +298,34 @@ body {
   }
 }
 
+/* ---------- material symbols (the reference icon set) ---------- */
+.ms-icon {
+  font-family: "Material Symbols Outlined";
+  font-weight: normal;
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  letter-spacing: normal;
+  text-transform: none;
+  -webkit-font-feature-settings: "liga";
+  font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 20;
+  user-select: none;
+}
+
 /* ---------- utility classes ---------- */
 .eyebrow {
   font-family: var(--font-mono);
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--mute);
+  color: var(--gold);
+  font-weight: 500;
   display: inline-flex;
   align-items: center;
   gap: 0.6em;
@@ -159,7 +336,8 @@ body {
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: var(--ok);
+  background: var(--gold-2);
+  box-shadow: 0 0 8px var(--glow-strong);
 }
 
 .chip {
@@ -184,18 +362,26 @@ body {
   border-radius: 999px;
   background: var(--cc, var(--ink));
 }
-.chip--program { --cc: #09090b; }
-.chip--indexer { --cc: #10b981; }
-.chip--wallet  { --cc: #0284c7; }
-.chip--sdk     { --cc: #f59e0b; }
-.chip--data    { --cc: #71717a; }
+.chip--program { --cc: var(--gold-2); }
+.chip--indexer { --cc: var(--ok); }
+.chip--wallet  { --cc: var(--protocol); }
+.chip--sdk     { --cc: var(--warn); }
+.chip--data    { --cc: var(--mute); }
 
 .mono { font-family: var(--font-mono); }
-.accent-text { color: var(--ink); }
+.accent-text { color: var(--gold); }
 .h-display {
   font-family: var(--font-display);
-  font-weight: 700;
-  letter-spacing: -0.025em;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+/* gradient telemetry text: 73612e -> 88763a -> a38f51 */
+.gold-text {
+  background-image: linear-gradient(100deg, var(--gold) 0%, var(--gold-2) 45%, var(--gold-3) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .tag {
@@ -209,16 +395,19 @@ body {
   border: 1px solid var(--line);
 }
 .tag--pub {
-  color: #0369a1;        /* sky-700 */
-  background: #e0f2fe;   /* sky-100 */
-}
-.dark .tag--pub {
-  color: #7dd3fc;        /* sky-300 */
-  background: rgba(2, 132, 199, 0.16);
+  color: var(--critical);
+  background: var(--critical-soft);
+  border-color: var(--critical-line);
 }
 .tag--priv {
-  color: var(--mute);
-  background: var(--panel-2);
+  color: var(--ok);
+  background: var(--ok-soft);
+  border-color: var(--ok-line);
+}
+.tag--gold {
+  color: var(--gold);
+  background: var(--gold-soft);
+  border-color: var(--gold-line);
 }
 
 /* ---------- scrollbars ---------- */
@@ -237,7 +426,7 @@ body {
   background: var(--mute);
 }
 
-/* ---------- backdrop: pure white canvas with a faint hairline grid ---------- */
+/* ---------- backdrop: cream canvas with a faint hairline grid + caustics ---------- */
 .aurora {
   position: fixed;
   inset: 0;
@@ -255,22 +444,56 @@ body {
   mask-image: radial-gradient(ellipse 85% 60% at 50% 0%, black 20%, transparent 75%);
   opacity: 0.5;
 }
-
-/* primary action: flat obsidian, no glow */
-.btn-glow {
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+/* caustic focal wash behind the hero, per the reference */
+.aurora .caustic {
+  position: absolute;
+  top: -8rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 760px;
+  height: 520px;
+  border-radius: 999px;
+  background: var(--gold-2);
+  opacity: 0.1;
+  filter: blur(140px);
 }
 
-/* cards: borderless surface elevation + soft shadow lift on hover */
+/* primary action: golden amber with a caustic perimeter on hover */
+.btn-glow {
+  box-shadow: 0 4px 16px var(--glow);
+  transition: background-color 0.2s ease, box-shadow 0.25s ease, transform 0.2s ease;
+}
+.btn-glow:hover:not([disabled]) {
+  box-shadow: 0 6px 24px var(--glow-strong);
+}
+
+/* cards: tonal strata + specular top edge, no heavy drop shadows */
 .card-lift {
-  transition: box-shadow 0.25s ease, transform 0.25s ease;
+  position: relative;
+  transition: box-shadow 0.25s ease, transform 0.25s ease, border-color 0.25s ease;
 }
 .card-lift:hover {
   transform: translateY(-2px);
-  box-shadow: 0 16px 40px -16px rgba(9, 9, 11, 0.18);
+  box-shadow: 0 16px 40px -16px rgba(21, 19, 15, 0.16);
+  border-color: color-mix(in srgb, var(--gold-2) 40%, var(--border));
 }
 .dark .card-lift:hover {
   box-shadow: 0 16px 40px -16px rgba(0, 0, 0, 0.7);
+}
+/* hairline specular highlight along the top edge of feature cards */
+.specular {
+  position: relative;
+  overflow: hidden;
+}
+.specular::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--gold-2) 55%, transparent), transparent);
+  pointer-events: none;
 }
 
 /* scroll reveal: sections fade up once as they enter the viewport */
@@ -307,16 +530,6 @@ body {
   .run-fill-live, .soft-pulse { animation: none; }
 }
 
-/* accent text: solid ink (no gradient) */
-.text-gradient {
-  color: var(--ink);
-}
-
-/* progress fill: solid emerald */
-.progress-glow {
-  background: var(--ok);
-}
-
 /* big measured numbers */
 .stat-number {
   font-family: var(--font-display);
@@ -330,13 +543,16 @@ body {
  * whole viewport and hijacks hit-testing (every click lands on the overlay).
  * Dim via the modal root's own background only. */
 .wallet-adapter-modal.wallet-adapter-modal-fade-in {
-  background: rgba(9, 9, 11, 0.44) !important;
+  background: rgba(21, 19, 15, 0.44) !important;
+}
+.dark .wallet-adapter-modal.wallet-adapter-modal-fade-in {
+  background: rgba(10, 9, 7, 0.6) !important;
 }
 .wallet-adapter-modal-wrapper {
   background: var(--card) !important;
   border: 1px solid var(--line) !important;
   border-radius: 1rem !important;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
+  box-shadow: 0 25px 50px -12px rgba(21, 19, 15, 0.25) !important;
   font-family: var(--font-sans) !important;
 }
 .dark .wallet-adapter-modal-wrapper {
@@ -369,7 +585,7 @@ body {
   font-family: var(--font-sans) !important;
   font-size: 1rem !important;
   font-weight: 500 !important;
-  border-radius: 0.625rem !important;
+  border-radius: 0.75rem !important;
   background: var(--paper) !important;
   color: var(--foreground) !important;
   border: 1px solid var(--line) !important;
@@ -377,7 +593,7 @@ body {
 }
 .wallet-adapter-button:hover:not([disabled]) {
   background: var(--panel) !important;
-  border-color: var(--line-2) !important;
+  border-color: var(--gold-2) !important;
 }
 .wallet-adapter-button:focus,
 .wallet-adapter-button:focus-visible {
@@ -414,6 +630,8 @@ body {
 .anim-4 { animation-delay: 0.18s; }
 .anim-5 { animation-delay: 0.23s; }
 .anim-6 { animation-delay: 0.28s; }
+.anim-7 { animation-delay: 0.33s; }
+.anim-8 { animation-delay: 0.38s; }
 @media (prefers-reduced-motion: reduce) {
   .anim { animation: none; }
 }
@@ -449,6 +667,172 @@ details[open]::details-content {
   opacity: 1;
   transform: none;
 }
+
+/* ---------- beUI-adapted motion (in-house, no motion/react) ---------- */
+
+/* SPRING_PRESS feel: 120ms weighted press, disabled for reduced motion */
+.press {
+  transition: transform 0.12s var(--ease-out);
+}
+.press:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Action Swap: two stacked labels trade places with a blur cross-fade.
+ * .swap-hover sits on the hover trigger; children .swap-a/.swap-b stack in a
+ * grid so the control never changes width. */
+.swap {
+  display: inline-grid;
+}
+.swap > * {
+  grid-area: 1 / 1;
+  transition:
+    opacity 0.22s var(--ease-out),
+    transform 0.22s var(--ease-out),
+    filter 0.22s var(--ease-out);
+}
+.swap .swap-b {
+  opacity: 0;
+  transform: translateY(55%);
+  filter: blur(5px);
+  white-space: nowrap;
+}
+.swap-hover:hover .swap-a,
+.swap-hover:focus-visible .swap-a {
+  opacity: 0;
+  transform: translateY(-55%);
+  filter: blur(5px);
+}
+.swap-hover:hover .swap-b,
+.swap-hover:focus-visible .swap-b {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+}
+
+/* hero headline: per-word spring-ish rise (beUI text reveal, CSS form) */
+.word-rise > span {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(0.55em);
+  filter: blur(4px);
+  animation: word-rise-in 0.6s var(--ease-out) forwards;
+}
+@keyframes word-rise-in {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+/* magnetic wrapper (beUI MagneticButton): JS sets --mx/--my within ±4px */
+.magnetic {
+  transform: translate(var(--mx, 0), var(--my, 0));
+  transition: transform 0.3s var(--ease-out);
+}
+
+/* gold shimmer sweep for emphasized mono labels */
+.text-shimmer {
+  background: linear-gradient(
+    100deg,
+    var(--gold) 40%,
+    var(--gold-3) 50%,
+    var(--gold) 60%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer-sweep 3.2s linear infinite;
+}
+@keyframes shimmer-sweep {
+  from { background-position: 120% 0; }
+  to { background-position: -100% 0; }
+}
+
+/* CSS tooltip: [data-tip] shows a small origin-aware label (beUI tooltip timing) */
+[data-tip] {
+  position: relative;
+}
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 50%;
+  translate: -50% 2px;
+  z-index: 60;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--band-line);
+  background: var(--band-bg);
+  color: var(--band-ink);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.35;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.16s var(--ease-out),
+    translate 0.16s var(--ease-out);
+}
+[data-tip]:hover::after,
+[data-tip]:focus-visible::after {
+  opacity: 1;
+  translate: -50% 0;
+}
+
+/* landing header scroll-progress hairline */
+.scroll-progress {
+  transform-origin: 0 50%;
+  transform: scaleX(var(--sp, 0));
+}
+
+/* gliding active pill for tab groups (beUI Tabs layout spring, CSS form) */
+.glider {
+  transition:
+    transform 0.35s var(--ease-out),
+    width 0.35s var(--ease-out),
+    height 0.35s var(--ease-out);
+}
+
+/* bouncier accordion settle for the FAQ (overrides the generic curve) */
+details.qa::details-content {
+  transition:
+    block-size 0.4s cubic-bezier(0.34, 1.4, 0.44, 1),
+    content-visibility 0.4s allow-discrete;
+}
+
+/* ?static capture mode: everything snapped to its end state (screenshots/QA) */
+.static [data-reveal],
+.static [data-stagger] > *,
+.static .word-rise > span,
+.static .anim,
+.static .reveal-in {
+  opacity: 1 !important;
+  transform: none !important;
+  filter: none !important;
+  animation: none !important;
+}
+.static .chart-bar {
+  width: var(--w) !important;
+}
+.static .run-fill-live,
+.static .soft-pulse,
+.static .text-shimmer {
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .press:active:not(:disabled) { transform: none; }
+  .swap .swap-b { transform: none; }
+  .swap-hover:hover .swap-a, .swap-hover:focus-visible .swap-a { transform: none; }
+  .word-rise > span { animation: none; opacity: 1; transform: none; filter: none; }
+  .magnetic { transform: none; }
+  .text-shimmer { animation: none; }
+}
+
 [data-stagger] > *:nth-child(2) { transition-delay: 0.05s; }
 [data-stagger] > *:nth-child(3) { transition-delay: 0.1s; }
 [data-stagger] > *:nth-child(4) { transition-delay: 0.15s; }
@@ -461,6 +845,7 @@ details[open]::details-content {
 .progress-glow {
   position: relative;
   overflow: hidden;
+  background: linear-gradient(90deg, var(--gold) 0%, var(--gold-2) 60%, var(--gold-3) 100%);
 }
 .progress-glow::after {
   content: "";
@@ -474,12 +859,6 @@ details[open]::details-content {
   to { transform: translateX(100%); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  [data-stagger] > * { opacity: 1; transform: none; transition: none; }
-  .progress-glow::after { animation: none; content: none; }
-}
-
 /* benchmark bars: draw to scale when the section reveals */
 .chart-bar {
   width: 0;
@@ -490,4 +869,27 @@ details[open]::details-content {
 }
 @media (prefers-reduced-motion: reduce) {
   .chart-bar { width: var(--w, 0%); transition: none; }
+}
+
+/* ---------- theme toggle: view-transition reveal (progressive enhancement) ---------- */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-new(root) {
+  animation: theme-reveal 0.45s ease-in;
+}
+@keyframes theme-reveal {
+  from { clip-path: circle(0% at calc(100% - 44px) 44px); }
+  to { clip-path: circle(150% at calc(100% - 44px) 44px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-new(root) { animation: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  [data-stagger] > * { opacity: 1; transform: none; transition: none; }
+  .progress-glow::after { animation: none; content: none; }
 }

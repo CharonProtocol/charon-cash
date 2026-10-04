@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useWallet } from "@solana/wallet-adapter-react"
 import { toast } from "sonner"
-import { ArrowRight, History, Play, Settings, Users, Wallet } from "lucide-react"
+import { ArrowRight, History, Play, Settings, Users } from "lucide-react"
 import { getBackendUrl, totalBalance } from "privacy-cash-sdk"
 
+import { GliderGroup } from "@/components/motion/Glider"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { HistoryPage } from "@/components/HistoryPage"
@@ -192,29 +193,23 @@ export function EmployerApp() {
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-4 p-4 sm:p-6 lg:flex-row">
-      {/* Sidebar nav (top tab bar on phones) */}
+      {/* Sidebar nav (top tab bar on phones): pill group with a gliding indicator */}
       <aside className="lg:w-52 lg:flex-none">
-        <div className="flex items-center justify-between gap-2 lg:sticky lg:top-6 lg:flex-col lg:items-stretch lg:gap-1">
-          {(
-            [
-              ["payroll", "Payroll", Play],
-              ["history", "History", History],
-              ["team", "Team", Users],
-            ] as const
-          ).map(([id, label, Icon]) => (
-            <button
-              key={id}
-              onClick={() => setPage(id)}
-              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                page === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-              }`}
-            >
-              <Icon className="size-4" /> {label}
-            </button>
-          ))}
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-line bg-panel-2 p-1 lg:sticky lg:top-6 lg:flex-col lg:items-stretch lg:justify-start lg:gap-0.5">
+          <GliderGroup
+            value={page}
+            onChange={(id) => setPage(id)}
+            className="flex flex-1 justify-between gap-0.5 lg:flex-col lg:items-stretch"
+            itemClassName="flex-1 justify-center lg:justify-start"
+            items={[
+              { id: "payroll", label: "Payroll", icon: <Play className="size-4" /> },
+              { id: "history", label: "History", icon: <History className="size-4" /> },
+              { id: "team", label: "Team", icon: <Users className="size-4" /> },
+            ]}
+          />
           <button
             onClick={() => setSettingsOpen(true)}
-            className="hidden items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground lg:flex"
+            className="hidden items-center gap-2 rounded-md px-3 py-2 text-sm text-body-ink transition-colors hover:bg-card/60 hover:text-ink lg:flex"
           >
             <Settings className="size-4" /> Settings
           </button>
@@ -223,9 +218,14 @@ export function EmployerApp() {
 
       <main className="min-w-0 flex-1 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h1 className="h-display text-2xl">
-            {page === "payroll" ? "Payroll runs" : page === "history" ? "Past payments" : "Team"}
-          </h1>
+          <div>
+            <div className="font-mono text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-gold">
+              {page === "payroll" ? "Treasury Console" : page === "history" ? "Ledger" : "Recipients"}
+            </div>
+            <h1 className="h-display mt-0.5 text-2xl">
+              {page === "payroll" ? "Payroll runs" : page === "history" ? "Past payments" : "Team"}
+            </h1>
+          </div>
           <WalletBar
             vaultSolRaw={vaultSolRaw}
             relayerOk={bps !== null}
@@ -249,20 +249,31 @@ export function EmployerApp() {
         ) : page === "team" ? (
           <TeamPage extraEntries={parsed?.entries} />
         ) : !publicKey ? (
-          <Card className="card-lift border-dashed">
+          <Card className="card-lift specular overflow-hidden">
             <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
-              <div className="flex size-16 items-center justify-center rounded-2xl border border-zinc-200 bg-secondary">
-                <Wallet className="size-7 text-primary" />
+              <div className="relative">
+                <div className="absolute inset-0 rounded-full bg-[var(--gold-2)] opacity-20 blur-2xl" />
+                <img
+                  src="/charon-mark.png"
+                  alt=""
+                  className="relative size-14 rounded-full object-contain"
+                />
               </div>
               <div>
-                <p className="h-display text-lg">Connect the treasury wallet</p>
-                <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
+                <p className="font-mono text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-gold">
+                  Connect Treasury
+                </p>
+                <p className="h-display mt-1 text-lg">Connect the treasury wallet</p>
+                <p className="mx-auto mt-1 max-w-xs text-sm text-body-ink">
                   One signature unlocks the vault — then pay everyone from this screen, gasless.
                 </p>
               </div>
               <Button size="lg" className="btn-glow" onClick={openModal}>
                 Connect wallet <ArrowRight className="ml-1 size-4" />
               </Button>
+              <p className="rounded border border-line bg-panel px-3 py-1 font-mono text-[11px] text-body-ink">
+                PROGRAM_ID · shielded merkle pool
+              </p>
             </CardContent>
           </Card>
         ) : busy ? (
