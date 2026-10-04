@@ -256,17 +256,20 @@ export function browserProverInfo(): BrowserProverInfo | null {
 }
 
 /** Recommended worker count for a run with `lanes` parallel chains: MT
- * proofs queue through rayon, so more than 2 workers just splits the same
- * cores thinner. 1 lane → 1 worker with everything; 2+ lanes → up to 2
- * workers on machines with the cores to feed them; single-threaded pages
- * keep the per-core pool. */
+ * proofs queue through rayon, so each extra worker only pays off when the
+ * machine has cores to feed it. 1 lane → 1 worker with everything; 2+
+ * lanes → 2 workers on small machines, 4 from 12 lanes, 6 from 24 lanes —
+ * the count scales with cores (÷4 floor) so a 32-core box automatically
+ * gets 6 workers × 5 threads without any manual config; single-threaded
+ * pages keep the per-core pool. */
 export function recommendedWorkers(lanes: number): number {
   const cores = navigator.hardwareConcurrency || 4
   const mt =
     typeof SharedArrayBuffer !== "undefined" &&
     (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true
   if (!mt) return workerCount()
-  return Math.max(1, Math.min(lanes, Math.floor(cores / 4), 2))
+  const cap = lanes >= 24 ? 6 : lanes >= 12 ? 4 : 2
+  return Math.max(1, Math.min(lanes, Math.floor(cores / 4), cap))
 }
 
 // Prove directly through the pool (bypasses the SDK's prove()); used by the

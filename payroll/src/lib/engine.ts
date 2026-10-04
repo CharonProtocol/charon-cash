@@ -142,7 +142,11 @@ export interface EngineDeps {
 }
 
 const ATTEMPTS = 3
-const LANES = 8
+// Hard cap on parallel payout chains — the picker scales its options with
+// machine cores and must never offer more than this. Lanes are note chains,
+// not CPU threads; past ~8 the wall is devnet landing + mirror indexing, so
+// higher counts serve big-core machines (32) rather than same-machine speed.
+const LANES = 32
 const RESERVE_POLL_MS = 350
 const RESERVE_WAIT_CAP_MS = 120_000
 // A thrown-after-broadcast payout is adjudicated by polling its nullifiers:

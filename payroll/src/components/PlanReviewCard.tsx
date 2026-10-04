@@ -51,14 +51,24 @@ export function PlanReviewCard({
   // override — the recommendation just preselects and is badged below.
   const cores = navigator.hardwareConcurrency || 4
   const rowCount = parsed?.entries.length ?? 0
-  const recommendedLanes =
-    rowCount === 0
+  // Same list the picker renders — the recommendation must land on a real
+  // button or the "rec" badge (and the preselection) silently disappears
+  // (a 10-core M4 computed 5, which isn't offered). Options grow with the
+  // machine: 12/16 on 8+ cores, 24/32 on 24+ — no manual config anywhere.
+  const laneOptions = [
+    1, 2, 3, 4, 6, 8,
+    ...(cores >= 8 ? [12, 16] : []),
+    ...(cores >= 24 ? [24, 32] : []),
+  ]
+  const rawRec =
+    rowCount === 0 || rowCount < 10
       ? 2
-      : rowCount < 10
-        ? 2
-        : rowCount < 50
-          ? 4
-          : Math.min(8, Math.max(4, Math.floor(cores / 2)))
+      : rowCount < 50
+        ? 4
+        : Math.min(16, Math.max(4, Math.floor(cores / 2)))
+  const recommendedLanes = laneOptions.reduce((a, b) =>
+    Math.abs(b - rawRec) < Math.abs(a - rawRec) ? b : a,
+  )
   const [lanes, setLanes] = useState(recommendedLanes)
   const [lanesTouched, setLanesTouched] = useState(false)
   const [recipientCheck, setRecipientCheck] = useState<RecipientCheck | null>(null)
@@ -226,7 +236,15 @@ export function PlanReviewCard({
           <div className="space-y-2">
             <Label>Parallel lanes</Label>
             <div className="flex gap-1 rounded-lg border p-0.5">
-              {[1, 2, 3, 4, 6, 8].map((l) => (
+              {/* Lanes are payout chains, not CPU threads — each spends most
+                  of its life waiting on devnet while proofs queue through the
+                  shared prover pool, so 12/16 are safe on any 8+ core machine
+                  (an M4 mini reports 10) and 24/32 appear on 24+ core boxes.
+                  Below 8 cores the base list stands. The recommendation caps
+                  at 16 because past that devnet landing + mirror indexing,
+                  not proving, is the wall — bigger machines prove faster per
+                  row rather than needing more chains. */}
+              {laneOptions.map((l) => (
                 <button
                   key={l}
                   onClick={() => {
