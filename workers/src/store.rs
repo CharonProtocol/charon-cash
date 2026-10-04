@@ -258,6 +258,25 @@ impl Store {
             .and_then(|sl| sl.try_into().ok()))
     }
 
+    /// Where a commitment already sits in the tree, if anywhere. The sync
+    /// uses this to detect a tx whose leaves were applied by a torn write
+    /// wave (subrequest budget cut it mid-flight) before `indexed_txs` made
+    /// that visible — re-appending those leaves would corrupt the mirror.
+    pub async fn commitment_leaf_index(
+        &self,
+        tree_key: &str,
+        commitment_hex: &str,
+    ) -> Result<Option<i64>, String> {
+        let rows = self
+            .db
+            .query(
+                "SELECT leaf_index FROM utxos WHERE tree_key = $1 AND commitment_hex = $2 LIMIT 1",
+                &[s(tree_key), s(commitment_hex)],
+            )
+            .await?;
+        Ok(rows.first().map(|r| i64_at(r, "leaf_index")))
+    }
+
     pub async fn is_nullifier_spent(&self, nullifier_hex: &str) -> Result<bool, String> {
         let rows = self
             .db
