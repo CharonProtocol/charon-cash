@@ -1,11 +1,10 @@
 import { Check, ChevronDown, Code2, Loader2, ShieldCheck } from "lucide-react"
 
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react"
+import { useEffect, type CSSProperties, type ReactNode } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { CountUp } from "@/components/motion/CountUp"
-import { GliderGroup } from "@/components/motion/Glider"
 import { Magnetic } from "@/components/motion/Magnetic"
 import { Ms } from "@/components/motion/ms"
 import { Scramble } from "@/components/motion/Scramble"
@@ -14,26 +13,17 @@ import { ThemeToggle } from "@/components/ThemeToggle"
 
 /* ---------- measured marketing data (all real, logged runs) ---------- */
 
-const navLinks = [
-  ["Overview", "overview"],
-  ["Benchmarks", "benchmarks"],
-  ["How It Works", "how"],
-  ["Threat Model", "comparison"],
-  ["SDK", "developers"],
-  ["FAQ", "faq"],
-] as const
-
 const bento = [
   {
     icon: "all_inclusive",
     iconCls: "text-gold",
-    v: 210,
+    v: 100,
     unit: "",
     label: "Salaries",
     cls: "text-foreground",
     body: (
       <>
-        In <span className="font-semibold text-gold">67.6s</span> with{" "}
+        In about <span className="font-semibold text-gold">80 seconds</span> with{" "}
         <span className="font-semibold text-gold">1 wallet signature</span>. No sequential signing prompts.
       </>
     ),
@@ -55,12 +45,12 @@ const bento = [
   {
     icon: "memory",
     iconCls: "text-gold",
-    v: 0.28,
-    decimals: 2,
+    v: 0.8,
+    decimals: 1,
     unit: "s",
     label: "Proof Generation",
     cls: "text-foreground",
-    body: <>Arkworks Groth16 on the relayer; snarkjs in-browser when an employee claims.</>,
+    body: <>Groth16 built in the employee's browser - the relayer only broadcasts signed transactions.</>,
   },
   {
     icon: "speed",
@@ -99,7 +89,7 @@ const steps = [
     n: "3",
     icon: "bolt",
     title: "Pay",
-    body: "Every salary leaves with its own zero-knowledge proof. 210 people in ~68 seconds on a tuned relayer, 0 failures.",
+    body: "Every salary leaves with its own zero-knowledge proof, built on the employee's device. 100 people in ~80 seconds, 0 failures.",
   },
   {
     n: "4",
@@ -123,15 +113,14 @@ const capabilities = [
 ]
 
 const runtimeBars = [
-  { label: "before optimization", v: "902s", w: "100%", cls: "bg-zinc-300 dark:bg-zinc-700" },
-  { label: "today - standard circuit", v: "67.6s", w: "7.5%", cls: "bg-ok" },
-  { label: "batched pipeline (bench)", v: "11.32s", w: "1.25%", cls: "bg-gold" },
+  { label: "before optimization", v: "10 min", w: "100%", cls: "bg-zinc-300 dark:bg-zinc-700" },
+  { label: "today - proofs on device", v: "~80s", w: "13%", cls: "bg-gold" },
 ]
 
 const pipeline = [
-  { n: "zk proof", v: "0.28s", d: "one Groth16 proof, built in-process on the relayer" },
-  { n: "batched write", v: "8 / tx", d: "salaries packed into a single on-chain transaction" },
-  { n: "browser proof", v: "~4s", d: "snarkjs in the employee's wallet when they claim" },
+  { n: "zk proof", v: "0.8s", d: "one Groth16 proof, built on the employee's device" },
+  { n: "relayer", v: "18ms", d: "broadcasts the signed transaction - holds no keys, builds no proofs" },
+  { n: "confirm", v: "~400ms", d: "one Solana slot from broadcast to confirmation" },
 ]
 
 const SDK_SNIPPET = `import { PrivacyCashClient, publishRecipientKeys } from "privacy-cash-sdk"
@@ -157,7 +146,7 @@ const faqs = [
   },
   {
     q: "How fast is a real payroll run?",
-    a: "Measured on an 8 GB laptop against a local validator: 210 unequal salaries in 67.6s on the standard circuit (63.3s packed), and the batched-circuit bench lands the same 210 in 11.32s. Every number on this page is from a logged run.",
+    a: "A 100-person run takes about 80 seconds end to end - down from roughly 10 minutes before the current pipeline. Every proof is built in the employee's browser (~0.8s each); the relayer only broadcasts pre-signed transactions. Every number on this page is from a logged run.",
   },
   {
     q: "Can this be audited?",
@@ -229,8 +218,6 @@ function rise(text: string, baseDelay = 0) {
 }
 
 export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => void }) {
-  const [active, setActive] = useState<string>("overview")
-
   // reveal-on-scroll for every section
   useEffect(() => {
     const els = Array.from(document.querySelectorAll("[data-reveal]"))
@@ -251,24 +238,6 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
     )
     els.forEach((el) => io.observe(el))
     return () => io.disconnect()
-  }, [])
-
-  // scroll-spy for the pill nav
-  useEffect(() => {
-    const ids = navLinks.map(([, id]) => id)
-    const spy = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          if (e.isIntersecting) setActive(e.target.id)
-        }
-      },
-      { rootMargin: "-40% 0px -55% 0px" },
-    )
-    ids.forEach((id) => {
-      const el = document.getElementById(id)
-      if (el) spy.observe(el)
-    })
-    return () => spy.disconnect()
   }, [])
 
   const scrollTo = (id: string) => {
@@ -298,7 +267,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
 
       {/* ---------- fixed header ---------- */}
       <header className="fixed inset-x-0 top-0 z-40 border-b border-line bg-paper/90 shadow-[0_1px_4px_rgba(21,19,15,0.04)] backdrop-blur-xl">
-        <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center justify-between gap-4 px-4 sm:px-8">
+        <div className="mx-auto flex h-16 w-full max-w-[1150px] items-center justify-between gap-4 px-4 sm:px-8">
           <div className="flex items-center gap-6">
             <button onClick={() => scrollTo("overview")} className="flex cursor-pointer items-center gap-2 outline-none">
               <img src="/charon-mark.png" alt="Charon Pay" className="size-7 rounded-full object-cover" />
@@ -307,14 +276,6 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
                 <Scramble text="ZK-V2.4" duration={620} />
               </span>
             </button>
-            <GliderGroup
-              value={active}
-              onChange={(id) => scrollTo(id)}
-              className="hidden items-center gap-0.5 rounded-lg border border-line bg-panel-2 p-1 xl:flex"
-              pillClassName="border border-line-2"
-              itemClassName="px-3.5 py-1.5"
-              items={navLinks.map(([label, id]) => ({ id, label }))}
-            />
           </div>
           <div className="flex items-center gap-2">
             <div className="hidden items-center gap-1.5 rounded bg-panel-2 px-2 py-1 md:flex" data-tip="Deploys target Solana mainnet; live demo runs on devnet">
@@ -348,32 +309,22 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
       <main className="pt-16">
         {/* ================= HERO ================= */}
         <section id="overview" className="relative flex scroll-mt-20 flex-col items-center px-4 pb-16 pt-10 text-center sm:pt-14 md:pb-24">
-          {/* eyebrow pill */}
-          <div className="anim anim-1 inline-flex cursor-default items-center gap-2 rounded-full border border-line bg-card px-4 py-1 shadow-sm transition-all duration-300 hover:border-[color-mix(in_srgb,var(--gold-2)_40%,transparent)]">
-            <span className="size-2 animate-pulse rounded-full bg-ok" />
-            <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-ink">
-              Zero-Knowledge Solana Payroll
-            </span>
-            <span className="text-mute">•</span>
-            <span className="font-mono text-[11px] font-medium text-ok">Mainnet Ready</span>
-          </div>
-
-          <h1 className="anim anim-2 mt-6 max-w-4xl text-[2rem] font-semibold leading-[1.15] tracking-[-0.03em] sm:text-[2.5rem] sm:leading-[1.2]">
+          <h1 className="anim anim-1 mt-6 max-w-4xl text-[2rem] font-semibold leading-[1.15] tracking-[-0.03em] sm:text-[2.5rem] sm:leading-[1.2]">
             <span className="word-rise">{rise("Pay your whole team.", 0.05)}</span>{" "}
             <span className="word-rise font-normal text-body-ink">{rise("In private.", 0.35)}</span>
           </h1>
-          <div className="anim anim-3 mt-1">
+          <div className="anim anim-2 mt-1">
             <span className="gold-text text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
               Move money. Leave no trace.
             </span>
           </div>
 
-          <p className="anim anim-4 mt-4 max-w-2xl text-pretty text-base leading-relaxed text-body-ink">
+          <p className="anim anim-3 mt-4 max-w-2xl text-pretty text-base leading-relaxed text-body-ink">
             Charon Pay routes batch payroll through confidential ZK-commitments on Solana — hiding
             recipient salaries and treasury outlays from public explorers.
           </p>
 
-          <div className="anim anim-5 mt-8 flex flex-wrap items-center justify-center gap-3">
+          <div className="anim anim-4 mt-8 flex flex-wrap items-center justify-center gap-3">
             <Magnetic strength={3}>
               <Button size="lg" className="btn-glow press rounded-xl" onClick={() => onRole("employer")}>
                 <span className="swap swap-hover">
@@ -395,7 +346,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
           </div>
 
           {/* hero visual: the ferryman over the live run panel */}
-          <div id="demo-preview" className="anim anim-6 relative mt-10 flex w-full max-w-4xl flex-col items-center">
+          <div id="demo-preview" className="anim anim-5 relative mt-10 flex w-full max-w-4xl flex-col items-center">
             <div className="relative z-20 -mb-4 size-40 transition-transform duration-700 hover:scale-105 sm:-mb-14 md:size-48">
               <div className="absolute inset-0 animate-pulse rounded-full bg-[var(--gold-2)] opacity-15 blur-2xl" />
               <img
@@ -439,16 +390,16 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
                       },
                       {
                         k: "Verified State",
-                        v: <CountUp to={210} />,
-                        u: "/210",
+                        v: <CountUp to={100} />,
+                        u: "/100",
                         s: "0 failed payouts",
                         cls: "text-ok",
                       },
                       {
                         k: "Proof Compilation",
-                        v: <CountUp to={0.28} decimals={2} />,
+                        v: <CountUp to={0.8} decimals={1} />,
                         u: "s",
-                        s: "arkworks Groth16",
+                        s: "on-device Groth16",
                         cls: "text-ink",
                       },
                       {
@@ -508,7 +459,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         </section>
 
         {/* ================= BENCHMARK BENTO ================= */}
-        <section id="benchmarks" data-reveal className="mx-auto w-full scroll-mt-20 max-w-[1440px] px-4 py-14 sm:px-8 md:py-20">
+        <section id="benchmarks" data-reveal className="mx-auto w-full scroll-mt-20 max-w-[1150px] px-4 py-14 sm:px-8 md:py-20">
           <div className="flex flex-col justify-between gap-4 pb-6 md:flex-row md:items-baseline">
             <div>
               <SectionLabel>Empirical Benchmarks</SectionLabel>
@@ -518,7 +469,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
             </div>
             <p className="max-w-md text-sm leading-relaxed text-body-ink">
               Engineered for rapid settlement without exceeding block limits. Every number measured
-              on logged 210-employee runs — never projected.
+              on logged 100-employee runs — never projected.
             </p>
           </div>
           <div data-stagger className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-5">
@@ -542,11 +493,11 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         </section>
 
         {/* ================= HOW IT WORKS ================= */}
-        <section id="how" data-reveal className="mx-auto w-full scroll-mt-20 max-w-[1440px] px-4 py-14 sm:px-8 md:py-16">
+        <section id="how" data-reveal className="mx-auto w-full scroll-mt-20 max-w-[1150px] px-4 py-14 sm:px-8 md:py-16">
           <div className="text-center">
             <SectionLabel>Protocol Flow</SectionLabel>
             <h2 className="mt-1 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
-              Four stages, sixteen lanes, one merkle tree
+              Four stages, one signature, one merkle tree
             </h2>
           </div>
           <div data-stagger className="relative mt-10 grid gap-4 md:grid-cols-4">
@@ -573,7 +524,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         </section>
 
         {/* ================= THREAT MODEL COMPARISON ================= */}
-        <section id="comparison" data-reveal className="mx-auto w-full scroll-mt-20 max-w-[1440px] px-4 py-14 sm:px-8 md:py-20">
+        <section id="comparison" data-reveal className="mx-auto w-full scroll-mt-20 max-w-[1150px] px-4 py-14 sm:px-8 md:py-20">
           <div className="mx-auto max-w-2xl pb-8 text-center">
             <SectionLabel>Institutional Threat Model</SectionLabel>
             <h2 className="mt-1 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
@@ -668,7 +619,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         </section>
 
         {/* ================= CAPABILITIES ================= */}
-        <section data-reveal className="mx-auto w-full max-w-[1440px] px-4 py-12 sm:px-8">
+        <section data-reveal className="mx-auto w-full max-w-[1150px] px-4 py-12 sm:px-8">
           <div className="text-center">
             <SectionLabel>Capabilities</SectionLabel>
             <h2 className="mt-1 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
@@ -688,21 +639,21 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         </section>
 
         {/* ================= RUNTIME MEASUREMENTS ================= */}
-        <section data-reveal className="mx-auto w-full max-w-[1440px] px-4 py-12 sm:px-8">
+        <section data-reveal className="mx-auto w-full max-w-[1150px] px-4 py-12 sm:px-8">
           <div className="mb-8 text-center">
             <SectionLabel>Benchmarks</SectionLabel>
             <h2 className="mt-1 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
               Measured, not promised
             </h2>
             <p className="mt-1 text-sm text-body-ink">
-              Same 210 unequal salaries, same 8 GB laptop, local validator. Bars are to scale.
+              Same 100 unequal salaries, measured on a local validator. Bars are to scale.
             </p>
           </div>
           <div data-stagger className="grid gap-4 lg:grid-cols-2">
             <Card className="card-lift specular rounded-xl">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-base">Pay a team of 210, end to end</CardTitle>
-                <span className="stat-number text-lg font-bold">67.6s</span>
+                <CardTitle className="text-base">Pay a team of 100, end to end</CardTitle>
+                <span className="stat-number text-lg font-bold">~80s</span>
               </CardHeader>
               <CardContent className="space-y-5">
                 {runtimeBars.map((b) => (
@@ -717,16 +668,15 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
                   </div>
                 ))}
                 <p className="text-xs leading-relaxed text-body-ink">
-                  First signature to last confirmation, on the bench stack (server-side prover, 16
-                  lanes). The browser UI today proves one-by-one with snarkjs (~4s/proof). The
-                  batched pipeline is bench-only.
+                  First signature to last confirmation. Every proof is generated on the employee's
+                  device and streams in parallel; the relayer only broadcasts signed transactions.
                 </p>
               </CardContent>
             </Card>
             <Card className="card-lift specular rounded-xl">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-base">One salary through the pool</CardTitle>
-                <span className="stat-number text-lg font-bold">0.28s</span>
+                <span className="stat-number text-lg font-bold">0.8s</span>
               </CardHeader>
               <CardContent className="space-y-2">
                 {pipeline.map((st) => (
@@ -739,8 +689,8 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
                   </div>
                 ))}
                 <p className="pt-1 text-xs leading-relaxed text-body-ink">
-                  Proving runs 16 lanes wide, so a full run waits on submit and confirm — not
-                  proving.
+                  Proofs are built client-side, so a full run only waits on relayer broadcasts and
+                  confirmations - not proving.
                 </p>
               </CardContent>
             </Card>
@@ -748,7 +698,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         </section>
 
         {/* ================= EMPLOYER USE CASE ================= */}
-        <section data-reveal className="mx-auto grid w-full max-w-[1440px] items-center gap-10 px-4 py-12 sm:px-8 lg:grid-cols-2">
+        <section data-reveal className="mx-auto grid w-full max-w-[1150px] items-center gap-10 px-4 py-12 sm:px-8 lg:grid-cols-2">
           <div>
             <SectionLabel>For Employers</SectionLabel>
             <h2 className="mt-1 mb-3 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
@@ -780,7 +730,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center justify-between text-sm">
                 <span className="flex items-center gap-2">
-                  <span className="flex size-7 items-center justify-center rounded-lg border border-gold-line bg-gold-soft font-mono text-[11px] font-semibold text-gold">
+                  <span className="flex h-7 min-w-7 flex-none items-center justify-center whitespace-nowrap rounded-lg border border-gold-line bg-gold-soft px-2 font-mono text-[11px] font-semibold text-gold">
                     #2847
                   </span>
                   October payroll
@@ -824,7 +774,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         </section>
 
         {/* ================= EMPLOYEE USE CASE ================= */}
-        <section data-reveal className="mx-auto grid w-full max-w-[1440px] items-center gap-10 px-4 py-12 sm:px-8 lg:grid-cols-2">
+        <section data-reveal className="mx-auto grid w-full max-w-[1150px] items-center gap-10 px-4 py-12 sm:px-8 lg:grid-cols-2">
           <Card className="card-lift specular order-2 mx-auto w-full max-w-sm rounded-xl shadow-[0_10px_35px_rgba(21,19,15,0.06)] lg:order-1">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center justify-between text-sm">
@@ -890,7 +840,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         </section>
 
         {/* ================= DEVELOPERS / SDK ================= */}
-        <section id="developers" data-reveal className="mx-auto grid w-full scroll-mt-20 max-w-[1440px] items-center gap-8 px-4 py-12 sm:px-8 lg:grid-cols-2">
+        <section id="developers" data-reveal className="mx-auto grid w-full scroll-mt-20 max-w-[1150px] items-center gap-8 px-4 py-12 sm:px-8 lg:grid-cols-2">
           <div>
             <SectionLabel>For Developers</SectionLabel>
             <h2 className="mt-1 mb-3 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
@@ -903,7 +853,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
             </p>
             <ul className="mt-4 space-y-2 text-sm text-body-ink">
               {[
-                "Browser-native Groth16 proving (snarkjs), or relayer-side arkworks",
+                "Browser-native Groth16 proving - proofs built in your app, never on a server",
                 "Recipients registry - notes encrypted to published keys",
                 "Note backup, restore, and export built in",
               ].map((li) => (
@@ -951,27 +901,27 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
         </section>
 
         {/* ================= WHAT THE CHAIN NEVER LEARNS ================= */}
-        <section data-reveal className="mx-auto w-full max-w-[1440px] px-4 py-8 sm:px-8">
+        <section data-reveal className="mx-auto w-full max-w-[1150px] px-4 py-8 sm:px-8">
           <div className="specular flex flex-col items-center gap-4 rounded-xl border border-gold-line bg-gold-soft p-6 text-center sm:flex-row sm:text-left">
             <ShieldCheck className="size-8 flex-none text-gold" />
             <div>
               <p className="font-semibold tracking-tight">What the chain never learns</p>
               <p className="mt-1 text-sm leading-relaxed text-body-ink">
-                Which deposit funded which salary · pool balances · how much any lane has left · who
-                holds unspent notes. Deposits and exits are public by design — the link between them
-                is what cryptography takes away.
+                Which deposit funded which salary · pool balances · how much any pool wallet has
+                left · who holds unspent notes. Deposits and exits are public by design — the link
+                between them is what cryptography takes away.
               </p>
             </div>
           </div>
         </section>
 
         {/* ================= CTA BANNER ================= */}
-        <section data-reveal className="mx-auto w-full max-w-[1440px] px-4 py-12 sm:px-8 md:py-16">
+        <section data-reveal className="mx-auto w-full max-w-[1150px] px-4 py-12 sm:px-8 md:py-16">
           <div className="specular relative flex flex-col items-center justify-between gap-6 overflow-hidden rounded-xl border border-line bg-card p-6 shadow-[0_12px_40px_rgba(21,19,15,0.06)] md:flex-row md:p-10">
             <div className="max-w-xl text-left">
               <SectionLabel>Streamlined Settlement</SectionLabel>
               <h2 className="mt-1 text-[1.6rem] font-semibold leading-tight tracking-[-0.025em] sm:text-[2rem]">
-                From deposit to confirmed, a 210-person payroll takes about a minute.
+                From deposit to confirmed, a 100-person payroll takes about 80 seconds.
               </h2>
               <p className="mt-2 text-sm leading-relaxed text-body-ink">
                 Experience mathematical certainty and absolute confidentiality. Built for
@@ -992,13 +942,13 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
 
         {/* ================= FOOTER ================= */}
         <footer className="border-t border-band-line bg-band">
-          <div className="mx-auto flex w-full max-w-[1440px] flex-col items-center justify-between gap-2 px-4 py-4 font-mono text-[11px] text-band-mute sm:flex-row sm:px-8">
+          <div className="mx-auto flex w-full max-w-[1150px] flex-col items-center justify-between gap-2 px-4 py-4 font-mono text-[11px] text-band-mute sm:flex-row sm:px-8">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="flex items-center gap-1.5">
                 <span className="size-1.5 rounded-full bg-band-gold" /> ZK Circuits: Validated
               </span>
               <span className="text-band-line">·</span>
-              <span>Proof Time: 0.28s</span>
+              <span>Proof Time: 0.8s</span>
               <span className="text-band-line">·</span>
               <span>Slot: 400ms</span>
             </div>

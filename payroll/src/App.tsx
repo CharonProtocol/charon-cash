@@ -44,7 +44,7 @@ export default function App() {
       </div>
       {/* console band: the dark obsidian strip that stays dark in both themes */}
       <header className="sticky top-0 z-40 border-b border-band-line bg-band/95 text-band-ink shadow-[0_1px_8px_rgba(0,0,0,0.25)] backdrop-blur-xl">
-        <div className="mx-auto flex h-14 w-full max-w-3xl items-center justify-between px-4 sm:px-6">
+        <div className="mx-auto flex h-14 w-full max-w-[1150px] items-center justify-between px-4 sm:px-6">
           <button
             className="flex items-center gap-2 outline-none focus-visible:outline-none"
             onClick={() => go("landing")}

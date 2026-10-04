@@ -69,7 +69,7 @@ export function EmployeeApp() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl space-y-4 p-4 sm:p-6">
+    <main className="mx-auto max-w-4xl space-y-4 p-4 sm:p-6">
       <div className="flex items-center justify-between gap-2">
         <div>
           <div className="font-mono text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-gold">

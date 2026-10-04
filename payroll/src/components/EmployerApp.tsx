@@ -192,7 +192,7 @@ export function EmployerApp() {
   }, [snapshot, startRun])
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-4 p-4 sm:p-6 lg:flex-row">
+    <div className="mx-auto flex max-w-[1150px] flex-col gap-4 p-4 sm:p-6 lg:flex-row">
       {/* Sidebar nav (top tab bar on phones): pill group with a gliding indicator */}
       <aside className="lg:w-52 lg:flex-none">
         <div className="flex items-center justify-between gap-2 rounded-lg border border-line bg-panel-2 p-1 lg:sticky lg:top-6 lg:flex-col lg:items-stretch lg:justify-start lg:gap-0.5">
