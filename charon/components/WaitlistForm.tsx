@@ -92,7 +92,7 @@ export function WaitlistForm() {
           <label className="field">
             <span>
               Email
-              <b className="req" aria-hidden="true">
+              <b className="req" aria-hidden="true" color="red">
                 *
               </b>
             </span>

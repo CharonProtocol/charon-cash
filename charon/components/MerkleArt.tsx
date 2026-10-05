@@ -24,12 +24,18 @@ export function MerkleArt() {
   return (
     <svg className="merkle" viewBox={`0 0 ${W} ${H}`} aria-hidden="true">
       {LEVELS.slice(1).map((level, d) =>
-        level.map((p, i) => {
-          const mid = (p.y + LEVELS[d][0].y) / 2;
-          return [LEVELS[d][i * 2], LEVELS[d][i * 2 + 1]].map((c, k) => (
-            <path key={`e${d}-${i}-${k}`} className="merkle-edge" d={`M${p.x} ${p.y} V${mid} H${c.x} V${c.y}`} />
-          ));
-        }),
+        level.map((p, i) =>
+          [LEVELS[d][i * 2], LEVELS[d][i * 2 + 1]].map((c, k) => {
+            const dy = c.y - p.y;
+            return (
+              <path
+                key={`e${d}-${i}-${k}`}
+                className="merkle-edge"
+                d={`M${p.x} ${p.y} C${p.x} ${p.y + dy * 0.55} ${c.x} ${c.y - dy * 0.25} ${c.x} ${c.y}`}
+              />
+            );
+          }),
+        ),
       )}
       {LEVELS.map((level, d) =>
         level.map((p, i) => (
