@@ -245,13 +245,13 @@ export function EmployeeApp() {
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[640px] text-sm">
+                    <table className="w-full min-w-[560px] text-sm">
                       <thead>
                         <tr className="border-b border-line text-left font-mono text-[10px] uppercase tracking-[0.14em] text-mute">
                           <th className="w-8 px-4 py-2.5" />
                           <th className="px-3 py-2.5 font-medium">Note & leaf</th>
                           <th className="px-3 py-2.5 text-right font-medium">Shielded amount</th>
-                          <th className="px-3 py-2.5 font-medium">Received</th>
+                          <th className="hidden px-3 py-2.5 font-medium sm:table-cell">Received</th>
                           <th className="px-5 py-2.5 text-right font-medium">Action</th>
                         </tr>
                       </thead>
@@ -287,7 +287,7 @@ export function EmployeeApp() {
                                   <Ms name="lock" className="text-[10px]" /> shielded
                                 </span>
                               </td>
-                              <td className="px-3 py-3 text-xs text-body-ink">
+                              <td className="hidden px-3 py-3 text-xs text-body-ink sm:table-cell">
                                 {new Date(n.createdAt).toLocaleTimeString()}
                               </td>
                               <td className="px-5 py-3 text-right">

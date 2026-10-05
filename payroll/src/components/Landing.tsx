@@ -9,6 +9,8 @@ import { Magnetic } from "@/components/motion/Magnetic"
 import { Ms } from "@/components/motion/ms"
 import { Scramble } from "@/components/motion/Scramble"
 import { Tilt } from "@/components/motion/Tilt"
+import { ScrollRuler } from "@/components/motion/ScrollRuler"
+import { SmoothScroll, useSmoothScroll } from "@/components/motion/smooth-scroll"
 import { ThemeToggle } from "@/components/ThemeToggle"
 
 /* ---------- measured marketing data (all real, logged runs) ---------- */
@@ -55,7 +57,7 @@ const bento = [
   {
     icon: "speed",
     iconCls: "text-gold",
-    v: 195500,
+    v: 134035,
     unit: "",
     label: "Compute Units",
     cls: "text-foreground",
@@ -288,6 +290,16 @@ function rise(text: string, baseDelay = 0) {
 }
 
 export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => void }) {
+  // Lenis smooth scrolling drives the whole landing; the tick ruler on the
+  // left edge replaces both the browser scrollbar and the old top hairline.
+  return (
+    <SmoothScroll root className="relative min-h-dvh">
+      <LandingBody onRole={onRole} />
+    </SmoothScroll>
+  )
+}
+
+function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void }) {
   // The lantern starts lit on every fresh load (?static screenshots render it
   // already dimmed), then dims once after 3s — it stays off until the user
   // refreshes, which is the only thing that re-runs this timer.
@@ -321,26 +333,14 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
     return () => io.disconnect()
   }, [])
 
+  const { scrollTo: smoothScrollTo } = useSmoothScroll()
   const scrollTo = (id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })
+    smoothScrollTo(`#${id}`)
   }
-
-  // beUI-style scroll progress: linear gold hairline under the header
-  useEffect(() => {
-    const bar = document.documentElement
-    const onScroll = () => {
-      const max = bar.scrollHeight - bar.clientHeight
-      document
-        .getElementById("scroll-progress")
-        ?.style.setProperty("--sp", max > 0 ? String(bar.scrollTop / max) : "0")
-    }
-    onScroll()
-    window.addEventListener("scroll", onScroll, { passive: true })
-    return () => window.removeEventListener("scroll", onScroll)
-  }, [])
 
   return (
     <div className="relative min-h-dvh">
+      <ScrollRuler />
       <div className="aurora" aria-hidden>
         <div className="caustic" />
         <div className="grid-lines" />
@@ -359,11 +359,11 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
             </button>
           </div>
           <div className="flex items-center gap-2">
-            <div className="hidden items-center gap-1.5 rounded bg-panel-2 px-2 py-1 md:flex" data-tip="Deploys target Solana mainnet; live demo runs on devnet">
+            <div className="hidden items-center gap-1.5 rounded bg-panel-2 px-2 py-1 md:flex">
               <span className="size-2 animate-pulse rounded-full bg-ok" />
               <span className="font-mono text-[11px] text-body-ink">Solana Devnet</span>
             </div>
-            <div className="hidden items-center gap-1.5 rounded bg-panel-2 px-2 py-1 lg:flex" data-tip="Relayer round-trip, measured from the browser">
+            <div className="hidden items-center gap-1.5 rounded bg-panel-2 px-2 py-1 lg:flex">
               <Ms name="bolt" className="text-sm text-ok" />
               <span className="font-mono text-[11px] text-body-ink">Relayer: 18ms</span>
             </div>
@@ -380,11 +380,6 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
             </Button>
           </div>
         </div>
-        <div
-          id="scroll-progress"
-          aria-hidden
-          className="scroll-progress absolute inset-x-0 bottom-[-1px] h-[2px] bg-gradient-to-r from-[var(--gold)] to-[var(--gold-3)]"
-        />
       </header>
 
       <main className="pt-16">
@@ -608,7 +603,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
             {bento.map((m) => (
               <div
                 key={m.label}
-                className="specular group flex flex-col justify-between rounded-xl border border-line bg-card p-6 transition-all hover:border-[color-mix(in_srgb,var(--gold-2)_50%,transparent)] hover:shadow-md"
+                className="specular group flex flex-col justify-between rounded-xl border border-line bg-card p-6 transition-all hover:-translate-y-0.5 hover:border-[color-mix(in_srgb,var(--gold-2)_50%,transparent)] hover:shadow-md"
               >
                 <div>
                   <Ms name={m.icon} className={`text-2xl transition-transform group-hover:scale-110 ${m.iconCls}`} />

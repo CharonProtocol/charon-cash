@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useWallet } from "@solana/wallet-adapter-react"
 import { toast } from "sonner"
 import { Copy, Search, Trash2 } from "lucide-react"
-import { getBackendUrl, totalBalance } from "privacy-cash-sdk"
+import { fetchRecipientsBatch, getBackendUrl, totalBalance } from "privacy-cash-sdk"
 
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -25,6 +25,7 @@ import { lamportsToSol, shortHash } from "@/lib/format"
 import { estimateTotals } from "@/lib/estimate"
 import { navigate } from "@/lib/router"
 import { failedEntriesOf, listRuns, storageOk } from "@/lib/store"
+import { useUiSync } from "@/lib/sync"
 import type { Asset, ParsedFile, RunMode, RunReceipt } from "@/lib/types"
 
 type Page = "overview" | "payroll" | "history" | "team"
@@ -33,6 +34,7 @@ const LEDGER_PAGE = 8
 
 export function EmployerApp({ page }: { page: Page }) {
   const { publicKey } = useWallet()
+  useUiSync()
   const { client, ready, busy, error, vaultSolRaw, bps, minTransferFee, refreshVault, unlocked, unlockBusy, unlockNow } =
     usePayrollClient()
   const [storageWarn] = useState(() => !storageOk())
@@ -41,6 +43,45 @@ export function EmployerApp({ page }: { page: Page }) {
   const [snapshot, setSnapshot] = useState<RunSnapshot | null>(null)
   const [receipt, setReceipt] = useState<RunReceipt | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+
+  // Recipient registry check — shared by the plan card (warning list) and the
+  // settlement bar's stateful Verify → Dispatch button.
+  const [recipientCheck, setRecipientCheck] = useState<{
+    total: number
+    registered: number
+    unregistered: string[]
+  } | null>(null)
+  const [verifying, setVerifying] = useState(false)
+  // Any change to the batch invalidates a previous verification.
+  useEffect(() => {
+    setRecipientCheck(null)
+  }, [parsed])
+  const checkRecipients = useCallback(async () => {
+    if (!parsed || verifying) return
+    setVerifying(true)
+    try {
+      // One batch round trip per 90 wallets; the batch throws only on a
+      // transport/5xx failure, so a null here is still a confirmed
+      // "not enrolled".
+      const keys = await fetchRecipientsBatch(parsed.entries.map((e) => e.address))
+      const unregistered = parsed.entries
+        .map((e) => e.address)
+        .filter((a) => !keys.get(a))
+      setRecipientCheck({
+        total: parsed.entries.length,
+        registered: parsed.entries.length - unregistered.length,
+        unregistered,
+      })
+      if (unregistered.length === 0) toast.success(`All ${parsed.entries.length} recipients enrolled`)
+      else toast.warning(`${unregistered.length} recipient(s) not enrolled`)
+    } catch (e) {
+      setRecipientCheck(null)
+      toast.error(`Could not verify recipients: ${(e as Error).message}`)
+    } finally {
+      setVerifying(false)
+    }
+  }, [parsed, verifying])
+
   const engineRef = useRef<{ cancel: () => void } | null>(null)
   // Kept so a stopped/crashed run's failed rows can be retried without the
   // receipt (snapshots don't carry asset/mode/fileHash).
@@ -243,7 +284,7 @@ export function EmployerApp({ page }: { page: Page }) {
     : null
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] px-4 pb-36 pt-6 sm:px-6 sm:pt-8 lg:px-10">
+    <div className="mx-auto w-full max-w-[1280px] px-4 pb-16 pt-6 sm:px-6 sm:pt-8 lg:px-10">
       {error && <p className="mb-3 text-sm text-destructive">{error}</p>}
       {storageWarn && (
         <p className="mb-3 text-sm text-muted-foreground">
@@ -283,7 +324,9 @@ export function EmployerApp({ page }: { page: Page }) {
             }
             liveChip={liveProgress}
           />
-          <HistoryPage onResumeFailed={resumeFailed} />
+          <div className="mt-8">
+            <HistoryPage onResumeFailed={resumeFailed} />
+          </div>
         </>
       ) : page === "team" ? (
         <>
@@ -304,7 +347,9 @@ export function EmployerApp({ page }: { page: Page }) {
             }
             liveChip={liveProgress}
           />
-          <TeamPage extraEntries={parsed?.entries} />
+          <div className="mt-8">
+            <TeamPage extraEntries={parsed?.entries} />
+          </div>
         </>
       ) : busy ? (
         <p className="text-sm text-muted-foreground">Connecting… (fetching relayer config)</p>
@@ -321,7 +366,7 @@ export function EmployerApp({ page }: { page: Page }) {
               One signature funds the run — every payout leaves with its own Groth16 proof,
               built in this browser, and lands gasless through the relayer.
             </p>
-            <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+            <div className="mt-4 mb-2 flex flex-wrap items-center justify-end gap-2">
               <WalletBar
                 vaultSolRaw={vaultSolRaw}
                 relayerOk={bps !== null}
@@ -359,6 +404,23 @@ export function EmployerApp({ page }: { page: Page }) {
             />
           </div>
 
+          {/* ── dispatch bar: in the flow, right under the telemetry ──── */}
+          {!snapshot && (
+            <SettlementBar
+              parsed={parsed}
+              bps={bps}
+              minTransferFee={minTransferFee}
+              vaultSolRaw={vaultSolRaw}
+              mode={planParams.current?.mode ?? "shielded"}
+              lanes={planParams.current?.lanes ?? 8}
+              check={recipientCheck}
+              verifying={verifying}
+              onVerify={checkRecipients}
+              canDispatch={canDispatch}
+              onDispatch={dispatch}
+            />
+          )}
+
           {/* ── live run owns the page ─────────────────────────────────── */}
           <div className="mt-6">
             {!snapshot && (
@@ -373,6 +435,7 @@ export function EmployerApp({ page }: { page: Page }) {
                     bps={bps}
                     minTransferFee={minTransferFee}
                     vaultSolRaw={vaultSolRaw}
+                    check={recipientCheck}
                     disabled={!ready}
                     onRun={(asset, mode, lanes) => startRun(asset, undefined, undefined, mode, lanes)}
                     onParamsChange={onParamsChange}
@@ -400,20 +463,6 @@ export function EmployerApp({ page }: { page: Page }) {
               onResumeSnapshot={resumeAbortedSnapshot}
             />
           </div>
-
-          {/* ── sticky settlement bar ──────────────────────────────────── */}
-          {!snapshot && (
-            <SettlementBar
-              parsed={parsed}
-              bps={bps}
-              minTransferFee={minTransferFee}
-              vaultSolRaw={vaultSolRaw}
-              mode={planParams.current?.mode ?? "shielded"}
-              lanes={planParams.current?.lanes ?? 8}
-              canDispatch={canDispatch}
-              onDispatch={dispatch}
-            />
-          )}
         </>
       )}
 
@@ -840,6 +889,9 @@ function SettlementBar({
   vaultSolRaw,
   mode,
   lanes,
+  check,
+  verifying,
+  onVerify,
   canDispatch,
   onDispatch,
 }: {
@@ -849,6 +901,9 @@ function SettlementBar({
   vaultSolRaw: bigint | null
   mode: RunMode
   lanes: number
+  check: { total: number; registered: number; unregistered: string[] } | null
+  verifying: boolean
+  onVerify: () => void
   canDispatch: boolean
   onDispatch: () => void
 }) {
@@ -863,19 +918,36 @@ function SettlementBar({
   const vaultBig = vaultSolRaw ?? 0n
   const shortfall = totals && required > vaultBig ? required - vaultBig : 0n
   const n = parsed?.entries.length ?? 0
+  // One stateful action instead of two buttons in two places: with a batch
+  // loaded the bar verifies first, then becomes the dispatch button.
+  const needsVerify = n > 0 && check === null
+  const notEnrolled = check?.unregistered.length ?? 0
+
+  let actionLabel = "Authorize & Dispatch"
+  let actionDisabled = !canDispatch || n === 0
+  let actionSub: string | undefined
+  if (needsVerify) {
+    actionLabel = verifying ? "Verifying recipients…" : "Verify recipients"
+    actionDisabled = verifying
+    actionSub = "one check before dispatch"
+  } else if (notEnrolled > 0) {
+    actionLabel = `Locked · ${notEnrolled} not enrolled`
+    actionDisabled = true
+  } else if (n > 0) {
+    actionLabel = `Authorize & Dispatch ${n} payout${n === 1 ? "" : "s"}`
+  }
 
   return (
-    <div className="fixed inset-x-0 bottom-4 z-30 px-4">
-      <div className="mx-auto flex w-full max-w-[1280px] flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-band-line bg-band/95 px-5 py-3.5 text-band-ink shadow-[0_12px_40px_rgba(0,0,0,0.35)] backdrop-blur-xl">
-        <div className="hidden min-w-0 lg:block">
-          <div className="flex items-center gap-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-band-mute">
-            <span className="size-1.5 rounded-full bg-band-gold" />
-            zero-knowledge attestation
-          </div>
-          <div className="mt-0.5 truncate font-mono text-[11px] text-band-mute">
-            {lanes} parallel multi-lane bundle{lanes === 1 ? "" : "s"}
-          </div>
+    <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-band-line bg-band/95 px-5 py-4 text-band-ink shadow-[0_12px_40px_rgba(0,0,0,0.18)]">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-band-mute">
+          <span className="size-1.5 rounded-full bg-band-gold" />
+          zero-knowledge attestation
         </div>
+        <div className="mt-0.5 truncate font-mono text-[11px] text-band-mute">
+          {lanes} parallel multi-lane bundle{lanes === 1 ? "" : "s"}
+        </div>
+      </div>
         <div className="flex flex-1 flex-wrap items-center gap-x-6 gap-y-2">
           <BarStat label="Total distributed" value={totals ? `${lamportsToSol(totals.totalNet.toString()).toFixed(4)} SOL` : "—"} />
           <BarStat label="Relayer gas" value={totals ? `${lamportsToSol(totals.totalFees.toString()).toFixed(4)} SOL` : "—"} sub="subsidized" />
@@ -892,16 +964,20 @@ function SettlementBar({
             }
           />
         </div>
-        <Button
-          size="lg"
-          className="btn-glow flex-none font-semibold active:scale-[0.98]"
-          disabled={!canDispatch || n === 0}
-          onClick={onDispatch}
-        >
-          <Ms name="lock" className="mr-1.5 text-sm" />
-          {n > 0 ? `Authorize & Dispatch ${n} payout${n === 1 ? "" : "s"}` : "Authorize & Dispatch"}
-        </Button>
-      </div>
+        <div className="flex flex-col items-end gap-1">
+          <Button
+            size="lg"
+            className="btn-glow max-w-full flex-none whitespace-normal font-semibold active:scale-[0.98] sm:whitespace-nowrap"
+            disabled={actionDisabled}
+            onClick={needsVerify ? onVerify : onDispatch}
+          >
+            <Ms name={needsVerify ? (verifying ? "progress_activity" : "verified") : "lock"} className={`mr-1.5 text-sm ${verifying ? "animate-spin" : ""}`} />
+            {actionLabel}
+          </Button>
+          {actionSub && (
+            <span className="font-mono text-[10px] text-band-mute">{actionSub}</span>
+          )}
+        </div>
     </div>
   )
 }

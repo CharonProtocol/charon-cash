@@ -6,20 +6,14 @@ import {
   useState,
 } from "react"
 import { toast } from "sonner"
-import { getMint } from "@solana/spl-token"
-import { useConnection } from "@solana/wallet-adapter-react"
-import { PublicKey } from "@solana/web3.js"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Slider } from "@/components/motion/Slider"
+import { RangeSlider } from "@/components/motion/range-slider"
 import { Ms } from "@/components/motion/ms"
-import { Input } from "@/components/ui/input"
 import { rawToHuman, shortHash } from "@/lib/format"
 import { estimateTotals } from "@/lib/estimate"
 import { validateDecimals } from "@/lib/parse"
-import { fetchRecipientsBatch, fetchTreeState, splTreeKey } from "privacy-cash-sdk"
 import type { Asset, ParsedFile, RunMode } from "@/lib/types"
 
 const SOL_DECIMALS = 9
@@ -50,19 +44,19 @@ export const PlanReviewCard = forwardRef<
     bps: number | null
     minTransferFee: number
     vaultSolRaw: bigint | null
+    /** recipient registry check — owned by EmployerApp so the settlement bar
+     *  can run the same verify step from its dispatch button */
+    check: RecipientCheck | null
     onRun: (asset: Asset, mode: RunMode, lanes: number) => void
     disabled: boolean
     onParamsChange?: (p: PlanParams) => void
   }
 >(function PlanReviewCard(
-  { parsed, bps, minTransferFee, vaultSolRaw, onRun, disabled, onParamsChange },
+  { parsed, bps, minTransferFee, vaultSolRaw, check: recipientCheck, onRun, disabled, onParamsChange },
   ref,
 ) {
-  const { connection } = useConnection()
-  const [kind, setKind] = useState<"sol" | "spl">("sol")
-  const [mint, setMint] = useState("")
-  const [decimals, setDecimals] = useState<number | null>(null)
-  const [mintError, setMintError] = useState<string | null>(null)
+  // SOL is the only live settlement asset (USDC/USDT tiles are preview-only).
+  const kind = "sol" as const
   // The app is private-only by design — no public mode, no toggle.
   const mode: RunMode = "shielded"
   // Recommended lanes: small runs pay faster strictly serially (splits cost
@@ -91,15 +85,6 @@ export const PlanReviewCard = forwardRef<
   )
   const [lanes, setLanes] = useState(recommendedLanes)
   const [lanesTouched, setLanesTouched] = useState(false)
-  const [recipientCheck, setRecipientCheck] = useState<RecipientCheck | null>(null)
-  const [checking, setChecking] = useState(false)
-  const [checkError, setCheckError] = useState<string | null>(null)
-
-  // A new file means the previous recipient check no longer applies.
-  useEffect(() => {
-    setRecipientCheck(null)
-    setCheckError(null)
-  }, [parsed?.fileHash])
 
   // A new CSV re-arms the recommendation unless the user picked lanes by hand.
   useEffect(() => {
@@ -107,36 +92,12 @@ export const PlanReviewCard = forwardRef<
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recommendedLanes])
 
-  const asset: Asset | null = useMemo(() => {
-    if (kind === "sol") return { kind: "sol" }
-    if (mint && decimals !== null) return { kind: "spl", mint, decimals }
-    return null
-  }, [kind, mint, decimals])
+  const asset: Asset = { kind: "sol" }
 
-  const activeDecimals = kind === "sol" ? SOL_DECIMALS : decimals
+  const activeDecimals = SOL_DECIMALS
 
   const decimalErrors =
     parsed && activeDecimals !== null ? validateDecimals(parsed.entries, activeDecimals) : []
-
-  const resolveMint = async () => {
-    setMintError(null)
-    setDecimals(null)
-    try {
-      const m = new PublicKey(mint)
-      const info = await getMint(connection, m)
-      setDecimals(info.decimals)
-      // Fail fast (spec: error matrix) if this mint has no initialized tree.
-      try {
-        await fetchTreeState(splTreeKey(m.toBase58()))
-      } catch {
-        setMintError(
-          "this mint has no initialized merkle tree — ask the operator to initialize it (see README ops notes)",
-        )
-      }
-    } catch (e) {
-      setMintError(`cannot load mint: ${(e as Error).message}`)
-    }
-  }
 
   const totals = useMemo(
     () =>
@@ -152,36 +113,11 @@ export const PlanReviewCard = forwardRef<
       ? totals.totalNet + totals.totalFees - vaultBig
       : 0n
 
-  const checkRecipients = async () => {
-    if (!parsed) return
-    setChecking(true)
-    setCheckError(null)
-    try {
-      // One batch round trip per 90 wallets; the batch throws only on a
-      // transport/5xx failure (falling back per-wallet preserves that), so a
-      // null here is still a confirmed "not enrolled".
-      const keys = await fetchRecipientsBatch(parsed.entries.map((e) => e.address))
-      const unregistered = parsed.entries
-        .map((e) => e.address)
-        .filter((a) => !keys.get(a))
-      setRecipientCheck({
-        total: parsed.entries.length,
-        registered: parsed.entries.length - unregistered.length,
-        unregistered,
-      })
-    } catch (e) {
-      setRecipientCheck(null)
-      setCheckError(`could not verify recipients: ${(e as Error).message}`)
-    } finally {
-      setChecking(false)
-    }
-  }
-
   // private-only app: dispatch needs every recipient enrolled
   const shieldedReady = recipientCheck !== null && recipientCheck.unregistered.length === 0
 
   const canRun =
-    !!parsed && bps !== null && !!asset && !mintError && decimalErrors.length === 0 && !disabled && shieldedReady
+    !!parsed && bps !== null && !disabled && shieldedReady && decimalErrors.length === 0
 
   // The settlement bar reads this snapshot through its own ref — reporting via
   // callback keeps PlanReviewCard the single source of run-truth.
@@ -191,24 +127,17 @@ export const PlanReviewCard = forwardRef<
   }, [mode, lanes, asset, canRun, recipientCheck])
 
   const dispatch = () => {
-    if (!asset) return
     if (!canRun) {
       if (!parsed) toast.warning("Upload a batch ledger first — the matrix is empty.")
-      else if (mode === "shielded" && recipientCheck && recipientCheck.unregistered.length > 0)
+      else if (recipientCheck && recipientCheck.unregistered.length > 0)
         toast.warning(`${recipientCheck.unregistered.length} recipient(s) haven't enabled private receiving yet.`)
-      else if (mode === "shielded" && recipientCheck === null)
+      else if (recipientCheck === null)
         toast.info("Verify recipients once before a shielded dispatch.")
-      else if (mintError) toast.warning(mintError)
       else if (decimalErrors.length > 0) toast.warning("Some amounts exceed this asset's decimals.")
       else if (disabled) toast.info("Still syncing with the relayer — one moment.")
       return
     }
-    if (kind === "spl" && mint && decimals !== null) {
-      toast.info("First SPL run may ask for one extra one-time signature (lookup table setup).")
-    }
-    if (mode === "shielded") {
-      toast.info("Private mode: each employee receives a note only they can spend.")
-    }
+    toast.info("Private dispatch: each employee receives a note only they can spend.")
     onRun(asset, mode, lanes)
   }
 
@@ -252,60 +181,35 @@ export const PlanReviewCard = forwardRef<
           <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-mute">
             Settlement asset
           </div>
+          <button
+            type="button"
+            className={`flex w-full items-center gap-3 rounded-xl border border-gold-line bg-gold-soft/70 px-3.5 py-2.5 text-left ring-1 ring-[color-mix(in_srgb,var(--gold-2)_30%,transparent)] transition-all`}
+          >
+            <Ms name="currency_exchange" className="text-base text-gold" />
+            <span className="flex-1">
+              <span className="block text-sm font-medium">SOL Native Note</span>
+              <span className="block text-[11px] text-mute">shielded merkle pool · v2 notes</span>
+            </span>
+            <Ms name="check_circle" className="text-base text-gold" />
+          </button>
           {[
-            { id: "sol" as const, title: "SOL Native Note", sub: "shielded merkle pool · v2 notes", on: kind === "sol", soon: false },
-            { id: "spl" as const, title: "Custom SPL Token", sub: "any mint with an initialized tree", on: kind === "spl", soon: false },
+            { title: "USDC", sub: "stablecoin pool · preset mint" },
+            { title: "USDT", sub: "stablecoin pool · preset mint" },
           ].map((opt) => (
-            <button
-              key={opt.id}
-              type="button"
-              onClick={() => { setKind(opt.id); setDecimals(null); setMintError(null) }}
-              className={`flex w-full items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-all ${
-                opt.on
-                  ? "border-gold-line bg-gold-soft/70 ring-1 ring-[color-mix(in_srgb,var(--gold-2)_30%,transparent)]"
-                  : "border-line bg-panel hover:bg-panel-2"
-              }`}
+            <div
+              key={opt.title}
+              className="flex items-center gap-3 rounded-xl border border-line bg-panel px-3.5 py-2.5 opacity-55"
             >
-              <Ms
-                name={opt.id === "sol" ? "currency_exchange" : "token"}
-                className={`text-base ${opt.on ? "text-gold" : "text-mute"}`}
-              />
+              <Ms name="token" className="text-base text-mute" />
               <span className="flex-1">
                 <span className="block text-sm font-medium">{opt.title}</span>
                 <span className="block text-[11px] text-mute">{opt.sub}</span>
               </span>
-              {opt.on && <Ms name="check_circle" className="text-base text-gold" />}
-            </button>
-          ))}
-          <div className="flex items-center gap-3 rounded-xl border border-line bg-panel px-3.5 py-2.5 opacity-55">
-            <Ms name="token" className="text-base text-mute" />
-            <span className="flex-1">
-              <span className="block text-sm font-medium">USDC / BONK direct</span>
-              <span className="block text-[11px] text-mute">preset mints · soon</span>
-            </span>
-            <span className="rounded border border-line bg-card px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-mute">
-              soon
-            </span>
-          </div>
-          {kind === "spl" && (
-            <div className="space-y-2 rounded-xl border border-line bg-panel p-3">
-              <div className="flex gap-2">
-                <Input
-                  value={mint}
-                  onChange={(e) => { setMint(e.target.value); setDecimals(null); setMintError(null) }}
-                  placeholder="Mint pubkey"
-                  className="font-mono text-xs"
-                />
-                <Button variant="outline" size="sm" onClick={resolveMint} disabled={!mint}>
-                  Load
-                </Button>
-              </div>
-              {decimals !== null && (
-                <p className="text-xs text-body-ink">decimals: {decimals}</p>
-              )}
-              {mintError && <p className="text-xs text-destructive">{mintError}</p>}
+              <span className="rounded border border-line bg-card px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-mute">
+                soon
+              </span>
             </div>
-          )}
+          ))}
         </div>
 
         {/* lanes */}
@@ -318,15 +222,21 @@ export const PlanReviewCard = forwardRef<
               life waiting on chain landings while proofs queue through the
               shared prover pool. Stops grow with the machine (12/16 on 8+
               cores, 24/32 on 24+); the rec caps at 16 because past that
-              landing + indexing, not proving, is the wall. */}
-          <Slider
-            ariaLabel="Parallel execution lanes"
-            values={laneOptions}
-            value={lanes}
-            onChange={(v) => {
-              setLanes(v)
+              landing + indexing, not proving, is the wall. The slider walks
+              the INDEX into laneOptions (uneven stops). */}
+          <RangeSlider
+            aria-label="Parallel execution lanes"
+            min={0}
+            max={laneOptions.length - 1}
+            step={1}
+            value={Math.max(0, laneOptions.indexOf(lanes))}
+            onValueChange={(v) => {
+              setLanes(laneOptions[v] ?? lanes)
               setLanesTouched(true)
             }}
+            formatValueText={(v) => `${laneOptions[v] ?? lanes} parallel lanes`}
+            showTicks
+            className="mx-1"
           />
           <p className="text-[11px] text-body-ink">
             Recommended <span className="font-semibold text-gold">{recommendedLanes}</span> for
@@ -339,51 +249,22 @@ export const PlanReviewCard = forwardRef<
           </p>
         </div>
 
-        {/* recipient verification (shielded only) */}
-        {mode === "shielded" && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={checkRecipients} disabled={!parsed || checking}>
-                {checking ? "Verifying…" : "Verify recipients"}
-              </Button>
-              {recipientCheck && (
-                <span
-                  className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[9px] font-semibold uppercase tracking-wider ${
-                    recipientCheck.unregistered.length === 0
-                      ? "border border-ok-line bg-ok-soft text-ok"
-                      : "border border-warn-line bg-warn-soft text-warn"
-                  }`}
-                >
-                  <span className="size-1.5 rounded-full bg-current" />
-                  {recipientCheck.unregistered.length === 0
-                    ? "enrolled & attested"
-                    : `${recipientCheck.registered}/${recipientCheck.total} enrolled`}
-                </span>
-              )}
-            </div>
-            {checkError && <p className="text-xs text-destructive">{checkError}</p>}
-            {recipientCheck && recipientCheck.unregistered.length > 0 && (
-              <div className="rounded-xl border border-warn-line bg-warn-soft/60 p-3">
-                <p className="text-xs font-medium text-warn">
-                  These employees have not enabled private receiving:
-                </p>
-                <ul className="mt-1 space-y-0.5">
-                  {recipientCheck.unregistered.map((a) => (
-                    <li key={a} className="font-mono text-xs text-body-ink">
-                      {shortHash(a, 8, 6)}
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-1 text-[11px] text-body-ink">
-                  Dispatch stays locked until every row is registered.
-                </p>
-              </div>
-            )}
-            {recipientCheck && recipientCheck.unregistered.length === 0 && (
-              <p className="text-[11px] text-body-ink">
-                Every employee can receive private notes.
-              </p>
-            )}
+        {/* unregistered recipients — verify itself lives in the settlement bar */}
+        {recipientCheck && recipientCheck.unregistered.length > 0 && (
+          <div className="rounded-xl border border-warn-line bg-warn-soft/60 p-3">
+            <p className="text-xs font-medium text-warn">
+              These employees have not enabled private receiving:
+            </p>
+            <ul className="mt-1 space-y-0.5">
+              {recipientCheck.unregistered.map((a) => (
+                <li key={a} className="font-mono text-xs text-body-ink">
+                  {shortHash(a, 8, 6)}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-[11px] text-body-ink">
+              Dispatch stays locked until every row is registered.
+            </p>
           </div>
         )}
 

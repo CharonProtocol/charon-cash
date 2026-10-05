@@ -67,8 +67,8 @@ export function WalletBar({
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 gap-y-2">
-      <div className="flex items-center gap-2">
+    <div className="flex w-full flex-wrap items-center justify-center gap-1.5 gap-y-2 sm:justify-between sm:gap-2">
+      <div className="flex items-center gap-1.5 sm:gap-2">
         <StatusChip ok={relayerOk === true} pending={relayerOk === null}>
           <span data-tip="Backend relayer reachable — proofs and submits flow through it">
             {relayerOk === null ? "relayer…" : relayerOk ? "relayer up" : "relayer down"}
@@ -85,8 +85,8 @@ export function WalletBar({
           </StatusChip>
         )}
       </div>
-      <div className="flex items-center gap-2">
-        <Button variant="ghost" size="sm" onClick={onOpenSettings}>
+      <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2">
+        <Button variant="ghost" size="sm" className="px-2 sm:px-3" onClick={onOpenSettings}>
           Settings
         </Button>
         {publicKey ? (
@@ -110,8 +110,8 @@ export function WalletBar({
                 <Ms name="lock_open" className="text-xs" /> unlocked
               </span>
             )}
-            <span className="flex items-center gap-1.5 rounded border border-line bg-card px-2 py-1 font-mono text-[11px] text-body-ink">
-              {shortHash(publicKey.toBase58())}
+            <span className="flex max-w-[7.5rem] items-center gap-1.5 overflow-hidden rounded border border-line bg-card px-2 py-1 font-mono text-[10px] text-body-ink sm:max-w-none sm:text-[11px]">
+              <span className="truncate">{shortHash(publicKey.toBase58())}</span>
             </span>
             <Button variant="ghost" size="sm" onClick={() => disconnect()}>
               Disconnect

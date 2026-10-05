@@ -1,11 +1,13 @@
-import { useMemo, useState } from "react"
-import { Ban, Check, Clock, Download, History, Loader2 } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { Ban, Check, Clock, Cloud, CloudOff, Download, History, Loader2, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { CountUp } from "@/components/motion/CountUp"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { downloadRun } from "@/lib/history"
 import { shortHash } from "@/lib/format"
-import { listRuns } from "@/lib/store"
+import { clearAll, HISTORY_EVENT, listRuns } from "@/lib/store"
+import { useSyncState } from "@/lib/sync"
 import { explorerTxUrl } from "@/lib/explorer"
 import type { RunReceipt } from "@/lib/types"
 
@@ -48,10 +50,54 @@ function runDuration(r: RunReceipt): number | null {
   return r.startedAt !== undefined && r.finishedAt !== undefined ? r.finishedAt - r.startedAt : null
 }
 
+/** Ledger sync state — the relayer DB is the cloud copy, localStorage the cache. */
+function SyncLine() {
+  const sync = useSyncState()
+  return (
+    <div className="flex items-center gap-1 pt-1 text-[11px] text-muted-foreground">
+      {sync === "syncing" ? (
+        <>
+          <Loader2 className="size-3 animate-spin" /> syncing…
+        </>
+      ) : sync === "synced" ? (
+        <>
+          <Cloud className="size-3 text-ok" /> synced to relayer DB
+        </>
+      ) : sync === "offline" ? (
+        <>
+          <CloudOff className="size-3" /> local only
+        </>
+      ) : null}
+    </div>
+  )
+}
+
 export function HistoryPage({ onResumeFailed }: { onResumeFailed: (r: RunReceipt) => void }) {
-  const runs = listRuns()
+  const [runs, setRuns] = useState(() => listRuns())
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const selected = runs.find((r) => r.id === selectedId) ?? runs[0] ?? null
+
+  // The sync layer may adopt runs pushed from another browser — refresh.
+  useEffect(() => {
+    const reload = () => setRuns(listRuns())
+    window.addEventListener(HISTORY_EVENT, reload)
+    return () => window.removeEventListener(HISTORY_EVENT, reload)
+  }, [])
+
+  // Failed rows first — they're the ones that need eyes; paid rows follow in
+  // payout order so a healthy run still reads top-to-bottom.
+  const entries = useMemo(() => {
+    if (!selected) return []
+    const rank = (s: RunReceipt["entries"][number]["status"]) => (s === "failed" ? 0 : s === "confirming" ? 1 : 2)
+    return [...selected.entries].sort((a, b) => rank(a.status) - rank(b.status))
+  }, [selected])
+
+  const clearLedger = () => {
+    if (!window.confirm("Delete every stored run receipt from this browser? This cannot be undone.")) return
+    clearAll()
+    setRuns([])
+    setSelectedId(null)
+  }
 
   const totals = useMemo(() => {
     let employees = 0
@@ -70,6 +116,7 @@ export function HistoryPage({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
               Completed payroll runs land here — who got paid, when, and the on-chain proof.
             </p>
           </div>
+          <SyncLine />
         </CardContent>
       </Card>
     )
@@ -77,20 +124,31 @@ export function HistoryPage({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-2 sm:grid-cols-3">
-        <div className="rounded-xl border p-4">
+      <div data-stagger className="grid gap-2 sm:grid-cols-3">
+        <div className="card-lift specular rounded-xl border p-4 transition-transform">
           <div className="text-xs uppercase tracking-wide text-muted-foreground">Runs</div>
-          <div className="stat-number text-2xl">{totals.runs}</div>
-        </div>
-        <div className="rounded-xl border p-4">
-          <div className="text-xs uppercase tracking-wide text-muted-foreground">Payout rows</div>
-          <div className="stat-number text-2xl">{totals.employees}</div>
-        </div>
-        <div className="rounded-xl border p-4">
-          <div className="text-xs uppercase tracking-wide text-muted-foreground">Mode</div>
-          <div className="flex items-center gap-1.5 pt-1 text-sm font-medium">
-            <span className="size-2 rounded-full bg-emerald-500" /> shielded pool
+          <div className="stat-number text-2xl">
+            <CountUp to={totals.runs} />
           </div>
+        </div>
+        <div className="card-lift specular rounded-xl border p-4 transition-transform">
+          <div className="text-xs uppercase tracking-wide text-muted-foreground">Payout rows</div>
+          <div className="stat-number text-2xl">
+            <CountUp to={totals.employees} />
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-2 rounded-xl border p-4">
+          <div>
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">Mode</div>
+            <div className="flex items-center gap-1.5 pt-1 text-sm font-medium">
+              <span className="size-2 rounded-full bg-emerald-500" /> shielded pool
+            </div>
+            {/* ledger sync state — relayer DB is the cloud copy, localStorage the cache */}
+            <SyncLine />
+          </div>
+          <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={clearLedger}>
+            <Trash2 className="mr-1 size-3.5" /> Clear ledger
+          </Button>
         </div>
       </div>
 
@@ -149,8 +207,8 @@ export function HistoryPage({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
               </div>
             </CardHeader>
             <CardContent>
-              <div className="overflow-hidden rounded-xl border">
-                <table className="w-full text-left text-xs">
+              <div className="overflow-x-auto rounded-xl border">
+                <table className="w-full min-w-[560px] text-left text-xs">
                   <thead className="bg-secondary/60 text-muted-foreground">
                     <tr>
                       <th className="px-3 py-2 font-medium">Name</th>
@@ -162,14 +220,21 @@ export function HistoryPage({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {selected.entries.map((e) => {
+                    {entries.map((e) => {
                       const st = rowStatus(e)
                       const took = e.startedAt !== undefined && e.confirmedAt !== undefined
                         ? fmtDur(e.confirmedAt - e.startedAt)
                         : null
                       return (
-                        <tr key={e.address} className="bg-card">
-                          <td className="px-3 py-2 font-medium">{e.memo ?? "—"}</td>
+                        <tr key={`${e.address}-${e.txSignature ?? "pending"}`} className="bg-card transition-colors hover:bg-secondary/40">
+                          <td className="px-3 py-2 font-medium">
+                            {e.memo ?? "—"}
+                            {st === "failed" && e.error && (
+                              <span className="mt-0.5 block max-w-[220px] truncate font-mono text-[10px] text-destructive" title={e.error}>
+                                {e.error}
+                              </span>
+                            )}
+                          </td>
                           <td className="px-3 py-2 font-mono text-muted-foreground">{shortHash(e.address, 5, 4)}</td>
                           <td className="px-3 py-2 font-mono">{e.amountHuman}</td>
                           <td className="hidden px-3 py-2 font-mono text-muted-foreground sm:table-cell">{took ?? "—"}</td>
@@ -193,7 +258,9 @@ export function HistoryPage({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
                                 )}
                               </div>
                             ) : (
-                              <span className="text-destructive" title={e.error}>{st === "failed" ? "—" : "…"}</span>
+                              <span className={st === "failed" ? "text-destructive" : "text-muted-foreground"}>
+                                {st === "failed" ? "no tx — see error" : "…"}
+                              </span>
                             )}
                           </td>
                         </tr>
