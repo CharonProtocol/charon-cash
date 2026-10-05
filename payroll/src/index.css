@@ -825,6 +825,27 @@ body::-webkit-scrollbar {
   display: none;
 }
 
+/* inner scrollers (history runs list, entry table) keep a slim visible bar —
+   the page hides its own, but a card you scroll must show that it scrolls */
+.scroll-inset {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--mute) 55%, transparent) transparent;
+}
+.scroll-inset::-webkit-scrollbar {
+  width: 6px;
+  display: block;
+}
+.scroll-inset::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-inset::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--mute) 55%, transparent);
+}
+.scroll-inset::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--gold) 55%, transparent);
+}
+
 /* code snippet tokens — theme-aware (light ink world, dark obsidian) */
 .tok-kw {
   color: var(--protocol-hi);

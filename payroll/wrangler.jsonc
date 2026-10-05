@@ -1,6 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "charon-payroll",
+  // Kartik's account (skartik1706) — the frontend home that gets the domain
+  "account_id": "f0e764736adeeb0386febbb6d14da493",
   "compatibility_date": "2026-09-26",
   "observability": {
     "enabled": true

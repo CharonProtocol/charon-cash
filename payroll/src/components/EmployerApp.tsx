@@ -26,6 +26,7 @@ import { estimateTotals } from "@/lib/estimate"
 import { navigate } from "@/lib/router"
 import { failedEntriesOf, listRuns, storageOk } from "@/lib/store"
 import { useUiSync } from "@/lib/sync"
+import { identifyWallet } from "@/lib/analytics"
 import type { Asset, ParsedFile, RunMode, RunReceipt } from "@/lib/types"
 
 type Page = "overview" | "payroll" | "history" | "team"
@@ -37,6 +38,9 @@ export function EmployerApp({ page }: { page: Page }) {
   useUiSync()
   const { client, ready, busy, error, vaultSolRaw, bps, minTransferFee, refreshVault, unlocked, unlockBusy, unlockNow } =
     usePayrollClient()
+  useEffect(() => {
+    if (publicKey) identifyWallet(publicKey.toBase58())
+  }, [publicKey])
   const [storageWarn] = useState(() => !storageOk())
 
   const [parsed, setParsed] = useState<ParsedFile | null>(null)
@@ -353,8 +357,6 @@ export function EmployerApp({ page }: { page: Page }) {
         </>
       ) : busy ? (
         <p className="text-sm text-muted-foreground">Connecting… (fetching relayer config)</p>
-      ) : unlockBusy ? (
-        <p className="text-sm text-muted-foreground">Unlocking vault… (approve the signature request)</p>
       ) : (
         <>
           {/* ── console header ─────────────────────────────────────────── */}

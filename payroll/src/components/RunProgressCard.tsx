@@ -431,7 +431,7 @@ export function RunProgressCard({
             {receipt!.summary.failed} payout(s) failed — Resume retries just those, nothing double-pays.
           </div>
         )}
-        <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+        <div data-lenis-prevent className="max-h-72 space-y-2 overflow-y-auto pr-1">
           {rows.map((r) => (
             <Row
               key={r.address}

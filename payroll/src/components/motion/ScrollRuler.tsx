@@ -41,16 +41,3 @@ function Tick({ index, progress }: { index: number; progress: MotionValue<number
     />
   )
 }
-
-/** Thin gold progress hairline pinned to the bottom edge of the console nav. */
-export function ScrollProgress() {
-  const { progress } = useSmoothScroll()
-  const scaleX = useTransform(progress, [0, 1], [0.001, 1])
-  return (
-    <motion.div
-      aria-hidden
-      className="absolute inset-x-0 bottom-0 h-[2px] origin-left bg-gradient-to-r from-gold/60 via-gold to-gold"
-      style={{ scaleX }}
-    />
-  )
-}

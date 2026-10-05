@@ -47,8 +47,32 @@ function toB64(bytes: Uint8Array): string {
   return btoa(s)
 }
 
-async function pullUiDoc(key: string, wallet: string): Promise<unknown | null> {
-  const res = await fetch(`${config.get().backendUrl}/api/ui/${key}/${wallet}`)
+async function sha256Hex(data: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", data as BufferSource)
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("")
+}
+
+async function signUiMessage(
+  prefix: string,
+  wallet: string,
+  key: string,
+  ts: number,
+  signMessage: (m: Uint8Array) => Promise<Uint8Array>,
+  docSha256Hex?: string,
+): Promise<string> {
+  const lines = [prefix, wallet, key, String(ts), ...(docSha256Hex ? [docSha256Hex] : [])]
+  const message = new TextEncoder().encode(lines.join("\n"))
+  return toB64(await signMessage(message))
+}
+
+async function pullUiDoc(
+  key: string,
+  wallet: string,
+  signMessage: (m: Uint8Array) => Promise<Uint8Array>,
+): Promise<unknown | null> {
+  const ts = Date.now()
+  const signature = await signUiMessage("charon-ui-read-v1", wallet, key, ts, signMessage)
+  const res = await fetch(`${config.get().backendUrl}/api/ui/${key}/${wallet}?ts=${ts}&signature=${encodeURIComponent(signature)}`)
   if (!res.ok) return null
   const j = (await res.json()) as { doc?: string }
   if (!j.doc) return null
@@ -66,19 +90,24 @@ async function pushUiDoc(
   signMessage: (m: Uint8Array) => Promise<Uint8Array>,
 ): Promise<boolean> {
   const ts = Date.now()
-  const message = new TextEncoder().encode(`charon-ui-v1\n${wallet}\n${key}\n${ts}`)
-  const signature = await signMessage(message)
+  const docJson = JSON.stringify(doc)
+  // the signature binds the doc's sha256 — the backend rejects substitutions
+  const docHash = await sha256Hex(new TextEncoder().encode(docJson))
+  const signature = await signUiMessage("charon-ui-v1", wallet, key, ts, signMessage, docHash)
   const res = await fetch(`${config.get().backendUrl}/api/ui/${key}`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ wallet, ts, doc: JSON.stringify(doc), signature: toB64(signature) }),
+    body: JSON.stringify({ wallet, ts, doc: docJson, signature }),
   })
   return res.ok
 }
 
 /**
- * Two-way sync of the employer docs for the connected wallet. Pulls once per
- * connection, then pushes (debounced) whenever either doc changes locally.
+ * Two-way sync of the employer docs for the connected wallet. Pulls at most
+ * once per browser session (sessionStorage flag) so a plain refresh never
+ * fires a wallet signature prompt — localStorage is the read path meanwhile.
+ * Pushes (debounced, one merged doc = one signature) on local changes only;
+ * data just adopted from the remote is already remote, so it never pushes.
  * Failures degrade silently to the local-only app; the badge reflects it.
  */
 export function useUiSync(): void {
@@ -89,11 +118,13 @@ export function useUiSync(): void {
     async (sign: (m: Uint8Array) => Promise<Uint8Array>, w: string) => {
       setSyncState("syncing")
       try {
-        const results = await Promise.all([
-          pushUiDoc("history", w, exportRunsDoc(), sign),
-          pushUiDoc("team", w, exportTeamDoc(), sign),
-        ])
-        setSyncState(results.every(Boolean) ? "synced" : "offline")
+        const ok = await pushUiDoc(
+          "ui",
+          w,
+          { history: exportRunsDoc(), team: exportTeamDoc() },
+          sign,
+        )
+        setSyncState(ok ? "synced" : "offline")
       } catch {
         setSyncState("offline")
       }
@@ -121,24 +152,44 @@ export function useUiSync(): void {
     const onTeam = () => schedule()
 
     void (async () => {
-      setSyncState("syncing")
+      const flag = `payroll:ui-sync-pulled:${wallet}`
+      let pulled = false
       try {
-        const [remoteRuns, remoteTeam] = await Promise.all([
-          pullUiDoc("history", wallet),
-          pullUiDoc("team", wallet),
-        ])
-        if (cancelled) return
-        const changedRuns = adoptRuns(remoteRuns)
-        const changedTeam = adoptTeam(remoteTeam)
-        if (changedRuns || changedTeam) schedule()
-        else setSyncState("synced")
+        pulled = sessionStorage.getItem(flag) === "1"
       } catch {
-        if (!cancelled) setSyncState("offline")
+        /* private mode — just pull every time */
+      }
+      if (pulled) {
+        setSyncState("synced")
+      } else {
+        setSyncState("syncing")
+        try {
+          const remote = (await pullUiDoc("ui", wallet, sign)) as
+            | { history?: unknown; team?: unknown }
+            | null
+          if (cancelled) return
+          if (remote && typeof remote === "object") {
+            adoptRuns(remote.history ?? null)
+            adoptTeam(remote.team ?? null)
+          }
+          try {
+            sessionStorage.setItem(flag, "1")
+          } catch {
+            /* ignore */
+          }
+          setSyncState("synced")
+        } catch {
+          if (!cancelled) setSyncState("offline")
+        }
+      }
+      // Attached after the pull so adoption writes don't schedule a push —
+      // that data came from the remote; pushing it back is a wasted signature.
+      if (!cancelled) {
+        window.addEventListener(HISTORY_EVENT, onHistory)
+        window.addEventListener(TEAM_EVENT, onTeam)
       }
     })()
 
-    window.addEventListener(HISTORY_EVENT, onHistory)
-    window.addEventListener(TEAM_EVENT, onTeam)
     return () => {
       cancelled = true
       if (timer) clearTimeout(timer)

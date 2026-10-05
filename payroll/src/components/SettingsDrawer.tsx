@@ -54,6 +54,7 @@ export function SettingsDrawer({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm" onClick={onClose}>
       <div
+        data-lenis-prevent
         className="h-full w-96 max-w-full overflow-y-auto bg-background p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >

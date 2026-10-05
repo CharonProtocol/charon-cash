@@ -158,22 +158,24 @@ export function HistoryPage({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
             <CardTitle className="text-sm">Runs</CardTitle>
           </CardHeader>
           <CardContent className="space-y-1">
-            {runs.map((r) => (
-              <button
-                key={r.id}
-                onClick={() => setSelectedId(r.id)}
-                className={`w-full rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${selected?.id === r.id ? "bg-primary/10 font-medium" : "hover:bg-secondary"}`}
-              >
-                <span className="block">{new Date(r.createdAt).toLocaleString()}</span>
-                <span className="mt-0.5 block text-muted-foreground">
-                  {r.summary.sent}/{r.summary.total} sent
-                  {r.summary.failed > 0 && ` · ${r.summary.failed} failed`}
-                  {" · "}
-                  {r.mode === "shielded" ? "private" : "public"}
-                  {runDuration(r) !== null && ` · ${fmtDur(runDuration(r)!)}`}
-                </span>
-              </button>
-            ))}
+            <div data-lenis-prevent className="scroll-inset max-h-[340px] space-y-1 overflow-y-auto pr-1">
+              {runs.map((r) => (
+                <button
+                  key={r.id}
+                  onClick={() => setSelectedId(r.id)}
+                  className={`w-full rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${selected?.id === r.id ? "bg-primary/10 font-medium" : "hover:bg-secondary"}`}
+                >
+                  <span className="block">{new Date(r.createdAt).toLocaleString()}</span>
+                  <span className="mt-0.5 block text-muted-foreground">
+                    {r.summary.sent}/{r.summary.total} sent
+                    {r.summary.failed > 0 && ` · ${r.summary.failed} failed`}
+                    {" · "}
+                    {r.mode === "shielded" ? "private" : "public"}
+                    {runDuration(r) !== null && ` · ${fmtDur(runDuration(r)!)}`}
+                  </span>
+                </button>
+              ))}
+            </div>
           </CardContent>
         </Card>
 
@@ -207,9 +209,9 @@ export function HistoryPage({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
               </div>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto rounded-xl border">
+              <div data-lenis-prevent className="scroll-inset max-h-[420px] overflow-y-auto rounded-xl border">
                 <table className="w-full min-w-[560px] text-left text-xs">
-                  <thead className="bg-secondary/60 text-muted-foreground">
+                  <thead className="sticky top-0 z-10 bg-secondary/95 text-muted-foreground backdrop-blur-sm">
                     <tr>
                       <th className="px-3 py-2 font-medium">Name</th>
                       <th className="px-3 py-2 font-medium">To</th>

@@ -2,7 +2,7 @@ import { useEffect } from "react"
 
 import { Ms } from "@/components/motion/ms"
 import { GliderGroup } from "@/components/motion/Glider"
-import { ScrollProgress, ScrollRuler } from "@/components/motion/ScrollRuler"
+import { ScrollRuler } from "@/components/motion/ScrollRuler"
 import { SmoothScroll } from "@/components/motion/smooth-scroll"
 import { ThemeToggle } from "@/components/ThemeToggle"
 
@@ -10,6 +10,7 @@ import { EmployeeApp } from "@/components/EmployeeApp"
 import { EmployerApp } from "@/components/EmployerApp"
 import { Landing } from "@/components/Landing"
 import { isLocalRpc } from "@/lib/explorer"
+import { capturePage } from "@/lib/analytics"
 import { navigate, useRoute } from "@/lib/router"
 
 // [data-stagger] children start hidden (opacity 0) and only the landing had
@@ -38,6 +39,9 @@ function useStaggerReveal(dep: unknown) {
 export default function App() {
   const route = useRoute()
   useStaggerReveal(route)
+  useEffect(() => {
+    capturePage(route.path)
+  }, [route.path])
 
   if (route.role === "landing") {
     return (
@@ -117,8 +121,6 @@ export default function App() {
             <ThemeToggle />
           </div>
         </div>
-        {/* scroll progress hairline along the nav's bottom edge */}
-        <ScrollProgress />
       </header>
       {/* key on ROLE, not path: switching /employer sub-pages must keep
           EmployerApp mounted or a live run's snapshot would be dropped */}
