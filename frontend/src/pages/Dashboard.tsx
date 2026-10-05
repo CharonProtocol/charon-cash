@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import {
   MotionConfig,
@@ -13,31 +14,30 @@ import { ShieldedTransfer } from "../components/dashboard/operations/ShieldedTra
 import { Withdraw } from "../components/dashboard/operations/Withdraw";
 import { Payroll } from "../components/dashboard/operations/Payroll";
 import { Swap } from "../components/dashboard/operations/Swap";
-import type { DashboardOperation } from "../components/dashboard/types";
+import type {
+  DashboardOperation,
+  PaymentContext,
+} from "../components/dashboard/types";
 import { useCharon } from "@/hooks/useCharon";
-
-const OPERATIONS = {
-  send: Send,
-  transfer: ShieldedTransfer,
-  withdraw: Withdraw,
-  payroll: Payroll,
-  swap: Swap,
-};
 
 export function Dashboard() {
   const [operation, setOperation] = useState<DashboardOperation>("send");
   const [busy, setBusy] = useState(false);
-  const charon = useCharon(false);
-
-  const Component = OPERATIONS[operation];
+  const charon = useCharon(true);
+  const { connected } = useWallet();
+  const context: PaymentContext = {
+    ...charon,
+    connected,
+    onBusyChange: setBusy,
+  };
   return (
     <MotionConfig reducedMotion="user">
       <LazyMotion
         features={domMax}
         strict
       >
-        <section className="bg-none relative h-screen flex flex-col">
-          <header className="basis-2 flex justify-between px-20 py-1 text-black items-center">
+        <section className="bg-none relative min-h-[480px] h-dvh flex flex-col px-4">
+          <header className="shrink-0 flex justify-between px-0 sm:px-20 py-1 text-black items-center">
             <a
               href="#"
               aria-label="Charon home"
@@ -60,17 +60,33 @@ export function Dashboard() {
               <WalletMultiButton />
             </div>
           </header>
-          <main className="grow relative">
-            <AnimatePresence
-              mode="wait"
-              initial={false}
-            >
-              {operation == "send" && <Send></Send>}
-              {operation == "withdraw" && <Withdraw></Withdraw>}
-              {operation == "swap" && <Swap></Swap>}
-              {operation == "payroll" && <Payroll></Payroll>}
-              {operation == "transfer" && <ShieldedTransfer></ShieldedTransfer>}
-            </AnimatePresence>
+          <main className="grow flex relative min-h-0  justify-center pt-10 pb-20">
+            <div className="flex min-h-0 w-full max-w-3xl flex-col">
+              <AnimatePresence
+                mode="wait"
+                initial={false}
+              >
+                <m.section
+                  key={`${operation}-${charon.address ?? "disconnected"}`}
+                  id="pay-panel"
+                  className="flex min-h-0 flex-1 flex-col"
+                  role="tabpanel"
+                  aria-labelledby={`pay-tab-${operation}`}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.14 }}
+                >
+                  {operation === "send" && <Send context={context} />}
+                  {operation === "withdraw" && <Withdraw context={context} />}
+                  {operation === "swap" && <Swap />}
+                  {operation === "payroll" && <Payroll />}
+                  {operation === "transfer" && (
+                    <ShieldedTransfer context={context} />
+                  )}
+                </m.section>
+              </AnimatePresence>
+            </div>
             <div className="absolute inset-x-0 bottom-10 flex justify-center">
               <OperationDock
                 value={operation}

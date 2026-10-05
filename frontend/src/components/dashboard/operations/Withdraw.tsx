@@ -97,14 +97,14 @@ export function Withdraw({ context }: { context: PaymentContext }) {
   );
   return (
     <OperationLayout title="Withdraw" direction="private to wallet">
-    <div className="relative grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-3 [@media(max-height:560px)]:gap-1.5">
+    <div className="flex min-h-0 flex-1 flex-col justify-between gap-3">
       <AnimatePresence
         mode="wait"
         initial={false}
       >
         <m.div
           key={step}
-          className="flex min-h-0 flex-col [@media(max-height:560px)]:grid [@media(max-height:560px)]:grid-cols-[100px_minmax(0,1fr)] [@media(max-height:560px)]:grid-rows-[auto_minmax(0,1fr)] [@media(max-height:560px)]:gap-x-3 [@media(max-height:560px)]:gap-y-1.5"
+          className="flex min-h-0 w-full flex-1 flex-col gap-5 [@media(max-height:560px)]:gap-2"
           initial={{ opacity: 0, y: reduced ? 0 : 8 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: reduced ? 0 : -6 }}
@@ -129,13 +129,6 @@ export function Withdraw({ context }: { context: PaymentContext }) {
             />
           ) : (
             <>
-              <h2
-                className="col-span-full mb-[clamp(8px,2dvh,18px)] shrink-0 text-[clamp(14px,2.5dvh,21px)] font-normal tracking-tight text-neutral-500 outline-none! [@media(max-height:560px)]:mb-0 [@media(max-height:560px)]:text-[13px]"
-                ref={heading}
-                tabIndex={-1}
-              >
-                Enter the amount
-              </h2>
               <TokenSelector
                 value={token}
                 onChange={(next) => {
@@ -143,6 +136,13 @@ export function Withdraw({ context }: { context: PaymentContext }) {
                   setValidation("");
                 }}
               />
+              <h2
+                className="shrink-0 text-[clamp(14px,2.5dvh,21px)] font-normal text-neutral-500 outline-none!"
+                ref={heading}
+                tabIndex={-1}
+              >
+                {`Enter the Amount of ${token} : `}
+              </h2>
               <form
                   className={FORM}
                   onSubmit={confirm}
