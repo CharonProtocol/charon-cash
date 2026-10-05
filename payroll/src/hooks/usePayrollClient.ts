@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useWallet } from "@solana/wallet-adapter-react"
+import { toast } from "sonner"
 import {
   PrivacyCashClient,
   fetchRelayerInfo,
   totalBalance,
   WRAPPED_SOL_MINT,
 } from "privacy-cash-sdk"
+
+function friendly(e: unknown): string {
+  const msg = (e as Error)?.message ?? String(e)
+  if (msg === "Failed to fetch" || msg.includes("NetworkError") || msg.includes("network")) {
+    return "Couldn't reach the relayer or RPC — check the backend URL in Settings and your connection."
+  }
+  return msg
+}
 
 export function usePayrollClient() {
   const { publicKey, signMessage, signTransaction, connect } = useWallet()
@@ -68,7 +77,7 @@ export function usePayrollClient() {
         // The wallet stays locked until "Unlock vault" (or the first run,
         // which unlocks through the engine).
       } catch (e) {
-        if (!cancelled) setError((e as Error).message)
+        if (!cancelled) setError(friendly(e))
       } finally {
         if (!cancelled) setBusy(false)
       }
@@ -87,6 +96,10 @@ export function usePayrollClient() {
       await c.refreshNotes()
       setVaultSolRaw(totalBalance(c.publicKey, WRAPPED_SOL_MINT))
       setUnlocked(true)
+    } catch (e) {
+      // Without this the rejection is unhandled: the button just silently
+      // does nothing on a rejected signature or a failed notes refresh.
+      toast.error(`Vault unlock failed: ${friendly(e)}`)
     } finally {
       setUnlockBusy(false)
     }

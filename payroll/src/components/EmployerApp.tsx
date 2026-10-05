@@ -105,17 +105,6 @@ export function EmployerApp({ page }: { page: Page }) {
   // console header keeps telling runs apart.
   const [runNo] = useState(() => 1042 + listRuns().length + 1)
 
-  const dispatch = useCallback(() => {
-    const p = planParams.current
-    if (!p) {
-      toast.warning("Load a batch and pick parameters first.")
-      return
-    }
-    if (p.asset && p.canRun) startRun(p.asset, undefined, undefined, p.mode, p.lanes)
-    else planRef.current?.dispatch()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   // Long quiet phases (lane fan-out, indexer catch-up, post-error
   // adjudication) must never look like a hang: surface the engine's own
   // status sentence as a toast whenever it changes, and warn when a live run
@@ -246,6 +235,16 @@ export function EmployerApp({ page }: { page: Page }) {
     },
     [client, parsed, bps, minTransferFee, vaultSolRaw, refreshVault],
   )
+
+  const dispatch = useCallback(() => {
+    const p = planParams.current
+    if (!p) {
+      toast.warning("Load a batch and pick parameters first.")
+      return
+    }
+    if (p.asset && p.canRun) startRun(p.asset, undefined, undefined, p.mode, p.lanes)
+    else planRef.current?.dispatch()
+  }, [startRun])
 
   const resumeFailed = useCallback(
     (r: RunReceipt) => {
