@@ -6,12 +6,9 @@ export type PaymentContext = {
   client: CharonProtocol | null;
   address?: string;
   connected: boolean;
-  unlocking: boolean;
   limit: string;
-  unlock: () => Promise<void>;
   refresh: () => void;
   observeProgress: (listener: ((stage: TransactionStage) => void) | null) => void;
   onBusyChange: (busy: boolean) => void;
-  rpcUrl: string;
 };
-export type PaymentStatus = 'idle' | 'unlocking' | TransactionStage | 'success' | 'error';
+export type PaymentStatus = 'idle' | TransactionStage | 'success' | 'error';

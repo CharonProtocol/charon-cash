@@ -132,7 +132,7 @@ export function Landing() {
               <div>
                 <h3>Connect your wallet</h3>
                 <p>
-                  Use your Solana wallet, then sign a message to unlock your
+                  Use your Solana wallet, then sign a message to initialize your
                   account.
                 </p>
               </div>

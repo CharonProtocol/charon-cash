@@ -1,3 +1,4 @@
+import { OperationLayout } from "../OperationLayout";
 import { useRef, useState, type FormEvent } from "react";
 import { AnimatePresence, m, useReducedMotion } from "motion/react";
 import { ArrowRight } from "lucide-react";
@@ -49,23 +50,13 @@ export function Withdraw({ context }: { context: PaymentContext }) {
       assertPaymentSupported("withdraw", token);
       if (!context.connected)
         throw new Error("Connect your wallet to continue.");
-      if (!context.client) throw new Error("Unlock your account to continue.");
+      if (!context.client) throw new Error("Your account is still initializing.");
       setValidation("");
       setStep(processingStep);
       await transaction.submit(amount, "", token);
     } catch (cause) {
       setValidation(
         cause instanceof Error ? cause.message : "Check the payment details.",
-      );
-    }
-  };
-  const unlock = async () => {
-    try {
-      setValidation("");
-      await context.unlock();
-    } catch (cause) {
-      setValidation(
-        cause instanceof Error ? cause.message : "Unable to unlock account.",
       );
     }
   };
@@ -88,15 +79,6 @@ export function Withdraw({ context }: { context: PaymentContext }) {
     <>
       {!context.connected ? (
         <WalletMultiButton />
-      ) : !context.client ? (
-        <button
-          type="button"
-          className="rounded-md bg-[#303030] px-3 py-2 text-xs! text-white disabled:opacity-40 [@media(max-height:560px)]:py-1"
-          disabled={context.unlocking}
-          onClick={() => void unlock()}
-        >
-          {context.unlocking ? "Unlocking…" : "Unlock account"}
-        </button>
       ) : (
         <span className="text-[9px] text-neutral-500">
           The arrow requests your wallet signature.
@@ -114,6 +96,7 @@ export function Withdraw({ context }: { context: PaymentContext }) {
     </p>
   );
   return (
+    <OperationLayout title="Withdraw" direction="private to wallet">
     <div className="relative grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-3 [@media(max-height:560px)]:gap-1.5">
       <AnimatePresence
         mode="wait"
@@ -207,7 +190,7 @@ export function Withdraw({ context }: { context: PaymentContext }) {
                       ? `Private ${token} → connected wallet`
                       : context.client
                         ? `Private balance · ${formatSol(context.limit)} SOL available per transaction`
-                        : "Unlock your account to see your private balance"}
+                        : "Connect your wallet to see your private balance"}
                   </p>
                   <>
                       <p className={NOTE}>
@@ -237,5 +220,6 @@ export function Withdraw({ context }: { context: PaymentContext }) {
         labels={["Amount", "Withdraw"]}
       />
     </div>
+    </OperationLayout>
   );
 }

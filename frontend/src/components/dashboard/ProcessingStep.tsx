@@ -6,10 +6,6 @@ import type { PaymentKind, PaymentStatus } from "./types";
 
 const LABELS: Record<PaymentStatus, [string, string]> = {
   idle: ["Ready", ""],
-  unlocking: [
-    "Unlocking your account",
-    "Approve the sign-in message in your wallet.",
-  ],
   proof: [
     "Creating your private proof",
     "Your browser is preparing the transaction.",

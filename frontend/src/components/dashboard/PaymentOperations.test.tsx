@@ -6,12 +6,12 @@ import { Withdraw } from './operations/Withdraw';
 import { Send } from './operations/Send';
 import { ShieldedTransfer } from './operations/ShieldedTransfer';
 import type { PaymentContext } from './types';
-const context: PaymentContext = { client: null, connected: true, address: '11111111111111111111111111111111', unlocking: false, limit: '0', unlock: async () => {}, refresh: () => {}, observeProgress: () => {}, onBusyChange: () => {}, rpcUrl: 'http://localhost:8899' };
+const context: PaymentContext = { client: null, connected: true, address: '11111111111111111111111111111111', limit: '0', refresh: () => {}, observeProgress: () => {}, onBusyChange: () => {} };
 
 describe('independent payment operations and asset selection', () => {
   it.each([
     { Component: Send, note: 'Wallet SOL → private account' },
-    { Component: ShieldedTransfer, note: 'Unlock your account to see your private balance' },
+    { Component: ShieldedTransfer, note: 'Connect your wallet to see your private balance' },
   ])('renders $Component.name with its own amount step and balance source', ({ Component, note }) => {
     const html = renderToStaticMarkup(<MotionConfig reducedMotion="always"><LazyMotion features={domMax}><Component context={context}/></LazyMotion></MotionConfig>);
     expect(html).toContain('Step 1 of 3');
