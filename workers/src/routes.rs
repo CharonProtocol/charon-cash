@@ -52,9 +52,14 @@ fn parse_leaf_index(raw: Option<String>) -> AppResult<u32> {
 
 const BN254_MODULUS_DEC: &str = "21888242871839275222246405745257275088548364400416034343698204186575808495617";
 const RECIPIENT_PUT_PREFIX: &str = "privacy-cash-recipients-v1";
+const UI_PUT_PREFIX: &str = "charon-ui-v1";
 
 pub fn recipient_put_message(wallet: &str, note_pubkey: &str, enc_pubkey: &str) -> String {
     format!("{RECIPIENT_PUT_PREFIX}\n{wallet}\n{note_pubkey}\n{enc_pubkey}")
+}
+
+pub fn ui_put_message(wallet: &str, doc_key: &str, ts: i64) -> String {
+    format!("{UI_PUT_PREFIX}\n{wallet}\n{doc_key}\n{ts}")
 }
 
 fn valid_note_pubkey(s: &str) -> bool {
@@ -672,6 +677,94 @@ pub fn router(state: Arc<AppState>) -> Router<'static, Arc<AppState>> {
                 }
             })
         })
+        .put_async("/api/ui/:key", |mut req, ctx| {
+            Box::pin(async move {
+                #[derive(Deserialize)]
+                struct PutUiRequest {
+                    wallet: String,
+                    ts: i64,
+                    doc: String,
+                    signature: String,
+                }
+                let state = state_of(&ctx);
+                let doc_key = ctx.param("key").cloned().unwrap_or_default();
+                if !doc_key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') || doc_key.len() > 64 {
+                    return err_json(AppError::bad_request(
+                        "INVALID_DOC_KEY",
+                        "doc_key must be 1-64 chars of [A-Za-z0-9-_]",
+                    ));
+                }
+                let body: PutUiRequest = match req.json().await {
+                    Ok(b) => b,
+                    Err(e) => return err_json(AppError::bad_request("INVALID_JSON", format!("{e}"))),
+                };
+                let wallet = body.wallet.trim().to_string();
+                let wallet_pk = crate::solana::pubkey::Pubkey::parse(&wallet);
+                if wallet_pk.is_none() {
+                    return err_json(AppError::bad_request(
+                        "INVALID_WALLET",
+                        "wallet must be a 32-byte base58 pubkey",
+                    ));
+                }
+                if body.doc.len() > 256 * 1024 {
+                    return err_json(AppError::bad_request("DOC_TOO_LARGE", "doc exceeds 256 KiB"));
+                }
+                let now_ms = js_sys::Date::now() as i64;
+                if (now_ms - body.ts).abs() > 10 * 60 * 1000 {
+                    return err_json(AppError::bad_request("STALE_TIMESTAMP", "ts outside the 10-minute window"));
+                }
+                let sig_bytes = match base64::Engine::decode(
+                    &base64::engine::general_purpose::STANDARD,
+                    body.signature.trim(),
+                ) {
+                    Ok(b) => b,
+                    Err(_) => {
+                        return err_json(AppError::bad_request(
+                            "INVALID_SIGNATURE",
+                            "signature must be base64 (64 bytes)",
+                        ))
+                    }
+                };
+                if sig_bytes.len() != 64 {
+                    return err_json(AppError::bad_request("INVALID_SIGNATURE", "signature must be 64 bytes"));
+                }
+                let sig = ed25519_dalek::Signature::from_bytes(&sig_bytes.try_into().unwrap());
+                let verifying = match ed25519_dalek::VerifyingKey::from_bytes(&wallet_pk.unwrap().to_bytes()) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        return err_json(AppError::bad_request(
+                            "INVALID_WALLET",
+                            "wallet must be a 32-byte ed25519 verifying key",
+                        ))
+                    }
+                };
+                let message = ui_put_message(&wallet, &doc_key, body.ts);
+                if verifying.verify(message.as_bytes(), &sig).is_err() {
+                    return err_json(AppError::bad_request(
+                        "BAD_SIGNATURE",
+                        "signature does not verify for this wallet, key and timestamp",
+                    ));
+                }
+                match state.store.put_ui_doc(&wallet, &doc_key, body.doc.trim()).await {
+                    Ok(()) => no_content(),
+                    Err(e) => err_json(AppError::internal(e)),
+                }
+            })
+        })
+        .get_async("/api/ui/:key/:wallet", |_req, ctx| {
+            Box::pin(async move {
+                let state = state_of(&ctx);
+                let doc_key = ctx.param("key").cloned().unwrap_or_default();
+                let wallet = ctx.param("wallet").cloned().unwrap_or_default();
+                match state.store.get_ui_doc(&wallet, &doc_key).await {
+                    Ok(Some((doc, updated_at))) => {
+                        ok_json(&json!({ "wallet": wallet, "key": doc_key, "doc": doc, "updated_at": updated_at }))
+                    }
+                    Ok(None) => err_json(AppError::not_found("NOT_FOUND", "no doc for this wallet and key")),
+                    Err(e) => err_json(AppError::internal(e)),
+                }
+            })
+        })
         .options_async("/*catch_all", |_req, _ctx| Box::pin(async move {
             Ok(cors(ResponseBuilder::new().empty()))
         }))
@@ -724,6 +817,20 @@ mod tests {
         assert!(verifying.verify(msg.as_bytes(), &sig).is_ok());
 
         let tampered = recipient_put_message(&wallet, "999", &enc);
+        assert!(verifying.verify(tampered.as_bytes(), &sig).is_err());
+    }
+
+    #[test]
+    fn ui_put_message_round_trips_ed25519() {
+        let kp = Keypair::from_seed([9u8; 32]);
+        let wallet = crate::solana::pubkey::Pubkey::new(kp.pubkey_bytes()).to_string();
+        let msg = ui_put_message(&wallet, "history", 1_728_000_000_000);
+        let sig = kp.sign(msg.as_bytes());
+        let verifying = ed25519_dalek::VerifyingKey::from_bytes(&kp.pubkey_bytes()).unwrap();
+        let sig = ed25519_dalek::Signature::from_bytes(&sig);
+        assert!(verifying.verify(msg.as_bytes(), &sig).is_ok());
+
+        let tampered = ui_put_message(&wallet, "history", 1_728_000_000_001);
         assert!(verifying.verify(tampered.as_bytes(), &sig).is_err());
     }
 }

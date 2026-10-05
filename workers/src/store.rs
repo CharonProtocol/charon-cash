@@ -3,6 +3,8 @@
 
 use serde_json::Value;
 
+use std::sync::OnceLock;
+
 use crate::neon::Neon;
 
 use serde::Deserialize;
@@ -128,6 +130,8 @@ fn i64_at(r: &Value, k: &str) -> i64 {
 pub struct Store {
     pub db: Neon,
 }
+
+static UI_TABLE_READY: OnceLock<()> = OnceLock::new();
 
 impl Store {
     pub fn new(db: Neon) -> Self {
@@ -414,6 +418,52 @@ impl Store {
             )
             .await
             .map(|_| ())
+    }
+
+    pub async fn get_ui_doc(&self, wallet: &str, doc_key: &str) -> Result<Option<(String, String)>, String> {
+        self.ensure_ui_table().await?;
+        let rows = self
+            .db
+            .query(
+                "SELECT doc, updated_at FROM ui_docs WHERE wallet_pubkey = $1 AND doc_key = $2",
+                &[s(wallet), s(doc_key)],
+            )
+            .await?;
+        Ok(rows.first().map(|r| (str_at(r, "doc"), str_at(r, "updated_at"))))
+    }
+
+    pub async fn put_ui_doc(&self, wallet: &str, doc_key: &str, doc: &str) -> Result<(), String> {
+        self.ensure_ui_table().await?;
+        self.db
+            .query(
+                "INSERT INTO ui_docs (wallet_pubkey, doc_key, doc, updated_at) \
+                 VALUES ($1, $2, $3, to_char(now(), 'YYYY-MM-DD HH24:MI:SS')) \
+                 ON CONFLICT (wallet_pubkey, doc_key) DO UPDATE SET doc = EXCLUDED.doc, \
+                 updated_at = EXCLUDED.updated_at",
+                &[s(wallet), s(doc_key), s(doc)],
+            )
+            .await
+            .map(|_| ())
+    }
+
+    async fn ensure_ui_table(&self) -> Result<(), String> {
+        if UI_TABLE_READY.get().is_some() {
+            return Ok(());
+        }
+        self.db
+            .query(
+                "CREATE TABLE IF NOT EXISTS ui_docs (\
+                     wallet_pubkey TEXT NOT NULL, \
+                     doc_key TEXT NOT NULL, \
+                     doc TEXT NOT NULL, \
+                     updated_at TEXT NOT NULL DEFAULT to_char(now(), 'YYYY-MM-DD HH24:MI:SS'), \
+                     PRIMARY KEY (wallet_pubkey, doc_key))",
+                &[],
+            )
+            .await
+            .map(|_| ())?;
+        let _ = UI_TABLE_READY.set(());
+        Ok(())
     }
 
     pub async fn get_recipient_keys(
