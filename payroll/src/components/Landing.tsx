@@ -219,13 +219,13 @@ function rise(text: string, baseDelay = 0) {
 
 export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => void }) {
   // The lantern starts lit on every fresh load (?static screenshots render it
-  // already dimmed), then dims once after 2s — it stays off until the user
+  // already dimmed), then dims once after 3s — it stays off until the user
   // refreshes, which is the only thing that re-runs this timer.
   const [lanternLit, setLanternLit] = useState(
     () => typeof document === "undefined" || !document.documentElement.classList.contains("static"),
   )
   useEffect(() => {
-    const t = setTimeout(() => setLanternLit(false), 2000)
+    const t = setTimeout(() => setLanternLit(false), 3000)
     return () => clearTimeout(t)
   }, [])
 
@@ -357,7 +357,7 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
           </div>
 
           {/* hero visual: the ferryman over the live run panel. The lantern
-              starts lit (amber glow) on every fresh load, then dims after 2s
+              starts lit (amber glow) on every fresh load, then dims after 3s
               and stays off until the next refresh — ?static renders it off. */}
           <div id="demo-preview" className="anim anim-5 relative mt-10 flex w-full max-w-4xl flex-col items-center">
             <div className="relative z-20 -mb-4 size-40 transition-transform duration-700 hover:scale-105 sm:-mb-14 md:size-48">

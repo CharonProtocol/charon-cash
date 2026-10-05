@@ -28,7 +28,7 @@ import { navigate } from "@/lib/router"
 import { failedEntriesOf, listRuns, storageOk } from "@/lib/store"
 import type { Asset, ParsedFile, RunMode, RunReceipt } from "@/lib/types"
 
-type Page = "payroll" | "history" | "team"
+type Page = "overview" | "payroll" | "history" | "team"
 
 const LEDGER_PAGE = 8
 
@@ -243,8 +243,11 @@ export function EmployerApp({ page }: { page: Page }) {
     ? `${snapshot.rows.filter((r) => r.status === "confirmed" || r.status === "relayed").length}/${snapshot.rows.length}`
     : null
 
+  // The runs console ref is dark-only: the console renders on the obsidian
+  // palette no matter which theme the landing/employee pages use.
   return (
-    <div className="mx-auto w-full max-w-[1280px] px-4 pb-36 pt-6 sm:px-6 sm:pt-8 lg:px-10">
+    <div className="dark min-h-[calc(100dvh-3.5rem)] bg-background">
+      <div className="mx-auto w-full max-w-[1280px] px-4 pb-36 pt-6 sm:px-6 sm:pt-8 lg:px-10">
       {error && <p className="mb-3 text-sm text-destructive">{error}</p>}
       {storageWarn && (
         <p className="mb-3 text-sm text-muted-foreground">
@@ -252,7 +255,20 @@ export function EmployerApp({ page }: { page: Page }) {
         </p>
       )}
 
-      {page === "history" ? (
+      {page === "overview" ? (
+        <OverviewPage
+          vaultSolRaw={vaultSolRaw}
+          bps={bps}
+          runNo={runNo}
+          liveProgress={liveProgress}
+          parsedCount={rows}
+          unlocked={unlocked}
+          unlockBusy={unlockBusy}
+          onUnlock={unlockNow}
+          onFunded={refreshVault}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
+      ) : page === "history" ? (
         <>
           <PageHeader
             kicker="Ledger & Receipts"
@@ -418,6 +434,7 @@ export function EmployerApp({ page }: { page: Page }) {
       )}
 
       {settingsOpen && <SettingsDrawer onClose={() => setSettingsOpen(false)} />}
+      </div>
     </div>
   )
 }
@@ -446,7 +463,7 @@ function PageHeader({
           </span>
           {liveChip && (
             <button
-              onClick={() => navigate("/employer")}
+              onClick={() => navigate("/employer/run")}
               className="flex items-center gap-1.5 rounded-full border border-gold-line bg-gold-soft px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold transition-transform hover:scale-[1.03]"
             >
               <span className="size-1.5 animate-pulse rounded-full bg-gold" />
@@ -495,6 +512,177 @@ function TelemetryCard({
       <div className="stat-number mt-2 text-2xl font-semibold tracking-tight">{value}</div>
       <p className="mt-1 text-[11px] text-body-ink">{sub}</p>
     </Card>
+  )
+}
+
+function OverviewPage({
+  vaultSolRaw,
+  bps,
+  runNo,
+  liveProgress,
+  parsedCount,
+  unlocked,
+  unlockBusy,
+  onUnlock,
+  onFunded,
+  onOpenSettings,
+}: {
+  vaultSolRaw: bigint | null
+  bps: number | null
+  runNo: number
+  liveProgress: string | null
+  parsedCount: number
+  unlocked: boolean
+  unlockBusy: boolean
+  onUnlock: () => void
+  onFunded: () => void
+  onOpenSettings: () => void
+}) {
+  // Snapshot on mount — the ledger page is the detailed, live view.
+  const [runs] = useState(() => listRuns().slice(0, 5))
+  const vaultSol = vaultSolRaw !== null ? Number(lamportsToSol(vaultSolRaw.toString())) : 0
+
+  return (
+    <>
+      <PageHeader
+        kicker="Employer Console"
+        title="Overview"
+        sub={`Next run #${runNo} — vault health, quick actions, and the last batches you dispatched.`}
+        right={
+          <WalletBar
+            vaultSolRaw={vaultSolRaw}
+            relayerOk={bps !== null}
+            unlocked={unlocked}
+            unlockBusy={unlockBusy}
+            onUnlock={onUnlock}
+            onOpenSettings={onOpenSettings}
+            onFunded={onFunded}
+          />
+        }
+        liveChip={liveProgress}
+      />
+
+      <div data-stagger className="mt-6 grid gap-4 sm:grid-cols-3">
+        <TelemetryCard
+          label="Treasury Vault"
+          value={<CountUp to={vaultSol} decimals={4} suffix=" SOL" />}
+          dot={vaultSolRaw === null ? "wait" : vaultSolRaw > 0n ? "ok" : "idle"}
+          dotLabel={vaultSolRaw === null ? "syncing" : vaultSolRaw > 0n ? "Balance Optimal" : "empty"}
+          sub="shielded pool PDA · spend-first funding"
+        />
+        <TelemetryCard
+          label="Relayer Health"
+          value={bps === null ? <span className="text-mute">…</span> : bps ? <span>online</span> : <span className="text-critical">down</span>}
+          dot={bps === null ? "wait" : bps ? "ok" : "bad"}
+          dotLabel={bps === null ? "checking" : bps ? "18ms latency" : "unreachable"}
+          sub="broadcasts signed txs · holds no keys"
+        />
+        <TelemetryCard
+          label="Gas Subsidies"
+          value={<CountUp to={100} suffix="%" />}
+          dot="ok"
+          dotLabel="Zero Paid"
+          sub="fees covered via Charon Pay"
+        />
+      </div>
+
+      {/* quick actions */}
+      <div data-stagger className="mt-6 grid gap-4 sm:grid-cols-3">
+        <button
+          onClick={() => navigate("/employer/run")}
+          className="card-lift group specular rounded-2xl border border-gold-line bg-gold-soft p-5 text-left transition-transform hover:-translate-y-0.5 focus-visible:outline-none"
+        >
+          <span className="flex size-10 items-center justify-center rounded-xl border border-gold-line bg-card">
+            <Ms name="rocket_launch" className="text-base text-gold" />
+          </span>
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <span className="font-semibold tracking-tight">Run payroll</span>
+            <Ms name="arrow_forward" className="text-sm text-gold opacity-0 transition-opacity group-hover:opacity-100" />
+          </div>
+          <p className="mt-1 text-xs text-body-ink">
+            {parsedCount > 0 ? `${parsedCount} payouts already loaded and validated` : "Upload a batch, review parameters, dispatch"}
+          </p>
+        </button>
+        <button
+          onClick={() => navigate("/employer/history")}
+          className="card-lift group specular rounded-2xl border border-border bg-card p-5 text-left transition-transform hover:-translate-y-0.5 focus-visible:outline-none"
+        >
+          <span className="flex size-10 items-center justify-center rounded-xl border border-line bg-panel">
+            <Ms name="receipt_long" className="text-base text-body-ink" />
+          </span>
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <span className="font-semibold tracking-tight">Ledger & Receipts</span>
+            <Ms name="arrow_forward" className="text-sm text-mute opacity-0 transition-opacity group-hover:opacity-100" />
+          </div>
+          <p className="mt-1 text-xs text-body-ink">Stored runs, per-row proofs, retryable failures</p>
+        </button>
+        <button
+          onClick={() => navigate("/employer/team")}
+          className="card-lift group specular rounded-2xl border border-border bg-card p-5 text-left transition-transform hover:-translate-y-0.5 focus-visible:outline-none"
+        >
+          <span className="flex size-10 items-center justify-center rounded-xl border border-line bg-panel">
+            <Ms name="group" className="text-base text-body-ink" />
+          </span>
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <span className="font-semibold tracking-tight">Team Registry</span>
+            <Ms name="arrow_forward" className="text-sm text-mute opacity-0 transition-opacity group-hover:opacity-100" />
+          </div>
+          <p className="mt-1 text-xs text-body-ink">Who has enrolled their stealth receiving keys</p>
+        </button>
+      </div>
+
+      {/* recent runs */}
+      <div className="card-lift specular mt-6 rounded-2xl border border-border bg-card">
+        <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
+          <div className="flex items-center gap-3">
+            <span className="flex size-9 flex-none items-center justify-center rounded-lg border border-gold-line bg-gold-soft">
+              <Ms name="history" className="text-sm text-gold" />
+            </span>
+            <div>
+              <div className="h-display text-base font-semibold tracking-tight">Recent runs</div>
+              <div className="text-[11px] text-mute">last five batches settled from this browser</div>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate("/employer/history")}
+            className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-mute transition-colors hover:bg-panel hover:text-foreground"
+          >
+            Full ledger
+          </button>
+        </div>
+        {runs.length === 0 ? (
+          <div className="px-6 py-8 text-center">
+            <p className="text-sm font-medium">No runs yet</p>
+            <p className="mt-1 text-xs text-body-ink">
+              Dispatch your first batch from Run Payroll — receipts land here automatically.
+            </p>
+          </div>
+        ) : (
+          <ul>
+            {runs.map((r) => {
+              const settled = r.entries.filter((e) => e.status !== "failed").length
+              return (
+                <li key={r.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line/60 px-5 py-3 last:border-0">
+                  <span className="w-20 font-mono text-xs text-mute">
+                    {new Date(r.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                  </span>
+                  <span className="font-mono text-xs">{shortHash(r.id, 6, 4)}</span>
+                  <span className="rounded border border-line bg-panel px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-body-ink">
+                    {r.mode}
+                  </span>
+                  <span className="ml-auto font-mono text-xs tabular-nums">
+                    {settled}/{r.entries.length} settled
+                  </span>
+                  <span className="w-24 text-right font-mono text-xs tabular-nums text-gold">
+                    {lamportsToSol(r.totalPlanned.toString()).toFixed(4)} SOL
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+    </>
   )
 }
 

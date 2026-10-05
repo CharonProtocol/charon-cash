@@ -2,16 +2,22 @@ import { useEffect, useState } from "react"
 
 export type Route =
   | { role: "landing"; path: "/" }
-  | { role: "employer"; path: "/employer" | "/employer/history" | "/employer/team"; page: "payroll" | "history" | "team" }
+  | {
+      role: "employer"
+      path: "/employer" | "/employer/run" | "/employer/history" | "/employer/team"
+      page: "overview" | "payroll" | "history" | "team"
+    }
   | { role: "employee"; path: "/employee" }
 
 export function parsePath(pathname: string): Route {
   const p = pathname.replace(/\/+$/, "") || "/"
   if (p === "/employer" || p.startsWith("/employer/")) {
     const sub = p.slice("/employer".length)
+    if (sub === "/run") return { role: "employer", path: "/employer/run", page: "payroll" }
     if (sub === "/history") return { role: "employer", path: "/employer/history", page: "history" }
     if (sub === "/team") return { role: "employer", path: "/employer/team", page: "team" }
-    return { role: "employer", path: "/employer", page: "payroll" }
+    // bare /employer and unknown subpaths both land on the overview
+    return { role: "employer", path: "/employer", page: "overview" }
   }
   if (p === "/employee") return { role: "employee", path: "/employee" }
   return { role: "landing", path: "/" }

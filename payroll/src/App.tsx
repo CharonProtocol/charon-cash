@@ -1,3 +1,5 @@
+import { useEffect } from "react"
+
 import { Ms } from "@/components/motion/ms"
 import { GliderGroup } from "@/components/motion/Glider"
 import { ThemeToggle } from "@/components/ThemeToggle"
@@ -8,8 +10,32 @@ import { Landing } from "@/components/Landing"
 import { isLocalRpc } from "@/lib/explorer"
 import { navigate, useRoute } from "@/lib/router"
 
+// [data-stagger] children start hidden (opacity 0) and only the landing had
+// an observer to reveal them — console and gate sections stayed invisible
+// forever outside ?static mode. Mark every stagger root on mount (and any
+// that appear later, e.g. the live-run card); the CSS transition-delays turn
+// the reveal into the staggered entrance.
+function useStaggerReveal(dep: unknown) {
+  useEffect(() => {
+    const reveal = (el: Element) => el.classList.add("stagger-in")
+    document.querySelectorAll("[data-stagger]:not(.stagger-in)").forEach(reveal)
+    const mo = new MutationObserver((muts) => {
+      for (const m of muts) {
+        m.addedNodes.forEach((n) => {
+          if (!(n instanceof HTMLElement)) return
+          if (n.matches("[data-stagger]")) reveal(n)
+          n.querySelectorAll("[data-stagger]:not(.stagger-in)").forEach(reveal)
+        })
+      }
+    })
+    mo.observe(document.body, { childList: true, subtree: true })
+    return () => mo.disconnect()
+  }, [dep])
+}
+
 export default function App() {
   const route = useRoute()
+  useStaggerReveal(route)
 
   if (route.role === "landing") {
     return (
@@ -53,9 +79,10 @@ export default function App() {
               className="mx-auto flex w-fit items-center"
               value={activeId}
               onChange={(id) => {
-                if (id === "payroll") navigate("/employer")
+                if (id === "payroll") navigate("/employer/run")
                 else if (id === "history") navigate("/employer/history")
                 else if (id === "team") navigate("/employer/team")
+                else if (id === "overview") navigate("/employer")
                 else navigate("/employee")
               }}
               items={
@@ -92,7 +119,9 @@ export default function App() {
           </div>
         </div>
       </header>
-      <div key={route.path} className="anim">
+      {/* key on ROLE, not path: switching /employer sub-pages must keep
+          EmployerApp mounted or a live run's snapshot would be dropped */}
+      <div key={route.role} className="anim">
         {employer ? <EmployerApp page={route.page} /> : <EmployeeApp />}
       </div>
     </div>

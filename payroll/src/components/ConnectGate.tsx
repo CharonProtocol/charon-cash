@@ -1,5 +1,6 @@
 import { useWallet } from "@solana/wallet-adapter-react"
 import { WalletReadyState, type WalletName } from "@solana/wallet-adapter-base"
+import { useEffect, useRef } from "react"
 import { ArrowRight, Fingerprint, KeyRound, ShieldCheck } from "lucide-react"
 
 import { GliderGroup } from "@/components/motion/Glider"
@@ -17,6 +18,7 @@ const SUBTITLES: Record<string, string> = {
   Ledger: "Direct USB / WebHID / Air-gapped QR",
   Torus: "Social recovery · embedded keys",
   Glow: "Mobile-first · Wallet Standard",
+  "Demo Wallet": "Burner keypair · no extension needed (dev only)",
 }
 
 const invariants = [
@@ -44,13 +46,35 @@ const invariants = [
  */
 export function ConnectGate({ role }: { role: "employer" | "employee" }) {
   const { open } = useConnectWallet()
-  const { wallets, select } = useWallet()
+  const { wallets, select, wallet, connecting } = useWallet()
+
+  // connect-from-click: select() attaches the context's listeners to the
+  // adapter; once the selected wallet reflects the click we connect THE
+  // ADAPTER directly — the context's connect() closes over stale state and
+  // silently no-ops here. The adapter's connect event drives the context.
+  const pendingConnect = useRef<string | null>(null)
+  useEffect(() => {
+    if (pendingConnect.current && wallet?.adapter.name === pendingConnect.current) {
+      pendingConnect.current = null
+      // defer one task: this effect runs before the provider's own adapter-
+      // listener effect in the same commit, and connecting synchronously
+      // would emit `connect` before anyone listens
+      const adapter = wallet.adapter
+      const t = setTimeout(() => {
+        void adapter.connect().catch(() => open()) // popup blocked → full picker
+      }, 0)
+      return () => clearTimeout(t)
+    }
+  }, [wallet, open])
 
   const installed = wallets.filter((w) => w.readyState === WalletReadyState.Installed)
   const detected = new Set<string>(installed.map((w) => w.adapter.name))
   // Curated order so the screen matches the ref even before wallets install;
-  // anything detected that isn't curated still gets a row.
-  const curated = ["Phantom", "Solflare", "Backpack", "Ledger"]
+  // anything detected that isn't curated still gets a row. In dev the burner
+  // wallet leads so the console is one click away without an extension.
+  const curated = import.meta.env.DEV
+    ? ["Demo Wallet", "Phantom", "Solflare", "Backpack"]
+    : ["Phantom", "Solflare", "Backpack", "Ledger"]
   const names = [
     ...curated,
     ...wallets.map((w) => w.adapter.name as string).filter((n) => !curated.includes(n)),
@@ -132,16 +156,23 @@ export function ConnectGate({ role }: { role: "employer" | "employee" }) {
                   <Button
                     size="sm"
                     className="btn-glow flex-none"
+                    disabled={connecting}
                     onClick={() => {
-                      try {
-                        select(name as WalletName)
-                      } catch {
-                        // unknown adapter — the modal still lists everything
+                      const target = wallets.find((w) => w.adapter.name === name)?.adapter
+                      if (wallet?.adapter.name === name && target) {
+                        // already selected (persisted from a previous session) —
+                        // select() won't re-render anything, connect right here
+                        void target.connect().catch(() => open())
+                        return
                       }
-                      open()
+                      // straight from this click so the wallet's own popup
+                      // keeps the user gesture; the modal is the fallback
+                      pendingConnect.current = name
+                      select(name as WalletName)
                     }}
                   >
-                    Connect <ArrowRight className="ml-1 size-3.5" />
+                    {connecting ? "Connecting…" : "Connect"}{" "}
+                    <ArrowRight className="ml-1 size-3.5" />
                   </Button>
                 </div>
               )

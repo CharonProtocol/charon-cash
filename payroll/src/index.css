@@ -16,25 +16,28 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 
-  /* neutrals (cream paper ramp) */
-  --paper: #f9f8f5;      /* canvas */
-  --panel: #f4f2ec;      /* panels, rails, table backplates */
-  --panel-2: #eeece6;    /* nav pill, hover tiers */
-  --line: #e2e0d8;       /* structural hairlines */
+  /* neutrals — ref light ramp (stitch employee/connect/landing):
+     surface #fef9f0 · container #f2ede5 · high #ede8df · highest #e7e2d9
+     outline-variant #cec6b5 · outline #7d7768 · on-surface #1d1c16 */
+  --paper: #fef9f0;      /* canvas */
+  --panel: #f2ede5;      /* panels, rails, table backplates */
+  --panel-2: #ede8df;    /* nav pill, hover tiers */
+  --line: #e7e2d9;       /* structural hairlines */
   --line-2: #cec6b5;     /* primary perimeters, input edges */
-  --ink: #15130f;        /* headlines, cryptographic values */
+  --ink: #1d1c16;        /* headlines, cryptographic values */
   --ink-soft: #3a3833;
   --ink-deep: #26241f;
-  --body-ink: #54524b;   /* commentary, supporting attributes */
-  --mute: #979081;       /* footers, delimiters */
+  --body-ink: #4b463a;   /* commentary, supporting attributes */
+  --mute: #7d7768;       /* footers, delimiters */
 
-  /* golden-amber telemetry */
-  --gold: #73612e;       /* primary anchors, key interactive drivers */
-  --gold-deep: #5f5024;  /* hover */
-  --gold-2: #88763a;
+  /* golden-amber telemetry — ref primary ramp:
+     primary #6b5b21 · container #857338 · secondary-container #efe2c0 */
+  --gold: #6b5b21;       /* primary anchors, key interactive drivers */
+  --gold-deep: #5a4c1a;  /* hover */
+  --gold-2: #857338;
   --gold-3: #a38f51;
-  --gold-soft: #f5f1e4;  /* gold chip fill */
-  --gold-line: #e8ddbe;  /* gold chip border */
+  --gold-soft: #efe2c0;  /* gold chip fill */
+  --gold-line: #d2c6a5;  /* gold chip border */
   --glow: rgba(136, 118, 58, 0.25);
   --glow-strong: rgba(136, 118, 58, 0.4);
 
@@ -48,7 +51,7 @@
   --warn-hi: #b57e12;
   --warn-soft: #faf3df;
   --warn-line: #ecdcb2;
-  --critical: #b3261e;   /* exposure, failure */
+  --critical: #ba1a1a;   /* exposure, failure — ref error */
   --critical-hi: #d3362d;
   --critical-deep: #b3261e;
   --critical-soft: #ffdad6;
@@ -66,45 +69,48 @@
   --band-mute: #a89f8c;
   --band-gold: #dbc581;
 
-  /* shadcn semantic tokens (light) */
-  --background: #f9f8f5;
-  --foreground: #15130f;
-  --card: #ffffff;
-  --card-foreground: #15130f;
-  --popover: #ffffff;
-  --popover-foreground: #15130f;
-  --primary: #73612e;
+  /* shadcn semantic tokens (light) — mirrors the ref ramp above */
+  --background: #fef9f0;
+  --foreground: #1d1c16;
+  --card: #f8f3ea;            /* surface-container-low: cards lift off canvas */
+  --card-foreground: #1d1c16;
+  --popover: #ffffff;         /* surface-container-lowest */
+  --popover-foreground: #1d1c16;
+  --primary: #6b5b21;
   --primary-foreground: #ffffff;
-  --secondary: #f4f2ec;
-  --secondary-foreground: #15130f;
-  --muted: #f4f2ec;
-  --muted-foreground: #54524b;
-  --accent-2: #eeece6;
-  --accent-foreground: #15130f;
-  --destructive: #b3261e;
-  --border: #e2e0d8;
-  --input: #e2e0d8;
-  --ring: #73612e;
+  --secondary: #f2ede5;
+  --secondary-foreground: #1d1c16;
+  --muted: #f2ede5;
+  --muted-foreground: #4b463a;
+  --accent-2: #ede8df;
+  --accent-foreground: #1d1c16;
+  --destructive: #ba1a1a;
+  --border: #ded8ca;
+  --input: #cec6b5;
+  --ring: #6b5b21;
 }
 
 .dark {
-  --paper: #171512;      /* obsidian canvas */
-  --panel: #1e1c17;
-  --panel-2: #26231c;
-  --line: #37342b;
-  --line-2: #4e462e;
-  --ink: #f5f0e7;
-  --ink-soft: #d6cfbf;
-  --ink-deep: #c9c2b0;
-  --body-ink: #b3ab99;
-  --mute: #847c6a;
+  /* obsidian ramp — ref runs-console: surface #15130f · container #21201a
+     high #2b2a24 · highest #36352f · outline-variant #4b463a · outline #979081
+     on-surface #e7e2d9 · on-surface-variant #cec6b5 · container-low #1d1c16 */
+  --paper: #15130f;      /* obsidian canvas */
+  --panel: #21201a;
+  --panel-2: #2b2a24;
+  --line: #36352f;
+  --line-2: #4b463a;
+  --ink: #e7e2d9;
+  --ink-soft: #cec6b5;
+  --ink-deep: #b8b1a0;
+  --body-ink: #cec6b5;
+  --mute: #979081;
 
-  --gold: #dbc581;       /* light gold on obsidian */
+  --gold: #dbc581;       /* ref primary — light gold on obsidian */
   --gold-deep: #c9b068;
-  --gold-2: #e3cf92;
+  --gold-2: #a38f51;     /* ref primary-container */
   --gold-3: #f8e19a;
-  --gold-soft: #2e2917;
-  --gold-line: #55481f;
+  --gold-soft: #514930;  /* ref secondary-container chip fill */
+  --gold-line: #615738;
   --glow: rgba(219, 197, 129, 0.14);
   --glow-strong: rgba(219, 197, 129, 0.3);
 
@@ -134,23 +140,23 @@
   --band-mute: #948c7a;
   --band-gold: #dbc581;
 
-  --background: #171512;
-  --foreground: #f5f0e7;
-  --card: #1e1c17;
-  --card-foreground: #f5f0e7;
-  --popover: #1e1c17;
-  --popover-foreground: #f5f0e7;
+  --background: #15130f;
+  --foreground: #e7e2d9;
+  --card: #1d1c16;
+  --card-foreground: #e7e2d9;
+  --popover: #21201a;
+  --popover-foreground: #e7e2d9;
   --primary: #dbc581;
-  --primary-foreground: #231b00;
-  --secondary: #26231c;
-  --secondary-foreground: #f5f0e7;
-  --muted: #26231c;
-  --muted-foreground: #b3ab99;
-  --accent-2: #322e24;
-  --accent-foreground: #f5f0e7;
+  --primary-foreground: #3b2f00;
+  --secondary: #2b2a24;
+  --secondary-foreground: #e7e2d9;
+  --muted: #2b2a24;
+  --muted-foreground: #cec6b5;
+  --accent-2: #36352f;
+  --accent-foreground: #e7e2d9;
   --destructive: #ffb4ab;
-  --border: #37342b;
-  --input: #37342b;
+  --border: #36352f;
+  --input: #4b463a;
   --ring: #dbc581;
 }
 
@@ -662,8 +668,13 @@ details[open]::details-content {
     opacity 0.5s cubic-bezier(0.22, 1, 0.36, 1),
     transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 }
+/* staggered children reveal: either an ancestor [data-reveal] was scrolled in
+   (landing) or the [data-stagger] root itself was marked .stagger-in — the
+   App-level reveal effect marks every stagger root on mount, so console and
+   gate sections animate in without depending on Landing's observer. */
 [data-reveal].reveal-in [data-stagger] > *,
-[data-reveal].reveal-in[data-stagger] > * {
+[data-reveal].reveal-in[data-stagger] > *,
+[data-stagger].stagger-in > * {
   opacity: 1;
   transform: none;
 }

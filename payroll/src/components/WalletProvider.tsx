@@ -7,12 +7,20 @@ import { WalletModalProvider, useWalletModal } from "@solana/wallet-adapter-reac
 import "@solana/wallet-adapter-react-ui/styles.css"
 
 import { config } from "@/lib/config"
+import { DemoWalletAdapter } from "@/lib/demoWallet"
 
 export function SolanaProviders({ children }: { children: ReactNode }) {
-  const wallets = useMemo(() => [], [])
+  // Dev-only burner wallet so the console is testable in a browser with no
+  // wallet extension installed. Never ships in the prod bundle.
+  const wallets = useMemo(
+    () => (import.meta.env.DEV ? [new DemoWalletAdapter()] : []),
+    [],
+  )
   return (
     <ConnectionProvider endpoint={config.get().rpcUrl} config={{ commitment: "confirmed" }}>
-      <SolanaWalletProvider wallets={wallets} autoConnect>
+      {/* no autoConnect: a refresh must never silently log the user back in —
+          connecting is always an explicit click on the connect screen */}
+      <SolanaWalletProvider wallets={wallets}>
         <WalletModalProvider>{children}</WalletModalProvider>
       </SolanaWalletProvider>
     </ConnectionProvider>
