@@ -46,6 +46,7 @@ export default function App() {
   if (route.role === "landing") {
     return (
       <Landing
+        page={route.page}
         onRole={(r) => {
           navigate(`/${r}`)
         }}
