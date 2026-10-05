@@ -21,7 +21,6 @@ import { WalletBar } from "@/components/WalletBar"
 import { usePayrollClient } from "@/hooks/usePayrollClient"
 import { ensureBrowserProver, recommendedWorkers } from "@/lib/browserProver"
 import { createEngine, type RunSnapshot } from "@/lib/engine"
-import { isLocalRpc } from "@/lib/explorer"
 import { lamportsToSol, shortHash } from "@/lib/format"
 import { estimateTotals } from "@/lib/estimate"
 import { navigate } from "@/lib/router"
@@ -243,11 +242,8 @@ export function EmployerApp({ page }: { page: Page }) {
     ? `${snapshot.rows.filter((r) => r.status === "confirmed" || r.status === "relayed").length}/${snapshot.rows.length}`
     : null
 
-  // The runs console ref is dark-only: the console renders on the obsidian
-  // palette no matter which theme the landing/employee pages use.
   return (
-    <div className="dark min-h-[calc(100dvh-3.5rem)] bg-background">
-      <div className="mx-auto w-full max-w-[1280px] px-4 pb-36 pt-6 sm:px-6 sm:pt-8 lg:px-10">
+    <div className="mx-auto w-full max-w-[1280px] px-4 pb-36 pt-6 sm:px-6 sm:pt-8 lg:px-10">
       {error && <p className="mb-3 text-sm text-destructive">{error}</p>}
       {storageWarn && (
         <p className="mb-3 text-sm text-muted-foreground">
@@ -317,37 +313,25 @@ export function EmployerApp({ page }: { page: Page }) {
       ) : (
         <>
           {/* ── console header ─────────────────────────────────────────── */}
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="flex items-center gap-2 rounded-full border border-line bg-card px-3 py-1 font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-body-ink">
-                  <span className="relative flex size-1.5">
-                    <span className="absolute inline-flex size-full animate-ping rounded-full bg-ok opacity-60" />
-                    <span className="relative inline-flex size-1.5 rounded-full bg-ok" />
-                  </span>
-                  {rows > 0 ? `${rows} payouts loaded` : "awaiting batch"} · {isLocalRpc() ? "localnet" : "devnet"} · mempool clear
-                </span>
-                <span className="rounded-md border border-gold-line bg-gold-soft px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold">
-                  circuit-v2.4
-                </span>
-              </div>
-              <h1 className="h-display mt-2 text-3xl tracking-[-0.02em] sm:text-4xl">
-                Run #{runNo} — <Scramble text="Batch Dispatch" />
-              </h1>
-              <p className="mt-1 max-w-2xl text-sm text-body-ink">
-                One signature funds the run — every payout leaves with its own Groth16 proof,
-                built in this browser, and lands gasless through the relayer.
-              </p>
+          <div>
+            <h1 className="h-display text-3xl tracking-[-0.02em] sm:text-4xl">
+              Run #{runNo} — <Scramble text="Batch Dispatch" />
+            </h1>
+            <p className="mt-1 max-w-2xl text-sm text-body-ink">
+              One signature funds the run — every payout leaves with its own Groth16 proof,
+              built in this browser, and lands gasless through the relayer.
+            </p>
+            <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+              <WalletBar
+                vaultSolRaw={vaultSolRaw}
+                relayerOk={bps !== null}
+                unlocked={unlocked}
+                unlockBusy={unlockBusy}
+                onUnlock={unlockNow}
+                onOpenSettings={() => setSettingsOpen(true)}
+                onFunded={refreshVault}
+              />
             </div>
-            <WalletBar
-              vaultSolRaw={vaultSolRaw}
-              relayerOk={bps !== null}
-              unlocked={unlocked}
-              unlockBusy={unlockBusy}
-              onUnlock={unlockNow}
-              onOpenSettings={() => setSettingsOpen(true)}
-              onFunded={refreshVault}
-            />
           </div>
 
           {/* ── telemetry trio ─────────────────────────────────────────── */}
@@ -434,7 +418,6 @@ export function EmployerApp({ page }: { page: Page }) {
       )}
 
       {settingsOpen && <SettingsDrawer onClose={() => setSettingsOpen(false)} />}
-      </div>
     </div>
   )
 }
@@ -455,26 +438,24 @@ function PageHeader({
   liveChip?: string | null
 }) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-gold">
-            {kicker}
-          </span>
-          {liveChip && (
-            <button
-              onClick={() => navigate("/employer/run")}
-              className="flex items-center gap-1.5 rounded-full border border-gold-line bg-gold-soft px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold transition-transform hover:scale-[1.03]"
-            >
-              <span className="size-1.5 animate-pulse rounded-full bg-gold" />
-              run live · {liveChip}
-            </button>
-          )}
-        </div>
-        <h1 className="h-display mt-1 text-2xl sm:text-3xl">{title}</h1>
-        <p className="mt-1 max-w-2xl text-sm text-body-ink">{sub}</p>
+    <div>
+      <div className="flex items-center gap-2">
+        <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-gold">
+          {kicker}
+        </span>
+        {liveChip && (
+          <button
+            onClick={() => navigate("/employer/run")}
+            className="flex items-center gap-1.5 rounded-full border border-gold-line bg-gold-soft px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold transition-transform hover:scale-[1.03]"
+          >
+            <span className="size-1.5 animate-pulse rounded-full bg-gold" />
+            run live · {liveChip}
+          </button>
+        )}
       </div>
-      {right}
+      <h1 className="h-display mt-1 text-2xl sm:text-3xl">{title}</h1>
+      <p className="mt-1 max-w-2xl text-sm text-body-ink">{sub}</p>
+      {right && <div className="mt-4 flex flex-wrap items-center justify-end gap-2">{right}</div>}
     </div>
   )
 }
@@ -898,7 +879,6 @@ function SettlementBar({
         <div className="flex flex-1 flex-wrap items-center gap-x-6 gap-y-2">
           <BarStat label="Total distributed" value={totals ? `${lamportsToSol(totals.totalNet.toString()).toFixed(4)} SOL` : "—"} />
           <BarStat label="Relayer gas" value={totals ? `${lamportsToSol(totals.totalFees.toString()).toFixed(4)} SOL` : "—"} sub="subsidized" />
-          <BarStat label="ZK proof gen" value="on-device" sub="subsidized" />
           <BarStat
             label="Total required"
             value={totals ? `${lamportsToSol(required.toString()).toFixed(4)} SOL` : "—"}

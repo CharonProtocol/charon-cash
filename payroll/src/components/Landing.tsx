@@ -135,6 +135,41 @@ await client.unlock() // decrypt your notes locally
 // claim a private note to your wallet - gasless, relayed
 const r = await client.withdrawSOL(amountLamports, recipient, { relay: true })`
 
+/** Tiny tokenizing highlighter for the SDK snippet — comments, strings,
+ *  keywords, SDK types, numbers; colors come from theme tokens. */
+function CodeBlock({ code }: { code: string }) {
+  const re =
+    /(\/\/[^\n]*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|\b(import|from|const|await|async|new|return|export)\b|\b(PrivacyCashClient|publishRecipientKeys|Boolean|Number|String)\b|\b(\d+(?:\.\d+)?)\b/g
+  const nodes: ReactNode[] = []
+  let last = 0
+  let m: RegExpExecArray | null
+  let key = 0
+  while ((m = re.exec(code)) !== null) {
+    if (m.index > last) nodes.push(code.slice(last, m.index))
+    const cls = m[1]
+      ? "tok-com"
+      : m[2]
+        ? "tok-str"
+        : m[3]
+          ? "tok-kw"
+          : m[4]
+            ? "tok-type"
+            : "tok-num"
+    nodes.push(
+      <span key={key++} className={cls}>
+        {m[0]}
+      </span>,
+    )
+    last = m.index + m[0].length
+  }
+  if (last < code.length) nodes.push(code.slice(last))
+  return (
+    <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed">
+      <code>{nodes}</code>
+    </pre>
+  )
+}
+
 const faqs = [
   {
     q: "What does the chain actually see?",
@@ -157,6 +192,41 @@ const faqs = [
     a: "SOL payroll runs today. The private-note format (v2) is token-agnostic, so SPL stablecoins like USDC are the natural next pool - the circuit and tree do not care what the note represents.",
   },
 ]
+
+/** Two stacked representations that crossfade on the lantern state — the hero
+ *  panel's "public while the lamp is lit, blind once it dims" storytelling.
+ *  Both layers share one grid cell so sizing follows the wider of the two. */
+function Crossfade({
+  lit,
+  on,
+  off,
+  className,
+}: {
+  lit: boolean
+  on: ReactNode
+  off: ReactNode
+  className?: string
+}) {
+  return (
+    <span className={`inline-grid justify-items-center ${className ?? ""}`}>
+      <span
+        className={`[grid-area:1/1] transition-opacity duration-[1200ms] ease-out ${
+          lit ? "opacity-100" : "opacity-0"
+        }`}
+      >
+        {on}
+      </span>
+      <span
+        aria-hidden
+        className={`[grid-area:1/1] whitespace-nowrap transition-opacity duration-[1200ms] ease-out ${
+          lit ? "opacity-0" : "opacity-100"
+        }`}
+      >
+        {off}
+      </span>
+    </span>
+  )
+}
 
 const publicRows = [
   { who: "Alex R. (VP Engineering)", amt: "2.10 SOL" },
@@ -395,10 +465,30 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
                     <span className="flex items-center gap-1.5 rounded border border-ok-line bg-ok-soft px-2 py-0.5 font-mono text-[11px] font-medium text-ok">
                       <span className="size-1.5 rounded-full bg-ok" /> Instant Finality
                     </span>
+                    {/* the lantern IS the privacy story: lit = operator preview,
+                        dim = everything went private */}
+                    <Crossfade
+                      lit={lanternLit}
+                      on={
+                        <span className="flex items-center gap-1.5 rounded border border-warn-line bg-warn-soft px-2 py-0.5 font-mono text-[11px] font-medium text-warn">
+                          <span className="size-1.5 rounded-full bg-warn" /> Public preview
+                        </span>
+                      }
+                      off={
+                        <span className="flex items-center gap-1.5 rounded border border-ok-line bg-ok-soft px-2 py-0.5 font-mono text-[11px] font-medium text-ok">
+                          <span className="size-1.5 rounded-full bg-ok" /> Shielded
+                        </span>
+                      }
+                    />
                   </div>
                   <div className="flex items-center gap-3 font-mono text-[11px] text-body-ink">
                     <span>
-                      Treasury Pool: <span className="font-medium text-ink">0x8A...3Fe9</span>
+                      Treasury Pool:{" "}
+                      <Crossfade
+                        lit={lanternLit}
+                        on={<span className="font-medium text-ink">0x8A...3Fe9</span>}
+                        off={<span className="tracking-widest text-mute">0x··…····</span>}
+                      />
                     </span>
                     <span className="text-line-2">•</span>
                     <span className="flex items-center gap-1 font-medium text-ok">
@@ -412,7 +502,13 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
                     [
                       {
                         k: "Masked Total",
-                        v: <CountUp to={8.7} decimals={4} />,
+                        v: (
+                          <Crossfade
+                            lit={lanternLit}
+                            on={<CountUp to={8.7} decimals={4} />}
+                            off={<span className="tracking-[0.3em]">········</span>}
+                          />
+                        ),
                         u: "SOL",
                         s: "zk-SNARK payload",
                         cls: "text-ink",
@@ -432,11 +528,13 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
                         cls: "text-ink",
                       },
                       {
+                        // 0% while the lamp is lit (you can see everything),
+                        // glides back to 100% the moment it dims
                         k: "Privacy Level",
-                        v: <CountUp to={100} />,
+                        v: <CountUp to={lanternLit ? 0 : 100} />,
                         u: "%",
-                        s: "Shielded tree pool",
-                        cls: "text-gold",
+                        s: lanternLit ? "public preview" : "shielded tree pool",
+                        cls: lanternLit ? "text-warn" : "text-gold",
                         lock: true,
                       },
                     ] satisfies { k: string; v: ReactNode; u: string; s: string; cls: string; lock?: boolean }[]
@@ -445,10 +543,10 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
                       <div className="font-mono text-[11px] font-medium uppercase tracking-wider text-body-ink">
                         {t.k}
                       </div>
-                      <div className={`mt-1 flex items-baseline gap-1 text-xl font-semibold ${t.cls}`}>
+                      <div className={`mt-1 flex items-baseline gap-1 text-xl font-semibold transition-colors duration-[1200ms] ${t.cls}`}>
                         {t.v}
                         <span className="font-mono text-[11px] font-semibold text-gold">{t.u}</span>
-                        {t.lock && <Ms name="lock" className="text-base" fill />}
+                        {t.lock && <Ms name={lanternLit ? "lock_open" : "lock"} className="text-base" fill />}
                       </div>
                       <div className="mt-0.5 font-mono text-[11px] text-body-ink">{t.s}</div>
                     </div>
@@ -464,9 +562,9 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
                   </div>
                   <div className="mt-1 space-y-1">
                     {[
-                      ["cm_9f0a...471c", "Senior Cryptographer"],
-                      ["cm_3e21...8b40", "Rust Runtime Core"],
-                    ].map(([cm, role]) => (
+                      ["cm_9f0a...471c", "Senior Cryptographer", "1.2450"],
+                      ["cm_3e21...8b40", "Rust Runtime Core", "0.8310"],
+                    ].map(([cm, role, amt]) => (
                       <div
                         key={cm}
                         className="flex items-center justify-between rounded border border-[#e5e2da] bg-card px-2 py-2 font-mono text-[11px] shadow-xs transition-colors hover:border-[color-mix(in_srgb,var(--gold-2)_40%,transparent)] dark:border-line"
@@ -474,7 +572,12 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
                         <span className="font-medium text-ink">
                           {cm} <span className="hidden font-normal text-body-ink md:inline">({role})</span>
                         </span>
-                        <span className="hidden tracking-widest text-mute sm:inline">•••••••• SOL</span>
+                        <Crossfade
+                          lit={lanternLit}
+                          className="hidden sm:inline"
+                          on={<span className="font-semibold text-ink">{amt} SOL</span>}
+                          off={<span className="tracking-widest text-mute">•••••••• SOL</span>}
+                        />
                         <span className="flex items-center gap-1 font-medium text-ok">
                           <span className="size-1.5 rounded-full bg-ok" /> Verified
                         </span>
@@ -893,17 +996,15 @@ export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => vo
               ))}
             </ul>
           </div>
-          <div className="overflow-hidden rounded-xl border border-band-line bg-band text-band-ink shadow-[0_1px_2px_rgba(9,9,11,0.03),0_14px_36px_-16px_rgba(9,9,11,0.14)]">
-            <div className="flex items-center gap-1.5 border-b border-band-line px-5 py-3">
-              <span className="size-2.5 rounded-full bg-band-line" />
-              <span className="size-2.5 rounded-full bg-band-line" />
-              <span className="size-2.5 rounded-full bg-band-line" />
-              <span className="mono ml-2 text-[11px] text-band-mute">claim.ts</span>
-              <Code2 className="ml-auto size-3.5 text-band-mute" />
+          <div className="overflow-hidden rounded-xl border border-line bg-panel shadow-[0_1px_2px_rgba(9,9,11,0.03),0_14px_36px_-16px_rgba(9,9,11,0.14)]">
+            <div className="flex items-center gap-1.5 border-b border-line px-5 py-3">
+              <span className="size-2.5 rounded-full bg-[#e8a9a2]" />
+              <span className="size-2.5 rounded-full bg-[#ecd394]" />
+              <span className="size-2.5 rounded-full bg-[#a8cfb5]" />
+              <span className="mono ml-2 text-[11px] text-mute">claim.ts</span>
+              <Code2 className="ml-auto size-3.5 text-mute" />
             </div>
-            <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed">
-              <code>{SDK_SNIPPET}</code>
-            </pre>
+            <CodeBlock code={SDK_SNIPPET} />
           </div>
         </section>
 

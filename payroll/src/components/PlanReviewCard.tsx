@@ -13,7 +13,7 @@ import { PublicKey } from "@solana/web3.js"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { GliderGroup } from "@/components/motion/Glider"
+import { Slider } from "@/components/motion/Slider"
 import { Ms } from "@/components/motion/ms"
 import { Input } from "@/components/ui/input"
 import { rawToHuman, shortHash } from "@/lib/format"
@@ -63,7 +63,8 @@ export const PlanReviewCard = forwardRef<
   const [mint, setMint] = useState("")
   const [decimals, setDecimals] = useState<number | null>(null)
   const [mintError, setMintError] = useState<string | null>(null)
-  const [mode, setMode] = useState<RunMode>("shielded")
+  // The app is private-only by design — no public mode, no toggle.
+  const mode: RunMode = "shielded"
   // Recommended lanes: small runs pay faster strictly serially (splits cost
   // more than they save below ~10 rows); big runs overlap chain latency
   // across chains, capped by the machine's cores. The user can always
@@ -176,9 +177,8 @@ export const PlanReviewCard = forwardRef<
     }
   }
 
-  const shieldedReady =
-    mode === "public" ||
-    (recipientCheck !== null && recipientCheck.unregistered.length === 0)
+  // private-only app: dispatch needs every recipient enrolled
+  const shieldedReady = recipientCheck !== null && recipientCheck.unregistered.length === 0
 
   const canRun =
     !!parsed && bps !== null && !!asset && !mintError && decimalErrors.length === 0 && !disabled && shieldedReady
@@ -308,75 +308,35 @@ export const PlanReviewCard = forwardRef<
           )}
         </div>
 
-        {/* privacy mode */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-mute">
-            <Ms name="enhanced_encryption" className="text-xs" /> Privacy mode
-          </div>
-          <GliderGroup
-            className="flex rounded-xl border border-line bg-panel p-1"
-            pillClassName="bg-card border border-line shadow-sm"
-            itemClassName="flex-1 justify-center px-2 text-xs"
-            value={mode}
-            onChange={(m) => setMode(m)}
-            items={[
-              { id: "shielded" as const, label: "Private notes" },
-              { id: "public" as const, label: "Direct (public)" },
-            ]}
-          />
-          <p className="text-[11px] leading-relaxed text-body-ink">
-            {mode === "shielded"
-              ? "Amounts and recipients stay private. One signature funds the run — every payout goes out on its own, zero signatures from you."
-              : "Sent straight from your wallet. Fast, but amounts and recipients are public on-chain, and you sign every payout."}
-          </p>
-        </div>
-
         {/* lanes */}
-        <div className="space-y-2">
+        <div className="space-y-3">
           <div className="flex items-center justify-between font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-mute">
             <span>Parallel execution lanes</span>
             <span className="normal-case tracking-normal text-gold">{lanes} concurrent</span>
           </div>
           {/* Lanes are payout chains, not CPU threads — each spends most of its
               life waiting on chain landings while proofs queue through the
-              shared prover pool. Options grow with the machine; the rec caps
-              at 16 because past that landing + indexing, not proving, is the
-              wall. */}
-          <GliderGroup
-            className="flex rounded-xl border border-line bg-panel p-1"
-            pillClassName="bg-card border border-line shadow-sm"
-            itemClassName="flex-1 justify-center whitespace-nowrap px-1 text-xs"
-            value={String(lanes)}
+              shared prover pool. Stops grow with the machine (12/16 on 8+
+              cores, 24/32 on 24+); the rec caps at 16 because past that
+              landing + indexing, not proving, is the wall. */}
+          <Slider
+            ariaLabel="Parallel execution lanes"
+            values={laneOptions}
+            value={lanes}
             onChange={(v) => {
-              setLanes(Number(v))
+              setLanes(v)
               setLanesTouched(true)
             }}
-            items={laneOptions.map((l) => ({
-              id: String(l),
-              label: l === recommendedLanes ? `${l} ·rec` : String(l),
-            }))}
           />
+          <p className="text-[11px] text-body-ink">
+            Recommended <span className="font-semibold text-gold">{recommendedLanes}</span> for
+            this batch · {cores} cores detected
+          </p>
           <p className="flex items-center gap-1.5 text-[11px] text-body-ink">
             <Ms name="schedule" className="text-xs text-gold" />
             est. total completion: <span className="font-medium text-ink">{estLabel}</span>
             <span className="text-mute">(zero mempool collisions)</span>
           </p>
-        </div>
-
-        {/* relayer node status */}
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-panel px-3.5 py-2.5">
-          <span className="flex items-center gap-2 text-xs">
-            <span
-              className={`size-1.5 rounded-full ${bps === null ? "animate-pulse bg-muted-foreground/50" : bps ? "bg-ok" : "bg-critical"}`}
-            />
-            Relayer:{" "}
-            <span className="font-medium">
-              {bps === null ? "connecting…" : bps ? "online · queue clear" : "offline"}
-            </span>
-          </span>
-          <span className="rounded border border-ok-line bg-ok-soft px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider text-ok">
-            gasless prover
-          </span>
         </div>
 
         {/* recipient verification (shielded only) */}

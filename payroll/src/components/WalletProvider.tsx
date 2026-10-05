@@ -18,9 +18,9 @@ export function SolanaProviders({ children }: { children: ReactNode }) {
   )
   return (
     <ConnectionProvider endpoint={config.get().rpcUrl} config={{ commitment: "confirmed" }}>
-      {/* no autoConnect: a refresh must never silently log the user back in —
-          connecting is always an explicit click on the connect screen */}
-      <SolanaWalletProvider wallets={wallets}>
+      {/* autoConnect restores an explicitly-made connection across refreshes —
+          a fresh browser still lands on the connect gate */}
+      <SolanaWalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>{children}</WalletModalProvider>
       </SolanaWalletProvider>
     </ConnectionProvider>

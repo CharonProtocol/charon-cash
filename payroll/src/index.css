@@ -815,6 +815,82 @@ details[open]::details-content {
     height 0.35s var(--ease-out);
 }
 
+/* beUI slider: transparent range input over the custom rail; the thumb
+   carries the gold glow, the rail fill is drawn by the component */.beui-slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: var(--gold);
+  border: 3px solid var(--card);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--gold-2) 22%, transparent),
+    0 2px 10px rgba(21, 19, 15, 0.28);
+  transition: transform 0.15s var(--ease-out);
+}
+.beui-slider-input:active::-webkit-slider-thumb {
+  transform: scale(1.18);
+}
+.beui-slider-input::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: var(--gold);
+  border: 3px solid var(--card);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--gold-2) 22%, transparent),
+    0 2px 10px rgba(21, 19, 15, 0.28);
+  transition: transform 0.15s var(--ease-out);
+}
+.beui-slider-input:active::-moz-range-thumb {
+  transform: scale(1.18);
+}
+.beui-slider-input:focus-visible {
+  outline: none;
+}
+.beui-slider-input:focus-visible::-webkit-slider-thumb {
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--gold-2) 40%, transparent),
+    0 2px 10px rgba(21, 19, 15, 0.28);
+}
+
+/* code snippet tokens — theme-aware (light ink world, dark obsidian) */
+.tok-kw {
+  color: var(--protocol-hi);
+  font-weight: 600;
+}
+.tok-str {
+  color: var(--gold-deep);
+}
+.tok-com {
+  color: var(--mute);
+  font-style: italic;
+}
+.tok-type {
+  color: var(--ok-deep);
+  font-weight: 600;
+}
+.tok-num {
+  color: var(--gold);
+}
+.dark .tok-kw {
+  color: var(--protocol);
+}
+.dark .tok-str {
+  color: var(--gold);
+}
+.dark .tok-com {
+  color: var(--mute);
+}
+.dark .tok-type {
+  color: var(--ok);
+}
+.dark .tok-num {
+  color: var(--gold-3);
+}
+
+
 /* bouncier accordion settle for the FAQ (overrides the generic curve) */
 details.qa::details-content {
   transition:

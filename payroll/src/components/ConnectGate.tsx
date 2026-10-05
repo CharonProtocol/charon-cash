@@ -44,7 +44,14 @@ const invariants = [
  * Mirrors the connect-wallet ref: suite pill, portal toggle, program row,
  * wallet rows, security invariants, network/relayer strip.
  */
-export function ConnectGate({ role }: { role: "employer" | "employee" }) {
+export function ConnectGate({
+  role,
+  footerAction,
+}: {
+  role: "employer" | "employee"
+  /** one-more-step block rendered inside the card (e.g. employee key setup) */
+  footerAction?: React.ReactNode
+}) {
   const { open } = useConnectWallet()
   const { wallets, select, wallet, connecting } = useWallet()
 
@@ -134,14 +141,25 @@ export function ConnectGate({ role }: { role: "employer" | "employee" }) {
           <div className="mt-3 space-y-2">
             {names.map((name) => {
               const isDetected = detected.has(name)
+              // real wallet art when the adapter provides it (installed wallets
+              // + the dev burner); letter tile for curated-but-absent names
+              const icon = wallets.find((w) => (w.adapter.name as string) === name)?.adapter.icon
               return (
                 <div
                   key={name}
                   className="flex items-center gap-3 rounded-xl border border-line bg-panel px-3.5 py-3 transition-all hover:-translate-y-px hover:border-[color-mix(in_srgb,var(--gold-2)_35%,var(--border))] hover:bg-panel-2"
                 >
-                  <span className="flex size-9 flex-none items-center justify-center rounded-lg border border-line bg-card font-mono text-xs font-bold text-gold">
-                    {name.slice(0, 2).toUpperCase()}
-                  </span>
+                  {icon ? (
+                    <img
+                      src={icon}
+                      alt=""
+                      className="size-9 flex-none rounded-lg border border-line bg-card object-contain p-0.5"
+                    />
+                  ) : (
+                    <span className="flex size-9 flex-none items-center justify-center rounded-lg border border-line bg-card font-mono text-xs font-bold text-gold">
+                      {name.slice(0, 2).toUpperCase()}
+                    </span>
+                  )}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 text-sm font-medium">
                       {name}
@@ -183,6 +201,10 @@ export function ConnectGate({ role }: { role: "employer" | "employee" }) {
               </Button>
             )}
           </div>
+
+          {footerAction && (
+            <div className="mt-4 rounded-xl border border-gold-line bg-gold-soft/60 p-4">{footerAction}</div>
+          )}
         </div>
 
         <div className="rounded-2xl border border-border bg-card p-5">

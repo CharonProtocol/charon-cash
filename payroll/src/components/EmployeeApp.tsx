@@ -6,7 +6,6 @@ import { publishRecipientKeys } from "privacy-cash-sdk"
 
 import { Ms } from "@/components/motion/ms"
 import { CountUp } from "@/components/motion/CountUp"
-import { Scramble } from "@/components/motion/Scramble"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -101,75 +100,45 @@ export function EmployeeApp() {
   }
   const allSelected = noteRows.length > 0 && selected.size === noteRows.length
 
-  if (!connected) return <ConnectGate role="employee" />
+  // One sign-in page: wallet connect + one-time stealth-key setup together —
+  // never two stacked gates.
+  if (!connected || registered === false) {
+    return (
+      <ConnectGate
+        role="employee"
+        footerAction={
+          connected ? (
+            <div className="text-center">
+              <span className="mx-auto flex size-10 items-center justify-center rounded-xl border border-gold-line bg-card">
+                <ShieldCheck className="size-4 text-gold" />
+              </span>
+              <p className="mt-2 text-sm font-semibold">Enable private receiving</p>
+              <p className="mx-auto mt-1 max-w-sm text-xs text-body-ink">
+                One-time setup publishes your stealth receiving keys — approve the signature
+                requests. Until then, payouts arrive as normal public SOL transfers.
+              </p>
+              <Button className="btn-glow mt-3" onClick={enable} disabled={enabling}>
+                {enabling ? "Waiting for signature…" : "Generate stealth keys"}
+              </Button>
+            </div>
+          ) : undefined
+        }
+      />
+    )
+  }
 
   return (
     <div className="mx-auto w-full max-w-[1280px] px-4 pb-16 pt-6 sm:px-6 sm:pt-8 lg:px-10">
       {error && <p className="mb-3 text-sm text-destructive">{error}</p>}
 
       {busy ? (
-        <p className="text-sm text-muted-foreground">
-          {registered === false ? "Checking registry…" : "Unlocking… (approve the signature request)"}
-        </p>
-      ) : registered === null ? null : registered === false ? (
-        <>
-          {/* ── onboarding: publish receiving keys ─────────────────────── */}
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full border border-line bg-card px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-body-ink">
-                  recipient portal
-                </span>
-                <span className="rounded-full border border-line bg-card px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-body-ink">
-                  shielded claims
-                </span>
-                <span className="rounded-md border border-gold-line bg-gold-soft px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold">
-                  ephemeral keys
-                </span>
-              </div>
-              <h1 className="h-display mt-2 text-3xl tracking-[-0.02em] sm:text-4xl">
-                <Scramble text="Employee Shielded Note Claims" />
-              </h1>
-              <p className="mt-1 max-w-2xl text-sm text-body-ink">
-                Your employer can pay you with ECDH-encrypted notes — invisible on-chain. One-time
-                setup publishes your receiving keys; nothing else ever leaves your device.
-              </p>
-            </div>
-          </div>
-          <Card className="card-lift specular mx-auto mt-8 max-w-xl p-6 text-center">
-            <span className="mx-auto flex size-12 items-center justify-center rounded-xl border border-gold-line bg-gold-soft">
-              <ShieldCheck className="size-5 text-gold" />
-            </span>
-            <p className="h-display mt-3 text-lg">Enable private receiving</p>
-            <p className="mx-auto mt-1 max-w-sm text-sm text-body-ink">
-              Approve two signature requests to publish your stealth receiving keys. Until then,
-              payouts arrive as normal public SOL transfers.
-            </p>
-            <Button className="btn-glow mt-4" onClick={enable} disabled={enabling}>
-              {enabling ? "Waiting for signature…" : "Generate stealth keys"}
-            </Button>
-          </Card>
-        </>
-      ) : (
+        <p className="text-sm text-muted-foreground">Unlocking… (approve the signature request)</p>
+      ) : registered === null ? null : (
         <>
           {/* ── header ─────────────────────────────────────────────────── */}
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <div className="flex flex-wrap items-center gap-2">
-                {["recipient portal", "shielded claims", "ephemeral keys"].map((t, i) => (
-                  <span
-                    key={t}
-                    className={
-                      i === 2
-                        ? "rounded-md border border-gold-line bg-gold-soft px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold"
-                        : "rounded-full border border-line bg-card px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-body-ink"
-                    }
-                  >
-                    {t}
-                  </span>
-                ))}
-              </div>
-              <h1 className="h-display mt-2 text-3xl tracking-[-0.02em] sm:text-4xl">
+              <h1 className="h-display text-3xl tracking-[-0.02em] sm:text-4xl">
                 Employee Shielded Note Claims
               </h1>
               <p className="mt-1 max-w-2xl text-sm text-body-ink">

@@ -93,10 +93,7 @@ export default function App() {
                       { id: "history", label: "Ledger & Receipts" },
                       { id: "team", label: "Team Registry" },
                     ]
-                  : [
-                      { id: "overview", label: "Overview" },
-                      { id: "employee", label: "Shielded Claims" },
-                    ]
+                  : [{ id: "employee", label: "Shielded Claims" }]
               }
             />
           </nav>

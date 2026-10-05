@@ -36,11 +36,25 @@ export class DemoWalletAdapter extends BaseMessageSignerWalletAdapter {
 
   async connect(): Promise<void> {
     if (this.connecting) return
-    this._keypair ??= Keypair.generate()
+    if (!this._keypair) {
+      // one burner identity per browser profile: published receiving keys and
+      // claimed notes must keep belonging to "this" wallet across reloads
+      try {
+        const raw = localStorage.getItem("payroll:demo-sk")
+        this._keypair = raw
+          ? Keypair.fromSecretKey(Uint8Array.from(JSON.parse(raw) as number[]))
+          : Keypair.generate()
+        if (!raw)
+          localStorage.setItem("payroll:demo-sk", JSON.stringify(Array.from(this._keypair.secretKey)))
+      } catch {
+        this._keypair = Keypair.generate()
+      }
+    }
     this.emit("connect", this._keypair.publicKey)
   }
 
   async disconnect(): Promise<void> {
+    // keep the stored identity — reconnect (manual or autoConnect) restores it
     const had = this._keypair !== null
     this._keypair = null
     if (had) this.emit("disconnect")
