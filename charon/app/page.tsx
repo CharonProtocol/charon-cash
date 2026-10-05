@@ -98,7 +98,7 @@ export default function Page() {
               A private balance on a <em>public</em> chain.
             </h1>
             <p className="lede">
-              Charon holds value in notes only you can spend. Your device builds the proof, the program checks it, and the key never leaves you.
+              Charon holds value in notes only you can spend. Your device builds the proof, the program checks it and the key never leaves you.
             </p>
             <div className="hero-actions">
               <a className="btn" href="#list" data-join>
@@ -141,10 +141,10 @@ export default function Page() {
           </div>
           <div className="why-body">
             <p>
-              On Solana, amounts, addresses, and timing sit in the open. Follow one payment and you can usually find the one before it. A wallet is not a balance. It is a history.
+              On Solana, amounts, addresses and timing sit in the open. Follow one payment and you can usually find the one before it. A wallet is not a balance. It is a history.
             </p>
             <p>
-              Hiding that on a server does not fix it. Whoever builds the proof holds the spend key, and whoever holds the key can spend the note. <strong>Privacy is the machine the proof is made on.</strong>
+              Hiding that on a server does not fix it. Whoever builds the proof holds the spend key and whoever holds the key can spend the note. <strong>Privacy is the machine the proof is made on.</strong>
             </p>
           </div>
         </section>
@@ -152,9 +152,12 @@ export default function Page() {
         <section id="how" className="how" data-reveal>
           <div className="how-head">
             <p className="kicker">How it works</p>
-            <h2>A pool of notes. A proof at the crossing.</h2>
+            <h2>A pool of notes.
+              <br />
+              Your balance, without the trail.
+            </h2>
             <p className="how-sub">
-              Deposit into a note. Spend it by proving you own a note in the tree that has not been spent, without showing which one.
+              Deposit into a note. Spend it by proving you own a note in the tree that has not been spent without showing which one.
             </p>
           </div>
           <div className="cards">
@@ -175,12 +178,12 @@ export default function Page() {
             <p className="kicker">Early access</p>
             <h2>Take a place on the near shore.</h2>
             <p>
-              Leave an address to hear when Charon opens. A withdrawal to a public address is still public; Charon hides the path that led to it.
+              Leave an address to hear when Charon goes live. A withdrawal to a public address is still public, Charon hides the path that led to it.
             </p>
           </div>
           <WaitlistForm />
         </section>
-      </main>
+      </main >
 
       <footer className="foot">
         <ul className="stack" aria-label="What Charon is built with">

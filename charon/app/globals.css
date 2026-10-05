@@ -3,7 +3,7 @@
   --paper-2: #ebe5d8;
   --ink: #000000;
   --night: #121519;
-  --muted: rgba(0, 0, 0, 0.62);
+  --muted: rgba(0, 0, 0, 0.78);
   --amber: #e0a04a;
   --amber-deep: #b8742e;
   --line: rgba(22, 22, 22, 0.12);
@@ -16,7 +16,7 @@
 
 html {
   scroll-behavior: smooth;
-  scroll-padding-top: 1.5rem;
+  scroll-padding-top: 5rem;
 }
 
 html,
@@ -30,7 +30,8 @@ body {
   font-family: var(--font-sans), "Public Sans", sans-serif;
   font-size: 1.04rem;
   line-height: 1.55;
-  -webkit-font-smoothing: antialiased;
+  font-weight: 450;
+  -webkit-font-smoothing: auto;
 }
 
 a {
@@ -84,6 +85,7 @@ a {
   line-height: 2.35rem;
   letter-spacing: 0.04em;
   white-space: nowrap;
+  filter: blur(0.6px);
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
   mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
 }
@@ -94,11 +96,11 @@ a {
 }
 
 .hash-base {
-  color: rgba(22, 22, 22, 0.11);
+  color: rgba(22, 22, 22, 0.10);
 }
 
 .hash-lit {
-  color: rgba(184, 116, 46, 0.7);
+  color: rgba(184, 116, 46, 0.55);
   opacity: 0;
   transition: opacity 600ms var(--ease);
   -webkit-mask-image: radial-gradient(240px circle at var(--gx, 50%) var(--gy, 30%), #000, transparent 75%);
@@ -154,7 +156,7 @@ a {
   filter: drop-shadow(0 0 3px rgba(224, 160, 74, 0.9));
 }
 
-/* Paper halo behind type that sits directly on the hash field */
+/* A one-pixel paper edge, so the hashes don't cut through the letters */
 
 .hero-copy,
 .facts,
@@ -162,14 +164,79 @@ a {
 .how-head,
 .foot-bar {
   text-shadow:
-    0 0 2px var(--paper),
-    0 0 6px var(--paper),
-    0 0 12px var(--paper),
-    0 0 18px var(--paper);
+    0 0 1px var(--paper),
+    0 1px 0 var(--paper),
+    0 -1px 0 var(--paper),
+    1px 0 0 var(--paper),
+    -1px 0 0 var(--paper);
 }
 
-.hero-copy .btn {
+.hero-copy .btn,
+.hero-copy .btn-ghost {
   text-shadow: none;
+}
+
+/* Nav */
+
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem clamp(1.25rem, 4vw, 3rem);
+  background: color-mix(in srgb, var(--paper) 72%, transparent);
+  backdrop-filter: saturate(140%) blur(14px);
+  -webkit-backdrop-filter: saturate(140%) blur(14px);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: var(--font-news), Newsreader, serif;
+  font-size: 1.3rem;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+
+.brand-mark {
+  width: 34px;
+  height: auto;
+  mix-blend-mode: multiply;
+}
+
+.nav nav {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  font-size: 0.92rem;
+}
+
+.nav nav a {
+  text-decoration: none;
+  color: var(--muted);
+  transition: color 200ms var(--ease);
+}
+
+.nav nav a:hover {
+  color: var(--ink);
+}
+
+.nav nav .nav-join {
+  color: var(--paper);
+  background: var(--ink);
+  padding: 0.5rem 0.95rem;
+  border-radius: 999px;
+  transition: background 200ms var(--ease), color 200ms var(--ease);
+}
+
+.nav nav .nav-join:hover {
+  background: var(--amber);
+  color: var(--ink);
 }
 
 /* Layout */
@@ -217,7 +284,7 @@ h1,
 h2,
 h3 {
   font-family: var(--font-news), Newsreader, serif;
-  font-weight: 450;
+  font-weight: 500;
   letter-spacing: -0.032em;
   line-height: 1.02;
   margin: 0;
@@ -236,7 +303,8 @@ h2 em {
   grid-template-columns: minmax(0, 1.05fr) minmax(260px, 0.95fr);
   gap: 2rem 3rem;
   align-items: center;
-  padding: clamp(2.5rem, 6vw, 4rem) 0 clamp(2.5rem, 5vw, 3.5rem);
+  min-height: calc(100svh - 64px);
+  padding: clamp(2rem, 5vw, 3rem) 0;
 }
 
 .hero h1 {
@@ -250,7 +318,7 @@ h2 em {
   margin: 1.4rem 0 2rem;
   font-size: 1.18rem;
   line-height: 1.5;
-  color: rgba(0, 0, 0, 0.8);
+  color: var(--ink);
   animation: rise 900ms 120ms var(--ease) both;
 }
 
@@ -335,7 +403,7 @@ h2 em {
 .merkle text {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 10px;
-  fill: rgba(0, 0, 0, 0.42);
+  fill: rgba(22, 22, 22, 0.42);
 }
 
 .merkle .merkle-label {
@@ -412,7 +480,7 @@ h2 em {
 
 .facts strong {
   font-family: var(--font-news), Newsreader, serif;
-  font-weight: 450;
+  font-weight: 500;
   font-size: clamp(2.2rem, 4vw, 3rem);
   line-height: 1;
   letter-spacing: -0.03em;
@@ -474,7 +542,7 @@ h2 em {
 .how-sub {
   margin: 0;
   max-width: 44ch;
-  color: rgba(0, 0, 0, 0.78);
+  color: var(--ink);
 }
 
 .cards {
@@ -542,7 +610,7 @@ h2 em {
 .card p {
   margin: 0;
   font-size: 0.96rem;
-  color: rgba(0, 0, 0, 0.76);
+  color: rgba(0, 0, 0, 0.9);
 }
 
 /* Waitlist: the night section */
@@ -564,13 +632,13 @@ h2 em {
 }
 
 .list .kicker {
-  color: rgba(243, 239, 230, 0.62);
+  color: rgba(243, 239, 230, 0.82);
 }
 
 .list-copy p {
   margin: 1.1rem 0 0;
   max-width: 44ch;
-  color: rgba(243, 239, 230, 0.78);
+  color: rgba(243, 239, 230, 0.92);
 }
 
 .list-cta {
@@ -599,7 +667,7 @@ h2 em {
 
 .list-cta-head strong {
   font-family: var(--font-news), Newsreader, serif;
-  font-weight: 450;
+  font-weight: 500;
   font-size: 1.3rem;
   letter-spacing: -0.02em;
   line-height: 1.1;
@@ -607,7 +675,7 @@ h2 em {
 
 .list-cta-head span {
   font-size: 0.85rem;
-  color: rgba(243, 239, 230, 0.6);
+  color: rgba(243, 239, 230, 0.82);
 }
 
 .list-lamp {
@@ -689,13 +757,7 @@ h2 em {
   flex-direction: column;
   gap: 0.35rem;
   font-size: 0.82rem;
-  color: rgba(243, 239, 230, 0.7);
-}
-
-.field .req {
-  margin-left: 0.2rem;
-  font-weight: 600;
-  color: #ff5a4f;
+  color: rgba(243, 239, 230, 0.9);
 }
 
 .field em {
@@ -704,7 +766,7 @@ h2 em {
   padding: 0.05rem 0.45rem;
   border-radius: 999px;
   font-size: 0.72rem;
-  color: rgba(243, 239, 230, 0.55);
+  color: rgba(243, 239, 230, 0.85);
   border: 1px solid rgba(243, 239, 230, 0.18);
 }
 
@@ -739,7 +801,7 @@ h2 em {
 .field small {
   font-size: 0.76rem;
   line-height: 1.4;
-  color: rgba(243, 239, 230, 0.45);
+  color: rgba(243, 239, 230, 0.68);
 }
 
 .consent {
@@ -748,7 +810,7 @@ h2 em {
   align-items: flex-start;
   font-size: 0.84rem;
   line-height: 1.4;
-  color: rgba(243, 239, 230, 0.75);
+  color: rgba(243, 239, 230, 0.92);
 }
 
 .consent input {
@@ -760,7 +822,7 @@ h2 em {
   min-height: 1.2em;
   margin: -0.25rem 0 0;
   font-size: 0.85rem;
-  color: rgba(243, 239, 230, 0.7);
+  color: rgba(243, 239, 230, 0.88);
 }
 
 .note.error {
@@ -789,8 +851,8 @@ h2 em {
   padding: 2.25rem 0 1.25rem;
   font-size: 0.78rem;
   line-height: 1.6;
-  color: rgba(0, 0, 0, 0.5);
-  filter: blur(0.8px);
+  color: rgba(0, 0, 0, 0.68);
+  filter: blur(0.45px);
   opacity: 0.85;
   transition: filter 500ms var(--ease), opacity 500ms var(--ease);
   -webkit-mask-image: radial-gradient(ellipse 58% 64% at center, #000 66%, transparent);
@@ -881,10 +943,14 @@ h2 em {
 }
 
 @media (max-width: 860px) {
+  .nav nav a:not(.nav-join) {
+    display: none;
+  }
+
   .hero {
     grid-template-columns: 1fr;
     min-height: auto;
-    padding-top: 2.25rem;
+    padding-top: 1.5rem;
   }
 
   .hero-art {
