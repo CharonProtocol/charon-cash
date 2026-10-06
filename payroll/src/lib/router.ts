@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 
 export type Route =
-  | { role: "landing"; path: "/" | "/how"; page: "home" | "how" }
+  | { role: "landing"; path: "/" }
   | {
       role: "employer"
       path: "/employer" | "/employer/run" | "/employer/history" | "/employer/team"
@@ -20,8 +20,7 @@ export function parsePath(pathname: string): Route {
     return { role: "employer", path: "/employer", page: "overview" }
   }
   if (p === "/employee") return { role: "employee", path: "/employee" }
-  if (p === "/how") return { role: "landing", path: "/how", page: "how" }
-  return { role: "landing", path: "/", page: "home" }
+  return { role: "landing", path: "/" }
 }
 
 // Non-role search params (?theme, ?static — used by the screenshot tooling)

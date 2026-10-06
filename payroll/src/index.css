@@ -432,13 +432,6 @@ body {
   background: var(--mute);
 }
 
-/* ---------- alternating section grade: breaks the wall of text into
-   readable groups (reviewer feedback) ---------- */
-.section-alt {
-  background: color-mix(in srgb, var(--panel) 55%, transparent);
-  border-block: 1px solid var(--line);
-}
-
 /* ---------- backdrop: cream canvas with a faint hairline grid + caustics ---------- */
 .aurora {
   position: fixed;

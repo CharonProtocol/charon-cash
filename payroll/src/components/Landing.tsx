@@ -12,7 +12,6 @@ import { Tilt } from "@/components/motion/Tilt"
 import { ScrollRuler } from "@/components/motion/ScrollRuler"
 import { SmoothScroll, useSmoothScroll } from "@/components/motion/smooth-scroll"
 import { ThemeToggle } from "@/components/ThemeToggle"
-import { navigate } from "@/lib/router"
 
 /* ---------- measured marketing data (all real, logged runs) ---------- */
 
@@ -123,30 +122,7 @@ const runtimeBars = [
 const pipeline = [
   { n: "zk proof", v: "0.8s", d: "one Groth16 proof, built on the employee's device" },
   { n: "relayer", v: "18ms", d: "broadcasts the signed transaction - holds no keys, builds no proofs" },
-  { n: "confirm", v: "~250ms", d: "one Solana slot from broadcast to confirmation" },
-]
-
-const arch = [
-  {
-    n: "App + SDK",
-    d: "Your browser wallet holds the keys and builds every Groth16 proof on-device (wasm). Nothing cryptographic ever touches a server.",
-  },
-  {
-    n: "Groth16 circuit",
-    d: "Proves a payout spends one committed note in the shielded Merkle tree - without revealing which note, its amount, or who receives it.",
-  },
-  {
-    n: "On-chain program",
-    d: "Verifies the proof, inserts the new commitment, and burns the spent nullifier. One packed payout transact costs ~209k compute units.",
-  },
-  {
-    n: "Gasless relayer",
-    d: "A keyless Cloudflare Worker mirrors the tree, packs payouts into batches, and broadcasts signed transactions. It holds no user keys and builds no proofs.",
-  },
-  {
-    n: "What the chain sees",
-    d: "One pool, commitments, nullifiers, proofs. No wallet addresses, no salary amounts, no link between a deposit and any payout.",
-  },
+  { n: "confirm", v: "~400ms", d: "one Solana slot from broadcast to confirmation" },
 ]
 
 const SDK_SNIPPET = `import { PrivacyCashClient, publishRecipientKeys } from "privacy-cash-sdk"
@@ -313,29 +289,17 @@ function rise(text: string, baseDelay = 0) {
   ))
 }
 
-export function Landing({
-  onRole,
-  page = "home",
-}: {
-  onRole: (r: "employer" | "employee") => void
-  page?: "home" | "how"
-}) {
+export function Landing({ onRole }: { onRole: (r: "employer" | "employee") => void }) {
   // Lenis smooth scrolling drives the whole landing; the tick ruler on the
   // left edge replaces both the browser scrollbar and the old top hairline.
   return (
     <SmoothScroll root className="relative min-h-dvh">
-      <LandingBody onRole={onRole} page={page} />
+      <LandingBody onRole={onRole} />
     </SmoothScroll>
   )
 }
 
-function LandingBody({
-  onRole,
-  page,
-}: {
-  onRole: (r: "employer" | "employee") => void
-  page: "home" | "how"
-}) {
+function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void }) {
   // The lantern starts lit on every fresh load (?static screenshots render it
   // already dimmed), then dims once after 3s — it stays off until the user
   // refreshes, which is the only thing that re-runs this timer.
@@ -404,21 +368,7 @@ function LandingBody({
               <span className="font-mono text-[11px] text-body-ink">Relayer: 18ms</span>
             </div>
             <ThemeToggle />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="hidden lg:inline-flex"
-              onClick={() => navigate(page === "how" ? "/" : "/how")}
-            >
-              {page === "how" ? "Home" : "How it works"}
-            </Button>
-            {/* shaded, not ghost: reviewer note — it must read as a button */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="hidden bg-panel-2 font-medium hover:bg-panel sm:inline-flex"
-              onClick={() => onRole("employee")}
-            >
+            <Button variant="ghost" size="sm" onClick={() => onRole("employee")} className="hidden sm:inline-flex">
               Employee sign in
             </Button>
             <Button size="sm" className="btn-glow press" onClick={() => onRole("employer")}>
@@ -433,8 +383,7 @@ function LandingBody({
       </header>
 
       <main className="pt-16">
-        {/* ================= HERO (home only) ================= */}
-        {page === "home" && (
+        {/* ================= HERO ================= */}
         <section id="overview" className="relative flex scroll-mt-20 flex-col items-center px-4 pb-16 pt-10 text-center sm:pt-14 md:pb-24">
           <h1 className="anim anim-1 mt-6 max-w-4xl text-[2rem] font-semibold leading-[1.15] tracking-[-0.03em] sm:text-[2.5rem] sm:leading-[1.2]">
             <span className="word-rise">{rise("Pay your whole team.", 0.05)}</span>{" "}
@@ -465,7 +414,7 @@ function LandingBody({
               size="lg"
               variant="outline"
               className="press rounded-xl"
-              onClick={() => navigate("/how")}
+              onClick={() => scrollTo("comparison")}
             >
               <Ms name="terminal" className="text-base text-body-ink" />
               Explore Architecture
@@ -635,50 +584,40 @@ function LandingBody({
             </Tilt>
           </div>
         </section>
-        )}
 
-        {/* ================= HOW IT WORKS PAGE (route: /how) ================= */}
-        {page === "how" ? (
-          <>
-            <section className="mx-auto w-full max-w-[1150px] px-4 pb-2 pt-12 text-center sm:px-8 md:pt-16">
-              <SectionLabel>How It Works</SectionLabel>
-              <h2 className="mt-1 text-[1.8rem] font-semibold tracking-[-0.025em] sm:text-[2.25rem]">
-                The protocol, end to end
+        {/* ================= BENCHMARK BENTO ================= */}
+        <section id="benchmarks" data-reveal className="mx-auto w-full scroll-mt-20 max-w-[1150px] px-4 py-14 sm:px-8 md:py-20">
+          <div className="flex flex-col justify-between gap-4 pb-6 md:flex-row md:items-baseline">
+            <div>
+              <SectionLabel>Empirical Benchmarks</SectionLabel>
+              <h2 className="mt-1 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
+                Zero-Knowledge at Solana Speed
               </h2>
-              <p className="mx-auto mt-3 max-w-2xl text-pretty text-sm leading-relaxed text-body-ink">
-                One shielded pool, one Groth16 circuit, one on-chain program. The treasury deposits
-                a lump sum; salaries leave as zero-knowledge payouts that link to no deposit and
-                reveal no amount. Here is the architecture, the flow, the threat model, and the
-                measured numbers.
-              </p>
-            </section>
-
-            <section className="mx-auto w-full max-w-[1150px] px-4 py-10 sm:px-8">
-              <div className="text-center">
-                <SectionLabel>Architecture</SectionLabel>
-                <h3 className="mt-1 text-[1.4rem] font-semibold tracking-[-0.02em] sm:text-[1.7rem]">
-                  Five layers between your CSV and the chain
-                </h3>
-              </div>
-              <div data-stagger className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {arch.map((a, i) => (
-                  <div
-                    key={a.n}
-                    className={`specular rounded-xl border border-line bg-card p-5 transition-all hover:border-[color-mix(in_srgb,var(--gold-2)_45%,transparent)] hover:shadow-md ${
-                      i === arch.length - 1 ? "md:col-span-2 lg:col-span-1" : ""
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="flex size-7 items-center justify-center rounded-lg border border-gold-line bg-gold-soft font-mono text-xs font-semibold text-gold">
-                        {i + 1}
-                      </span>
-                      <span className="text-base font-semibold tracking-tight">{a.n}</span>
-                    </div>
-                    <p className="mt-2 text-sm leading-relaxed text-body-ink">{a.d}</p>
+            </div>
+            <p className="max-w-md text-sm leading-relaxed text-body-ink">
+              Engineered for rapid settlement without exceeding block limits. Every number measured
+              on logged 100-employee runs — never projected.
+            </p>
+          </div>
+          <div data-stagger className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-5">
+            {bento.map((m) => (
+              <div
+                key={m.label}
+                className="specular group flex flex-col justify-between rounded-xl border border-line bg-card p-6 transition-all hover:-translate-y-0.5 hover:border-[color-mix(in_srgb,var(--gold-2)_50%,transparent)] hover:shadow-md"
+              >
+                <div>
+                  <Ms name={m.icon} className={`text-2xl transition-transform group-hover:scale-110 ${m.iconCls}`} />
+                  <div className={`stat-number mt-4 text-[1.75rem] font-semibold tracking-tight ${m.cls}`}>
+                    <CountUp to={m.v} decimals={"decimals" in m ? (m.decimals as number) : 0} />
+                    {m.unit}
                   </div>
-                ))}
+                  <div className="mt-0.5 text-[13px] font-medium text-ink">{m.label}</div>
+                </div>
+                <div className="mt-4 text-xs leading-relaxed text-body-ink">{m.body}</div>
               </div>
-            </section>
+            ))}
+          </div>
+        </section>
 
         {/* ================= HOW IT WORKS ================= */}
         <section id="how" data-reveal className="mx-auto w-full scroll-mt-20 max-w-[1150px] px-4 py-14 sm:px-8 md:py-16">
@@ -806,141 +745,6 @@ function LandingBody({
           </div>
         </section>
 
-        {/* ================= BENCHMARK BENTO (docs page) ================= */}
-        <section data-reveal className="mx-auto w-full max-w-[1150px] px-4 py-14 sm:px-8 md:py-16">
-          <div className="flex flex-col justify-between gap-4 pb-6 md:flex-row md:items-center">
-            <div>
-              <SectionLabel>Empirical Benchmarks</SectionLabel>
-              <h3 className="mt-1 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
-                Zero-Knowledge at Solana Speed
-              </h3>
-            </div>
-            <p className="max-w-md text-sm leading-relaxed text-body-ink">
-              Engineered for rapid settlement without exceeding block limits. Every number measured
-              on logged 100-employee runs — never projected.
-            </p>
-          </div>
-          <div data-stagger className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-5">
-            {bento.map((m) => (
-              <div
-                key={m.label}
-                className="specular group flex flex-col justify-between rounded-xl border border-line bg-card p-6 transition-all hover:-translate-y-0.5 hover:border-[color-mix(in_srgb,var(--gold-2)_50%,transparent)] hover:shadow-md"
-              >
-                <div>
-                  <Ms name={m.icon} className={`text-2xl transition-transform group-hover:scale-110 ${m.iconCls}`} />
-                  <div className={`stat-number mt-4 text-[1.75rem] font-semibold tracking-tight ${m.cls}`}>
-                    <CountUp to={m.v} decimals={"decimals" in m ? (m.decimals as number) : 0} />
-                    {m.unit}
-                  </div>
-                  <div className="mt-0.5 text-[13px] font-medium text-ink">{m.label}</div>
-                </div>
-                <div className="mt-4 text-xs leading-relaxed text-body-ink">{m.body}</div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* ================= RUNTIME MEASUREMENTS (docs page) ================= */}
-        <section className="section-alt" data-reveal>
-          <div className="mx-auto w-full max-w-[1150px] px-4 py-12 sm:px-8">
-            <div className="mb-8 text-center">
-              <SectionLabel>Benchmarks</SectionLabel>
-              <h3 className="mt-1 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
-                Measured, not promised
-              </h3>
-              <p className="mt-1 text-sm text-body-ink">
-                Same 100 unequal salaries, measured on a local validator. Bars are to scale.
-              </p>
-            </div>
-            <div data-stagger className="grid gap-4 lg:grid-cols-2">
-              <Card className="card-lift specular rounded-xl">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-base">Pay a team of 100, end to end</CardTitle>
-                  <span className="stat-number text-lg font-bold">~80s</span>
-                </CardHeader>
-                <CardContent className="space-y-5">
-                  {runtimeBars.map((b) => (
-                    <div key={b.label}>
-                      <div className="mb-1.5 flex items-center justify-between text-xs">
-                        <span className="text-body-ink">{b.label}</span>
-                        <span className="stat-number font-bold">{b.v}</span>
-                      </div>
-                      <div className="h-3 w-full overflow-hidden rounded-md bg-panel-2">
-                        <div className={`chart-bar h-full rounded-md ${b.cls}`} style={{ "--w": b.w } as CSSProperties} />
-                      </div>
-                    </div>
-                  ))}
-                  <p className="text-xs leading-relaxed text-body-ink">
-                    First signature to last confirmation. Every proof is generated on the employee's
-                    device and streams in parallel; the relayer only broadcasts signed transactions.
-                  </p>
-                </CardContent>
-              </Card>
-              <Card className="card-lift specular rounded-xl">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-base">One salary through the pool</CardTitle>
-                  <span className="stat-number text-lg font-bold">0.8s</span>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {pipeline.map((st) => (
-                    <div key={st.n} className="flex items-start justify-between gap-3 rounded-lg border border-line bg-panel px-3 py-2.5">
-                      <span className="min-w-0">
-                        <span className="block font-mono text-xs font-medium">{st.n}</span>
-                        <span className="block text-[11px] leading-relaxed text-body-ink">{st.d}</span>
-                      </span>
-                      <span className="stat-number flex-none text-sm font-bold">{st.v}</span>
-                    </div>
-                  ))}
-                  <p className="pt-1 text-xs leading-relaxed text-body-ink">
-                    Proofs are built client-side, so a full run only waits on relayer broadcasts and
-                    confirmations - not proving.
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        </section>
-
-        {/* ================= DEVELOPERS / SDK (docs page) ================= */}
-        <section id="developers" className="mx-auto grid w-full scroll-mt-20 max-w-[1150px] items-center gap-8 px-4 py-12 sm:px-8 lg:grid-cols-2" data-reveal>
-          <div>
-            <SectionLabel>For Developers</SectionLabel>
-            <h3 className="mt-1 mb-3 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
-              One SDK, the whole pool
-            </h3>
-            <p className="text-sm leading-relaxed text-body-ink">
-              The TypeScript SDK talks to your wallet and the relayer: scanning, note decryption,
-              proof generation, and gasless claims - without running provers, syncing merkle trees,
-              or shipping circuit builds yourself.
-            </p>
-            <ul className="mt-4 space-y-2 text-sm text-body-ink">
-              {[
-                "Browser-native Groth16 proving - proofs built in your app, never on a server",
-                "Recipients registry - notes encrypted to published keys",
-                "Note backup, restore, and export built in",
-              ].map((li) => (
-                <li key={li} className="flex items-start gap-2">
-                  <Check className="mt-0.5 size-4 flex-none text-ok" />
-                  {li}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className="overflow-hidden rounded-xl border border-line bg-panel shadow-[0_1px_2px_rgba(9,9,11,0.03),0_14px_36px_-16px_rgba(9,9,11,0.14)]">
-            <div className="flex items-center gap-1.5 border-b border-line px-5 py-3">
-              <span className="size-2.5 rounded-full bg-[#e8a9a2]" />
-              <span className="size-2.5 rounded-full bg-[#ecd394]" />
-              <span className="size-2.5 rounded-full bg-[#a8cfb5]" />
-              <span className="mono ml-2 text-[11px] text-mute">claim.ts</span>
-              <Code2 className="ml-auto size-3.5 text-mute" />
-            </div>
-            <CodeBlock code={SDK_SNIPPET} />
-          </div>
-        </section>
-          </>
-        ) : (
-          <>
-
         {/* ================= CAPABILITIES ================= */}
         <section data-reveal className="mx-auto w-full max-w-[1150px] px-4 py-12 sm:px-8">
           <div className="text-center">
@@ -961,9 +765,67 @@ function LandingBody({
           </div>
         </section>
 
+        {/* ================= RUNTIME MEASUREMENTS ================= */}
+        <section data-reveal className="mx-auto w-full max-w-[1150px] px-4 py-12 sm:px-8">
+          <div className="mb-8 text-center">
+            <SectionLabel>Benchmarks</SectionLabel>
+            <h2 className="mt-1 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
+              Measured, not promised
+            </h2>
+            <p className="mt-1 text-sm text-body-ink">
+              Same 100 unequal salaries, measured on a local validator. Bars are to scale.
+            </p>
+          </div>
+          <div data-stagger className="grid gap-4 lg:grid-cols-2">
+            <Card className="card-lift specular rounded-xl">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-base">Pay a team of 100, end to end</CardTitle>
+                <span className="stat-number text-lg font-bold">~80s</span>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {runtimeBars.map((b) => (
+                  <div key={b.label}>
+                    <div className="mb-1.5 flex items-center justify-between text-xs">
+                      <span className="text-body-ink">{b.label}</span>
+                      <span className="stat-number font-bold">{b.v}</span>
+                    </div>
+                    <div className="h-3 w-full overflow-hidden rounded-md bg-panel-2">
+                      <div className={`chart-bar h-full rounded-md ${b.cls}`} style={{ "--w": b.w } as CSSProperties} />
+                    </div>
+                  </div>
+                ))}
+                <p className="text-xs leading-relaxed text-body-ink">
+                  First signature to last confirmation. Every proof is generated on the employee's
+                  device and streams in parallel; the relayer only broadcasts signed transactions.
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="card-lift specular rounded-xl">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-base">One salary through the pool</CardTitle>
+                <span className="stat-number text-lg font-bold">0.8s</span>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {pipeline.map((st) => (
+                  <div key={st.n} className="flex items-start justify-between gap-3 rounded-lg border border-line bg-panel px-3 py-2.5">
+                    <span className="min-w-0">
+                      <span className="block font-mono text-xs font-medium">{st.n}</span>
+                      <span className="block text-[11px] leading-relaxed text-body-ink">{st.d}</span>
+                    </span>
+                    <span className="stat-number flex-none text-sm font-bold">{st.v}</span>
+                  </div>
+                ))}
+                <p className="pt-1 text-xs leading-relaxed text-body-ink">
+                  Proofs are built client-side, so a full run only waits on relayer broadcasts and
+                  confirmations - not proving.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </section>
+
         {/* ================= EMPLOYER USE CASE ================= */}
-        <section className="section-alt" data-reveal>
-          <div className="mx-auto grid w-full max-w-[1150px] items-center gap-10 px-4 py-12 sm:px-8 lg:grid-cols-2">
+        <section data-reveal className="mx-auto grid w-full max-w-[1150px] items-center gap-10 px-4 py-12 sm:px-8 lg:grid-cols-2">
           <div>
             <SectionLabel>For Employers</SectionLabel>
             <h2 className="mt-1 mb-3 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
@@ -1036,7 +898,6 @@ function LandingBody({
               </div>
             </CardContent>
           </Card>
-          </div>
         </section>
 
         {/* ================= EMPLOYEE USE CASE ================= */}
@@ -1105,9 +966,45 @@ function LandingBody({
           </div>
         </section>
 
+        {/* ================= DEVELOPERS / SDK ================= */}
+        <section id="developers" data-reveal className="mx-auto grid w-full scroll-mt-20 max-w-[1150px] items-center gap-8 px-4 py-12 sm:px-8 lg:grid-cols-2">
+          <div>
+            <SectionLabel>For Developers</SectionLabel>
+            <h2 className="mt-1 mb-3 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
+              One SDK, the whole pool
+            </h2>
+            <p className="text-sm leading-relaxed text-body-ink">
+              The TypeScript SDK talks to your wallet and the relayer: scanning, note decryption,
+              proof generation, and gasless claims - without running provers, syncing merkle trees,
+              or shipping circuit builds yourself.
+            </p>
+            <ul className="mt-4 space-y-2 text-sm text-body-ink">
+              {[
+                "Browser-native Groth16 proving - proofs built in your app, never on a server",
+                "Recipients registry - notes encrypted to published keys",
+                "Note backup, restore, and export built in",
+              ].map((li) => (
+                <li key={li} className="flex items-start gap-2">
+                  <Check className="mt-0.5 size-4 flex-none text-ok" />
+                  {li}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="overflow-hidden rounded-xl border border-line bg-panel shadow-[0_1px_2px_rgba(9,9,11,0.03),0_14px_36px_-16px_rgba(9,9,11,0.14)]">
+            <div className="flex items-center gap-1.5 border-b border-line px-5 py-3">
+              <span className="size-2.5 rounded-full bg-[#e8a9a2]" />
+              <span className="size-2.5 rounded-full bg-[#ecd394]" />
+              <span className="size-2.5 rounded-full bg-[#a8cfb5]" />
+              <span className="mono ml-2 text-[11px] text-mute">claim.ts</span>
+              <Code2 className="ml-auto size-3.5 text-mute" />
+            </div>
+            <CodeBlock code={SDK_SNIPPET} />
+          </div>
+        </section>
+
         {/* ================= FAQ ================= */}
-        <section id="faq" className="section-alt" data-reveal>
-          <div className="mx-auto w-full max-w-3xl scroll-mt-20 px-4 py-12 sm:px-8">
+        <section id="faq" data-reveal className="mx-auto w-full max-w-3xl scroll-mt-20 px-4 py-12 sm:px-8">
           <div className="mb-8 text-center">
             <SectionLabel>FAQ</SectionLabel>
             <h2 className="mt-1 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">Questions, answered</h2>
@@ -1126,10 +1023,7 @@ function LandingBody({
               </details>
             ))}
           </div>
-          </div>
         </section>
-          </>
-        )}
 
         {/* ================= WHAT THE CHAIN NEVER LEARNS ================= */}
         <section data-reveal className="mx-auto w-full max-w-[1150px] px-4 py-8 sm:px-8">
@@ -1152,12 +1046,11 @@ function LandingBody({
             <div className="max-w-xl text-left">
               <SectionLabel>Streamlined Settlement</SectionLabel>
               <h2 className="mt-1 text-[1.6rem] font-semibold leading-tight tracking-[-0.025em] sm:text-[2rem]">
-                Your first shielded payroll is 80 seconds away.
+                From deposit to confirmed, a 100-person payroll takes about 80 seconds.
               </h2>
               <p className="mt-2 text-sm leading-relaxed text-body-ink">
-                Connect a treasury wallet, drop in a CSV, and watch every salary confirm privately —
-                from deposit to confirmed in about 80 seconds. Built for DAOs, decentralized funds,
-                and crypto-native teams ready to stop leaking payroll on-chain.
+                Experience mathematical certainty and absolute confidentiality. Built for
+                decentralized funds, DAOs, and crypto engineering teams.
               </p>
             </div>
             <div className="flex w-full max-w-md flex-col gap-2 sm:flex-row md:w-auto">
@@ -1179,8 +1072,14 @@ function LandingBody({
               <span className="flex items-center gap-1.5">
                 <span className="size-1.5 rounded-full bg-band-gold" /> ZK Circuits: Validated
               </span>
+              <span className="text-band-line">·</span>
+              <span>Proof Time: 0.8s</span>
+              <span className="text-band-line">·</span>
+              <span>Slot: 400ms</span>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+              <span>Groth16 Finality Verified</span>
+              <span className="text-band-line">·</span>
               <span>© 2026 Charon Pay Protocol Ltd.</span>
             </div>
           </div>
