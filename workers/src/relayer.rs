@@ -59,16 +59,87 @@ fn fee_cache() -> &'static Mutex<Option<(u16, u16)>> {
     S.get_or_init(|| Mutex::new(None))
 }
 
-fn compute_budget_ixs() -> Vec<Instruction> {
+/// Per-kind CU ceilings: measured transact usage plus headroom (SOL transact
+/// ~158k incl. Groth16 verify; SPL ~190k plus idempotent-ATA setup ixs). Admin
+/// ops keep the old blanket request. The explicit simulate reports
+/// "consumed X of Y" before anything is sent, so an underestimated constant
+/// fails loudly at the relayer instead of inflating every tx's priority fee.
+const CU_ADMIN: u32 = 1_000_000;
+const CU_TRANSACT_SOL: u32 = 200_000;
+const CU_TRANSACT_SPL: u32 = 300_000;
+const MICRO_LAMPORTS_PER_CU: u64 = 5_000;
+
+fn compute_budget_ixs(cu_limit: u32) -> Vec<Instruction> {
     let cb = acc::compute_budget_program_id();
     let mut limit_data = vec![2u8];
-    limit_data.extend_from_slice(&1_000_000u32.to_le_bytes());
+    limit_data.extend_from_slice(&cu_limit.to_le_bytes());
     let mut price_data = vec![3u8];
-    price_data.extend_from_slice(&5_000u64.to_le_bytes());
+    price_data.extend_from_slice(&MICRO_LAMPORTS_PER_CU.to_le_bytes());
     vec![
         Instruction { program_id: cb, data: limit_data, accounts: vec![] },
         Instruction { program_id: cb, data: price_data, accounts: vec![] },
     ]
+}
+
+/// Blockhashes stay valid ~60-90s; a 20s cached copy saves one RPC round trip
+/// per send inside a payroll run, which pins a single isolate. Invalidated on
+/// a BlockhashNotFound from the node.
+const BLOCKHASH_TTL_MS: i64 = 20_000;
+
+fn blockhash_cache() -> &'static Mutex<Option<([u8; 32], i64)>> {
+    static S: OnceLock<Mutex<Option<([u8; 32], i64)>>> = OnceLock::new();
+    S.get_or_init(|| Mutex::new(None))
+}
+
+async fn fresh_blockhash(state: &AppState) -> AppResult<[u8; 32]> {
+    let now = crate::sync::now_ms();
+    if let Some((hash, at)) = blockhash_cache().lock().unwrap().as_ref() {
+        if now - *at < BLOCKHASH_TTL_MS {
+            return Ok(*hash);
+        }
+    }
+    let (hash, _) = state
+        .rpc
+        .get_latest_blockhash()
+        .await
+        .map_err(|e| AppError::upstream(format!("get_latest_blockhash: {e}")))?;
+    *blockhash_cache().lock().unwrap() = Some((hash, crate::sync::now_ms()));
+    Ok(hash)
+}
+
+fn invalidate_blockhash() {
+    *blockhash_cache().lock().unwrap() = None;
+}
+
+fn is_blockhash_miss(err: &AppError) -> bool {
+    err.message.contains("BlockhashNotFound")
+}
+
+/// Parsed ALT address lists never change for a given table address, so one
+/// read per isolate is enough. Failures are never cached, so an evicted
+/// epoch heals on the next call.
+fn alt_cache() -> &'static Mutex<HashMap<String, Vec<Pubkey>>> {
+    static S: OnceLock<Mutex<HashMap<String, Vec<Pubkey>>>> = OnceLock::new();
+    S.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+async fn alt_addresses(state: &AppState, alt_address: &Pubkey) -> AppResult<Vec<Pubkey>> {
+    let key = alt_address.to_string();
+    if let Some(hit) = alt_cache().lock().unwrap().get(&key) {
+        return Ok(hit.clone());
+    }
+    let account = state
+        .rpc
+        .get_account(alt_address)
+        .await
+        .map_err(|e| AppError::upstream(format!("read ALT {alt_address}: {e}")))?;
+    let data = account.ok_or_else(|| {
+        AppError::bad_request("INVALID_ALT", format!("ALT {alt_address} not found on chain"))
+    })?;
+    let addresses = parse_alt_addresses(&data)
+        .map_err(|e| AppError::bad_request("INVALID_ALT", format!("alt deserialize: {e}")))?;
+    alt_cache().lock().unwrap().insert(key, addresses.clone());
+    Ok(addresses)
 }
 
 /// 15s confirmation window: poll every 3s; anything longer is "submitted".
@@ -105,60 +176,61 @@ async fn simulate_then_send(state: &AppState, wire_bytes: &[u8]) -> AppResult<St
         .map_err(|e| AppError::upstream(format!("send_transaction: {e}")))
 }
 
-async fn send_legacy(state: &AppState, ixs: Vec<Instruction>) -> AppResult<String> {
-    let (blockhash, _) = state
-        .rpc
-        .get_latest_blockhash()
-        .await
-        .map_err(|e| AppError::upstream(format!("get_latest_blockhash: {e}")))?;
-
-    let mut all = compute_budget_ixs();
-    all.extend(ixs);
-    let wire_bytes = wire::build_legacy_tx(&state.signer_pubkey(), &all, &blockhash, &state.keypair);
-
-    simulate_then_send(state, &wire_bytes).await
+async fn send_legacy(state: &AppState, ixs: Vec<Instruction>, cu_limit: u32) -> AppResult<String> {
+    for attempt in 0..2 {
+        if attempt > 0 {
+            invalidate_blockhash();
+        }
+        let blockhash = fresh_blockhash(state).await?;
+        let mut all = compute_budget_ixs(cu_limit);
+        all.extend(ixs.clone());
+        let wire_bytes =
+            wire::build_legacy_tx(&state.signer_pubkey(), &all, &blockhash, &state.keypair);
+        match simulate_then_send(state, &wire_bytes).await {
+            Ok(sig) => return Ok(sig),
+            Err(e) if attempt == 0 && is_blockhash_miss(&e) => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    unreachable!("retry loop returns on the second attempt")
 }
 
 async fn send_v0(
     state: &AppState,
     ixs: Vec<Instruction>,
     alt_address: Pubkey,
+    cu_limit: u32,
 ) -> AppResult<String> {
-    let (blockhash, _) = state
-        .rpc
-        .get_latest_blockhash()
-        .await
-        .map_err(|e| AppError::upstream(format!("get_latest_blockhash: {e}")))?;
+    for attempt in 0..2 {
+        if attempt > 0 {
+            invalidate_blockhash();
+        }
+        let blockhash = fresh_blockhash(state).await?;
+        let mut all = compute_budget_ixs(cu_limit);
+        all.extend(ixs.clone());
+        let addresses = alt_addresses(state, &alt_address).await?;
 
-    let mut all = compute_budget_ixs();
-    all.extend(ixs);
+        let wire_bytes = wire::build_v0_tx(
+            &state.signer_pubkey(),
+            &all,
+            &alt_address,
+            &addresses,
+            &blockhash,
+            &state.keypair,
+        )
+        .map_err(|e| AppError::bad_request("ALT_COMPILE", format!("v0 compile: {e}")))?;
 
-    let account = state
-        .rpc
-        .get_account(&alt_address)
-        .await
-        .map_err(|e| AppError::upstream(format!("read ALT {alt_address}: {e}")))?;
-    let data = account.ok_or_else(|| {
-        AppError::bad_request("INVALID_ALT", format!("ALT {alt_address} not found on chain"))
-    })?;
-    let addresses = parse_alt_addresses(&data)
-        .map_err(|e| AppError::bad_request("INVALID_ALT", format!("alt deserialize: {e}")))?;
-
-    let wire_bytes = wire::build_v0_tx(
-        &state.signer_pubkey(),
-        &all,
-        &alt_address,
-        &addresses,
-        &blockhash,
-        &state.keypair,
-    )
-    .map_err(|e| AppError::bad_request("ALT_COMPILE", format!("v0 compile: {e}")))?;
-
-    simulate_then_send(state, &wire_bytes).await
+        match simulate_then_send(state, &wire_bytes).await {
+            Ok(sig) => return Ok(sig),
+            Err(e) if attempt == 0 && is_blockhash_miss(&e) => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    unreachable!("retry loop returns on the second attempt")
 }
 
 async fn submit(state: &AppState, ixs: Vec<Instruction>) -> AppResult<RelayResponse> {
-    let sig = send_legacy(state, ixs).await?;
+    let sig = send_legacy(state, ixs, CU_ADMIN).await?;
     let status = wait_confirmed(state, &sig).await;
     Ok(RelayResponse { signature: sig, slot: None, status })
 }
@@ -170,7 +242,7 @@ async fn submit_v0(
     ixs: Vec<Instruction>,
     alt_address: Pubkey,
 ) -> AppResult<RelayResponse> {
-    let sig = send_v0(state, ixs, alt_address).await?;
+    let sig = send_v0(state, ixs, alt_address, CU_ADMIN).await?;
     let status = wait_confirmed(state, &sig).await;
     Ok(RelayResponse { signature: sig, slot: None, status })
 }
@@ -383,9 +455,13 @@ pub async fn relay_withdraw(state: &AppState, req: WithdrawRequest) -> AppResult
         }
     }
     ixs.push(ix);
+    let cu = match t.kind {
+        TransactKind::Spl => CU_TRANSACT_SPL,
+        TransactKind::Sol => CU_TRANSACT_SOL,
+    };
     let sent = match (t.kind, t.alt_address) {
-        (TransactKind::Spl, Some(alt)) => send_v0(state, ixs, alt).await,
-        _ => send_legacy(state, ixs).await,
+        (TransactKind::Spl, Some(alt)) => send_v0(state, ixs, alt, cu).await,
+        _ => send_legacy(state, ixs, cu).await,
     };
 
     match sent {
