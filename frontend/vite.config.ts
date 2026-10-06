@@ -13,6 +13,14 @@ const polyfillsRoot = dirname(dirname(require.resolve('vite-plugin-node-polyfill
 // Always use the ESM build of the plugin shims (require.resolve returns .cjs).
 const shim = (name: string) => join(polyfillsRoot, 'shims', name, 'dist', 'index.js')
 
+// Cross-origin isolation unlocks SharedArrayBuffer, so the SDK loads the threaded
+// prover. Production hosting must send the same headers (see public/_headers).
+// Every cross-origin subresource then needs CORS or CORP (fonts use crossorigin).
+const isolationHeaders = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+}
+
 export default defineConfig({
   plugins: [
     react(),
@@ -44,15 +52,21 @@ export default defineConfig({
       'vite-plugin-node-polyfills/shims/process',
       'vite-plugin-node-polyfills/shims/global',
     ],
+    // Pre-bundling would break the SDK's `new URL('./prover-worker.js', import.meta.url)`
+    // and the wasm-bindgen `new URL('*_bg.wasm', import.meta.url)` lookups.
+    exclude: ['charonprotocol-sdk'],
     esbuildOptions: {
       define: { global: 'globalThis' },
     },
   },
+  // The prover worker is an ES module (it imports the wasm-bindgen glue).
   worker: { format: 'es' },
   build: {
     commonjsOptions: { transformMixedEsModules: true },
   },
+  preview: { headers: isolationHeaders },
   server: {
+    headers: isolationHeaders,
     host: '0.0.0.0',
     port: 5173,
     fs: { allow: ['..'] },

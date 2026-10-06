@@ -52,8 +52,9 @@ export function useCharon() {
     setUnlocking(true);
     const version = generation.current;
     try {
-      const { CharonProtocol } =
+      const { CharonProtocol, configureProver } =
         await import("charonprotocol-sdk");
+      configureProver({ circuitBaseUrl: "/circuit/", proverBaseUrl: "/prover/" });
       if (version !== generation.current) return;
       const instance = await CharonProtocol.generateClient({
         rpcUrl: RPC_URL,
