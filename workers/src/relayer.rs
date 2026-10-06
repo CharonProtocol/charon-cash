@@ -96,9 +96,11 @@ async fn simulate_then_send(state: &AppState, wire_bytes: &[u8]) -> AppResult<St
             format!("{err} | {}", logs.join(" | ")),
         ));
     }
+    // The explicit simulate above already produced readable failure logs, so
+    // preflight would re-run the whole Groth16 transact on the node a second time.
     state
         .rpc
-        .send_transaction(wire_bytes, false)
+        .send_transaction(wire_bytes, true)
         .await
         .map_err(|e| AppError::upstream(format!("send_transaction: {e}")))
 }
