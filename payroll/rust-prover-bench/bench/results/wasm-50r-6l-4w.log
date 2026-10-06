@@ -1,0 +1,15 @@
+spawning 4 wasm prover workers...
+[0.3s] prover pool ready (wasm-arkworks, 4 workers)
+[0.7s] treasurer 85D66cApcAw5uoYXZ73mzeWBjTZT5G5qtiGtPPdLNWkh funded 20000000000
+using deprecated parameters for the initialization function; pass a single object instead
+[49.2s] paying: 20/50 done, 5 proving, proves=28 avg=6007ms max=10970ms
+[75.0s] paying: 40/50 done, 5 proving, proves=48 avg=6404ms max=10970ms
+[102.0s] paying: 50/50 done, 0 proving, proves=60 avg=6190ms max=10970ms
+[102.1s] paying: 50/50 done, 0 proving, proves=60 avg=6190ms max=10970ms
+
+=== RESULT (local simnet, 50 rows, 6 lanes, wasm prover x4) ===
+sent=50 failed=0 total=50
+funding: 0.516351672 SOL
+proofs: 60 prove-bucket=371.4s avg=6190ms max=10970ms
+total wall: 102.1s  -> 0.5 rows/s
+spot-check: 10/10 recipients hold SOL

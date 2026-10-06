@@ -1,0 +1,56 @@
+machine: 8 cores / 8.0GB -> 4 provers, 3 transacts/v1-tx, ARK_THREADS=2
+run-standard-v1: 12 pools, 210 employees, pay 5000000, 3 transacts/v1-tx
+airdropping 12 employers
+registering 210 recipients
+using deprecated parameters for the initialization function; pass a single object instead
+registered in 1.4s
+fee per transact: 12500 (bps=25, floor=10000)
+spawning 4 transaction2 provers
+circuit             /Users/singupallikartik/Developer/chat/privacy-cash/programs/privacy-cash/artifacts/circuits/transaction2   native_witness=false
+circuit             /Users/singupallikartik/Developer/chat/privacy-cash/programs/privacy-cash/artifacts/circuits/transaction2   native_witness=false
+circuit             /Users/singupallikartik/Developer/chat/privacy-cash/programs/privacy-cash/artifacts/circuits/transaction2   native_witness=false
+circuit             /Users/singupallikartik/Developer/chat/privacy-cash/programs/privacy-cash/artifacts/circuits/transaction2   native_witness=false
+zkey load               3.61s   (threads=2, g2_swap=false)
+zkey load               3.62s   (threads=2, g2_swap=false)
+zkey load               3.63s   (threads=2, g2_swap=false)
+zkey load               3.63s   (threads=2, g2_swap=false)
+r1cs+wasm load       r1cs+wasm load       r1cs+wasm load         982 .161.ms00
+s
+986.38ms
+r1cs+wasm load       995.43ms
+depositing to 12 pools ( 18,18,18,18,18,18,17,17,17,17,17,17 )
+210 deposits done in 110.0s
+{
+  "pools": 12,
+  "employees": 210,
+  "payLamports": "5000000",
+  "varied": false,
+  "amountCheck": null,
+  "circuit": "transaction2 (standard, no batch circuits)",
+  "transactsPerV1Tx": 3,
+  "arkThreads": 2,
+  "depositsLanded": 210,
+  "v1TxsSent": 72,
+  "employeesPaidByEvents": 210,
+  "txsProcessedByProxy": 282,
+  "expectedTxs": 282,
+  "laneFailures": 0,
+  "setupMs": 116148,
+  "payWallMs": 56906,
+  "totalWallMs": 173054,
+  "proves": 420,
+  "proveTotalMs": 1047350,
+  "proveP50Ms": 1874,
+  "proxyPending": 0,
+  "chainVerify": {
+    "treePda": "2MuZGAFvUE1xd2CsANzMkZGnwLPG1zFwfcArbuF1dvBr",
+    "exists": true,
+    "chainNextIndex": 840,
+    "chainRoot": "20d1be7fe2cca13bed5c90c8032b641b8b33ff54c904a1bdbf002730a5ebc1a0",
+    "replicaNextIndex": 840,
+    "replicaRoot": "20d1be7fe2cca13bed5c90c8032b641b8b33ff54c904a1bdbf002730a5ebc1a0",
+    "nextIndexMatch": true,
+    "rootInHistory": true
+  }
+}
+wrote /Users/singupallikartik/Developer/chat/privacy-cash/payroll/rust-prover-bench/bench/results/native-210r-12p/run-2026-10-06T12-44-04-324Z.json

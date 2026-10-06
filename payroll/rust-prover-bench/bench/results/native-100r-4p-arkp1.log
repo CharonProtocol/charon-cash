@@ -1,0 +1,47 @@
+machine: 8 cores / 8.0GB -> 1 provers, 3 transacts/v1-tx, ARK_THREADS=2
+run-standard-v1: 4 pools, 100 employees, pay 5000000, 3 transacts/v1-tx
+airdropping 4 employers
+registering 100 recipients
+using deprecated parameters for the initialization function; pass a single object instead
+registered in 0.7s
+fee per transact: 12500 (bps=25, floor=10000)
+spawning 1 transaction2 provers
+circuit             /Users/singupallikartik/Developer/chat/privacy-cash/programs/privacy-cash/artifacts/circuits/transaction2   native_witness=false
+zkey load               2.18s   (threads=2, g2_swap=false)
+r1cs+wasm load       318.34ms
+depositing to 4 pools ( 25,25,25,25 )
+100 deposits done in 62.9s
+{
+  "pools": 4,
+  "employees": 100,
+  "payLamports": "5000000",
+  "varied": false,
+  "amountCheck": null,
+  "circuit": "transaction2 (standard, no batch circuits)",
+  "transactsPerV1Tx": 3,
+  "arkThreads": 2,
+  "depositsLanded": 100,
+  "v1TxsSent": 36,
+  "employeesPaidByEvents": 100,
+  "txsProcessedByProxy": 136,
+  "expectedTxs": 136,
+  "laneFailures": 0,
+  "setupMs": 66255,
+  "payWallMs": 62479,
+  "totalWallMs": 128734,
+  "proves": 200,
+  "proveTotalMs": 746790,
+  "proveP50Ms": 1906,
+  "proxyPending": 0,
+  "chainVerify": {
+    "treePda": "2MuZGAFvUE1xd2CsANzMkZGnwLPG1zFwfcArbuF1dvBr",
+    "exists": true,
+    "chainNextIndex": 400,
+    "chainRoot": "26924f4affce2208d2699bc30f8eb3c1782f6ca83f294a53c6ae3d4eaa7b4c67",
+    "replicaNextIndex": 400,
+    "replicaRoot": "26924f4affce2208d2699bc30f8eb3c1782f6ca83f294a53c6ae3d4eaa7b4c67",
+    "nextIndexMatch": true,
+    "rootInHistory": true
+  }
+}
+wrote /Users/singupallikartik/Developer/chat/privacy-cash/payroll/rust-prover-bench/bench/results/native-100r-4p-arkp1/run-2026-10-06T13-37-12-045Z.json

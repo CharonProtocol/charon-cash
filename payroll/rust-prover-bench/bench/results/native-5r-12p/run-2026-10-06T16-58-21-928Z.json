@@ -1,0 +1,212 @@
+{
+  "summary": {
+    "pools": 12,
+    "employees": 5,
+    "payLamports": "5000000",
+    "varied": false,
+    "amountCheck": null,
+    "circuit": "transaction2 (standard, no batch circuits)",
+    "transactsPerV1Tx": 3,
+    "arkThreads": 2,
+    "depositsLanded": 5,
+    "v1TxsSent": 5,
+    "employeesPaidByEvents": 5,
+    "txsProcessedByProxy": 10,
+    "expectedTxs": 10,
+    "laneFailures": 0,
+    "setupMs": 10355,
+    "payWallMs": 3762,
+    "totalWallMs": 14117,
+    "proves": 10,
+    "proveTotalMs": 12563,
+    "proveP50Ms": 1231,
+    "proxyPending": 0,
+    "chainVerify": {
+      "treePda": "2MuZGAFvUE1xd2CsANzMkZGnwLPG1zFwfcArbuF1dvBr",
+      "exists": true,
+      "chainNextIndex": 20,
+      "chainRoot": "19ddcc87a8bd24e8ee13063400c1e1f5c88991ea7d8a787afb5b77e3fe26ab06",
+      "replicaNextIndex": 20,
+      "replicaRoot": "19ddcc87a8bd24e8ee13063400c1e1f5c88991ea7d8a787afb5b77e3fe26ab06",
+      "nextIndexMatch": true,
+      "rootInHistory": true
+    }
+  },
+  "events": [
+    {
+      "t": 1791305887393,
+      "pool": -1,
+      "seq": -1,
+      "phase": "register",
+      "employees": 5,
+      "ms": 72
+    },
+    {
+      "t": 1791305895814,
+      "pool": 2,
+      "seq": 0,
+      "phase": "deposit",
+      "ms": 2625,
+      "leafIndex": 0
+    },
+    {
+      "t": 1791305895993,
+      "pool": 1,
+      "seq": 0,
+      "phase": "deposit",
+      "ms": 2804,
+      "leafIndex": 2
+    },
+    {
+      "t": 1791305896541,
+      "pool": 0,
+      "seq": 0,
+      "phase": "deposit",
+      "ms": 3353,
+      "leafIndex": 4
+    },
+    {
+      "t": 1791305897091,
+      "pool": 3,
+      "seq": 0,
+      "phase": "deposit",
+      "ms": 3902,
+      "leafIndex": 6
+    },
+    {
+      "t": 1791305897638,
+      "pool": 4,
+      "seq": 0,
+      "phase": "deposit",
+      "ms": 4449,
+      "leafIndex": 8
+    },
+    {
+      "t": 1791305899233,
+      "pool": 0,
+      "seq": 1,
+      "phase": "v1pay",
+      "ms": 1589,
+      "proveMs": 1057,
+      "sendMs": 525,
+      "sig": "GSPaaqcq2rn46XMG3u1iRzUppFTLWq4bXBuSfkmociG32vXase8w3kBdaKXAspA1dXXEebeUafgqmenMRF4E7rU",
+      "size": 1235,
+      "transacts": 1,
+      "employees": 1,
+      "fetchIdx": 10,
+      "landedSig": "GSPaaqcq2rn46XMG3u1iRzUppFTLWq4bXBuSfkmociG32vXase8w3kBdaKXAspA1dXXEebeUafgqmenMRF4E7rU"
+    },
+    {
+      "t": 1791305899758,
+      "pool": 2,
+      "seq": 1,
+      "phase": "v1pay",
+      "ms": 2110,
+      "proveMs": 1078,
+      "sendMs": 1022,
+      "sig": "63bESgKNLpbx26MTT9JgNDiNuqhFwG7YZCa4fTVBQ2vxPJqQqvhBgWKEidRpedaD54SSkfu2AmSVwD7arLVKCmUa",
+      "size": 1234,
+      "transacts": 1,
+      "employees": 1,
+      "fetchIdx": 10,
+      "landedSig": "63bESgKNLpbx26MTT9JgNDiNuqhFwG7YZCa4fTVBQ2vxPJqQqvhBgWKEidRpedaD54SSkfu2AmSVwD7arLVKCmUa"
+    },
+    {
+      "t": 1791305900306,
+      "pool": 3,
+      "seq": 1,
+      "phase": "v1pay",
+      "ms": 2657,
+      "proveMs": 1066,
+      "sendMs": 1570,
+      "sig": "5rqspswf2ZMzEoBrfVXhvVbka8xrhkquz1Y7YpUqsTvjPVtAU798stBHs32ZJbt1Y8ciuJ4CTbhigfydVvzTs7Dm",
+      "size": 1235,
+      "transacts": 1,
+      "employees": 1,
+      "fetchIdx": 10,
+      "landedSig": "5rqspswf2ZMzEoBrfVXhvVbka8xrhkquz1Y7YpUqsTvjPVtAU798stBHs32ZJbt1Y8ciuJ4CTbhigfydVvzTs7Dm"
+    },
+    {
+      "t": 1791305900854,
+      "pool": 1,
+      "seq": 1,
+      "phase": "v1pay",
+      "ms": 3207,
+      "proveMs": 1065,
+      "sendMs": 2116,
+      "sig": "3mRd7YGooxVKnL19NjkdtbK4uXcYUyuWCPnSyjmnK287U3n6ibz6PDozdypfaRhkkEkUW1VQPHLseofLyfU51xtZ",
+      "size": 1234,
+      "transacts": 1,
+      "employees": 1,
+      "fetchIdx": 10,
+      "landedSig": "3mRd7YGooxVKnL19NjkdtbK4uXcYUyuWCPnSyjmnK287U3n6ibz6PDozdypfaRhkkEkUW1VQPHLseofLyfU51xtZ"
+    },
+    {
+      "t": 1791305901401,
+      "pool": 4,
+      "seq": 1,
+      "phase": "v1pay",
+      "ms": 3752,
+      "proveMs": 1693,
+      "sendMs": 2055,
+      "sig": "4G4dADh7dSDRH4VCthBs7vH9HRZrXBywq8EVkCC9TtsGmk2MVn6JECw6wmMm8r47c21uymk1CPfLPvQ1Ux1WfEQ",
+      "size": 1235,
+      "transacts": 1,
+      "employees": 1,
+      "fetchIdx": 10,
+      "landedSig": "4G4dADh7dSDRH4VCthBs7vH9HRZrXBywq8EVkCC9TtsGmk2MVn6JECw6wmMm8r47c21uymk1CPfLPvQ1Ux1WfEQ"
+    }
+  ],
+  "proveTimes": [
+    {
+      "wtns": 1184,
+      "total": 1186,
+      "at": 1791305894424
+    },
+    {
+      "wtns": 1215,
+      "total": 1231,
+      "at": 1791305894485
+    },
+    {
+      "wtns": 1236,
+      "total": 1245,
+      "at": 1791305894486
+    },
+    {
+      "wtns": 1298,
+      "total": 1299,
+      "at": 1791305894543
+    },
+    {
+      "wtns": 701,
+      "total": 1872,
+      "at": 1791305895128
+    },
+    {
+      "wtns": 1015,
+      "total": 1016,
+      "at": 1791305898699
+    },
+    {
+      "wtns": 1018,
+      "total": 1019,
+      "at": 1791305898711
+    },
+    {
+      "wtns": 1017,
+      "total": 1018,
+      "at": 1791305898714
+    },
+    {
+      "wtns": 1036,
+      "total": 1037,
+      "at": 1791305898725
+    },
+    {
+      "wtns": 639,
+      "total": 1640,
+      "at": 1791305899340
+    }
+  ]
+}

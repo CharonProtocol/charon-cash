@@ -1,0 +1,56 @@
+machine: 8 cores / 8.0GB -> 4 provers, 3 transacts/v1-tx, ARK_THREADS=2
+run-standard-v1: 4 pools, 100 employees, pay 5000000, 3 transacts/v1-tx
+airdropping 4 employers
+registering 100 recipients
+using deprecated parameters for the initialization function; pass a single object instead
+registered in 0.7s
+fee per transact: 12500 (bps=25, floor=10000)
+spawning 4 transaction2 provers
+circuit             /Users/singupallikartik/Developer/chat/privacy-cash/programs/privacy-cash/artifacts/circuits/transaction2   native_witness=false
+circuit             /Users/singupallikartik/Developer/chat/privacy-cash/programs/privacy-cash/artifacts/circuits/transaction2   native_witness=false
+circuit             /Users/singupallikartik/Developer/chat/privacy-cash/programs/privacy-cash/artifacts/circuits/transaction2   native_witness=false
+circuit             /Users/singupallikartik/Developer/chat/privacy-cash/programs/privacy-cash/artifacts/circuits/transaction2   native_witness=false
+zkey load               3.60s   (threads=2, g2_swap=false)
+zkey load               3.61s   (threads=2, g2_swap=false)
+zkey load               3.61s   (threads=2, g2_swap=false)
+zkey load               3.62s   (threads=2, g2_swap=false)
+r1cs+wasm load      r1cs+wasm load      r1cs+wasm load        r1cs+wasm load      926 .92481.ms70
+ms
+ 941.65ms
+925.80ms
+depositing to 4 pools ( 25,25,25,25 )
+100 deposits done in 52.1s
+{
+  "pools": 4,
+  "employees": 100,
+  "payLamports": "5000000",
+  "varied": false,
+  "amountCheck": null,
+  "circuit": "transaction2 (standard, no batch circuits)",
+  "transactsPerV1Tx": 3,
+  "arkThreads": 2,
+  "depositsLanded": 100,
+  "v1TxsSent": 36,
+  "employeesPaidByEvents": 100,
+  "txsProcessedByProxy": 136,
+  "expectedTxs": 136,
+  "laneFailures": 0,
+  "setupMs": 57467,
+  "payWallMs": 29433,
+  "totalWallMs": 86900,
+  "proves": 200,
+  "proveTotalMs": 292453,
+  "proveP50Ms": 939,
+  "proxyPending": 0,
+  "chainVerify": {
+    "treePda": "2MuZGAFvUE1xd2CsANzMkZGnwLPG1zFwfcArbuF1dvBr",
+    "exists": true,
+    "chainNextIndex": 400,
+    "chainRoot": "08184db6835c65f6c9f6fb8cdce1e06c0523aac0caf6047def55244c704158a7",
+    "replicaNextIndex": 400,
+    "replicaRoot": "08184db6835c65f6c9f6fb8cdce1e06c0523aac0caf6047def55244c704158a7",
+    "nextIndexMatch": true,
+    "rootInHistory": true
+  }
+}
+wrote /Users/singupallikartik/Developer/chat/privacy-cash/payroll/rust-prover-bench/bench/results/native-100r-4p/run-2026-10-06T12-55-49-343Z.json

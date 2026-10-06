@@ -1,0 +1,2387 @@
+{
+  "summary": {
+    "pools": 8,
+    "employees": 100,
+    "payLamports": "5000000",
+    "varied": false,
+    "amountCheck": null,
+    "circuit": "transaction2 (standard, no batch circuits)",
+    "transactsPerV1Tx": 3,
+    "arkThreads": 2,
+    "depositsLanded": 100,
+    "v1TxsSent": 36,
+    "employeesPaidByEvents": 100,
+    "txsProcessedByProxy": 136,
+    "expectedTxs": 136,
+    "laneFailures": 0,
+    "setupMs": 57534,
+    "payWallMs": 28226,
+    "totalWallMs": 85760,
+    "proves": 200,
+    "proveTotalMs": 538079,
+    "proveP50Ms": 985,
+    "proxyPending": 0,
+    "chainVerify": {
+      "treePda": "2MuZGAFvUE1xd2CsANzMkZGnwLPG1zFwfcArbuF1dvBr",
+      "exists": true,
+      "chainNextIndex": 400,
+      "chainRoot": "21bc8c60bb1e4b0ff5162c94a8fc7a2caceaf8bd57d8724de0207fa9af688518",
+      "replicaNextIndex": 400,
+      "replicaRoot": "21bc8c60bb1e4b0ff5162c94a8fc7a2caceaf8bd57d8724de0207fa9af688518",
+      "nextIndexMatch": true,
+      "rootInHistory": true
+    }
+  },
+  "events": [
+    {
+      "t": 1791291370299,
+      "pool": -1,
+      "seq": -1,
+      "phase": "register",
+      "employees": 100,
+      "ms": 698
+    },
+    {
+      "t": 1791291377253,
+      "pool": 5,
+      "seq": 0,
+      "phase": "deposit",
+      "ms": 2389,
+      "leafIndex": 0
+    },
+    {
+      "t": 1791291377445,
+      "pool": 7,
+      "seq": 0,
+      "phase": "deposit",
+      "ms": 2580,
+      "leafIndex": 2
+    },
+    {
+      "t": 1791291377969,
+      "pool": 0,
+      "seq": 0,
+      "phase": "deposit",
+      "ms": 3106,
+      "leafIndex": 4
+    },
+    {
+      "t": 1791291378491,
+      "pool": 6,
+      "seq": 0,
+      "phase": "deposit",
+      "ms": 3626,
+      "leafIndex": 6
+    },
+    {
+      "t": 1791291379012,
+      "pool": 1,
+      "seq": 0,
+      "phase": "deposit",
+      "ms": 4148,
+      "leafIndex": 8
+    },
+    {
+      "t": 1791291379533,
+      "pool": 2,
+      "seq": 0,
+      "phase": "deposit",
+      "ms": 4669,
+      "leafIndex": 10
+    },
+    {
+      "t": 1791291380054,
+      "pool": 4,
+      "seq": 0,
+      "phase": "deposit",
+      "ms": 5190,
+      "leafIndex": 12
+    },
+    {
+      "t": 1791291380572,
+      "pool": 3,
+      "seq": 0,
+      "phase": "deposit",
+      "ms": 5708,
+      "leafIndex": 14
+    },
+    {
+      "t": 1791291381094,
+      "pool": 5,
+      "seq": 1,
+      "phase": "deposit",
+      "ms": 3841,
+      "leafIndex": 16
+    },
+    {
+      "t": 1791291381614,
+      "pool": 7,
+      "seq": 1,
+      "phase": "deposit",
+      "ms": 4168,
+      "leafIndex": 18
+    },
+    {
+      "t": 1791291382135,
+      "pool": 0,
+      "seq": 1,
+      "phase": "deposit",
+      "ms": 4166,
+      "leafIndex": 20
+    },
+    {
+      "t": 1791291382653,
+      "pool": 6,
+      "seq": 1,
+      "phase": "deposit",
+      "ms": 4162,
+      "leafIndex": 22
+    },
+    {
+      "t": 1791291383174,
+      "pool": 1,
+      "seq": 1,
+      "phase": "deposit",
+      "ms": 4162,
+      "leafIndex": 24
+    },
+    {
+      "t": 1791291383695,
+      "pool": 2,
+      "seq": 1,
+      "phase": "deposit",
+      "ms": 4162,
+      "leafIndex": 26
+    },
+    {
+      "t": 1791291384214,
+      "pool": 4,
+      "seq": 1,
+      "phase": "deposit",
+      "ms": 4160,
+      "leafIndex": 28
+    },
+    {
+      "t": 1791291384737,
+      "pool": 3,
+      "seq": 1,
+      "phase": "deposit",
+      "ms": 4165,
+      "leafIndex": 30
+    },
+    {
+      "t": 1791291385256,
+      "pool": 5,
+      "seq": 2,
+      "phase": "deposit",
+      "ms": 4162,
+      "leafIndex": 32
+    },
+    {
+      "t": 1791291385776,
+      "pool": 7,
+      "seq": 2,
+      "phase": "deposit",
+      "ms": 4162,
+      "leafIndex": 34
+    },
+    {
+      "t": 1791291386296,
+      "pool": 0,
+      "seq": 2,
+      "phase": "deposit",
+      "ms": 4161,
+      "leafIndex": 36
+    },
+    {
+      "t": 1791291386818,
+      "pool": 6,
+      "seq": 2,
+      "phase": "deposit",
+      "ms": 4165,
+      "leafIndex": 38
+    },
+    {
+      "t": 1791291387338,
+      "pool": 1,
+      "seq": 2,
+      "phase": "deposit",
+      "ms": 4164,
+      "leafIndex": 40
+    },
+    {
+      "t": 1791291387858,
+      "pool": 2,
+      "seq": 2,
+      "phase": "deposit",
+      "ms": 4163,
+      "leafIndex": 42
+    },
+    {
+      "t": 1791291388376,
+      "pool": 4,
+      "seq": 2,
+      "phase": "deposit",
+      "ms": 4162,
+      "leafIndex": 44
+    },
+    {
+      "t": 1791291388898,
+      "pool": 3,
+      "seq": 2,
+      "phase": "deposit",
+      "ms": 4161,
+      "leafIndex": 46
+    },
+    {
+      "t": 1791291388923,
+      "pool": 5,
+      "seq": 3,
+      "phase": "deposit",
+      "ms": 3667,
+      "leafIndex": 48
+    },
+    {
+      "t": 1791291389438,
+      "pool": 7,
+      "seq": 3,
+      "phase": "deposit",
+      "ms": 3662,
+      "leafIndex": 50
+    },
+    {
+      "t": 1791291389958,
+      "pool": 0,
+      "seq": 3,
+      "phase": "deposit",
+      "ms": 3662,
+      "leafIndex": 52
+    },
+    {
+      "t": 1791291390486,
+      "pool": 6,
+      "seq": 3,
+      "phase": "deposit",
+      "ms": 3668,
+      "leafIndex": 54
+    },
+    {
+      "t": 1791291391008,
+      "pool": 1,
+      "seq": 3,
+      "phase": "deposit",
+      "ms": 3670,
+      "leafIndex": 56
+    },
+    {
+      "t": 1791291391528,
+      "pool": 2,
+      "seq": 3,
+      "phase": "deposit",
+      "ms": 3670,
+      "leafIndex": 58
+    },
+    {
+      "t": 1791291392047,
+      "pool": 4,
+      "seq": 3,
+      "phase": "deposit",
+      "ms": 3671,
+      "leafIndex": 60
+    },
+    {
+      "t": 1791291392568,
+      "pool": 3,
+      "seq": 3,
+      "phase": "deposit",
+      "ms": 3670,
+      "leafIndex": 62
+    },
+    {
+      "t": 1791291393091,
+      "pool": 5,
+      "seq": 4,
+      "phase": "deposit",
+      "ms": 4168,
+      "leafIndex": 64
+    },
+    {
+      "t": 1791291393611,
+      "pool": 7,
+      "seq": 4,
+      "phase": "deposit",
+      "ms": 4173,
+      "leafIndex": 66
+    },
+    {
+      "t": 1791291394131,
+      "pool": 0,
+      "seq": 4,
+      "phase": "deposit",
+      "ms": 4173,
+      "leafIndex": 68
+    },
+    {
+      "t": 1791291394651,
+      "pool": 6,
+      "seq": 4,
+      "phase": "deposit",
+      "ms": 4165,
+      "leafIndex": 70
+    },
+    {
+      "t": 1791291395173,
+      "pool": 1,
+      "seq": 4,
+      "phase": "deposit",
+      "ms": 4165,
+      "leafIndex": 72
+    },
+    {
+      "t": 1791291395693,
+      "pool": 2,
+      "seq": 4,
+      "phase": "deposit",
+      "ms": 4165,
+      "leafIndex": 74
+    },
+    {
+      "t": 1791291396214,
+      "pool": 4,
+      "seq": 4,
+      "phase": "deposit",
+      "ms": 4167,
+      "leafIndex": 76
+    },
+    {
+      "t": 1791291396735,
+      "pool": 3,
+      "seq": 4,
+      "phase": "deposit",
+      "ms": 4167,
+      "leafIndex": 78
+    },
+    {
+      "t": 1791291397255,
+      "pool": 5,
+      "seq": 5,
+      "phase": "deposit",
+      "ms": 4164,
+      "leafIndex": 80
+    },
+    {
+      "t": 1791291397776,
+      "pool": 7,
+      "seq": 5,
+      "phase": "deposit",
+      "ms": 4165,
+      "leafIndex": 82
+    },
+    {
+      "t": 1791291398296,
+      "pool": 0,
+      "seq": 5,
+      "phase": "deposit",
+      "ms": 4165,
+      "leafIndex": 84
+    },
+    {
+      "t": 1791291398818,
+      "pool": 6,
+      "seq": 5,
+      "phase": "deposit",
+      "ms": 4167,
+      "leafIndex": 86
+    },
+    {
+      "t": 1791291399338,
+      "pool": 1,
+      "seq": 5,
+      "phase": "deposit",
+      "ms": 4165,
+      "leafIndex": 88
+    },
+    {
+      "t": 1791291399861,
+      "pool": 2,
+      "seq": 5,
+      "phase": "deposit",
+      "ms": 4168,
+      "leafIndex": 90
+    },
+    {
+      "t": 1791291399881,
+      "pool": 4,
+      "seq": 5,
+      "phase": "deposit",
+      "ms": 3667,
+      "leafIndex": 92
+    },
+    {
+      "t": 1791291400403,
+      "pool": 3,
+      "seq": 5,
+      "phase": "deposit",
+      "ms": 3668,
+      "leafIndex": 94
+    },
+    {
+      "t": 1791291400924,
+      "pool": 5,
+      "seq": 6,
+      "phase": "deposit",
+      "ms": 3669,
+      "leafIndex": 96
+    },
+    {
+      "t": 1791291401452,
+      "pool": 7,
+      "seq": 6,
+      "phase": "deposit",
+      "ms": 3676,
+      "leafIndex": 98
+    },
+    {
+      "t": 1791291401971,
+      "pool": 0,
+      "seq": 6,
+      "phase": "deposit",
+      "ms": 3675,
+      "leafIndex": 100
+    },
+    {
+      "t": 1791291402493,
+      "pool": 6,
+      "seq": 6,
+      "phase": "deposit",
+      "ms": 3675,
+      "leafIndex": 102
+    },
+    {
+      "t": 1791291403015,
+      "pool": 1,
+      "seq": 6,
+      "phase": "deposit",
+      "ms": 3677,
+      "leafIndex": 104
+    },
+    {
+      "t": 1791291403536,
+      "pool": 2,
+      "seq": 6,
+      "phase": "deposit",
+      "ms": 3675,
+      "leafIndex": 106
+    },
+    {
+      "t": 1791291404057,
+      "pool": 4,
+      "seq": 6,
+      "phase": "deposit",
+      "ms": 4176,
+      "leafIndex": 108
+    },
+    {
+      "t": 1791291404580,
+      "pool": 3,
+      "seq": 6,
+      "phase": "deposit",
+      "ms": 4177,
+      "leafIndex": 110
+    },
+    {
+      "t": 1791291405101,
+      "pool": 5,
+      "seq": 7,
+      "phase": "deposit",
+      "ms": 4177,
+      "leafIndex": 112
+    },
+    {
+      "t": 1791291405622,
+      "pool": 7,
+      "seq": 7,
+      "phase": "deposit",
+      "ms": 4170,
+      "leafIndex": 114
+    },
+    {
+      "t": 1791291406144,
+      "pool": 0,
+      "seq": 7,
+      "phase": "deposit",
+      "ms": 4173,
+      "leafIndex": 116
+    },
+    {
+      "t": 1791291406666,
+      "pool": 6,
+      "seq": 7,
+      "phase": "deposit",
+      "ms": 4173,
+      "leafIndex": 118
+    },
+    {
+      "t": 1791291407187,
+      "pool": 1,
+      "seq": 7,
+      "phase": "deposit",
+      "ms": 4172,
+      "leafIndex": 120
+    },
+    {
+      "t": 1791291407710,
+      "pool": 2,
+      "seq": 7,
+      "phase": "deposit",
+      "ms": 4174,
+      "leafIndex": 122
+    },
+    {
+      "t": 1791291408233,
+      "pool": 4,
+      "seq": 7,
+      "phase": "deposit",
+      "ms": 4176,
+      "leafIndex": 124
+    },
+    {
+      "t": 1791291408756,
+      "pool": 3,
+      "seq": 7,
+      "phase": "deposit",
+      "ms": 4176,
+      "leafIndex": 126
+    },
+    {
+      "t": 1791291409277,
+      "pool": 5,
+      "seq": 8,
+      "phase": "deposit",
+      "ms": 4175,
+      "leafIndex": 128
+    },
+    {
+      "t": 1791291409799,
+      "pool": 7,
+      "seq": 8,
+      "phase": "deposit",
+      "ms": 4177,
+      "leafIndex": 130
+    },
+    {
+      "t": 1791291410319,
+      "pool": 0,
+      "seq": 8,
+      "phase": "deposit",
+      "ms": 4175,
+      "leafIndex": 132
+    },
+    {
+      "t": 1791291410841,
+      "pool": 6,
+      "seq": 8,
+      "phase": "deposit",
+      "ms": 4175,
+      "leafIndex": 134
+    },
+    {
+      "t": 1791291411364,
+      "pool": 1,
+      "seq": 8,
+      "phase": "deposit",
+      "ms": 4177,
+      "leafIndex": 136
+    },
+    {
+      "t": 1791291411887,
+      "pool": 2,
+      "seq": 8,
+      "phase": "deposit",
+      "ms": 4177,
+      "leafIndex": 138
+    },
+    {
+      "t": 1791291412408,
+      "pool": 4,
+      "seq": 8,
+      "phase": "deposit",
+      "ms": 4175,
+      "leafIndex": 140
+    },
+    {
+      "t": 1791291412931,
+      "pool": 3,
+      "seq": 8,
+      "phase": "deposit",
+      "ms": 4175,
+      "leafIndex": 142
+    },
+    {
+      "t": 1791291413453,
+      "pool": 5,
+      "seq": 9,
+      "phase": "deposit",
+      "ms": 4176,
+      "leafIndex": 144
+    },
+    {
+      "t": 1791291413974,
+      "pool": 7,
+      "seq": 9,
+      "phase": "deposit",
+      "ms": 4175,
+      "leafIndex": 146
+    },
+    {
+      "t": 1791291414495,
+      "pool": 0,
+      "seq": 9,
+      "phase": "deposit",
+      "ms": 4176,
+      "leafIndex": 148
+    },
+    {
+      "t": 1791291415019,
+      "pool": 6,
+      "seq": 9,
+      "phase": "deposit",
+      "ms": 4178,
+      "leafIndex": 150
+    },
+    {
+      "t": 1791291415540,
+      "pool": 1,
+      "seq": 9,
+      "phase": "deposit",
+      "ms": 4176,
+      "leafIndex": 152
+    },
+    {
+      "t": 1791291416061,
+      "pool": 2,
+      "seq": 9,
+      "phase": "deposit",
+      "ms": 4174,
+      "leafIndex": 154
+    },
+    {
+      "t": 1791291416587,
+      "pool": 4,
+      "seq": 9,
+      "phase": "deposit",
+      "ms": 4179,
+      "leafIndex": 156
+    },
+    {
+      "t": 1791291417109,
+      "pool": 3,
+      "seq": 9,
+      "phase": "deposit",
+      "ms": 4178,
+      "leafIndex": 158
+    },
+    {
+      "t": 1791291417632,
+      "pool": 5,
+      "seq": 10,
+      "phase": "deposit",
+      "ms": 4179,
+      "leafIndex": 160
+    },
+    {
+      "t": 1791291418153,
+      "pool": 7,
+      "seq": 10,
+      "phase": "deposit",
+      "ms": 4179,
+      "leafIndex": 162
+    },
+    {
+      "t": 1791291418676,
+      "pool": 0,
+      "seq": 10,
+      "phase": "deposit",
+      "ms": 4181,
+      "leafIndex": 164
+    },
+    {
+      "t": 1791291419199,
+      "pool": 6,
+      "seq": 10,
+      "phase": "deposit",
+      "ms": 4180,
+      "leafIndex": 166
+    },
+    {
+      "t": 1791291419721,
+      "pool": 1,
+      "seq": 10,
+      "phase": "deposit",
+      "ms": 4181,
+      "leafIndex": 168
+    },
+    {
+      "t": 1791291420244,
+      "pool": 2,
+      "seq": 10,
+      "phase": "deposit",
+      "ms": 4183,
+      "leafIndex": 170
+    },
+    {
+      "t": 1791291420768,
+      "pool": 4,
+      "seq": 10,
+      "phase": "deposit",
+      "ms": 4181,
+      "leafIndex": 172
+    },
+    {
+      "t": 1791291421291,
+      "pool": 3,
+      "seq": 10,
+      "phase": "deposit",
+      "ms": 4182,
+      "leafIndex": 174
+    },
+    {
+      "t": 1791291421812,
+      "pool": 5,
+      "seq": 11,
+      "phase": "deposit",
+      "ms": 4180,
+      "leafIndex": 176
+    },
+    {
+      "t": 1791291421840,
+      "pool": 7,
+      "seq": 11,
+      "phase": "deposit",
+      "ms": 3687,
+      "leafIndex": 178
+    },
+    {
+      "t": 1791291422357,
+      "pool": 0,
+      "seq": 11,
+      "phase": "deposit",
+      "ms": 3681,
+      "leafIndex": 180
+    },
+    {
+      "t": 1791291422874,
+      "pool": 6,
+      "seq": 11,
+      "phase": "deposit",
+      "ms": 3675,
+      "leafIndex": 182
+    },
+    {
+      "t": 1791291423405,
+      "pool": 1,
+      "seq": 11,
+      "phase": "deposit",
+      "ms": 3684,
+      "leafIndex": 184
+    },
+    {
+      "t": 1791291423919,
+      "pool": 2,
+      "seq": 11,
+      "phase": "deposit",
+      "ms": 3675,
+      "leafIndex": 186
+    },
+    {
+      "t": 1791291424443,
+      "pool": 4,
+      "seq": 11,
+      "phase": "deposit",
+      "ms": 3675,
+      "leafIndex": 188
+    },
+    {
+      "t": 1791291424970,
+      "pool": 3,
+      "seq": 11,
+      "phase": "deposit",
+      "ms": 3679,
+      "leafIndex": 190
+    },
+    {
+      "t": 1791291425486,
+      "pool": 0,
+      "seq": 12,
+      "phase": "deposit",
+      "ms": 3129,
+      "leafIndex": 192
+    },
+    {
+      "t": 1791291426012,
+      "pool": 1,
+      "seq": 12,
+      "phase": "deposit",
+      "ms": 2606,
+      "leafIndex": 194
+    },
+    {
+      "t": 1791291426542,
+      "pool": 2,
+      "seq": 12,
+      "phase": "deposit",
+      "ms": 2623,
+      "leafIndex": 196
+    },
+    {
+      "t": 1791291427085,
+      "pool": 3,
+      "seq": 12,
+      "phase": "deposit",
+      "ms": 2115,
+      "leafIndex": 198
+    },
+    {
+      "t": 1791291428701,
+      "pool": 5,
+      "seq": 1,
+      "phase": "v1pay",
+      "ms": 1601,
+      "proveMs": 1012,
+      "sendMs": 579,
+      "sig": "5xC59QsryrcsLHL4JwXMtzMtRdvqM6m6g8taWULob8vT6gMaKuZ5XqUrkNTAXxyFPSZkQMMs56PcetyiGsLDG4f3",
+      "size": 2960,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 200,
+      "landedSig": "5xC59QsryrcsLHL4JwXMtzMtRdvqM6m6g8taWULob8vT6gMaKuZ5XqUrkNTAXxyFPSZkQMMs56PcetyiGsLDG4f3"
+    },
+    {
+      "t": 1791291429169,
+      "pool": 4,
+      "seq": 1,
+      "phase": "v1pay",
+      "ms": 2068,
+      "proveMs": 1992,
+      "sendMs": 70,
+      "sig": "2iT1CqZfMR74LAw4HQGKvogpNnAvkEa3Q8fb7zCKYxyHzWZvVr3FGLzCZ4EhpnRdDVRMSGHi3xTxekigAJc9YTe2",
+      "size": 2961,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 200,
+      "landedSig": "2iT1CqZfMR74LAw4HQGKvogpNnAvkEa3Q8fb7zCKYxyHzWZvVr3FGLzCZ4EhpnRdDVRMSGHi3xTxekigAJc9YTe2"
+    },
+    {
+      "t": 1791291431689,
+      "pool": 2,
+      "seq": 1,
+      "phase": "v1pay",
+      "ms": 4587,
+      "proveMs": 3989,
+      "sendMs": 590,
+      "sig": "WCB4WTYRNSMsSaF5QAJgJ6j8k9eTkrPhTUJjo7k9bJYgL3G5eSFv3srStWzgrRbSWLCESx5wSbTaJfKvDWkjADk",
+      "size": 2960,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 200,
+      "landedSig": "WCB4WTYRNSMsSaF5QAJgJ6j8k9eTkrPhTUJjo7k9bJYgL3G5eSFv3srStWzgrRbSWLCESx5wSbTaJfKvDWkjADk"
+    },
+    {
+      "t": 1791291432732,
+      "pool": 0,
+      "seq": 1,
+      "phase": "v1pay",
+      "ms": 5630,
+      "proveMs": 4993,
+      "sendMs": 629,
+      "sig": "2onQMonF3btRxm6aBZwwepsKTsgdJxBzC75yNsdj6ytNUNS9Au7WoqQgzo1mN4Fv9gksavMHcHEhKHh4ZXPmWwq9",
+      "size": 2960,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 200,
+      "landedSig": "2onQMonF3btRxm6aBZwwepsKTsgdJxBzC75yNsdj6ytNUNS9Au7WoqQgzo1mN4Fv9gksavMHcHEhKHh4ZXPmWwq9"
+    },
+    {
+      "t": 1791291432835,
+      "pool": 7,
+      "seq": 1,
+      "phase": "v1pay",
+      "ms": 5733,
+      "proveMs": 5078,
+      "sendMs": 643,
+      "sig": "4wEDo7RY4zGUgDJPmKcrBYH2SzzkhBnXDz6J8ZCTNQeE2arQg8zL3C4UTzKgfwF7T5fCt1L9NKyfLJP766qrs6aw",
+      "size": 2960,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 200,
+      "landedSig": "4wEDo7RY4zGUgDJPmKcrBYH2SzzkhBnXDz6J8ZCTNQeE2arQg8zL3C4UTzKgfwF7T5fCt1L9NKyfLJP766qrs6aw"
+    },
+    {
+      "t": 1791291433253,
+      "pool": 1,
+      "seq": 1,
+      "phase": "v1pay",
+      "ms": 6151,
+      "proveMs": 6028,
+      "sendMs": 111,
+      "sig": "57pDnaYKx2duzuEbbFn5WeeXoD9Vsvv6Ax6UFAW2gtmwg5N5tBw43stCzPzVmRPjMxmWpujyVSkXdv3g1f6WoLbB",
+      "size": 2961,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 200,
+      "landedSig": "57pDnaYKx2duzuEbbFn5WeeXoD9Vsvv6Ax6UFAW2gtmwg5N5tBw43stCzPzVmRPjMxmWpujyVSkXdv3g1f6WoLbB"
+    },
+    {
+      "t": 1791291433861,
+      "pool": 3,
+      "seq": 1,
+      "phase": "v1pay",
+      "ms": 6757,
+      "proveMs": 6117,
+      "sendMs": 608,
+      "sig": "2HwhSgy3fu7PX2rmu1pC9E8uBpiR3dB1YJUbGKPhAMHFfUEEZBPKztgAhvMRtdmJjQPCJAruGAbTcUx8wwV5szE9",
+      "size": 2960,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 200,
+      "landedSig": "2HwhSgy3fu7PX2rmu1pC9E8uBpiR3dB1YJUbGKPhAMHFfUEEZBPKztgAhvMRtdmJjQPCJAruGAbTcUx8wwV5szE9"
+    },
+    {
+      "t": 1791291434484,
+      "pool": 6,
+      "seq": 1,
+      "phase": "v1pay",
+      "ms": 7381,
+      "proveMs": 6082,
+      "sendMs": 1229,
+      "sig": "3XhLWxwQakv7atVF8nQRkuXEHJvR3E5sV4pzKyLdWw5F8JeFwX37KY9WTMHyDpBvpvitga6mx7fdrdaUYrYm7UiZ",
+      "size": 2959,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 200,
+      "landedSig": "3XhLWxwQakv7atVF8nQRkuXEHJvR3E5sV4pzKyLdWw5F8JeFwX37KY9WTMHyDpBvpvitga6mx7fdrdaUYrYm7UiZ"
+    },
+    {
+      "t": 1791291435108,
+      "pool": 5,
+      "seq": 2,
+      "phase": "v1pay",
+      "ms": 6407,
+      "proveMs": 5556,
+      "sendMs": 839,
+      "sig": "63D5WgNZRQj4hLSF8tX2YcDCrKHRWRYnA6Cs4AGb5qcGT5FsuJmxgJ4zrgL8uwHfa7CFasjZy5Y4pPoDry9dFM6i",
+      "size": 2961,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 206,
+      "landedSig": "63D5WgNZRQj4hLSF8tX2YcDCrKHRWRYnA6Cs4AGb5qcGT5FsuJmxgJ4zrgL8uwHfa7CFasjZy5Y4pPoDry9dFM6i"
+    },
+    {
+      "t": 1791291435910,
+      "pool": 4,
+      "seq": 2,
+      "phase": "v1pay",
+      "ms": 6741,
+      "proveMs": 6124,
+      "sendMs": 606,
+      "sig": "2MY2HPZHVgzT9ouCJwU7FBMZiHohZnitpytmCkghtJ19qnDSdYjScHBKAGpjeJieFufuq9vdNLTdM2Nzxd3MCC8n",
+      "size": 2961,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 212,
+      "landedSig": "2MY2HPZHVgzT9ouCJwU7FBMZiHohZnitpytmCkghtJ19qnDSdYjScHBKAGpjeJieFufuq9vdNLTdM2Nzxd3MCC8n"
+    },
+    {
+      "t": 1791291436956,
+      "pool": 0,
+      "seq": 2,
+      "phase": "v1pay",
+      "ms": 4224,
+      "proveMs": 3618,
+      "sendMs": 599,
+      "sig": "2nDnwo9UjKPudjnKkHEoQhibD4LajrEdponZREe1f1VnskdWL4vwZjGBxq5VsHyPP5uAq2rFjLAucYpcYbd8aSQs",
+      "size": 2960,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 230,
+      "landedSig": "2nDnwo9UjKPudjnKkHEoQhibD4LajrEdponZREe1f1VnskdWL4vwZjGBxq5VsHyPP5uAq2rFjLAucYpcYbd8aSQs"
+    },
+    {
+      "t": 1791291437551,
+      "pool": 2,
+      "seq": 2,
+      "phase": "v1pay",
+      "ms": 5862,
+      "proveMs": 4668,
+      "sendMs": 1117,
+      "sig": "g7DpvFbHrnTGbK6AGaWovsiNSK29k8VtvjaUxV7UiC2p6sC8UuvTMiCkhwgXr7Cwqsnep8q2MxZu7UqZYzr5geQ",
+      "size": 2960,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 218,
+      "landedSig": "g7DpvFbHrnTGbK6AGaWovsiNSK29k8VtvjaUxV7UiC2p6sC8UuvTMiCkhwgXr7Cwqsnep8q2MxZu7UqZYzr5geQ"
+    },
+    {
+      "t": 1791291438147,
+      "pool": 7,
+      "seq": 2,
+      "phase": "v1pay",
+      "ms": 5312,
+      "proveMs": 4603,
+      "sendMs": 701,
+      "sig": "3fCDdKDByUGzqTuUyWdHDDmNabMNJ9KowBRQwpRJ4mML4H6pt82e8qvnAcvVLGNS4JLsP31rt6NHHTyV6uWBPgDW",
+      "size": 2961,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 230,
+      "landedSig": "3fCDdKDByUGzqTuUyWdHDDmNabMNJ9KowBRQwpRJ4mML4H6pt82e8qvnAcvVLGNS4JLsP31rt6NHHTyV6uWBPgDW"
+    },
+    {
+      "t": 1791291438534,
+      "pool": 1,
+      "seq": 2,
+      "phase": "v1pay",
+      "ms": 5281,
+      "proveMs": 5184,
+      "sendMs": 88,
+      "sig": "2yoQ1ajWADoQFaLX56JzBhZcwfEQNS735iBZUG9giJpyPZeN5PSY5UvM923wMXd2Q2YGxH6ZWXFvty84CSvGznEH",
+      "size": 2961,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 236,
+      "landedSig": "2yoQ1ajWADoQFaLX56JzBhZcwfEQNS735iBZUG9giJpyPZeN5PSY5UvM923wMXd2Q2YGxH6ZWXFvty84CSvGznEH"
+    },
+    {
+      "t": 1791291440104,
+      "pool": 3,
+      "seq": 2,
+      "phase": "v1pay",
+      "ms": 6243,
+      "proveMs": 5627,
+      "sendMs": 604,
+      "sig": "3gKzMNDvhVDE9rQH7xDVVyBCRAqo5SL72Gtfk5L3zeNEpzYoEqaKF9fM8s6o9xgJwBST2u33oir2Eh1ZgUVT5asD",
+      "size": 2960,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 248,
+      "landedSig": "3gKzMNDvhVDE9rQH7xDVVyBCRAqo5SL72Gtfk5L3zeNEpzYoEqaKF9fM8s6o9xgJwBST2u33oir2Eh1ZgUVT5asD"
+    },
+    {
+      "t": 1791291440222,
+      "pool": 6,
+      "seq": 2,
+      "phase": "v1pay",
+      "ms": 5738,
+      "proveMs": 5063,
+      "sendMs": 634,
+      "sig": "5nNkKmrbkA4seicLAYTCRq7zb2GXqRAdUydCp1ReJrZxx19wC9dnSzbySngXEFcmjt9WduDYSNPcY4YFHmHP3fgc",
+      "size": 2960,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 254,
+      "landedSig": "5nNkKmrbkA4seicLAYTCRq7zb2GXqRAdUydCp1ReJrZxx19wC9dnSzbySngXEFcmjt9WduDYSNPcY4YFHmHP3fgc"
+    },
+    {
+      "t": 1791291441219,
+      "pool": 5,
+      "seq": 3,
+      "phase": "v1pay",
+      "ms": 6111,
+      "proveMs": 5515,
+      "sendMs": 589,
+      "sig": "4fdSZZqXAnF94GWomSEuYoFJ9TXtiqGw43fo32ff1iMPSCACEBBWPDWasS6rXLBMNoheZZTcA3eMxygQ2o6usodq",
+      "size": 2959,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 254,
+      "landedSig": "4fdSZZqXAnF94GWomSEuYoFJ9TXtiqGw43fo32ff1iMPSCACEBBWPDWasS6rXLBMNoheZZTcA3eMxygQ2o6usodq"
+    },
+    {
+      "t": 1791291442266,
+      "pool": 4,
+      "seq": 3,
+      "phase": "v1pay",
+      "ms": 6356,
+      "proveMs": 5715,
+      "sendMs": 629,
+      "sig": "2Vq9DU9ehzdFZwnUR9Gb2mYS8pE4kLfoWZ8aa8WTRytL4iiTVEkZhXJ9U1UhjCnxe7TrLyA5hpMZQVUXckCNbp42",
+      "size": 2960,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 260,
+      "landedSig": "2Vq9DU9ehzdFZwnUR9Gb2mYS8pE4kLfoWZ8aa8WTRytL4iiTVEkZhXJ9U1UhjCnxe7TrLyA5hpMZQVUXckCNbp42"
+    },
+    {
+      "t": 1791291443308,
+      "pool": 0,
+      "seq": 3,
+      "phase": "v1pay",
+      "ms": 6352,
+      "proveMs": 5732,
+      "sendMs": 609,
+      "sig": "4d6Rgo22pXPLR7NH9cBcsjik5mWtKsKnXWT2Rus5PJL9bxaRdU2MZtR6RQ8x1ZSTdb5uxx3ibHANZpa5m6QxFh5y",
+      "size": 2959,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 272,
+      "landedSig": "4d6Rgo22pXPLR7NH9cBcsjik5mWtKsKnXWT2Rus5PJL9bxaRdU2MZtR6RQ8x1ZSTdb5uxx3ibHANZpa5m6QxFh5y"
+    },
+    {
+      "t": 1791291443405,
+      "pool": 2,
+      "seq": 3,
+      "phase": "v1pay",
+      "ms": 5854,
+      "proveMs": 5179,
+      "sendMs": 619,
+      "sig": "4XUrj1Lj1syfdfBEuohdVgLwYPU9U6nYRb9weuHgUBKJoGhomoeeLRCMq5PKCNMiU6AHGVx1WBqDnP9FJr9g1wdT",
+      "size": 2957,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 278,
+      "landedSig": "4XUrj1Lj1syfdfBEuohdVgLwYPU9U6nYRb9weuHgUBKJoGhomoeeLRCMq5PKCNMiU6AHGVx1WBqDnP9FJr9g1wdT"
+    },
+    {
+      "t": 1791291444416,
+      "pool": 7,
+      "seq": 3,
+      "phase": "v1pay",
+      "ms": 6269,
+      "proveMs": 5668,
+      "sendMs": 589,
+      "sig": "39Mdicg6WGSZSRyipfE6iKtGrzU2UnRfAJ6TRoPMQnF3wefa2mpgkYHUiitsbWFunAcnCVmuQ3iTeHcazqugeUTU",
+      "size": 2960,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 278,
+      "landedSig": "39Mdicg6WGSZSRyipfE6iKtGrzU2UnRfAJ6TRoPMQnF3wefa2mpgkYHUiitsbWFunAcnCVmuQ3iTeHcazqugeUTU"
+    },
+    {
+      "t": 1791291445321,
+      "pool": 1,
+      "seq": 3,
+      "phase": "v1pay",
+      "ms": 6787,
+      "proveMs": 6162,
+      "sendMs": 604,
+      "sig": "3bBz2AzAknZrLUh9EnzL5k9z86G3k4fMYzZQAA6CEWTuNvF4vAtGWgh8odAoBaJG96uimLb9VnGECLwqFA3HXzSp",
+      "size": 2961,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 284,
+      "landedSig": "3bBz2AzAknZrLUh9EnzL5k9z86G3k4fMYzZQAA6CEWTuNvF4vAtGWgh8odAoBaJG96uimLb9VnGECLwqFA3HXzSp"
+    },
+    {
+      "t": 1791291445884,
+      "pool": 3,
+      "seq": 3,
+      "phase": "v1pay",
+      "ms": 5780,
+      "proveMs": 5672,
+      "sendMs": 97,
+      "sig": "443V7Sd4GnwuXaeCLu4BinutPy3oUma1j14gsvrYFJzLq5yCeLgxUjLmttFrq91A48EN2TM7WunvsPHHAWZbfXPA",
+      "size": 2961,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 296,
+      "landedSig": "443V7Sd4GnwuXaeCLu4BinutPy3oUma1j14gsvrYFJzLq5yCeLgxUjLmttFrq91A48EN2TM7WunvsPHHAWZbfXPA"
+    },
+    {
+      "t": 1791291446697,
+      "pool": 6,
+      "seq": 3,
+      "phase": "v1pay",
+      "ms": 6475,
+      "proveMs": 5809,
+      "sendMs": 637,
+      "sig": "j6E7E2aV6UeqajNcqMBTSbfBPVoG9mz5DfCsTFJYF9eHZbGUW8AFpHCbjsmDE8XPu4bX5jiRdQSoZjWhfWUzxEZ",
+      "size": 2957,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 296,
+      "landedSig": "j6E7E2aV6UeqajNcqMBTSbfBPVoG9mz5DfCsTFJYF9eHZbGUW8AFpHCbjsmDE8XPu4bX5jiRdQSoZjWhfWUzxEZ"
+    },
+    {
+      "t": 1791291447701,
+      "pool": 5,
+      "seq": 4,
+      "phase": "v1pay",
+      "ms": 6482,
+      "proveMs": 5870,
+      "sendMs": 599,
+      "sig": "3FwVhw7pFeB4s9eguaaDmAbAkgaYPxt2duaU4svaC7AK969MdgvkPqM1oWmGvvSq6G7tCCGeeEMtTK24FpFfmw47",
+      "size": 2959,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 302,
+      "landedSig": "3FwVhw7pFeB4s9eguaaDmAbAkgaYPxt2duaU4svaC7AK969MdgvkPqM1oWmGvvSq6G7tCCGeeEMtTK24FpFfmw47"
+    },
+    {
+      "t": 1791291448527,
+      "pool": 4,
+      "seq": 4,
+      "phase": "v1pay",
+      "ms": 6261,
+      "proveMs": 5595,
+      "sendMs": 658,
+      "sig": "4baUwYcbvc15JziFimDuSwMZTMHfRo9WjdhdYbma6MrqjddrZ9wf5chVnnJh9ErZmZPDtxh45DWSYYgWf8ewbUH9",
+      "size": 2961,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 308,
+      "landedSig": "4baUwYcbvc15JziFimDuSwMZTMHfRo9WjdhdYbma6MrqjddrZ9wf5chVnnJh9ErZmZPDtxh45DWSYYgWf8ewbUH9"
+    },
+    {
+      "t": 1791291449503,
+      "pool": 0,
+      "seq": 4,
+      "phase": "v1pay",
+      "ms": 6195,
+      "proveMs": 5587,
+      "sendMs": 601,
+      "sig": "cnpuT8K4TunR9mWYwiKGDmBCDPzEF4pgJ4gTnkTX1i2MFVKnJpK6GX82r68wYywSsqrgVPG6MZMspszFc95TXyB",
+      "size": 2961,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 320,
+      "landedSig": "cnpuT8K4TunR9mWYwiKGDmBCDPzEF4pgJ4gTnkTX1i2MFVKnJpK6GX82r68wYywSsqrgVPG6MZMspszFc95TXyB"
+    },
+    {
+      "t": 1791291450094,
+      "pool": 2,
+      "seq": 4,
+      "phase": "v1pay",
+      "ms": 6689,
+      "proveMs": 5868,
+      "sendMs": 813,
+      "sig": "3pGTcUJjXYDDkQQe53e3X2oLVUuMMoqwgxwmrnBHuY9W8UpH617eCGC4G1HgPoT4UCaeLnVV7qHz6EVsnurC8E6c",
+      "size": 2959,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 320,
+      "landedSig": "3pGTcUJjXYDDkQQe53e3X2oLVUuMMoqwgxwmrnBHuY9W8UpH617eCGC4G1HgPoT4UCaeLnVV7qHz6EVsnurC8E6c"
+    },
+    {
+      "t": 1791291451012,
+      "pool": 7,
+      "seq": 4,
+      "phase": "v1pay",
+      "ms": 6596,
+      "proveMs": 5963,
+      "sendMs": 623,
+      "sig": "4J5dueNLU2pk1qsjupsFS4aS78mWGRdQwzu5hLUinJvwhMSDYtHHRHDUSc4XovZE4Ps1Y4obV7hkQ74GUrY6jWc5",
+      "size": 2960,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 326,
+      "landedSig": "4J5dueNLU2pk1qsjupsFS4aS78mWGRdQwzu5hLUinJvwhMSDYtHHRHDUSc4XovZE4Ps1Y4obV7hkQ74GUrY6jWc5"
+    },
+    {
+      "t": 1791291451170,
+      "pool": 1,
+      "seq": 4,
+      "phase": "v1pay",
+      "ms": 5849,
+      "proveMs": 5745,
+      "sendMs": 95,
+      "sig": "YnKrPjgfb5xF27diX4SqH6V7wLSfcS8SJUXbbGcBvHViWtUj5mYsPCidC4FZuodqX471sficVGZzfjaDJc1u2Cc",
+      "size": 2961,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 332,
+      "landedSig": "YnKrPjgfb5xF27diX4SqH6V7wLSfcS8SJUXbbGcBvHViWtUj5mYsPCidC4FZuodqX471sficVGZzfjaDJc1u2Cc"
+    },
+    {
+      "t": 1791291452704,
+      "pool": 3,
+      "seq": 4,
+      "phase": "v1pay",
+      "ms": 6820,
+      "proveMs": 6213,
+      "sendMs": 595,
+      "sig": "24B5ovx6eLGNn7oPM5Ga4UDp14gBFG3fN94MGch6xY3ypzr6NggL5VBTGNSHEr4n4gL4unFFgQTFGs3EaXu7Nbmf",
+      "size": 2961,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 338,
+      "landedSig": "24B5ovx6eLGNn7oPM5Ga4UDp14gBFG3fN94MGch6xY3ypzr6NggL5VBTGNSHEr4n4gL4unFFgQTFGs3EaXu7Nbmf"
+    },
+    {
+      "t": 1791291452827,
+      "pool": 6,
+      "seq": 4,
+      "phase": "v1pay",
+      "ms": 6130,
+      "proveMs": 5807,
+      "sendMs": 315,
+      "sig": "5gSt1SBrYSoCXzBMAJPsNknVTgbJsYfWKudctNo3uNhU8gcyFhFRuNwJrCLZ12kjhVLoMVwTNKZeZYkrWQ4GPjH6",
+      "size": 2960,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 344,
+      "landedSig": "5gSt1SBrYSoCXzBMAJPsNknVTgbJsYfWKudctNo3uNhU8gcyFhFRuNwJrCLZ12kjhVLoMVwTNKZeZYkrWQ4GPjH6"
+    },
+    {
+      "t": 1791291453688,
+      "pool": 0,
+      "seq": 5,
+      "phase": "v1pay",
+      "ms": 4185,
+      "proveMs": 3628,
+      "sendMs": 533,
+      "sig": "3ojF9vGnjxXWLzCDm9r8RwjgxuG5K8oqjhbUv92aruvgWm9yoR7YeUsTLsrkVZ7U1X245wUQQVLrUrETiBJxVXwd",
+      "size": 1237,
+      "transacts": 1,
+      "employees": 1,
+      "fetchIdx": 368,
+      "landedSig": "3ojF9vGnjxXWLzCDm9r8RwjgxuG5K8oqjhbUv92aruvgWm9yoR7YeUsTLsrkVZ7U1X245wUQQVLrUrETiBJxVXwd"
+    },
+    {
+      "t": 1791291454216,
+      "pool": 2,
+      "seq": 5,
+      "phase": "v1pay",
+      "ms": 4122,
+      "proveMs": 3091,
+      "sendMs": 1024,
+      "sig": "4ePYfe59QRT6NeWMdgsgJvN7xCX8fQEQGBM4FdYiXRWXCipbdd8WAS2fkaCc92T8SsVShDSMCqLUphKUaZhnrh34",
+      "size": 1236,
+      "transacts": 1,
+      "employees": 1,
+      "fetchIdx": 368,
+      "landedSig": "4ePYfe59QRT6NeWMdgsgJvN7xCX8fQEQGBM4FdYiXRWXCipbdd8WAS2fkaCc92T8SsVShDSMCqLUphKUaZhnrh34"
+    },
+    {
+      "t": 1791291454763,
+      "pool": 1,
+      "seq": 5,
+      "phase": "v1pay",
+      "ms": 3592,
+      "proveMs": 2249,
+      "sendMs": 1339,
+      "sig": "2k8GZ8RWnWCYgvtFBWWzx9A1bV1s1NEQ6Q5ZwiLeR2ppd96eKFj65LkoCpvezLN2wKEMhDLDJ4NCQf7chEdzNozG",
+      "size": 1237,
+      "transacts": 1,
+      "employees": 1,
+      "fetchIdx": 380,
+      "landedSig": "2k8GZ8RWnWCYgvtFBWWzx9A1bV1s1NEQ6Q5ZwiLeR2ppd96eKFj65LkoCpvezLN2wKEMhDLDJ4NCQf7chEdzNozG"
+    },
+    {
+      "t": 1791291455312,
+      "pool": 3,
+      "seq": 5,
+      "phase": "v1pay",
+      "ms": 2608,
+      "proveMs": 961,
+      "sendMs": 1644,
+      "sig": "5neF1wu1kPda4v1Yv4DB2oiKAa6M6C1ixsyHgbzSmyviUb4AhY88rpXVhR7DiHGju71wNpMRR39wuLPkArkAcdi6",
+      "size": 1237,
+      "transacts": 1,
+      "employees": 1,
+      "fetchIdx": 392,
+      "landedSig": "5neF1wu1kPda4v1Yv4DB2oiKAa6M6C1ixsyHgbzSmyviUb4AhY88rpXVhR7DiHGju71wNpMRR39wuLPkArkAcdi6"
+    }
+  ],
+  "proveTimes": [
+    {
+      "wtns": 950,
+      "total": 950,
+      "at": 1791291375869
+    },
+    {
+      "wtns": 955,
+      "total": 985,
+      "at": 1791291375907
+    },
+    {
+      "wtns": 955,
+      "total": 983,
+      "at": 1791291375907
+    },
+    {
+      "wtns": 963,
+      "total": 982,
+      "at": 1791291375908
+    },
+    {
+      "wtns": 1033,
+      "total": 1975,
+      "at": 1791291376904
+    },
+    {
+      "wtns": 997,
+      "total": 1972,
+      "at": 1791291376905
+    },
+    {
+      "wtns": 1000,
+      "total": 1981,
+      "at": 1791291376912
+    },
+    {
+      "wtns": 1064,
+      "total": 2037,
+      "at": 1791291376972
+    },
+    {
+      "wtns": 679,
+      "total": 679,
+      "at": 1791291377938
+    },
+    {
+      "wtns": 671,
+      "total": 672,
+      "at": 1791291378120
+    },
+    {
+      "wtns": 651,
+      "total": 652,
+      "at": 1791291378623
+    },
+    {
+      "wtns": 645,
+      "total": 645,
+      "at": 1791291379139
+    },
+    {
+      "wtns": 646,
+      "total": 647,
+      "at": 1791291379661
+    },
+    {
+      "wtns": 641,
+      "total": 642,
+      "at": 1791291380178
+    },
+    {
+      "wtns": 641,
+      "total": 641,
+      "at": 1791291380698
+    },
+    {
+      "wtns": 639,
+      "total": 640,
+      "at": 1791291381215
+    },
+    {
+      "wtns": 641,
+      "total": 642,
+      "at": 1791291381738
+    },
+    {
+      "wtns": 641,
+      "total": 642,
+      "at": 1791291382258
+    },
+    {
+      "wtns": 642,
+      "total": 643,
+      "at": 1791291382780
+    },
+    {
+      "wtns": 641,
+      "total": 642,
+      "at": 1791291383298
+    },
+    {
+      "wtns": 640,
+      "total": 641,
+      "at": 1791291383817
+    },
+    {
+      "wtns": 641,
+      "total": 642,
+      "at": 1791291384339
+    },
+    {
+      "wtns": 639,
+      "total": 639,
+      "at": 1791291384855
+    },
+    {
+      "wtns": 638,
+      "total": 639,
+      "at": 1791291385378
+    },
+    {
+      "wtns": 638,
+      "total": 639,
+      "at": 1791291385897
+    },
+    {
+      "wtns": 639,
+      "total": 639,
+      "at": 1791291386418
+    },
+    {
+      "wtns": 641,
+      "total": 641,
+      "at": 1791291386940
+    },
+    {
+      "wtns": 641,
+      "total": 642,
+      "at": 1791291387462
+    },
+    {
+      "wtns": 639,
+      "total": 640,
+      "at": 1791291387980
+    },
+    {
+      "wtns": 640,
+      "total": 640,
+      "at": 1791291388501
+    },
+    {
+      "wtns": 642,
+      "total": 643,
+      "at": 1791291389022
+    },
+    {
+      "wtns": 703,
+      "total": 703,
+      "at": 1791291389604
+    },
+    {
+      "wtns": 702,
+      "total": 703,
+      "at": 1791291389630
+    },
+    {
+      "wtns": 682,
+      "total": 683,
+      "at": 1791291390124
+    },
+    {
+      "wtns": 652,
+      "total": 652,
+      "at": 1791291390613
+    },
+    {
+      "wtns": 642,
+      "total": 642,
+      "at": 1791291391131
+    },
+    {
+      "wtns": 640,
+      "total": 641,
+      "at": 1791291391651
+    },
+    {
+      "wtns": 640,
+      "total": 641,
+      "at": 1791291392172
+    },
+    {
+      "wtns": 644,
+      "total": 645,
+      "at": 1791291392695
+    },
+    {
+      "wtns": 641,
+      "total": 641,
+      "at": 1791291393212
+    },
+    {
+      "wtns": 637,
+      "total": 637,
+      "at": 1791291393731
+    },
+    {
+      "wtns": 639,
+      "total": 640,
+      "at": 1791291394253
+    },
+    {
+      "wtns": 640,
+      "total": 641,
+      "at": 1791291394774
+    },
+    {
+      "wtns": 638,
+      "total": 639,
+      "at": 1791291395292
+    },
+    {
+      "wtns": 636,
+      "total": 637,
+      "at": 1791291395812
+    },
+    {
+      "wtns": 638,
+      "total": 638,
+      "at": 1791291396334
+    },
+    {
+      "wtns": 639,
+      "total": 639,
+      "at": 1791291396856
+    },
+    {
+      "wtns": 639,
+      "total": 640,
+      "at": 1791291397377
+    },
+    {
+      "wtns": 641,
+      "total": 641,
+      "at": 1791291397899
+    },
+    {
+      "wtns": 639,
+      "total": 640,
+      "at": 1791291398419
+    },
+    {
+      "wtns": 640,
+      "total": 640,
+      "at": 1791291398939
+    },
+    {
+      "wtns": 641,
+      "total": 643,
+      "at": 1791291399463
+    },
+    {
+      "wtns": 652,
+      "total": 652,
+      "at": 1791291399993
+    },
+    {
+      "wtns": 714,
+      "total": 714,
+      "at": 1791291400578
+    },
+    {
+      "wtns": 718,
+      "total": 719,
+      "at": 1791291400602
+    },
+    {
+      "wtns": 696,
+      "total": 697,
+      "at": 1791291401108
+    },
+    {
+      "wtns": 660,
+      "total": 660,
+      "at": 1791291401587
+    },
+    {
+      "wtns": 648,
+      "total": 649,
+      "at": 1791291402103
+    },
+    {
+      "wtns": 645,
+      "total": 646,
+      "at": 1791291402619
+    },
+    {
+      "wtns": 644,
+      "total": 644,
+      "at": 1791291403140
+    },
+    {
+      "wtns": 643,
+      "total": 643,
+      "at": 1791291403661
+    },
+    {
+      "wtns": 646,
+      "total": 646,
+      "at": 1791291404185
+    },
+    {
+      "wtns": 642,
+      "total": 643,
+      "at": 1791291404703
+    },
+    {
+      "wtns": 640,
+      "total": 640,
+      "at": 1791291405223
+    },
+    {
+      "wtns": 639,
+      "total": 640,
+      "at": 1791291405744
+    },
+    {
+      "wtns": 640,
+      "total": 640,
+      "at": 1791291406265
+    },
+    {
+      "wtns": 639,
+      "total": 639,
+      "at": 1791291406786
+    },
+    {
+      "wtns": 642,
+      "total": 643,
+      "at": 1791291407311
+    },
+    {
+      "wtns": 646,
+      "total": 647,
+      "at": 1791291407837
+    },
+    {
+      "wtns": 646,
+      "total": 647,
+      "at": 1791291408359
+    },
+    {
+      "wtns": 645,
+      "total": 645,
+      "at": 1791291408880
+    },
+    {
+      "wtns": 642,
+      "total": 643,
+      "at": 1791291409401
+    },
+    {
+      "wtns": 643,
+      "total": 643,
+      "at": 1791291409923
+    },
+    {
+      "wtns": 646,
+      "total": 646,
+      "at": 1791291410448
+    },
+    {
+      "wtns": 646,
+      "total": 647,
+      "at": 1791291410969
+    },
+    {
+      "wtns": 646,
+      "total": 647,
+      "at": 1791291411490
+    },
+    {
+      "wtns": 642,
+      "total": 643,
+      "at": 1791291412010
+    },
+    {
+      "wtns": 642,
+      "total": 643,
+      "at": 1791291412532
+    },
+    {
+      "wtns": 643,
+      "total": 644,
+      "at": 1791291413055
+    },
+    {
+      "wtns": 644,
+      "total": 645,
+      "at": 1791291413578
+    },
+    {
+      "wtns": 645,
+      "total": 645,
+      "at": 1791291414101
+    },
+    {
+      "wtns": 649,
+      "total": 650,
+      "at": 1791291414627
+    },
+    {
+      "wtns": 647,
+      "total": 648,
+      "at": 1791291415146
+    },
+    {
+      "wtns": 646,
+      "total": 647,
+      "at": 1791291415668
+    },
+    {
+      "wtns": 649,
+      "total": 649,
+      "at": 1791291416192
+    },
+    {
+      "wtns": 646,
+      "total": 646,
+      "at": 1791291416710
+    },
+    {
+      "wtns": 644,
+      "total": 645,
+      "at": 1791291417235
+    },
+    {
+      "wtns": 646,
+      "total": 648,
+      "at": 1791291417759
+    },
+    {
+      "wtns": 644,
+      "total": 645,
+      "at": 1791291418279
+    },
+    {
+      "wtns": 643,
+      "total": 644,
+      "at": 1791291418800
+    },
+    {
+      "wtns": 643,
+      "total": 643,
+      "at": 1791291419322
+    },
+    {
+      "wtns": 644,
+      "total": 645,
+      "at": 1791291419846
+    },
+    {
+      "wtns": 650,
+      "total": 650,
+      "at": 1791291420374
+    },
+    {
+      "wtns": 645,
+      "total": 646,
+      "at": 1791291420892
+    },
+    {
+      "wtns": 643,
+      "total": 643,
+      "at": 1791291421414
+    },
+    {
+      "wtns": 639,
+      "total": 640,
+      "at": 1791291421933
+    },
+    {
+      "wtns": 660,
+      "total": 660,
+      "at": 1791291423024
+    },
+    {
+      "wtns": 663,
+      "total": 664,
+      "at": 1791291424077
+    },
+    {
+      "wtns": 644,
+      "total": 644,
+      "at": 1791291424566
+    },
+    {
+      "wtns": 657,
+      "total": 658,
+      "at": 1791291425635
+    },
+    {
+      "wtns": 918,
+      "total": 919,
+      "at": 1791291428089
+    },
+    {
+      "wtns": 940,
+      "total": 941,
+      "at": 1791291428103
+    },
+    {
+      "wtns": 939,
+      "total": 939,
+      "at": 1791291428104
+    },
+    {
+      "wtns": 943,
+      "total": 944,
+      "at": 1791291428111
+    },
+    {
+      "wtns": 946,
+      "total": 1873,
+      "at": 1791291429051
+    },
+    {
+      "wtns": 1001,
+      "total": 1920,
+      "at": 1791291429092
+    },
+    {
+      "wtns": 983,
+      "total": 1913,
+      "at": 1791291429098
+    },
+    {
+      "wtns": 997,
+      "total": 1920,
+      "at": 1791291429103
+    },
+    {
+      "wtns": 988,
+      "total": 2893,
+      "at": 1791291430082
+    },
+    {
+      "wtns": 1045,
+      "total": 2911,
+      "at": 1791291430098
+    },
+    {
+      "wtns": 1026,
+      "total": 2936,
+      "at": 1791291430127
+    },
+    {
+      "wtns": 1057,
+      "total": 2969,
+      "at": 1791291430162
+    },
+    {
+      "wtns": 966,
+      "total": 3869,
+      "at": 1791291431066
+    },
+    {
+      "wtns": 1005,
+      "total": 3894,
+      "at": 1791291431089
+    },
+    {
+      "wtns": 1020,
+      "total": 3950,
+      "at": 1791291431149
+    },
+    {
+      "wtns": 996,
+      "total": 3959,
+      "at": 1791291431160
+    },
+    {
+      "wtns": 1025,
+      "total": 4890,
+      "at": 1791291432093
+    },
+    {
+      "wtns": 1022,
+      "total": 4909,
+      "at": 1791291432114
+    },
+    {
+      "wtns": 1027,
+      "total": 4970,
+      "at": 1791291432178
+    },
+    {
+      "wtns": 1030,
+      "total": 4982,
+      "at": 1791291432192
+    },
+    {
+      "wtns": 1032,
+      "total": 5915,
+      "at": 1791291433127
+    },
+    {
+      "wtns": 1065,
+      "total": 5969,
+      "at": 1791291433183
+    },
+    {
+      "wtns": 1025,
+      "total": 5999,
+      "at": 1791291433219
+    },
+    {
+      "wtns": 1039,
+      "total": 6003,
+      "at": 1791291433221
+    },
+    {
+      "wtns": 1010,
+      "total": 5506,
+      "at": 1791291434231
+    },
+    {
+      "wtns": 1106,
+      "total": 5524,
+      "at": 1791291434237
+    },
+    {
+      "wtns": 1032,
+      "total": 5071,
+      "at": 1791291434254
+    },
+    {
+      "wtns": 1070,
+      "total": 5536,
+      "at": 1791291434256
+    },
+    {
+      "wtns": 1037,
+      "total": 6086,
+      "at": 1791291435271
+    },
+    {
+      "wtns": 1053,
+      "total": 6105,
+      "at": 1791291435292
+    },
+    {
+      "wtns": 1049,
+      "total": 3581,
+      "at": 1791291435307
+    },
+    {
+      "wtns": 1057,
+      "total": 3589,
+      "at": 1791291435312
+    },
+    {
+      "wtns": 1008,
+      "total": 3480,
+      "at": 1791291436322
+    },
+    {
+      "wtns": 1048,
+      "total": 3505,
+      "at": 1791291436342
+    },
+    {
+      "wtns": 1038,
+      "total": 3508,
+      "at": 1791291436347
+    },
+    {
+      "wtns": 1081,
+      "total": 4628,
+      "at": 1791291436356
+    },
+    {
+      "wtns": 1018,
+      "total": 4492,
+      "at": 1791291437344
+    },
+    {
+      "wtns": 1058,
+      "total": 4547,
+      "at": 1791291437402
+    },
+    {
+      "wtns": 1048,
+      "total": 4138,
+      "at": 1791291437406
+    },
+    {
+      "wtns": 1086,
+      "total": 4571,
+      "at": 1791291437437
+    },
+    {
+      "wtns": 1045,
+      "total": 5121,
+      "at": 1791291438392
+    },
+    {
+      "wtns": 1032,
+      "total": 5164,
+      "at": 1791291438437
+    },
+    {
+      "wtns": 1047,
+      "total": 4481,
+      "at": 1791291438455
+    },
+    {
+      "wtns": 1103,
+      "total": 4567,
+      "at": 1791291438549
+    },
+    {
+      "wtns": 1043,
+      "total": 4877,
+      "at": 1791291439481
+    },
+    {
+      "wtns": 1091,
+      "total": 5501,
+      "at": 1791291439486
+    },
+    {
+      "wtns": 1054,
+      "total": 4904,
+      "at": 1791291439511
+    },
+    {
+      "wtns": 993,
+      "total": 4935,
+      "at": 1791291439544
+    },
+    {
+      "wtns": 1027,
+      "total": 5360,
+      "at": 1791291440516
+    },
+    {
+      "wtns": 1064,
+      "total": 5403,
+      "at": 1791291440549
+    },
+    {
+      "wtns": 1060,
+      "total": 4683,
+      "at": 1791291440607
+    },
+    {
+      "wtns": 1109,
+      "total": 5453,
+      "at": 1791291440622
+    },
+    {
+      "wtns": 1061,
+      "total": 5653,
+      "at": 1791291441580
+    },
+    {
+      "wtns": 1074,
+      "total": 5695,
+      "at": 1791291441624
+    },
+    {
+      "wtns": 1044,
+      "total": 4598,
+      "at": 1791291441653
+    },
+    {
+      "wtns": 1058,
+      "total": 4625,
+      "at": 1791291441682
+    },
+    {
+      "wtns": 1002,
+      "total": 5032,
+      "at": 1791291442685
+    },
+    {
+      "wtns": 1103,
+      "total": 5628,
+      "at": 1791291442687
+    },
+    {
+      "wtns": 1095,
+      "total": 5080,
+      "at": 1791291442721
+    },
+    {
+      "wtns": 1073,
+      "total": 5080,
+      "at": 1791291442728
+    },
+    {
+      "wtns": 1032,
+      "total": 5552,
+      "at": 1791291443719
+    },
+    {
+      "wtns": 1033,
+      "total": 5549,
+      "at": 1791291443721
+    },
+    {
+      "wtns": 1089,
+      "total": 5638,
+      "at": 1791291443814
+    },
+    {
+      "wtns": 1129,
+      "total": 5316,
+      "at": 1791291443859
+    },
+    {
+      "wtns": 964,
+      "total": 6138,
+      "at": 1791291444687
+    },
+    {
+      "wtns": 973,
+      "total": 6148,
+      "at": 1791291444694
+    },
+    {
+      "wtns": 1134,
+      "total": 4725,
+      "at": 1791291444950
+    },
+    {
+      "wtns": 1100,
+      "total": 4734,
+      "at": 1791291444961
+    },
+    {
+      "wtns": 1032,
+      "total": 5486,
+      "at": 1791291445729
+    },
+    {
+      "wtns": 1085,
+      "total": 5544,
+      "at": 1791291445774
+    },
+    {
+      "wtns": 1077,
+      "total": 5778,
+      "at": 1791291446028
+    },
+    {
+      "wtns": 1066,
+      "total": 5769,
+      "at": 1791291446030
+    },
+    {
+      "wtns": 1062,
+      "total": 5519,
+      "at": 1791291446792
+    },
+    {
+      "wtns": 1031,
+      "total": 5533,
+      "at": 1791291446808
+    },
+    {
+      "wtns": 1057,
+      "total": 5811,
+      "at": 1791291447088
+    },
+    {
+      "wtns": 1059,
+      "total": 4803,
+      "at": 1791291447090
+    },
+    {
+      "wtns": 1044,
+      "total": 5560,
+      "at": 1791291447855
+    },
+    {
+      "wtns": 1064,
+      "total": 5571,
+      "at": 1791291447860
+    },
+    {
+      "wtns": 1075,
+      "total": 4752,
+      "at": 1791291448165
+    },
+    {
+      "wtns": 1074,
+      "total": 4747,
+      "at": 1791291448166
+    },
+    {
+      "wtns": 1038,
+      "total": 5472,
+      "at": 1791291448894
+    },
+    {
+      "wtns": 1047,
+      "total": 5477,
+      "at": 1791291448909
+    },
+    {
+      "wtns": 1080,
+      "total": 5811,
+      "at": 1791291449248
+    },
+    {
+      "wtns": 1105,
+      "total": 5837,
+      "at": 1791291449272
+    },
+    {
+      "wtns": 1067,
+      "total": 5533,
+      "at": 1791291449963
+    },
+    {
+      "wtns": 1079,
+      "total": 5559,
+      "at": 1791291449991
+    },
+    {
+      "wtns": 1044,
+      "total": 4980,
+      "at": 1791291450318
+    },
+    {
+      "wtns": 1124,
+      "total": 5943,
+      "at": 1791291450378
+    },
+    {
+      "wtns": 1080,
+      "total": 5705,
+      "at": 1791291451046
+    },
+    {
+      "wtns": 1073,
+      "total": 5722,
+      "at": 1791291451065
+    },
+    {
+      "wtns": 1035,
+      "total": 5455,
+      "at": 1791291451357
+    },
+    {
+      "wtns": 1077,
+      "total": 5550,
+      "at": 1791291451457
+    },
+    {
+      "wtns": 1046,
+      "total": 6185,
+      "at": 1791291452095
+    },
+    {
+      "wtns": 1081,
+      "total": 5400,
+      "at": 1791291452148
+    },
+    {
+      "wtns": 1096,
+      "total": 5704,
+      "at": 1791291452457
+    },
+    {
+      "wtns": 1044,
+      "total": 5747,
+      "at": 1791291452503
+    },
+    {
+      "wtns": 1032,
+      "total": 3537,
+      "at": 1791291453130
+    },
+    {
+      "wtns": 1034,
+      "total": 3079,
+      "at": 1791291453184
+    },
+    {
+      "wtns": 959,
+      "total": 2201,
+      "at": 1791291453419
+    },
+    {
+      "wtns": 876,
+      "total": 877,
+      "at": 1791291453664
+    }
+  ]
+}

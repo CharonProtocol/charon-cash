@@ -1,0 +1,56 @@
+machine: 8 cores / 8.0GB -> 4 provers, 3 transacts/v1-tx, ARK_THREADS=2
+run-standard-v1: 2 pools, 5 employees, pay 5000000, 3 transacts/v1-tx
+airdropping 2 employers
+registering 5 recipients
+using deprecated parameters for the initialization function; pass a single object instead
+registered in 0.1s
+fee per transact: 12500 (bps=25, floor=10000)
+spawning 4 transaction2 provers
+circuit             /Users/singupallikartik/Developer/chat/privacy-cash/programs/privacy-cash/artifacts/circuits/transaction2   native_witness=false
+circuit             /Users/singupallikartik/Developer/chat/privacy-cash/programs/privacy-cash/artifacts/circuits/transaction2   native_witness=false
+circuit             /Users/singupallikartik/Developer/chat/privacy-cash/programs/privacy-cash/artifacts/circuits/transaction2   native_witness=false
+circuit             /Users/singupallikartik/Developer/chat/privacy-cash/programs/privacy-cash/artifacts/circuits/transaction2   native_witness=false
+zkey load               3.54s   (threads=2, g2_swap=false)
+zkey load               3.55s   (threads=2, g2_swap=false)
+zkey load               3.57s   (threads=2, g2_swap=false)
+zkey load               3.58s   (threads=2, g2_swap=false)
+r1cs+wasm load      r1cs+wasm load       r1cs+wasm load      865r1cs+wasm load      . 37876ms.
+45ms
+ 897.91ms
+ 908.54ms
+depositing to 2 pools ( 3,2 )
+5 deposits done in 6.1s
+{
+  "pools": 2,
+  "employees": 5,
+  "payLamports": "5000000",
+  "varied": false,
+  "amountCheck": null,
+  "circuit": "transaction2 (standard, no batch circuits)",
+  "transactsPerV1Tx": 3,
+  "arkThreads": 2,
+  "depositsLanded": 5,
+  "v1TxsSent": 2,
+  "employeesPaidByEvents": 5,
+  "txsProcessedByProxy": 7,
+  "expectedTxs": 7,
+  "laneFailures": 0,
+  "setupMs": 10709,
+  "payWallMs": 2139,
+  "totalWallMs": 12848,
+  "proves": 10,
+  "proveTotalMs": 8578,
+  "proveP50Ms": 910,
+  "proxyPending": 0,
+  "chainVerify": {
+    "treePda": "2MuZGAFvUE1xd2CsANzMkZGnwLPG1zFwfcArbuF1dvBr",
+    "exists": true,
+    "chainNextIndex": 20,
+    "chainRoot": "2a54870670e9a966c786aee164c51e72692475ad13fcebc778e157a08c25d619",
+    "replicaNextIndex": 20,
+    "replicaRoot": "2a54870670e9a966c786aee164c51e72692475ad13fcebc778e157a08c25d619",
+    "nextIndexMatch": true,
+    "rootInHistory": true
+  }
+}
+wrote /Users/singupallikartik/Developer/chat/privacy-cash/payroll/rust-prover-bench/bench/results/native-5r-2p/run-2026-10-06T13-06-40-372Z.json

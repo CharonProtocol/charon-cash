@@ -1,0 +1,80 @@
+engine	employees	lanes	ark_provers	register_s	deposit_s	setup_s	pay_s	total_s	proves	prove_avg_ms	prove_p50_ms	v1_txs	paid	lane_failures	chain_ok	workers	pool_ready_s	funded_s	prove_bucket_s	prove_max_ms	rows_per_s	sent	failed	spot_ok
+native-arkworks	100	6	def	0.7	51.8	57.7	27.1	84.8	200	2014	1014	36	100	0	true									
+native-arkworks	50	2	def	0.4	45.7	50.6	14.3	64.9	100	810	697	18	50	0	true									
+native-arkworks	210	4	def	1.4	108.2	114.4	57.2	171.6	420	1472	943	72	210	0	true									
+native-arkworks	NaN	NaN	def	5.7	330.6	359.8	144.5	504.3	420	5826	5821	72	210	0	true									
+native-arkworks	100	12	def	0.8	49	55.2	32.2	87.4	200	2913	2571	36	100	0	true									
+wasm-arkworks	100	1						499	101	3848						4	0.4	0.6	388.6	6387	0.2	100	0	10/10
+native-arkworks	210	8	def	1.4	105.9	112.1	57.2	169.3	420	2994	1956	72	210	0	true									
+wasm-arkworks	5	2						65.6	6	9606						4	0.6	0.9	57.6	10211	0.08	5	0	5/10
+wasm-arkworks	100	8						132.1	110	6246						4	0.3	0.7	687	8414	0.76	100	0	10/10
+wasm-arkworks	50	4						121.5	57	5362						2	0.3	0.7	305.6	6892	0.41	50	0	10/10
+wasm-arkworks	5	4						29.6	6	3619						1	0.2	0.6	21.7	3949	0.17	5	0	5/10
+native-arkworks	5	2	def	0.1	6.1	10.7	2.1	12.8	10	858	910	2	5	0	true									
+wasm-arkworks	210	4						748.6	216	11694						1	0.2	0.6	2526	17996	0.28	210	0	10/10
+wasm-arkworks	5	16						27.9	6	3358						4	0.3	0.8	20.1	3387	0.18	5	0	5/10
+native-arkworks	100	4	2	0.7	52.3	56.7	36.2	92.9	200	1953	869	36	100	0	true									
+wasm-arkworks	210	1						944.5	211	3376						2	0.2	0.7	712.4	4490	0.22	210	0	10/10
+wasm-arkworks	210	2						489.8	212	3451						4	0.3	0.8	731.6	4554	0.43	210	0	10/10
+wasm-arkworks	50	6						102.1	60	6190						4	0.3	0.7	371.4	10970	0.49	50	0	10/10
+native-arkworks	NaN	NaN	def	1.5	131.4	138.5	182.1	320.6	420	4810	2478	72	210	0	true									
+native-arkworks	100	4	1	0.7	62.9	66.3	62.5	128.7	200	3734	1906	36	100	0	true									
+native-arkworks	210	16	def	1.4	108.2	114.4	58.8	173.2	420	2790	1928	80	210	0	true									
+native-arkworks	50	8	def	0.4	27.1	32.1	14.3	46.3	100	2014	976	18	50	0	true									
+wasm-arkworks	210	12						272.7	220	8068						4	0.3	0.7	1775	13173	0.77	210	0	10/10
+wasm-arkworks	5	1						61.6	6	8898						4	0.6	1	53.4	9328	0.08	5	0	5/10
+wasm-arkworks	50	4						97.6	57	3734						4	0.3	0.6	212.8	4087	0.51	50	0	10/10
+native-arkworks	5	4	def	0.1	4.1	8.6	2.6	11.3	10	975	938	4	5	0	true									
+wasm-arkworks	5	8						34.6	6	4440						4	0.4	0.5	26.6	5832	0.14	5	0	5/10
+native-arkworks	50	4	def	0.4	27.1	32.1	13.9	46	100	1301	930	18	50	0	true									
+native-arkworks	210	2	def	1.4	166.7	172.8	59	231.9	420	843	808	70	210	0	true									
+wasm-arkworks	50	16						94	61	6968						4	0.4	0.7	425.1	12104	0.53	50	0	10/10
+wasm-arkworks	100	4						373.6	106	11848						1	0.2	0.3	1255.9	15435	0.27	100	0	10/10
+wasm-arkworks	100	2						323.2	102	4502						4	0.4	0.6	459.2	6829	0.31	100	0	10/10
+wasm-arkworks	100	12						257.3	115	18924						4	0.5	0.7	2176.2	41098	0.39	100	0	10/10
+native-arkworks	5	8	def	0.1	3.7	8.9	3.7	12.6	10	1138	1098	5	5	0	true									
+native-arkworks	50	12	def	0.4	25.9	31.5	15.4	46.9	100	2203	1564	24	50	0	true									
+native-arkworks	5	12	def	0.1	4.5	10.4	3.8	14.1	10	1256	1231	5	5	0	true									
+native-arkworks	100	1	def	0.7	192.3	197.9	47.2	245.1	200	736	671	34	100	0	true									
+wasm-arkworks	210	8						283.5	222	7079						4	0.3	0.5	1571.6	9826	0.74	210	0	10/10
+wasm-arkworks	210	1						940.9	211	3295						4	0.3	0.7	695.2	3387	0.22	210	0	10/10
+native-arkworks	5	6	def	0.1	3.8	9.3	3.7	13	10	1162	1132	5	5	0	true									
+wasm-arkworks	210	4						340.4	216	4130						4	0.3	0.6	892.1	5370	0.62	210	0	10/10
+native-arkworks	210	1	2	1.4	400.5	405.6	126	531.6	420	760	650	70	210	0	true									
+native-arkworks	50	4	1	0.4	51.7	54.6	60.1	114.7	100	6860	3851	18	50	0	true									
+wasm-arkworks	210	16						307.5	224	13262						4	0.4	0.7	2970.8	19021	0.68	210	0	10/10
+native-arkworks	5	4	1	0.2	8.3	14	7.6	21.6	10	3810	4198	4	5	0	true									
+wasm-arkworks	100	6						192.9	110	8325						4	0.4	0.6	915.7	13324	0.52	100	0	10/10
+native-arkworks	100	16	def	0.7	52.7	58	28.2	86.1	200	2820	1991	36	100	0	true									
+wasm-arkworks	100	16						161.1	114	11514						4	0.4	0.7	1312.6	17725	0.62	100	0	10/10
+native-arkworks	210	1	1	1.4	404.9	409	166.4	575.3	420	955	649	70	210	0	true									
+native-arkworks	50	6	def	0.4	28.4	34.2	14.9	49.1	100	2152	1081	18	50	0	true									
+native-arkworks	50	4	2	0.6	45	51.7	43.8	95.5	100	5177	3127	18	50	0	true									
+native-arkworks	100	2	def	0.7	84	89.3	27.6	116.9	200	803	729	34	100	0	true									
+wasm-arkworks	50	12						115.5	68	8882						4	0.3	0.8	604	13764	0.43	50	0	10/10
+native-arkworks	5	4	2	0.2	6.6	14.1	8.4	22.5	10	3027	3169	4	5	0	true									
+native-arkworks	210	12	def	1.4	110	116.1	56.9	173.1	420	2494	1874	72	210	0	true									
+native-arkworks	210	1	def	1.4	405.7	412	99.4	511.5	420	732	779	70	210	0	true									
+wasm-arkworks	100	4						214.7	106	6086						2	0.3	0.7	645.1	8634	0.47	100	0	10/10
+wasm-arkworks	50	8						109.9	68	6556						4	0.4	0.5	445.8	8860	0.45	50	0	10/10
+native-arkworks	210	4	1	1.4	131.6	135.5	131.1	266.6	420	3847	2052	72	210	0	true									
+wasm-arkworks	50	1						231.7	51	3495						4	0.4	0.7	178.2	4412	0.22	50	0	10/10
+wasm-arkworks	5	4						28.1	6	3361						4	0.3	0.6	20.2	3402	0.18	5	0	5/10
+native-arkworks	210	4	2	1.4	107.8	112.9	81	193.9	420	2128	1311	72	210	0	true									
+native-arkworks	50	16	def	0.4	25.8	31.4	17.2	48.6	100	3331	2762	18	50	0	true									
+native-arkworks	210	6	def	1.4	107.7	113.8	57.5	171.3	420	2276	974	72	210	0	true									
+native-arkworks	100	4	def	0.7	52.1	57.5	29.4	86.9	200	1462	939	36	100	0	true									
+wasm-arkworks	210	4						442.9	216	6013						2	0.2	0.4	1298.9	10357	0.47	210	0	10/10
+wasm-arkworks	5	6						32.3	6	3941						4	0.4	0.7	23.6	4800	0.15	5	0	5/10
+wasm-arkworks	210	1						975.5	211	3532						1	0.2	0.6	745.2	5972	0.22	210	0	10/10
+native-arkworks	100	8	def	0.7	52.2	57.5	28.2	85.8	200	2690	985	36	100	0	true									
+wasm-arkworks	50	2						130.3	52	3456						4	0.3	0.8	179.7	4625	0.38	50	0	10/10
+wasm-arkworks	5	1						27.7	6	3328						1	0.2	0.7	20	3368	0.18	5	0	5/10
+wasm-arkworks	210	6						286.4	218	6480						4	0.4	0.7	1412.7	9756	0.73	210	0	10/10
+wasm-arkworks	50	4						199.1	57	10558						1	0.2	0.4	601.8	13975	0.25	50	0	10/10
+wasm-arkworks	5	4						27.4	6	3360						2	0.2	0.4	20.2	3424	0.18	5	0	5/10
+native-arkworks	5	1	def	0.1	9.8	14.5	2.7	17.1	10	707	668	2	5	0	true									
+wasm-arkworks	5	12						28	6	3404						4	0.3	0.8	20.4	3630	0.18	5	0	5/10
+native-arkworks	50	1	def	0.4	97.2	102.3	24	126.3	100	727	668	17	50	0	true									
+wasm-arkworks	100	4						146	104	3858						4	0.3	0.6	401.3	4121	0.68	100	0	10/10
+native-arkworks	5	16	def	0.1	4.7	10.1	3.5	13.5	10	1426	1371	5	5	0	true									

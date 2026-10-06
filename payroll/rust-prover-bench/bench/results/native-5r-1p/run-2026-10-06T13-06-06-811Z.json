@@ -1,0 +1,167 @@
+{
+  "summary": {
+    "pools": 1,
+    "employees": 5,
+    "payLamports": "5000000",
+    "varied": false,
+    "amountCheck": null,
+    "circuit": "transaction2 (standard, no batch circuits)",
+    "transactsPerV1Tx": 3,
+    "arkThreads": 2,
+    "depositsLanded": 5,
+    "v1TxsSent": 2,
+    "employeesPaidByEvents": 5,
+    "txsProcessedByProxy": 7,
+    "expectedTxs": 7,
+    "laneFailures": 0,
+    "setupMs": 14463,
+    "payWallMs": 2687,
+    "totalWallMs": 17150,
+    "proves": 10,
+    "proveTotalMs": 7073,
+    "proveP50Ms": 668,
+    "proxyPending": 0,
+    "chainVerify": {
+      "treePda": "2MuZGAFvUE1xd2CsANzMkZGnwLPG1zFwfcArbuF1dvBr",
+      "exists": true,
+      "chainNextIndex": 20,
+      "chainRoot": "23508699fbdfc294ea7de6bf28f98c58fd8f89b2cc7f430280b58aee7e409db2",
+      "replicaNextIndex": 20,
+      "replicaRoot": "23508699fbdfc294ea7de6bf28f98c58fd8f89b2cc7f430280b58aee7e409db2",
+      "nextIndexMatch": true,
+      "rootInHistory": true
+    }
+  },
+  "events": [
+    {
+      "t": 1791291949250,
+      "pool": -1,
+      "seq": -1,
+      "phase": "register",
+      "employees": 5,
+      "ms": 71
+    },
+    {
+      "t": 1791291955789,
+      "pool": 0,
+      "seq": 0,
+      "phase": "deposit",
+      "ms": 1978,
+      "leafIndex": 0
+    },
+    {
+      "t": 1791291957749,
+      "pool": 0,
+      "seq": 1,
+      "phase": "deposit",
+      "ms": 1960,
+      "leafIndex": 2
+    },
+    {
+      "t": 1791291959702,
+      "pool": 0,
+      "seq": 2,
+      "phase": "deposit",
+      "ms": 1953,
+      "leafIndex": 4
+    },
+    {
+      "t": 1791291961656,
+      "pool": 0,
+      "seq": 3,
+      "phase": "deposit",
+      "ms": 1954,
+      "leafIndex": 6
+    },
+    {
+      "t": 1791291963610,
+      "pool": 0,
+      "seq": 4,
+      "phase": "deposit",
+      "ms": 1954,
+      "leafIndex": 8
+    },
+    {
+      "t": 1791291965050,
+      "pool": 0,
+      "seq": 1,
+      "phase": "v1pay",
+      "ms": 1434,
+      "proveMs": 862,
+      "sendMs": 567,
+      "sig": "2xL7wbaFZuTwrMk7z22wZ4sNHPaH9wnaLmEZYjBEER2ViQLJkaYqxu6hzS5wWFWW8yDuK9zKi9MorvcWuTiG39j1",
+      "size": 2955,
+      "transacts": 3,
+      "employees": 3,
+      "fetchIdx": 10,
+      "landedSig": "2xL7wbaFZuTwrMk7z22wZ4sNHPaH9wnaLmEZYjBEER2ViQLJkaYqxu6hzS5wWFWW8yDuK9zKi9MorvcWuTiG39j1"
+    },
+    {
+      "t": 1791291966297,
+      "pool": 0,
+      "seq": 2,
+      "phase": "v1pay",
+      "ms": 1247,
+      "proveMs": 698,
+      "sendMs": 545,
+      "sig": "3YVPWhXhiR5Z2aA4C3iPb7QXk8rbEvYqnp7KSx5fMfDGz4Vvtm5cYZQKTFnUGyKwo6WYWgNjYTvz947PRyeJ6oGs",
+      "size": 2095,
+      "transacts": 2,
+      "employees": 2,
+      "fetchIdx": 16,
+      "landedSig": "3YVPWhXhiR5Z2aA4C3iPb7QXk8rbEvYqnp7KSx5fMfDGz4Vvtm5cYZQKTFnUGyKwo6WYWgNjYTvz947PRyeJ6oGs"
+    }
+  ],
+  "proveTimes": [
+    {
+      "wtns": 634,
+      "total": 636,
+      "at": 1791291954467
+    },
+    {
+      "wtns": 656,
+      "total": 657,
+      "at": 1791291956453
+    },
+    {
+      "wtns": 654,
+      "total": 656,
+      "at": 1791291958411
+    },
+    {
+      "wtns": 655,
+      "total": 656,
+      "at": 1791291960364
+    },
+    {
+      "wtns": 656,
+      "total": 657,
+      "at": 1791291962320
+    },
+    {
+      "wtns": 811,
+      "total": 812,
+      "at": 1791291964448
+    },
+    {
+      "wtns": 815,
+      "total": 816,
+      "at": 1791291964457
+    },
+    {
+      "wtns": 830,
+      "total": 831,
+      "at": 1791291964476
+    },
+    {
+      "wtns": 667,
+      "total": 668,
+      "at": 1791291965736
+    },
+    {
+      "wtns": 683,
+      "total": 684,
+      "at": 1791291965747
+    }
+  ]
+}

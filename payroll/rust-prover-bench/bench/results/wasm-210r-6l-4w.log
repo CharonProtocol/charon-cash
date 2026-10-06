@@ -1,0 +1,23 @@
+spawning 4 wasm prover workers...
+[0.4s] prover pool ready (wasm-arkworks, 4 workers)
+[0.7s] treasurer BdoHDD2SHz6bx5NdNHjjxeRbGzqkZdyt2HxHGoCqctX funded 20000000000
+using deprecated parameters for the initialization function; pass a single object instead
+[46.3s] paying: 20/210 done, 5 proving, proves=28 avg=5526ms max=8555ms
+[70.5s] paying: 40/210 done, 5 proving, proves=48 avg=5863ms max=8555ms
+[96.4s] paying: 60/210 done, 5 proving, proves=68 avg=6139ms max=8858ms
+[121.4s] paying: 80/210 done, 5 proving, proves=88 avg=6249ms max=8858ms
+[149.2s] paying: 100/210 done, 5 proving, proves=108 avg=6440ms max=9756ms
+[175.0s] paying: 120/210 done, 5 proving, proves=128 avg=6486ms max=9756ms
+[200.0s] paying: 140/210 done, 5 proving, proves=148 avg=6497ms max=9756ms
+[224.2s] paying: 160/210 done, 5 proving, proves=168 avg=6481ms max=9756ms
+[248.8s] paying: 180/210 done, 5 proving, proves=188 avg=6477ms max=9756ms
+[273.4s] paying: 200/210 done, 5 proving, proves=208 avg=6471ms max=9756ms
+[286.3s] paying: 210/210 done, 0 proving, proves=218 avg=6480ms max=9756ms
+[286.4s] paying: 210/210 done, 0 proving, proves=218 avg=6480ms max=9756ms
+
+=== RESULT (local simnet, 210 rows, 6 lanes, wasm prover x4) ===
+sent=210 failed=0 total=210
+funding: 2.168154632 SOL
+proofs: 218 prove-bucket=1412.7s avg=6480ms max=9756ms
+total wall: 286.4s  -> 0.7 rows/s
+spot-check: 10/10 recipients hold SOL
