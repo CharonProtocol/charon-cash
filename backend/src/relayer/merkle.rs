@@ -88,14 +88,17 @@ impl MerkleMirror {
 
         let mut next_index: u32 = 0;
         let mut root_index: u8 = 0;
-        for leaf in &leaves {
-            append(
-                &mut subtrees,
-                &mut next_index,
-                &mut root_index,
-                &mut root_history,
-                *leaf,
-            );
+        // One ring entry per transact, mirroring the chain's append_many:
+        // leaves arrive in per-tx contiguous pairs, and only the final root of
+        // each tx enters the history window.
+        for pair in leaves.chunks(2) {
+            let mut root = [0u8; 32];
+            for leaf in pair {
+                root = append(&mut subtrees, &mut next_index, *leaf);
+            }
+            let new_root_index = (root_index as usize + 1) % ROOT_HISTORY_SIZE;
+            root_index = new_root_index as u8;
+            root_history[new_root_index] = root;
         }
 
         let mut layers: Vec<Vec<[u8; 32]>> = Vec::with_capacity(MERKLE_TREE_HEIGHT + 1);
@@ -228,18 +231,17 @@ impl MerkleMirror {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Advance the subtree cache and next_index by one leaf; returns the tree
+/// root after the leaf. Ring writes live with the caller so a full transact
+/// can share one entry, matching the on-chain append_many.
 fn append(
     subtrees: &mut [[u8; 32]; MERKLE_TREE_HEIGHT],
     next_index: &mut u32,
-    root_index: &mut u8,
-    root_history: &mut [[u8; 32]; ROOT_HISTORY_SIZE],
     leaf: [u8; 32],
-) -> [[u8; 32]; MERKLE_TREE_HEIGHT] {
+) -> [u8; 32] {
     let zero_bytes = Poseidon::zero_bytes();
     let mut current_index = *next_index as usize;
     let mut current_level_hash = leaf;
-    let mut proof = [[0u8; 32]; MERKLE_TREE_HEIGHT];
 
     for i in 0..MERKLE_TREE_HEIGHT {
         let zero_byte = zero_bytes[i];
@@ -249,19 +251,14 @@ fn append(
             left = current_level_hash;
             right = zero_byte;
             subtrees[i] = current_level_hash;
-            proof[i] = right;
         } else {
             left = subtrees[i];
             right = current_level_hash;
-            proof[i] = left;
         }
         current_level_hash = Poseidon::hashv(&[&left, &right]).expect("poseidon hash");
         current_index /= 2;
     }
 
     *next_index += 1;
-    let new_root_index = (*root_index as usize + 1) % ROOT_HISTORY_SIZE;
-    *root_index = new_root_index as u8;
-    root_history[new_root_index] = current_level_hash;
-    proof
+    current_level_hash
 }

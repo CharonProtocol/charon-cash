@@ -114,9 +114,12 @@ pub async fn load_tree(store: &Store, tree_key: &str) -> Result<TreeData, String
 }
 
 /// Append leaves (in order) to the in-memory tree state. Mirrors the on-chain
-/// incremental append exactly: sibling defaults to the level's zero hash.
+/// append_many exactly: one level-walk per leaf, but only the final root
+/// enters the history ring — one ring entry per transact, so the mirror's
+/// 100-slot window covers the same txs the program's window covers.
 pub fn append_leaves(data: &mut TreeData, leaves: &[[u8; 32]]) -> Result<(), String> {
     let zb = zero_bytes();
+    let mut final_root = None;
     for leaf in leaves {
         let mut cur = *leaf;
         let mut pos = data.next_index as usize;
@@ -138,9 +141,12 @@ pub fn append_leaves(data: &mut TreeData, leaves: &[[u8; 32]]) -> Result<(), Str
             }
         }
         data.next_index += 1;
+        final_root = Some(cur);
+    }
+    if let Some(root) = final_root {
         let new_root_index = (data.root_index + 1) % ROOT_HISTORY_SIZE;
         data.root_index = new_root_index;
-        data.root_history[new_root_index] = cur;
+        data.root_history[new_root_index] = root;
     }
     Ok(())
 }
@@ -278,4 +284,81 @@ pub async fn is_known_root(store: &Store, tree_key: &str, root: [u8; 32]) -> App
         }
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fresh_tree() -> TreeData {
+        let mut history = [[0u8; 32]; ROOT_HISTORY_SIZE];
+        history[0] = zero_bytes()[MERKLE_TREE_HEIGHT];
+        TreeData {
+            tree_key: "test".into(),
+            next_index: 0,
+            root_index: 0,
+            root_history: history,
+            levels: vec![Vec::new(); MERKLE_TREE_HEIGHT + 1],
+        }
+    }
+
+    fn leaf(seed: u8) -> [u8; 32] {
+        let mut l = [0u8; 32];
+        l[0] = seed;
+        l
+    }
+
+    #[test]
+    fn pair_append_writes_one_root() {
+        let mut batched = fresh_tree();
+        append_leaves(&mut batched, &[leaf(1), leaf(2)]).unwrap();
+        assert_eq!(batched.next_index, 2);
+        // Exactly one new ring slot; slot 0 still holds the init zero-root.
+        assert_eq!(batched.root_index, 1);
+        assert_eq!(batched.root_history[0], zero_bytes()[MERKLE_TREE_HEIGHT]);
+
+        // The single ringed root equals the sequential per-leaf append's last
+        // root, and the level tree is byte-identical.
+        let mut seq = fresh_tree();
+        append_leaves(&mut seq, &[leaf(1)]).unwrap();
+        append_leaves(&mut seq, &[leaf(2)]).unwrap();
+        assert_eq!(batched.root_history[1], seq.root_history[seq.root_index]);
+        assert_eq!(batched.levels, seq.levels);
+    }
+
+    #[test]
+    fn pair_append_at_odd_index_matches_sequential() {
+        let mut t = fresh_tree();
+        // Three single-leaf appends (deposits) leave the tree at odd indexes;
+        // the pair then starts at position 3 (a right child at level 0).
+        for s in 1..=3 {
+            append_leaves(&mut t, &[leaf(s)]).unwrap();
+        }
+        assert_eq!(t.next_index, 3);
+        assert_eq!(t.root_index, 3);
+        let ring_after_singles = t.root_history;
+
+        append_leaves(&mut t, &[leaf(4), leaf(5)]).unwrap();
+        assert_eq!(t.next_index, 5);
+        // The pair advanced the ring by exactly one slot, leaving the
+        // singles' entries untouched.
+        assert_eq!(t.root_index, 4);
+        assert_eq!(t.root_history[3], ring_after_singles[3]);
+
+        let mut seq = fresh_tree();
+        for s in 1..=5 {
+            append_leaves(&mut seq, &[leaf(s)]).unwrap();
+        }
+        assert_eq!(t.root_history[4], seq.root_history[5]);
+        assert_eq!(t.levels, seq.levels);
+    }
+
+    #[test]
+    fn empty_append_is_a_noop() {
+        let mut t = fresh_tree();
+        append_leaves(&mut t, &[]).unwrap();
+        assert_eq!(t.next_index, 0);
+        assert_eq!(t.root_index, 0);
+        assert_eq!(t.root_history[0], zero_bytes()[MERKLE_TREE_HEIGHT]);
+    }
 }

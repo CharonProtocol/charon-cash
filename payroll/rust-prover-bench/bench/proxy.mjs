@@ -48,7 +48,7 @@ const replica = {
 }
 replica.rootHistory[0] = ZERO_BYTES[HEIGHT]
 
-function appendLeaf(commitmentHex, encHex, sig, slot) {
+function walkLeaf(commitmentHex, encHex, sig, slot) {
   const zb = ZERO_BYTES
   let cur = commitmentHex
   let pos = replica.nextIndex
@@ -62,9 +62,20 @@ function appendLeaf(commitmentHex, encHex, sig, slot) {
     }
   }
   replica.nextIndex += 1
-  replica.rootIndex = (replica.rootIndex + 1) % ROOT_HISTORY
-  replica.rootHistory[replica.rootIndex] = cur
   replica.leaves.push({ index: replica.nextIndex - 1, commitment: commitmentHex, encHex, sig, slot })
+  return cur
+}
+
+// Chain parity: the program's append_many records one root per transact, so
+// the replica rings one root per instruction (all its leaves), not per leaf.
+function appendTx(commitments, encs, sig, slot) {
+  let root = null
+  for (let i = 0; i < commitments.length; i++) {
+    root = walkLeaf(commitments[i], encs[i], sig, slot)
+    encIndex.set(encs[i], replica.nextIndex - 1)
+  }
+  replica.rootIndex = (replica.rootIndex + 1) % ROOT_HISTORY
+  replica.rootHistory[replica.rootIndex] = root
 }
 
 function merkleProof(leafIndex) {
@@ -324,10 +335,7 @@ async function watchLoop() {
         p.processed = true
         sigLeaf.set(sig, replica.nextIndex)
         for (const d of p.decode) {
-          for (let i = 0; i < d.commitments.length; i++) {
-            appendLeaf(d.commitments[i], d.enc[i], sig, slot)
-            encIndex.set(d.enc[i], replica.nextIndex - 1)
-          }
+          appendTx(d.commitments, d.enc, sig, slot)
           for (const nf of d.nullifiers) spentNullifiers.add(nf)
         }
         processedSigs.add(sig)
