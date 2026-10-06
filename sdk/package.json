@@ -18,7 +18,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && cp -r circuits dist/circuits",
+    "build": "tsc -p tsconfig.json && rm -rf dist/circuits dist/prover-wasm dist/prover-wasm-mt && cp -r circuits dist/circuits && cp -r prover-wasm dist/prover-wasm && cp -r prover-wasm-mt dist/prover-wasm-mt",
     "prepublishOnly": "bun run build && bun test",
     "test": "bun test",
     "setup": "node scripts/"

@@ -3,6 +3,10 @@ export {
   parseProofToBytesArray,
   parseToBytesArray,
   setCircuitBuffers,
+  configureProver,
+  terminateProver,
+  preloadProver,
+  proverThreads,
 } from "./prover";
 
 export { CharonProtocol } from "./client";

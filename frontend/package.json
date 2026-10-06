@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "predev": "node scripts/sync-prover.mjs",
     "build": "tsc -b && vite build",
+    "prebuild": "node scripts/sync-prover.mjs",
+    "sync-prover": "node scripts/sync-prover.mjs",
     "lint": "oxlint",
     "preview": "vite preview",
     "postinstall": "node scripts/setup-native-deps.mjs",
