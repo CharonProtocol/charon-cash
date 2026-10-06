@@ -246,6 +246,24 @@ await t2Pool.warmup()
 sdk.setProver(async (input) => proveOn(t2Pool, input))
 
 // ---------------- phase 1: deposits, one note per transact ----------------
+// surfpool occasionally stalls a few seconds under prover CPU load (RPC calls
+// fail or confirms exceed 30s, then it recovers). Production clients retry —
+// so does the bench. A timed-out deposit is adjudicated by scanning for the
+// note before re-depositing, so a tx that landed late is never double-paid.
+async function retryRpc(label, fn, tries = 4, backoffMs = 2000) {
+  let lastErr
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fn(i)
+    } catch (e) {
+      lastErr = e
+      console.log(`retry ${label} (attempt ${i + 1}/${tries}): ${String(e?.message ?? e).slice(0, 140)}`)
+      await new Promise(r => setTimeout(r, backoffMs * (i + 1)))
+    }
+  }
+  throw lastErr
+}
+
 async function depositPool(poolIdx) {
   const empCount = poolSizes[poolIdx]
   const signer = localSigner(employers[poolIdx])
@@ -256,10 +274,16 @@ async function depositPool(poolIdx) {
     const depAmount = payAmtAt(employeeOff + g) + feePerTx + SLACK_PER_TX
     const before = new Set(sdk.unspentNotes(client.publicKey).map(n => n.blinding))
     const t0 = Date.now()
-    const dep = await client.depositSOL(Number(depAmount))
-    const note = sdk.unspentNotes(client.publicKey).find(n => !before.has(n.blinding))
+    const dep = await retryRpc(`pool ${poolIdx} deposit ${g}`, async (attempt) => {
+      // adjudicate first: a prior attempt's tx may have landed late
+      const landed = sdk.unspentNotes(client.publicKey).find(n => !before.has(n.blinding))
+      if (landed && attempt > 0) return { d: { signature: "adjudicated" }, landed }
+      const d = await client.depositSOL(Number(depAmount))
+      return { d, landed: null }
+    })
+    const note = dep.landed ?? sdk.unspentNotes(client.publicKey).find(n => !before.has(n.blinding))
     if (!note) throw new Error(`pool ${poolIdx} deposit ${g}: fresh note not found`)
-    const leafStart = await healLeafStart(dep.signature)
+    const leafStart = await healLeafStart(dep.d.signature)
     notes.push({ amount: note.amount, blinding: note.blinding, index: leafStart })
     logEvent(poolIdx, g, "deposit", { ms: Date.now() - t0, leafIndex: leafStart })
   }
@@ -393,7 +417,8 @@ async function acquireSlot() {
 }
 async function chainNextIndex() {
   const [treePda] = PublicKey.findProgramAddressSync([Buffer.from("merkle_tree")], PROGRAM_ID)
-  const acc = await rpc("getAccountInfo", [treePda.toBase58(), { encoding: "base64" }])
+  const acc = await retryRpc("chainNextIndex", () =>
+    rpc("getAccountInfo", [treePda.toBase58(), { encoding: "base64" }]))
   return Buffer.from(acc.value.data[0], "base64").readUInt32LE(8)
 }
 
@@ -437,7 +462,9 @@ async function payStdV1(poolIdx) {
       let built = await proveGroup(b)
       const tProved = Date.now()
       for (;;) {
-        const { blockhash } = await sdk.fetchBlockhash()
+        // surfpool transiently stalls under load (RPC errors, late confirms);
+        // same bytes on resubmit = same signature = idempotent
+        const { blockhash } = await retryRpc(`pool ${poolIdx} g${b / PER_TX + 1} blockhash`, () => sdk.fetchBlockhash())
         const txIxs = [...built.map(x => x.instruction), fillerIx()]
         const { bytes, size, signature } = buildV1Tx(
           employers[poolIdx], blockhash, txIxs,
@@ -464,7 +491,8 @@ async function payStdV1(poolIdx) {
         }
 
         const tSend0 = Date.now()
-        const sig = await sdk.submitTransaction(Buffer.from(bytes))
+        const sig = await retryRpc(`pool ${poolIdx} g${b / PER_TX + 1} submit`, () =>
+          sdk.submitTransaction(Buffer.from(bytes)))
         const sendMs = Date.now() - tSend0
         paid += built.length
         logEvent(poolIdx, b / PER_TX + 1, "v1pay", {

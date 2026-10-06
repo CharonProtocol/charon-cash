@@ -432,6 +432,40 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
+    // --- intercepted: gasless relayer transact (engine public payouts) ---
+    // the relayer builds+signs this tx server-side, so there are no tx bytes
+    // to decode — but the request body already carries the commitments,
+    // ciphertexts and nullifiers, so track the same pending shape the submit
+    // path uses and let the watch loop append on landing order.
+    if (req.method === "POST" && (path === "/api/relayer" || path === "/api/relayer/transact")) {
+      const body = JSON.parse((await readBody(req)).toString())
+      const upstream = await fetch(BACKEND + path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      const text = await upstream.text()
+      let data
+      try { data = JSON.parse(text) } catch { data = text }
+      if (upstream.status === 200 && data?.signature) {
+        const bare = (h) => String(h ?? "").replace(/^0x/, "").toLowerCase()
+        const arr = (v) => (Array.isArray(v) ? v : [v]).filter(Boolean)
+        pending.set(data.signature, {
+          decode: [{
+            commitments: arr(body.output_commitments).map(bare),
+            enc: [body.encrypted_output1, body.encrypted_output2].filter(Boolean).map(bare),
+            nullifiers: arr(body.input_nullifiers).map(bare),
+          }],
+          submittedAt: Date.now(),
+        })
+        stats.submitted++
+        console.log(`[relayer] ${new Date().toISOString()} tracked gasless ${data.signature.slice(0, 16)}`)
+      }
+      res.writeHead(upstream.status, { "content-type": upstream.headers.get("content-type") ?? "application/json" })
+      res.end(text)
+      return
+    }
+
     // --- intercepted: tree state ---
     const mState = path.match(/^\/api\/merkle\/([^/]+)$/)
     if (req.method === "GET" && mState) {
