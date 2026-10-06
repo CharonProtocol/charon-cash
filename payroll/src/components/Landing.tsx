@@ -123,7 +123,7 @@ const runtimeBars = [
 const pipeline = [
   { n: "zk proof", v: "0.8s", d: "one Groth16 proof, built on the employee's device" },
   { n: "relayer", v: "18ms", d: "broadcasts the signed transaction - holds no keys, builds no proofs" },
-  { n: "confirm", v: "~200ms", d: "one Solana slot from broadcast to confirmation" },
+  { n: "confirm", v: "~250ms", d: "one Solana slot from broadcast to confirmation" },
 ]
 
 const arch = [
