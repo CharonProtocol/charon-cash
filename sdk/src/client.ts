@@ -19,7 +19,6 @@ import {
   transactSpl,
 } from "./program";
 import { CharonProtocolError, CharonProtocolErrorCode } from "./error";
-import { loadCircuit } from "./prover";
 
 export interface Signer {
   publicKey: PublicKey;
@@ -49,10 +48,6 @@ export class CharonProtocol {
   private storageService: StorageService;
   private isRuning?: boolean = false;
   private lightwasm: LightWasm;
-  private circuit: {
-    wasm: Uint8Array;
-    zkey: Uint8Array;
-  };
 
   utxoByMint: Map<string, UtxoSummary>;
   lastLoadedNote: number; // NOTE: this represents last loaded note in memory not from DB => initially it will be zero
@@ -71,7 +66,6 @@ export class CharonProtocol {
     utxoByMint,
     lastLoadedNote,
     worker,
-    circuit,
   }: {
     connection: Connection;
     publicKey: PublicKey;
@@ -83,10 +77,6 @@ export class CharonProtocol {
     utxoByMint: Map<string, UtxoSummary>;
     lastLoadedNote: number;
     worker: Worker;
-    circuit: {
-      wasm: Uint8Array;
-      zkey: Uint8Array;
-    };
   }) {
     this.publicKey = publicKey;
     this.signer = signer;
@@ -98,7 +88,6 @@ export class CharonProtocol {
     this.utxoByMint = utxoByMint;
     this.lastLoadedNote = lastLoadedNote;
     this.worker = worker;
-    this.circuit = circuit;
 
     worker.addEventListener("message", (event) => {
       if (event.data.type === this.SYNC_MESSAGE) {
@@ -213,8 +202,6 @@ export class CharonProtocol {
       rpcUrl,
     );
 
-    let { zkey, wasm } = await loadCircuit();
-
     return new CharonProtocol({
       connection,
       publicKey: owner.publicKey,
@@ -226,7 +213,6 @@ export class CharonProtocol {
       utxoByMint,
       lastLoadedNote,
       worker,
-      circuit: { zkey, wasm },
     });
   }
 
@@ -254,7 +240,6 @@ export class CharonProtocol {
       connection: this.connection,
       lightwasm: this.lightwasm,
       signTransaction: this.signer.signTransaction,
-      circuit: this.circuit,
     });
 
     return { signature: txid };
@@ -286,7 +271,6 @@ export class CharonProtocol {
       connection: this.connection,
       lightwasm: this.lightwasm,
       signTransaction: this.signer.signTransaction,
-      circuit: this.circuit,
     });
 
     // transaction is successful now remove the notes used from browser storage
@@ -325,7 +309,6 @@ export class CharonProtocol {
       connection: this.connection,
       lightwasm: this.lightwasm,
       signTransaction: this.signer.signTransaction,
-      circuit: this.circuit,
     });
 
     // transaction is successful now remove the notes used from browser storage
@@ -368,7 +351,6 @@ export class CharonProtocol {
       connection: this.connection,
       lightwasm: this.lightwasm,
       signTransaction: this.signer.signTransaction,
-      circuit: this.circuit,
     });
 
     return { signature: txid };
@@ -397,7 +379,6 @@ export class CharonProtocol {
       connection: this.connection,
       lightwasm: this.lightwasm,
       signTransaction: this.signer.signTransaction,
-      circuit: this.circuit,
     });
 
     // transaction is successful now remove the notes used from browser storage
@@ -436,7 +417,6 @@ export class CharonProtocol {
       connection: this.connection,
       lightwasm: this.lightwasm,
       signTransaction: this.signer.signTransaction,
-      circuit: this.circuit,
     });
 
     // transaction is successful now remove the notes used from browser storage

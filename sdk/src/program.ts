@@ -30,13 +30,7 @@ import {
   getMintAddressField,
   serializeProofAndExtData,
 } from "./utils";
-import {
-  CircuitParams,
-  parseProofToBytesArray,
-  parseToBytesArray,
-  ProofBytes,
-  prove,
-} from "./prover";
+import { CircuitParams, parseToBytesArray, ProofBytes, prove } from "./prover";
 import { CharonProtocolError, CharonProtocolErrorCode } from "./error";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -91,10 +85,6 @@ export type TransactArgs = {
   encryptionService: EncryptionService;
   signer: PublicKey;
   connection: Connection;
-  circuit: {
-    wasm: Uint8Array;
-    zkey: Uint8Array;
-  };
   signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>;
 };
 
@@ -108,10 +98,7 @@ export type TransferArgs = {
   encryptionService: EncryptionService;
   signer: PublicKey;
   connection: Connection;
-  circuit: {
-    wasm: Uint8Array;
-    zkey: Uint8Array;
-  };
+
   signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>;
 };
 
@@ -126,7 +113,6 @@ export async function transactSol({
   signer,
   connection,
   signTransaction,
-  circuit,
 }: TransactArgs) {
   if (inputUtxos.length != 2) {
     throw new ProgramError("Invalid number of input utxos , only 2 allowed");
@@ -239,13 +225,12 @@ export async function transactSol({
     mintAddress: getMintAddressField(new PublicKey(mintAddress)),
   };
 
-  const circuitOutput = await prove(circuitInput, circuit.wasm, circuit.zkey);
-  const proofBytes = parseProofToBytesArray(circuitOutput.proof);
-  const inputBytes = parseToBytesArray(circuitOutput.publicSignals);
+  const { publicSignals, proofA, proofB, proofC } = await prove(circuitInput);
+  const inputBytes = parseToBytesArray(publicSignals);
   const proofToSubmit: ProofBytes = {
-    proofA: proofBytes.proofA,
-    proofB: proofBytes.proofB,
-    proofC: proofBytes.proofC,
+    proofA: proofA,
+    proofB: proofB,
+    proofC: proofC,
     root: inputBytes[0],
     publicAmount: inputBytes[1],
     extDataHash: inputBytes[2],
@@ -335,37 +320,38 @@ export async function transactSol({
 
   let versionedTransaction = new VersionedTransaction(messageV0);
 
-  let signedTx = await signTransaction(versionedTransaction);
+  console.log("Size", versionedTransaction.serialize().length);
+  // let signedTx = await signTransaction(versionedTransaction);
 
-  try {
-    let txid = await sendAndConfirmRawTransaction(
-      connection,
-      Buffer.from(signedTx.serialize()),
-      {
-        commitment: "finalized",
-      },
-    );
-    return txid;
-  } catch (error) {
-    if (error instanceof SendTransactionError) {
-      let logs = error.logs;
+  // try {
+  //   let txid = await sendAndConfirmRawTransaction(
+  //     connection,
+  //     Buffer.from(signedTx.serialize()),
+  //     {
+  //       commitment: "finalized",
+  //     },
+  //   );
+  //   return txid;
+  // } catch (error) {
+  //   if (error instanceof SendTransactionError) {
+  //     let logs = error.logs;
 
-      let programErrorCode = undefined;
+  //     let programErrorCode = undefined;
 
-      for (let code of Object.values(ProgramErrorCode)) {
-        let found = logs?.some((line) => line.includes(code));
+  //     for (let code of Object.values(ProgramErrorCode)) {
+  //       let found = logs?.some((line) => line.includes(code));
 
-        if (found) {
-          programErrorCode = code;
-          break;
-        }
-      }
+  //       if (found) {
+  //         programErrorCode = code;
+  //         break;
+  //       }
+  //     }
 
-      throw new ProgramError(error.message, programErrorCode, { cause: error });
-    }
+  //     throw new ProgramError(error.message, programErrorCode, { cause: error });
+  //   }
 
-    throw new ProgramError("Transaction Failed", undefined, { cause: error });
-  }
+  //   throw new ProgramError("Transaction Failed", undefined, { cause: error });
+  // }
 }
 
 /// This is done for convenience , could be implemented in transactSol itself but making in comprehensible
@@ -380,7 +366,6 @@ export async function shieldedTransferSol({
   signer,
   connection,
   signTransaction,
-  circuit,
 }: TransferArgs) {
   if (inputUtxos.length != 2) {
     throw new ProgramError("Invalid number of input utxos , only 2 allowed");
@@ -478,13 +463,12 @@ export async function shieldedTransferSol({
     mintAddress: getMintAddressField(new PublicKey(mintAddress)),
   };
 
-  const circuitOutput = await prove(circuitInput, circuit.wasm, circuit.zkey);
-  const proofBytes = parseProofToBytesArray(circuitOutput.proof);
-  const inputBytes = parseToBytesArray(circuitOutput.publicSignals);
+  const { publicSignals, proofA, proofB, proofC } = await prove(circuitInput);
+  const inputBytes = parseToBytesArray(publicSignals);
   const proofToSubmit: ProofBytes = {
-    proofA: proofBytes.proofA,
-    proofB: proofBytes.proofB,
-    proofC: proofBytes.proofC,
+    proofA: proofA,
+    proofB: proofB,
+    proofC: proofC,
     root: inputBytes[0],
     publicAmount: inputBytes[1],
     extDataHash: inputBytes[2],
@@ -617,7 +601,6 @@ export async function transactSpl({
   signer,
   connection,
   signTransaction,
-  circuit,
 }: TransactArgs) {
   if (inputUtxos.length != 2) {
     throw new ProgramError("Invalid number of input utxos , only 2 allowed");
@@ -735,13 +718,12 @@ export async function transactSpl({
     mintAddress: getMintAddressField(new PublicKey(mintAddress)),
   };
 
-  const circuitOutput = await prove(circuitInput, circuit.wasm, circuit.zkey);
-  const proofBytes = parseProofToBytesArray(circuitOutput.proof);
-  const inputBytes = parseToBytesArray(circuitOutput.publicSignals);
+  const { publicSignals, proofA, proofB, proofC } = await prove(circuitInput);
+  const inputBytes = parseToBytesArray(publicSignals);
   const proofToSubmit: ProofBytes = {
-    proofA: proofBytes.proofA,
-    proofB: proofBytes.proofB,
-    proofC: proofBytes.proofC,
+    proofA: proofA,
+    proofB: proofB,
+    proofC: proofC,
     root: inputBytes[0],
     publicAmount: inputBytes[1],
     extDataHash: inputBytes[2],
@@ -866,37 +848,42 @@ export async function transactSpl({
 
   let versionedTransaction = new VersionedTransaction(messageV0);
 
-  let signedTx = await signTransaction(versionedTransaction);
+  console.log("Size ...", versionedTransaction.serialize().length);
+  console.log("Adress ...", versionedTransaction.message.addressTableLookups);
+  console.log("Adress ...", versionedTransaction.message.staticAccountKeys);
+  return;
 
-  try {
-    let txid = await sendAndConfirmRawTransaction(
-      connection,
-      Buffer.from(signedTx.serialize()),
-      {
-        commitment: "finalized",
-      },
-    );
-    return txid;
-  } catch (error) {
-    if (error instanceof SendTransactionError) {
-      let logs = error.logs;
+  // let signedTx = await signTransaction(versionedTransaction);
 
-      let programErrorCode = undefined;
+  // try {
+  //   let txid = await sendAndConfirmRawTransaction(
+  //     connection,
+  //     Buffer.from(signedTx.serialize()),
+  //     {
+  //       commitment: "finalized",
+  //     },
+  //   );
+  //   return txid;
+  // } catch (error) {
+  //   if (error instanceof SendTransactionError) {
+  //     let logs = error.logs;
 
-      for (let code of Object.values(ProgramErrorCode)) {
-        let found = logs?.some((line) => line.includes(code));
+  //     let programErrorCode = undefined;
 
-        if (found) {
-          programErrorCode = code;
-          break;
-        }
-      }
+  //     for (let code of Object.values(ProgramErrorCode)) {
+  //       let found = logs?.some((line) => line.includes(code));
 
-      throw new ProgramError(error.message, programErrorCode, { cause: error });
-    }
+  //       if (found) {
+  //         programErrorCode = code;
+  //         break;
+  //       }
+  //     }
 
-    throw new ProgramError("Transaction Failed", undefined, { cause: error });
-  }
+  //     throw new ProgramError(error.message, programErrorCode, { cause: error });
+  //   }
+
+  //   throw new ProgramError("Transaction Failed", undefined, { cause: error });
+  // }
 }
 
 /**
@@ -916,7 +903,6 @@ export async function shieldedTransferSpl({
   signer,
   connection,
   signTransaction,
-  circuit,
 }: TransferArgs) {
   if (inputUtxos.length != 2) {
     throw new ProgramError("Invalid number of input utxos , only 2 allowed");
@@ -1020,13 +1006,12 @@ export async function shieldedTransferSpl({
     mintAddress: getMintAddressField(new PublicKey(mintAddress)),
   };
 
-  const circuitOutput = await prove(circuitInput, circuit.wasm, circuit.zkey);
-  const proofBytes = parseProofToBytesArray(circuitOutput.proof);
-  const inputBytes = parseToBytesArray(circuitOutput.publicSignals);
+  const { publicSignals, proofA, proofB, proofC } = await prove(circuitInput);
+  const inputBytes = parseToBytesArray(publicSignals);
   const proofToSubmit: ProofBytes = {
-    proofA: proofBytes.proofA,
-    proofB: proofBytes.proofB,
-    proofC: proofBytes.proofC,
+    proofA: proofA,
+    proofB: proofB,
+    proofC: proofC,
     root: inputBytes[0],
     publicAmount: inputBytes[1],
     extDataHash: inputBytes[2],
