@@ -101,14 +101,14 @@ export function Send({ context }: { context: PaymentContext }) {
       title="Send"
       direction="wallet to private"
     >
-      <div className="flex min-h-0 flex-1 flex-col justify-between gap-2">
+      <div className="flex min-h-0 flex-1 flex-col justify-between items-stretch gap-2">
         <AnimatePresence
           mode="wait"
           initial={false}
         >
           <m.div
             key={step}
-            className="flex min-h-0 w-full flex-1 flex-col gap-3 [@media(max-height:560px)]:gap-2"
+            className="flex min-h-0 w-full flex-1 flex-col gap-3  items-stretch [@media(max-height:560px)]:gap-2"
             initial={{ opacity: 0, y: reduced ? 0 : 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: reduced ? 0 : -6 }}
@@ -151,7 +151,7 @@ export function Send({ context }: { context: PaymentContext }) {
                 </h2>
                 {step === 0 ? (
                   <form
-                    className="flex min-h-0 w-full flex-1 flex-col justify-center"
+                    className="grow flex min-h-0 w-full flex-1 flex-col justify-center"
                     onSubmit={advance}
                   >
                     <div className={ENTRY_ROW}>
@@ -199,7 +199,7 @@ export function Send({ context }: { context: PaymentContext }) {
                   </form>
                 ) : (
                   <form
-                    className="flex min-h-0 w-full flex-1 flex-col justify-center"
+                    className="grow flex min-h-0 w-full flex-1 flex-col justify-center"
                     onSubmit={confirm}
                   >
                     <div className={ENTRY_ROW}>

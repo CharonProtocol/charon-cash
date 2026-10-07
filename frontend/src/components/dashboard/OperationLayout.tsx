@@ -10,8 +10,8 @@ export function OperationLayout({
   children: ReactNode;
 }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-start">
-      <header className="">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <header className="flex justify-start">
         <h1 className="relative text-3xl font-normal text-black">
           {title}{" "}
           <p className="absolute top-full left-3/4 text-xs whitespace-nowrap text-black">

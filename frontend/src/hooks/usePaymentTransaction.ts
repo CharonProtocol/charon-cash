@@ -42,7 +42,9 @@ export function usePaymentTransaction(
       const result =
         kind === "send"
           ? await context.client.sendSol(lamports, destination)
-          : await context.client.withdrawSol(lamports);
+          : kind === "withdraw"
+            ? await context.client.withdrawSol(lamports)
+            : await context.client.shieldedTransferSol(lamports, recipient);
       if (mounted.current) {
         setSignature(result.signature);
         setStatus("success");

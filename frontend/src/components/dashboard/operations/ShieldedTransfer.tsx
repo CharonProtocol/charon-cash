@@ -57,11 +57,13 @@ export function ShieldedTransfer({ context }: { context: PaymentContext }) {
       }
       if (!context.connected)
         throw new Error("Connect your wallet to continue.");
-      if (!context.client) throw new Error("Your account is still initializing.");
+      if (!context.client)
+        throw new Error("Your account is still initializing.");
       setValidation("");
       setStep(processingStep);
       await transaction.submit(amount, recipient, token);
     } catch (cause) {
+      console.log("Cause :", cause);
       setValidation(
         cause instanceof Error ? cause.message : "Check the payment details.",
       );
@@ -107,185 +109,188 @@ export function ShieldedTransfer({ context }: { context: PaymentContext }) {
     </p>
   );
   return (
-    <OperationLayout title="Shielded Transfer" direction="private to private">
-    <div className="flex min-h-0 flex-1 flex-col justify-between gap-3">
-      <AnimatePresence
-        mode="wait"
-        initial={false}
-      >
-        <m.div
-          key={step}
-          className="flex min-h-0 w-full flex-1 flex-col gap-5 [@media(max-height:560px)]:gap-2"
-          initial={{ opacity: 0, y: reduced ? 0 : 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: reduced ? 0 : -6 }}
-          transition={{ duration: reduced ? 0 : 0.18 }}
-          onAnimationComplete={() => {
-            if (step === 1) heading.current?.focus();
-          }}
+    <OperationLayout
+      title="Shielded Transfer"
+      direction="private to private"
+    >
+      <div className="flex min-h-0 flex-1 flex-col justify-between gap-3">
+        <AnimatePresence
+          mode="wait"
+          initial={false}
         >
-          {step === processingStep ? (
-            <ProcessingStep
-              status={transaction.status}
-              kind="transfer"
-              amount={amount}
-              token={token}
-              error={transaction.error}
-              explorerUrl={transaction.explorerUrl}
-              onReset={reset}
-              onBack={() => {
-                transaction.reset();
-                setStep(1);
-              }}
-            />
-          ) : (
-            <>
-              <TokenSelector
-                value={token}
-                onChange={(next) => {
-                  setToken(next);
-                  setValidation("");
+          <m.div
+            key={step}
+            className="flex min-h-0 w-full flex-1 flex-col gap-5 [@media(max-height:560px)]:gap-2"
+            initial={{ opacity: 0, y: reduced ? 0 : 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: reduced ? 0 : -6 }}
+            transition={{ duration: reduced ? 0 : 0.18 }}
+            onAnimationComplete={() => {
+              if (step === 1) heading.current?.focus();
+            }}
+          >
+            {step === processingStep ? (
+              <ProcessingStep
+                status={transaction.status}
+                kind="transfer"
+                amount={amount}
+                token={token}
+                error={transaction.error}
+                explorerUrl={transaction.explorerUrl}
+                onReset={reset}
+                onBack={() => {
+                  transaction.reset();
+                  setStep(1);
                 }}
               />
-              <h2
-                className="shrink-0 text-[clamp(14px,2.5dvh,21px)] font-normal text-neutral-500 outline-none!"
-                ref={heading}
-                tabIndex={-1}
-              >
-                {step === 0
-                  ? `Enter the Amount of ${token} : `
-                  : "Enter the recipient’s wallet address"}
-              </h2>
-              {step === 0 ? (
-                <form
-                  className={FORM}
-                  onSubmit={advance}
+            ) : (
+              <>
+                <TokenSelector
+                  value={token}
+                  onChange={(next) => {
+                    setToken(next);
+                    setValidation("");
+                  }}
+                />
+                <h2
+                  className="shrink-0 text-[clamp(14px,2.5dvh,21px)] font-normal text-neutral-500 outline-none!"
+                  ref={heading}
+                  tabIndex={-1}
                 >
-                  <div className={ENTRY_ROW}>
-                    <label
-                      className="sr-only"
-                      htmlFor="pay-amount"
-                    >
-                      Amount in {token}
-                    </label>
-                    <input
-                      id="pay-amount"
-                      className={`min-w-0 w-full max-w-xl border-0 bg-transparent py-1.5 text-center text-[clamp(40px,9dvh,76px)]! tracking-[-3px] text-neutral-800 placeholder:text-neutral-500 [@media(max-height:560px)]:py-0 [@media(max-height:560px)]:text-[44px]! ${INPUT_RESET}`}
-                      inputMode="decimal"
-                      value={amount}
-                      onChange={(event) => {
-                        setAmount(event.target.value);
-                        setValidation("");
-                      }}
-                      placeholder="0.00"
-                      autoComplete="off"
-                      spellCheck={false}
-                      aria-describedby="pay-validation pay-balance"
-                    />
-                    <button
-                      className={NEXT_BUTTON}
-                      aria-label="Continue to recipient"
-                      type="submit"
-                    >
-                      <ArrowRight strokeWidth={1} />
-                    </button>
-                  </div>
-                  <div className="mx-auto mt-[clamp(6px,1.5dvh,14px)]">
-                    <TokenIcon
-                      token={token}
-                      className="size-6 shrink-0 [@media(max-height:560px)]:size-4"
-                    />
-                  </div>
-                  <p
-                    className={NOTE}
-                    id="pay-balance"
+                  {step === 0
+                    ? `Enter the Amount of ${token} : `
+                    : "Enter the recipient’s wallet address"}
+                </h2>
+                {step === 0 ? (
+                  <form
+                    className={FORM}
+                    onSubmit={advance}
                   >
-                    {token !== "SOL"
-                      ? `Private ${token} → private account`
-                      : context.client
-                        ? `Private balance · ${formatSol(context.limit)} SOL available per transaction`
-                        : "Connect your wallet to see your private balance"}
-                  </p>
-                  {errorMessage}
-                </form>
-              ) : (
-                <form
-                  className={FORM}
-                  onSubmit={confirm}
-                >
-                  <div className={ENTRY_ROW}>
-                    <label
-                      className="sr-only"
-                      htmlFor="pay-recipient"
+                    <div className={ENTRY_ROW}>
+                      <label
+                        className="sr-only"
+                        htmlFor="pay-amount"
+                      >
+                        Amount in {token}
+                      </label>
+                      <input
+                        id="pay-amount"
+                        className={`min-w-0 w-full max-w-xl border-0 bg-transparent py-1.5 text-center text-[clamp(40px,9dvh,76px)]! tracking-[-3px] text-neutral-800 placeholder:text-neutral-500 [@media(max-height:560px)]:py-0 [@media(max-height:560px)]:text-[44px]! ${INPUT_RESET}`}
+                        inputMode="decimal"
+                        value={amount}
+                        onChange={(event) => {
+                          setAmount(event.target.value);
+                          setValidation("");
+                        }}
+                        placeholder="0.00"
+                        autoComplete="off"
+                        spellCheck={false}
+                        aria-describedby="pay-validation pay-balance"
+                      />
+                      <button
+                        className={NEXT_BUTTON}
+                        aria-label="Continue to recipient"
+                        type="submit"
+                      >
+                        <ArrowRight strokeWidth={1} />
+                      </button>
+                    </div>
+                    <div className="mx-auto mt-[clamp(6px,1.5dvh,14px)]">
+                      <TokenIcon
+                        token={token}
+                        className="size-6 shrink-0 [@media(max-height:560px)]:size-4"
+                      />
+                    </div>
+                    <p
+                      className={NOTE}
+                      id="pay-balance"
                     >
-                      Recipient Solana wallet address
-                    </label>
-                    <input
-                      id="pay-recipient"
-                      className={`min-w-0 w-full max-w-lg border-0 bg-transparent px-3 py-2.5 text-xs! text-neutral-800 placeholder:text-neutral-500 ${INPUT_RESET}`}
-                      value={recipient}
-                      onChange={(event) => {
-                        setRecipient(event.target.value);
-                        setValidation("");
-                      }}
-                      placeholder="Recipient wallet address"
-                      autoComplete="off"
-                      spellCheck={false}
-                      aria-describedby="pay-recipient-hint pay-validation"
-                    />
-                    <button
-                      className={NEXT_BUTTON}
-                      aria-label="Confirm private payment"
-                      type="submit"
-                      disabled={!context.client}
-                    >
-                      <ArrowRight strokeWidth={1} />
-                    </button>
-                  </div>
-                  <div className="mx-auto mt-4 flex w-full max-w-lg items-center justify-end gap-3 text-xs text-neutral-600 [@media(max-height:560px)]:mt-1.5">
-                    <span>Amount to send</span>
-                    <strong className="text-lg font-normal text-neutral-900">
-                      {amount}
-                    </strong>
-                    <TokenIcon
-                      token={token}
-                      className="size-5 shrink-0"
-                    />
-                  </div>
-                  <p
-                    className={NOTE}
-                    id="pay-recipient-hint"
+                      {token !== "SOL"
+                        ? `Private ${token} → private account`
+                        : context.client
+                          ? `Private balance · ${formatSol(context.limit)} SOL available per transaction`
+                          : "Connect your wallet to see your private balance"}
+                    </p>
+                    {errorMessage}
+                  </form>
+                ) : (
+                  <form
+                    className={FORM}
+                    onSubmit={confirm}
                   >
-                    {
-                      "Transfer private funds to a registered private account. Your change stays private."
-                    }
-                  </p>
-                  <div className="mx-auto mt-3 flex w-full max-w-lg items-center justify-between gap-3 [@media(max-height:560px)]:mt-1.5">
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-2 bg-transparent py-1 text-[11px]! text-neutral-600"
-                      onClick={() => {
-                        setStep(0);
-                        setValidation("");
-                      }}
+                    <div className={ENTRY_ROW}>
+                      <label
+                        className="sr-only"
+                        htmlFor="pay-recipient"
+                      >
+                        Recipient Solana wallet address
+                      </label>
+                      <input
+                        id="pay-recipient"
+                        className={`min-w-0 w-full max-w-lg border-0 bg-transparent px-3 py-2.5 text-xs! text-neutral-800 placeholder:text-neutral-500 ${INPUT_RESET}`}
+                        value={recipient}
+                        onChange={(event) => {
+                          setRecipient(event.target.value);
+                          setValidation("");
+                        }}
+                        placeholder="Recipient wallet address"
+                        autoComplete="off"
+                        spellCheck={false}
+                        aria-describedby="pay-recipient-hint pay-validation"
+                      />
+                      <button
+                        className={NEXT_BUTTON}
+                        aria-label="Confirm private payment"
+                        type="submit"
+                        disabled={!context.client}
+                      >
+                        <ArrowRight strokeWidth={1} />
+                      </button>
+                    </div>
+                    <div className="mx-auto mt-4 flex w-full max-w-lg items-center justify-end gap-3 text-xs text-neutral-600 [@media(max-height:560px)]:mt-1.5">
+                      <span>Amount to send</span>
+                      <strong className="text-lg font-normal text-neutral-900">
+                        {amount}
+                      </strong>
+                      <TokenIcon
+                        token={token}
+                        className="size-5 shrink-0"
+                      />
+                    </div>
+                    <p
+                      className={NOTE}
+                      id="pay-recipient-hint"
                     >
-                      <ArrowLeft size={15} />
-                      Edit amount
-                    </button>
-                    {accountControls}
-                  </div>
-                  {errorMessage}
-                </form>
-              )}
-            </>
-          )}
-        </m.div>
-      </AnimatePresence>
-      <StepIndicator
-        step={step}
-        labels={["Amount", "Recipient", "Transaction"]}
-      />
-    </div>
+                      {
+                        "Transfer private funds to a registered private account. Your change stays private."
+                      }
+                    </p>
+                    <div className="mx-auto mt-3 flex w-full max-w-lg items-center justify-between gap-3 [@media(max-height:560px)]:mt-1.5">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-2 bg-transparent py-1 text-[11px]! text-neutral-600"
+                        onClick={() => {
+                          setStep(0);
+                          setValidation("");
+                        }}
+                      >
+                        <ArrowLeft size={15} />
+                        Edit amount
+                      </button>
+                      {accountControls}
+                    </div>
+                    {errorMessage}
+                  </form>
+                )}
+              </>
+            )}
+          </m.div>
+        </AnimatePresence>
+        <StepIndicator
+          step={step}
+          labels={["Amount", "Recipient", "Transaction"]}
+        />
+      </div>
     </OperationLayout>
   );
 }

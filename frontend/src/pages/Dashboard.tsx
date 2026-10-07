@@ -36,7 +36,7 @@ export function Dashboard() {
         features={domMax}
         strict
       >
-        <section className="bg-none relative min-h-[480px] h-dvh flex flex-col px-4">
+        <section className="bg-none relative h-dvh flex flex-col px-4">
           <header className="shrink-0 flex justify-between px-0 sm:px-20 py-1 text-black items-center">
             <a
               href="#"
