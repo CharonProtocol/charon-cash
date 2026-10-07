@@ -40,6 +40,9 @@ export declare class CharonProtocol {
     withdrawSol(amountInLamports: number): Promise<{
         signature: string;
     }>;
+    shieldedTransferSol(amountInLamports: number, recipientKey: string): Promise<{
+        signature: string;
+    }>;
     syncUtxos(): Promise<void>;
     private recalculateBalances;
     stopClient(): Promise<void>;

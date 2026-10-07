@@ -12,7 +12,7 @@ import {
 } from "@solana/web3.js";
 
 const PROGRAM_ID = new PublicKey(
-  process.env.PROGRAM_ID || "6MyU66azgzrp6eioGxmKrGZSxv7FB9nb1oXSrd1Qkwmn",
+  process.env.PROGRAM_ID || "A6jNiYjV9g7omJ4zHAyiDQtcRewobsko7gs9UjZ2pWRa",
 );
 const RPC_URL = process.env.RPC_URL || "http://127.0.0.1:8899";
 
@@ -61,7 +61,7 @@ const extendAltIx = AddressLookupTableProgram.extendLookupTable({
     treeToken,
     globalConfig,
     new PublicKey("5kHwyJA15XjiHYxUTGif8NoH25h1dTxjqhscTnf4V1Ua"), // feeRecipient
-    new PublicKey("6MyU66azgzrp6eioGxmKrGZSxv7FB9nb1oXSrd1Qkwmn"), // ProgramId
+    new PublicKey("A6jNiYjV9g7omJ4zHAyiDQtcRewobsko7gs9UjZ2pWRa"), // ProgramId
     SystemProgram.programId, // + save 31 bytes
   ],
 });

@@ -6,7 +6,7 @@ import { WasmFactory } from "@lightprotocol/hasher.rs";
 import BN from "bn.js";
 import { DEPOSIT_FEE_RATE, WITHDRAW_FEE_RATE, WRAPPED_SOL_MINT, } from "./constants";
 import { API } from "./api";
-import { transactSol } from "./program";
+import { transactSol, transferSol } from "./program";
 import { CharonProtocolError, CharonProtocolErrorCode } from "./error";
 import { loadCircuit } from "./prover";
 export const SIGN_MESSAGE = "Privacy Money account sign in";
@@ -216,6 +216,85 @@ export class CharonProtocol {
         this.recalculateBalances();
         return { signature: txid };
     }
+    async shieldedTransferSol(amountInLamports, recipientKey) {
+        await this.syncUtxos();
+        let mintAddress = WRAPPED_SOL_MINT;
+        // Check if user has utxos to withdraw
+        let utxosExists = this.utxoByMint.has(mintAddress);
+        if (!utxosExists) {
+            throw new CharonProtocolError("No utxos Exists to Withdraw", CharonProtocolErrorCode.UTXO_FINISHED);
+        }
+        // if user can withdraw the specified amount
+        let UtxoSummary = this.utxoByMint.get(mintAddress);
+        if (UtxoSummary.maxSingleTxAmount.lt(new BN(amountInLamports))) {
+            throw new CharonProtocolError(`You can currently only withdraw equal or less than ${UtxoSummary.maxSingleTxAmount.toNumber()}`, CharonProtocolErrorCode.WITHDRAWAL_LIMIT);
+        }
+        // which utxo to choose when withdrawing
+        // least amount one shall be removed
+        let requiredutxos = [];
+        for (let i = 0; i < UtxoSummary.utxos.length; i++) {
+            let least = UtxoSummary.utxos[i];
+            if (least.amount.gte(new BN(amountInLamports))) {
+                requiredutxos.push(least);
+                break;
+            }
+            let pairFind = false;
+            for (let j = i + 1; j < UtxoSummary.utxos.length; j++) {
+                let upper = UtxoSummary.utxos[j];
+                // check if these add to satisy withdrawAmount
+                if (upper.amount.add(least.amount).gte(new BN(amountInLamports))) {
+                    requiredutxos.push(least);
+                    requiredutxos.push(upper);
+                    pairFind = true;
+                    break;
+                }
+            }
+            if (pairFind) {
+                break;
+            }
+        }
+        let inputUtxos = [];
+        if (requiredutxos.length < 2) {
+            let encryptedNote = await this.storageService.loadUtxo(requiredutxos[0].utxoId);
+            let input1 = Utxo.deserialize(await this.encryptionService.decrypt(encryptedNote.encryptedUtxo), this.lightwasm);
+            let input2 = new Utxo({
+                lightWasm: this.lightwasm,
+                mintAddress: input1.mintAddress,
+            });
+            inputUtxos.push(input1);
+            inputUtxos.push(input2);
+        }
+        else {
+            let encryptedUtxos = await this.storageService.loadPairOfUtxo(requiredutxos[0].utxoId, requiredutxos[1].utxoId);
+            let input1 = Utxo.deserialize(await this.encryptionService.decrypt(encryptedUtxos[0].encryptedUtxo), this.lightwasm);
+            let input2 = Utxo.deserialize(await this.encryptionService.decrypt(encryptedUtxos[1].encryptedUtxo), this.lightwasm);
+            inputUtxos.push(input1);
+            inputUtxos.push(input2);
+        }
+        const fee = new BN(0);
+        // extAmount is the amount for withdrawals and deposits so fee excluded
+        let txid = await transferSol({
+            inputUtxos,
+            transferAmount: new BN(amountInLamports),
+            fee,
+            mintAddress,
+            recipientKey: recipientKey,
+            signer: this.signer.publicKey,
+            encryptionService: this.encryptionService,
+            connection: this.connection,
+            lightwasm: this.lightwasm,
+            signTransaction: this.signer.signTransaction,
+            circuit: this.circuit,
+        });
+        // transaction is successful now remove the notes used from browser storage
+        for (let u of requiredutxos) {
+            await this.storageService.removeUtxo(u.utxoId);
+            let noteSummary = this.utxoByMint.get(inputUtxos[0].mintAddress);
+            noteSummary.utxos = noteSummary.utxos.filter((note) => note.utxoId !== u.utxoId);
+        }
+        this.recalculateBalances();
+        return { signature: txid };
+    }
     async syncUtxos() {
         let newutxos = await this.storageService.loadUtxosFrom(this.signer.publicKey.toString(), this.lastLoadedNote);
         console.log("Sync utxos :", newutxos);
@@ -238,7 +317,7 @@ export class CharonProtocol {
                     walletPubkey,
                     amount: utxo.amount,
                 };
-                if (!requiredUtxoSummary.utxos.some(note => note.utxoId === id)) {
+                if (!requiredUtxoSummary.utxos.some((note) => note.utxoId === id)) {
                     requiredUtxoSummary.utxos.push(newNote);
                 }
             }));
@@ -247,10 +326,12 @@ export class CharonProtocol {
         this.lastLoadedNote = newutxos.reduce((highest, note) => Math.max(highest, note.id ?? 0), this.lastLoadedNote);
     }
     recalculateBalances() {
-        this.utxoByMint.forEach(summary => {
+        this.utxoByMint.forEach((summary) => {
             summary.utxos.sort((a, b) => a.amount.cmp(b.amount));
             summary.totalAmount = summary.utxos.reduce((total, note) => total.add(note.amount), new BN(0));
-            summary.maxSingleTxAmount = summary.utxos.slice(-2).reduce((total, note) => total.add(note.amount), new BN(0));
+            summary.maxSingleTxAmount = summary.utxos
+                .slice(-2)
+                .reduce((total, note) => total.add(note.amount), new BN(0));
         });
     }
     async stopClient() {

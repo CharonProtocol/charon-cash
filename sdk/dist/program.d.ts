@@ -44,6 +44,23 @@ export type TransactArgs = {
     };
     signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>;
 };
+export type TransferArgs = {
+    inputUtxos: Utxo[];
+    transferAmount: BN;
+    fee: BN;
+    mintAddress: string;
+    recipientKey: string;
+    lightwasm: LightWasm;
+    encryptionService: EncryptionService;
+    signer: PublicKey;
+    connection: Connection;
+    circuit: {
+        wasm: Uint8Array;
+        zkey: Uint8Array;
+    };
+    signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>;
+};
 export declare function transactSol({ inputUtxos, extAmount, fee, mintAddress, lightwasm, recipientKey, encryptionService, signer, connection, signTransaction, circuit, }: TransactArgs): Promise<string>;
+export declare function transferSol({ inputUtxos, transferAmount, fee, mintAddress, lightwasm, recipientKey, encryptionService, signer, connection, signTransaction, circuit, }: TransferArgs): Promise<string>;
 export declare function transactSpl({ inputUtxos, extAmount, fee, mintAddress, lightwasm, recipientKey, encryptionService, signer, connection, signTransaction, circuit, }: TransactArgs): Promise<string>;
 //# sourceMappingURL=program.d.ts.map

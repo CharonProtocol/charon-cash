@@ -13,7 +13,7 @@ import {
 const RPC_URL = process.env.RPC_URL || "http://127.0.0.1:8899";
 
 const PROGRAM_ID = new PublicKey(
-  "6MyU66azgzrp6eioGxmKrGZSxv7FB9nb1oXSrd1Qkwmn",
+  "A6jNiYjV9g7omJ4zHAyiDQtcRewobsko7gs9UjZ2pWRa",
 );
 
 // Create authority

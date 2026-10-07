@@ -21,7 +21,7 @@
     "build": "tsc -p tsconfig.json && cp -r circuits dist/circuits",
     "prepublishOnly": "bun run build && bun test",
     "test": "bun test",
-    "setup": "node scripts/"
+    "setup": "node scripts/initialize.mjs"
   },
   "keywords": [
     "solana",
