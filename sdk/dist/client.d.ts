@@ -28,6 +28,33 @@ export declare function splitDepositAmounts(extAmount: BN, fee: BN): {
     half: BN;
     rem: BN;
 };
+/**
+ * The trees one refreshNotes pass scans. Discovery (no `quick`) sweeps the
+ * SOL tree plus every supported mint's tree: a recipient of a shielded SPL
+ * transfer has no local hint about the mint. A mid-run `quick` poll scans
+ * only the tree the caller names — the engine knows which mint it is
+ * paying, and change notes land in that tree alone.
+ */
+export declare function refreshTreeKeys(opts: {
+    quick?: string;
+} | undefined, supportedMints: Array<{
+    mint: string;
+}> | undefined): string[];
+/**
+ * Whether this pass re-derives nullifiers for old notes to catch phantoms
+ * (spent on-chain but still spendable locally). Forced at run start
+ * (`recheckSpent`); otherwise ambient, at most once per 15s — deriving N
+ * nullifiers is real CPU on big vaults and it starved the provers mid-run.
+ * Never on a `quick` poll: a freshly landed note cannot be spent, the
+ * engine tracks the notes it spends itself, and the run-start sweep stays
+ * the phantom guard. fromScratch rescans only rebuild the set, so they
+ * skip it too.
+ */
+export declare function shouldRecheckSpent(opts: {
+    fromScratch?: boolean;
+    recheckSpent?: boolean;
+    quick?: string;
+} | undefined, lastSpentRecheckAt: number, now: number): boolean;
 export interface WithdrawResult {
     signature: string;
     recipientLamports: number;
@@ -100,6 +127,12 @@ export declare class PrivacyCashClient {
     refreshNotes(opts?: {
         fromScratch?: boolean;
         recheckSpent?: boolean;
+        /**
+         * Mid-run poll: scan only this tree (the caller knows which mint it is
+         * paying) and skip the ambient spent-recheck — new notes cannot be
+         * spent, and the run-start `recheckSpent` sweep stays the phantom guard.
+         */
+        quick?: string;
     }): Promise<SyncResult>;
     /**
      * Nullifiers (32-byte hex) for saved notes, derived under the unlocked

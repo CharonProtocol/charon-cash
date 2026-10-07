@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { PublicKey } from "@solana/web3.js"
-import { PayrollEngine, NoteLedger, ADJUDICATE_POLLS, type EngineClient, type RunRequest, type RunSnapshot } from "./engine"
+import { PayrollEngine, NoteLedger, ADJUDICATE_POLLS, treeKeyOf, type EngineClient, type RunRequest, type RunSnapshot } from "./engine"
 import type { Asset, PayrollEntry } from "./types"
 
 const E: PayrollEntry[] = [
@@ -1235,5 +1235,43 @@ describe("PayrollEngine lanes", () => {
     const cancelled = receipt.entries.filter((e) => e.error === "cancelled")
     expect(cancelled.length).toBe(receipt.summary.failed)
     expect(cancelled.every((e) => e.status === "failed")).toBe(true)
+  })
+})
+
+describe("mid-run refresh policy", () => {
+  it("scans only the paid tree after run start; the full spent-recheck stays a run-start sweep", async () => {
+    const lane = laneClient({
+      notes: [{ id: "n1", amount: 10n ** 12n }],
+      withdrawMs: 5,
+      withdraws: [],
+    })
+    const refreshOpts: Array<
+      { fromScratch?: boolean; recheckSpent?: boolean; quick?: string } | undefined
+    > = []
+    const client: EngineClient = {
+      ...lane.client,
+      refreshNotes: async (opts) => {
+        refreshOpts.push(opts)
+        return lane.client.refreshNotes(opts)
+      },
+    }
+    const engine = new PayrollEngine(laneDeps(client, lane.listNotes))
+    const asset = { kind: "sol" } as Asset
+    const receipt = await engine.run(req({ vaultRaw: 10n ** 18n, asset }))
+    expect(receipt.summary).toEqual({ sent: 3, failed: 0, total: 3 })
+
+    // exactly one full sweep — run start, the phantom guard / rescue button
+    expect(refreshOpts.length).toBeGreaterThan(1)
+    expect(refreshOpts[0]?.recheckSpent).toBe(true)
+    expect(refreshOpts.filter((o) => o?.recheckSpent)).toHaveLength(1)
+    // every refresh after the start sweep scans only the tree the run pays
+    // — no bare all-tree sweeps, no old-note recheck mid-run. The final
+    // sync before settle() is the one deliberate exception: a once-per-run
+    // full reconciliation right before the receipt is written.
+    const quick = treeKeyOf(asset)
+    for (const [i, o] of refreshOpts.slice(1, -1).entries()) {
+      expect(o?.quick, `refresh #${i + 1}`).toBe(quick)
+    }
+    expect(refreshOpts.at(-1)?.quick, "final sync stays a full sweep").toBeUndefined()
   })
 })

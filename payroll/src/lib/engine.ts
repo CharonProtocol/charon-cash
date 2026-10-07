@@ -78,7 +78,7 @@ export interface RunRequest {
 export interface EngineClient {
   init(): Promise<void>
   unlock(): Promise<void>
-  refreshNotes(opts?: { fromScratch?: boolean; recheckSpent?: boolean }): Promise<unknown>
+  refreshNotes(opts?: { fromScratch?: boolean; recheckSpent?: boolean; quick?: string }): Promise<unknown>
   depositSOL(lamports: number, opts?: { split?: boolean }): Promise<{ signature: string; leafIndex: number }>
   depositSPL(
     mint: string,
@@ -501,7 +501,9 @@ export class PayrollEngine {
         firstSig = dep.signature
         lastLeaf = dep.leafIndex
         await this.deps.waitUntilIndexed(treeKeyOf(req.asset), lastLeaf)
-        await this.deps.client.refreshNotes()
+        // mid-run poll semantics: the deposit itself reported its note, so
+        // only the paid tree needs scanning — no all-tree sweep, no recheck
+        await this.deps.client.refreshNotes({ quick: treeKeyOf(req.asset) })
         this.fundedAt = this.deps.now()
         funding = { depositedRaw: BigInt(amount), txSignature: firstSig ?? "", depositedAt: this.fundedAt }
         this.emit("funding", firstSig)
@@ -533,7 +535,10 @@ export class PayrollEngine {
       lastRefreshAt = this.deps.now()
       refreshInFlight = (async () => {
         try {
-          await this.deps.client.refreshNotes()
+          // quick: only the paid tree, no old-note recheck — a fresh change
+          // note cannot be spent, and re-deriving old nullifiers starved the
+          // provers mid-run
+          await this.deps.client.refreshNotes({ quick: treeKeyOf(req.asset) })
         } catch {
           /* transient indexer hiccup — the next poll retries */
         }
@@ -546,7 +551,7 @@ export class PayrollEngine {
     // unthrottled scan for the give-up path below (bounded: at most once per row)
     const refreshNow = async (): Promise<void> => {
       try {
-        await this.deps.client.refreshNotes()
+        await this.deps.client.refreshNotes({ quick: treeKeyOf(req.asset) })
       } catch {
         /* keep the stale view; the retry path handles it */
       }
@@ -609,7 +614,7 @@ export class PayrollEngine {
           } finally {
             ledger.busy--
           }
-          await this.deps.client.refreshNotes().catch(() => {})
+          await this.deps.client.refreshNotes({ quick: treeKeyOf(req.asset) }).catch(() => {})
           reloadLedger()
         }
       })().finally(() => {
@@ -733,7 +738,7 @@ export class PayrollEngine {
               ? await this.deps.client.depositSOL(amount)
               : await this.deps.client.depositSPL(req.asset.mint, amount)
           await this.deps.waitUntilIndexed(treeKeyOf(req.asset), dep.leafIndex)
-          await this.deps.client.refreshNotes().catch(() => {})
+          await this.deps.client.refreshNotes({ quick: treeKeyOf(req.asset) }).catch(() => {})
           reloadLedger()
           return true
         } catch {
@@ -902,7 +907,7 @@ export class PayrollEngine {
           // If the note is genuinely spent, reserveFor's gated full rescan
           // is the one that finds out.
           if (!submitted && /pinned note not found|pinned notes hold /.test(msg)) {
-            await this.deps.client.refreshNotes().catch(() => {})
+            await this.deps.client.refreshNotes({ quick: treeKeyOf(req.asset) }).catch(() => {})
             reloadLedger()
           }
           // A throw after broadcast must never free the pinned notes for a
@@ -930,7 +935,7 @@ export class PayrollEngine {
               }
             }
             if (!landed) {
-              await this.deps.client.refreshNotes().catch(() => {})
+              await this.deps.client.refreshNotes({ quick: treeKeyOf(req.asset) }).catch(() => {})
               reloadLedger()
               const spendable = new Set(
                 (this.deps.listNotes?.(req.asset) ?? []).map((n) => n.blinding),
@@ -1028,7 +1033,7 @@ export class PayrollEngine {
             }
           }),
         )
-        await this.deps.client.refreshNotes().catch(() => {})
+        await this.deps.client.refreshNotes({ quick: treeKeyOf(req.asset) }).catch(() => {})
         reloadLedger()
       }
       this.setStatus(undefined)

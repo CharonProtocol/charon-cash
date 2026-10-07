@@ -24,6 +24,33 @@ export function splitDepositAmounts(extAmount, fee) {
     const half = total.div(new BN(2));
     return { half, rem: total.sub(half) };
 }
+/**
+ * The trees one refreshNotes pass scans. Discovery (no `quick`) sweeps the
+ * SOL tree plus every supported mint's tree: a recipient of a shielded SPL
+ * transfer has no local hint about the mint. A mid-run `quick` poll scans
+ * only the tree the caller names — the engine knows which mint it is
+ * paying, and change notes land in that tree alone.
+ */
+export function refreshTreeKeys(opts, supportedMints) {
+    if (opts?.quick)
+        return [opts.quick];
+    return [SOL_TREE_KEY, ...(supportedMints ?? []).map((m) => m.mint)];
+}
+/**
+ * Whether this pass re-derives nullifiers for old notes to catch phantoms
+ * (spent on-chain but still spendable locally). Forced at run start
+ * (`recheckSpent`); otherwise ambient, at most once per 15s — deriving N
+ * nullifiers is real CPU on big vaults and it starved the provers mid-run.
+ * Never on a `quick` poll: a freshly landed note cannot be spent, the
+ * engine tracks the notes it spends itself, and the run-start sweep stays
+ * the phantom guard. fromScratch rescans only rebuild the set, so they
+ * skip it too.
+ */
+export function shouldRecheckSpent(opts, lastSpentRecheckAt, now) {
+    if (opts?.fromScratch || opts?.quick)
+        return false;
+    return Boolean(opts?.recheckSpent) || now - lastSpentRecheckAt > 15_000;
+}
 const DEPOSIT_FEE = 0;
 // D1 bills rows READ per page request: a 2000-wide page made every routine
 // sync burn thousands of billed rows for a handful of leaves (the free tier
@@ -142,13 +169,7 @@ export class PrivacyCashClient {
     /** Unlock + rescan + persist. Powers the UI "Load notes" action. */
     async refreshNotes(opts) {
         await this.unlock();
-        // Scan the SOL tree plus every supported mint's tree: a recipient of a
-        // shielded SPL transfer has no local hint about the mint, so discovery
-        // must sweep all trees the relayer knows about.
-        const trees = [
-            SOL_TREE_KEY,
-            ...(this.info?.supportedMints ?? []).map((m) => m.mint),
-        ];
+        const trees = refreshTreeKeys(opts, this.info?.supportedMints);
         let scanned = 0;
         let added = 0;
         let spent = 0;
@@ -162,7 +183,7 @@ export class PrivacyCashClient {
             added += r.added;
             spent += r.spent;
         }
-        if (!opts?.fromScratch && (opts?.recheckSpent || Date.now() - this.lastSpentRecheckAt > 15_000)) {
+        if (shouldRecheckSpent(opts, this.lastSpentRecheckAt, Date.now())) {
             this.lastSpentRecheckAt = Date.now();
             // The incremental scan only re-checks nullifiers for leaves it just
             // decrypted, so a note spent on-chain by a cancelled run's landed-but-
@@ -171,7 +192,7 @@ export class PrivacyCashClient {
             // call re-checks every unspent note. Ambient refreshes pay this at
             // most once per 15s (deriving N nullifiers is real CPU on big vaults
             // and it starved the provers mid-run); `recheckSpent` forces it for
-            // run-start verification.
+            // run-start verification; `quick` mid-run polls never pay it.
             // Bounded to the 64 biggest notes: deriving a nullifier per note is
             // real CPU on vaults grown by repeated runs, and a phantom that can
             // under-size a deposit materially is by definition a big one. The
