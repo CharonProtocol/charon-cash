@@ -18,7 +18,7 @@ pub struct MerkleManager {
 
 impl MerkleManager {
     pub async fn new() -> Result<Self> {
-        // WARNING : Wipes all the data on boot
+        // WARNING : Wipes all the data on boot , only for development for now
         if let Err(e) = tokio::fs::remove_dir_all(MERKLE_STORE_PATH).await {
             if e.kind() != std::io::ErrorKind::NotFound {
                 return Err(e.into());
@@ -37,7 +37,6 @@ impl MerkleManager {
 
         let mut pool_by_mint: HashMap<String, Pool> = HashMap::new();
 
-        pool_by_mint.insert(sol_address(), sol_merkle_tree);
 
         Ok(Self { pool_by_mint, db })
     }
@@ -89,6 +88,14 @@ pub fn sol_address() -> String {
     "11111111111111111111111111111112".to_owned()
 }
 
+
+
+/*
+    Note : Since Poseidon Hash is BN254, so the range of poseidon hash is 0 to 2^254 - 1, 
+    so the maximum value of the leaf node is 2^254 - 1, which is less than 2^256 - 1,which is range of NODE::random().
+    So This Test may fail if the random node generated is greater than 2^254 - 1 but it is correct.
+    This issue pose no threat to  our usage right now.
+*/
 #[cfg(test)]
 mod tests {
     use anyhow::Error;

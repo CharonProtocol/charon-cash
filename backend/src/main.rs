@@ -44,6 +44,10 @@ async fn main() -> anyhow::Result<()> {
     let db = Db::connect(&config.database_url).await;
 
     let merkle_manager = Arc::new(RwLock::new(MerkleManager::new().await?));
+    // Initialize the supported mints in the merkle manager
+    for mint in config.supported_mints.iter() {
+        merkle_manager.write().await.get_or_create_pool(mint);
+    }
 
     tokio::spawn(spawn_indexer(
         config.clone(),

@@ -54,6 +54,7 @@ impl Config {
 
 fn parse_supported_mints() -> Vec<Pubkey> {
     let default = [
+        "11111111111111111111111111111112",
         "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
         "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
     ];
@@ -62,4 +63,8 @@ fn parse_supported_mints() -> Vec<Pubkey> {
         .filter(|s| !s.trim().is_empty())
         .filter_map(|s| Pubkey::from_str(s.trim()).ok())
         .collect()
+}
+
+pub fn sol_address() -> String {
+    "11111111111111111111111111111112".to_owned()
 }

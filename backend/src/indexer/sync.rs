@@ -138,6 +138,7 @@ impl Indexer {
     ) -> Result<()> {
         let signature = bs58::encode(&tx_info.signature).into_string();
 
+        // This check is important for rebuilds / restarts: Yellowstone may send a transaction that was already indexed.
         if self.db.has_tx(&signature).await? {
             debug!(%signature, "already indexed");
             return Ok(());
