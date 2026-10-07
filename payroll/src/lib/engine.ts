@@ -85,13 +85,13 @@ export interface EngineClient {
     lamports: number,
     recipient: string,
     opts?: { relay?: boolean; inputNotes?: Array<{ blinding: string }> },
-  ): Promise<{ signature: string }>
+  ): Promise<{ signature: string; changeNote?: ChangeNoteRef }>
   withdrawSPL(
     mint: string,
     raw: number | string,
     recipient: string,
     opts?: { relay?: boolean; inputNotes?: Array<{ blinding: string }> },
-  ): Promise<{ signature: string }>
+  ): Promise<{ signature: string; changeNote?: ChangeNoteRef }>
   transferNoteSOL(
     recipient: string,
     netLamports: number,
@@ -101,7 +101,7 @@ export interface EngineClient {
       /** SDK hook fired after prep (recipient keys, merkle proof) but before proving. */
       onSubmitted?: (info: unknown) => Promise<void> | void
     },
-  ): Promise<{ signature: string; leafIndex: number; commitment: string }>
+  ): Promise<{ signature: string; leafIndex: number; commitment: string; changeNote?: ChangeNoteRef }>
   transferNoteSPL(
     mint: string,
     recipient: string,
@@ -111,7 +111,18 @@ export interface EngineClient {
       inputNotes?: Array<{ blinding: string }>
       onSubmitted?: (info: unknown) => Promise<void> | void
     },
-  ): Promise<{ signature: string; leafIndex: number; commitment: string }>
+  ): Promise<{ signature: string; leafIndex: number; commitment: string; changeNote?: ChangeNoteRef }>
+  /**
+   * Pins a minted change note's authoritative leaf index (matched by
+   * blinding) and un-pends it, so the lane's next row can spend it without
+   * waiting for a sync-scan heal. Optional: mocks and older clients omit it
+   * and the note heals on the next refresh as before.
+   */
+  resolveChangeNote?(
+    treeKey: string,
+    mintAddress: string | undefined,
+    change: ChangeNoteRef,
+  ): Promise<void>
   /** SDK adjudication: spending signature if any of these notes is already spent. */
   signatureIfSpent?(blindings: string[]): Promise<string | null>
   /** Exposed by the SDK client; lets the engine reserve/pin inputs for parallel lanes. */
@@ -122,6 +133,14 @@ export interface NoteRef {
   id: string
   amount: string
   blinding: string
+}
+
+/** A payout's change note, identified by its blinding (the leaf index that
+ * comes with it is only a guess until the indexer sees the tx). */
+export interface ChangeNoteRef {
+  amount: string
+  blinding: string
+  index: number
 }
 
 export interface EngineDeps {
@@ -177,6 +196,8 @@ interface PinnedNotes {
 class NoteLedger {
   private free = new Map<string, { id: string; amount: bigint; blinding: string }>()
   private reserved = new Set<string>()
+  /** Per-lane change-note claims (A5): lane -> the blinding its last payout minted. */
+  private laneClaims = new Map<number, string>()
   /** Lanes holding a reservation or mid-transfer; waiters poll while this is > 0. */
   busy = 0
 
@@ -194,10 +215,26 @@ class NoteLedger {
     for (const id of [...this.reserved]) {
       if (!seen.has(id)) this.reserved.delete(id)
     }
+    // A claim whose note landed is spent material; one whose note vanished
+    // (healed/rescanned away) is stale either way — expire it.
+    for (const [lane, blinding] of [...this.laneClaims]) {
+      if (![...this.free.values()].some((n) => n.blinding === blinding)) {
+        this.laneClaims.delete(lane)
+      }
+    }
   }
 
-  /** Largest note covering gross, else the greedy largest + complement pair. */
-  tryReserve(gross: bigint): PinnedNotes | null {
+  claimForLane(lane: number): string | undefined {
+    return this.laneClaims.get(lane)
+  }
+
+  setLaneClaim(lane: number, blinding: string): void {
+    this.laneClaims.set(lane, blinding)
+  }
+
+  /** Largest note covering gross (preferring the lane's claimed change note),
+   * else the greedy largest + complement pair. */
+  tryReserve(gross: bigint, preferBlinding?: string): PinnedNotes | null {
     const free = [...this.free.values()].sort((a, b) =>
       a.amount > b.amount ? -1 : a.amount < b.amount ? 1 : 0,
     )
@@ -205,7 +242,10 @@ class NoteLedger {
       this.free.delete(n.id)
       this.reserved.add(n.id)
     }
-    const single = free.find((n) => n.amount >= gross)
+    const claimed = preferBlinding
+      ? free.find((n) => n.blinding === preferBlinding && n.amount >= gross)
+      : undefined
+    const single = claimed ?? free.find((n) => n.amount >= gross)
     if (single) {
       take(single)
       return { ids: [single.id], blindings: [single.blinding] }
@@ -564,7 +604,7 @@ export class PayrollEngine {
      * fits and no lane is busy, one forced scan runs before conceding the
      * balance is truly spent.
      */
-    const reserveFor = async (gross: bigint): Promise<PinnedNotes | null> => {
+    const reserveFor = async (gross: bigint, lane?: number): Promise<PinnedNotes | null> => {
       if (!ledger) return null
       const deadline = this.deps.now() + RESERVE_WAIT_CAP_MS
       let scannedFinal = false
@@ -572,7 +612,7 @@ export class PayrollEngine {
       let healedOnce = false
       let lastStallKickAt = 0
       for (;;) {
-        const pinned = ledger.tryReserve(gross)
+        const pinned = ledger.tryReserve(gross, lane !== undefined ? ledger.claimForLane(lane) : undefined)
         if (pinned) {
           ledger.busy++
           return pinned
@@ -687,7 +727,32 @@ export class PayrollEngine {
       return topUpInFlight
     }
 
-    const payOne = async (row: RowState, planRow: (typeof plan.rows)[number]): Promise<void> => {
+    /**
+     * A row's change note is the next row's input on this lane. Claim it by
+     * blinding so tryReserve prefers it without a refresh detour, and let
+     * resolveChangeNote pin the authoritative leaf index in the background —
+     * until it lands the note stays pending in the SDK (unspendable), so a
+     * claim can never reserve a guess.
+     */
+    const claimLaneChange = (
+      lane: number,
+      change: ChangeNoteRef,
+    ): void => {
+      if (!ledger) return
+      ledger.setLaneClaim(lane, change.blinding)
+      const resolving = this.deps.client.resolveChangeNote?.(
+        treeKeyOf(req.asset),
+        req.asset.kind === "sol" ? undefined : req.asset.mint,
+        change,
+      )
+      void resolving?.then(() => reloadLedger()).catch(() => {})
+    }
+
+    const payOne = async (
+      row: RowState,
+      planRow: (typeof plan.rows)[number],
+      lane: number,
+    ): Promise<void> => {
       const gross = planRow.gross
       for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
         if (this.cancelled) {
@@ -707,7 +772,7 @@ export class PayrollEngine {
         let submitted = false
         try {
           const reserveStart = this.deps.now()
-          pinned = await reserveFor(gross)
+          pinned = await reserveFor(gross, lane)
           timing.reserveMs = this.deps.now() - reserveStart
           if (this.cancelled) {
             if (pinned) {
@@ -719,7 +784,7 @@ export class PayrollEngine {
             return
           }
           if (!pinned && ledger && (await ensureTopUp(gross))) {
-            pinned = await reserveFor(gross)
+            pinned = await reserveFor(gross, lane)
           }
           if (!pinned && ledger) {
             const total = ledger.totalFree()
@@ -733,6 +798,7 @@ export class PayrollEngine {
             ? { relay: true as const, inputNotes: pinned.blindings.map((blinding) => ({ blinding })) }
             : { relay: true as const }
           let sig: string
+          let changeNote: ChangeNoteRef | undefined
           if (req.mode === "shielded") {
             // Exact net in the note; the SDK takes its fee from the sender's
             // remaining notes, so no gross solve is needed here.
@@ -755,6 +821,7 @@ export class PayrollEngine {
             row.txSignature = res.signature
             row.noteLeafIndex = res.leafIndex
             row.noteCommitment = res.commitment
+            changeNote = res.changeNote
           } else {
             const res =
               req.asset.kind === "sol"
@@ -762,11 +829,13 @@ export class PayrollEngine {
                 : await this.deps.client.withdrawSPL(req.asset.mint, Number(gross), row.address, pinOpts)
             sig = res.signature
             row.txSignature = res.signature
+            changeNote = res.changeNote
           }
           row.error = undefined
           row.relayedAt = this.deps.now()
           row.status = "relayed"
           this.emit("paying", funding?.txSignature)
+          if (changeNote) claimLaneChange(lane, changeNote)
           const confirmStart = this.deps.now()
           row.status = (await this.deps.confirmSignature(sig)) ? "confirmed" : "confirming"
           timing.confirmMs = this.deps.now() - confirmStart
@@ -936,18 +1005,18 @@ export class PayrollEngine {
       .map((r, i) => ({ gross: r.gross, i }))
       .sort((a, b) => (a.gross > b.gross ? -1 : a.gross < b.gross ? 1 : 0))
       .map((o) => o.i)
-    const worker = async (): Promise<void> => {
+    const worker = async (lane: number): Promise<void> => {
       for (;;) {
         if (this.cancelled) return
         const k = next++
         if (k >= order.length) return
         const i = order[k]
-        await payOne(rows[i], plan.rows[i])
+        await payOne(rows[i], plan.rows[i], lane)
       }
     }
     const laneCount = ledger ? Math.min(Math.max(1, req.lanes ?? LANES), LANES, rows.length) : 1
     this.laneCount = laneCount
-    await Promise.all(Array.from({ length: laneCount }, () => worker()))
+    await Promise.all(Array.from({ length: laneCount }, (_, lane) => worker(lane)))
 
     if (this.cancelled) {
       for (const r of rows) {

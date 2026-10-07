@@ -217,6 +217,49 @@ async fn utxo_check(
     })
 }
 
+/// Authoritative leaf index for one commitment, read from the mirror. The
+/// transfer path's own index is a guess saved `pending: true` (the relayer
+/// assigns indexes); this is how the owner pins the real one.
+async fn commitment_lookup(
+    state: &AppState,
+    commitment_hex: &str,
+    tree_key: Option<&str>,
+) -> AppResult<serde_json::Value> {
+    let hex_clean = commitment_hex
+        .strip_prefix("0x")
+        .or_else(|| commitment_hex.strip_prefix("0X"))
+        .unwrap_or(commitment_hex)
+        .to_ascii_lowercase();
+    if hex_clean.len() != 64 || hex::decode(&hex_clean).is_err() {
+        return Err(AppError::bad_request(
+            "INVALID_HEX",
+            "commitment must be 64 hex chars (32 bytes)",
+        ));
+    }
+    let Some(tree_key) = tree_key else {
+        return Err(AppError::bad_request(
+            "MISSING_TREE_KEY",
+            "tree_key query param is required",
+        ));
+    };
+    match state
+        .store
+        .commitment_leaf_index(tree_key, &hex_clean)
+        .await
+        .map_err(AppError::internal)?
+    {
+        Some(leaf_index) => Ok(json!({
+            "tree_key": tree_key,
+            "commitment": hex_clean,
+            "leaf_index": leaf_index,
+        })),
+        None => Err(AppError::not_found(
+            "LEAF_NOT_FOUND",
+            "commitment not indexed yet (tx may still be landing)",
+        )),
+    }
+}
+
 pub fn router(state: Arc<AppState>) -> Router<'static, Arc<AppState>> {
     use ed25519_dalek::Verifier;
     Router::with_data(state)
@@ -450,6 +493,16 @@ pub fn router(state: Arc<AppState>) -> Router<'static, Arc<AppState>> {
             let url = req.url()?;
             // Mirror-only read (see utxos/range note).
             match utxo_check(&state, &hex_out, query_param(&url, "tree_key").as_deref()).await {
+                Ok(v) => ok_json(&v),
+                Err(e) => err_json(e),
+            }
+        }))
+        .get_async("/api/commitment/:hex", |req, ctx| Box::pin(async move {
+            let state = state_of(&ctx);
+            let hex_out = ctx.param("hex").cloned().unwrap_or_default();
+            let url = req.url()?;
+            // Mirror-only read (see utxos/range note).
+            match commitment_lookup(&state, &hex_out, query_param(&url, "tree_key").as_deref()).await {
                 Ok(v) => ok_json(&v),
                 Err(e) => err_json(e),
             }

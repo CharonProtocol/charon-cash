@@ -427,12 +427,13 @@ describe("PayrollEngine", () => {
       }),
     )
     // replicate the spec: base = 12x(net+fee) + widest-row-fee margin, then
-    // the simulated halving waves down to 8 notes, padded x1.5 + 20k
+    // the halving-wave simulation down to the lane target (min(LANES=32,
+    // 12 rows) = 12 → waves stop at 16 notes), padded x1.5 + 60k
     const S = 12n * (10n ** 9n + 10_000_000n) + 10_000_000n
     const feeOf = (x: bigint): bigint => (x * 100n + 9_999n) / 10_000n
     let notes = [S]
     let fees = 0n
-    while (notes.length < 8) {
+    while (notes.length < Math.min(32, 12)) {
       const next: bigint[] = []
       for (const x of notes) {
         const pool = x - feeOf(x)
@@ -629,6 +630,85 @@ describe("PayrollEngine lanes", () => {
     expect(withdraws.every((w) => w.pins.length === 1)).toBe(true)
     const pinned = withdraws.flatMap((w) => w.pins)
     expect(new Set(pinned).size).toBe(pinned.length)
+  })
+
+  it("a lane's claimed change note funds the next row with no refresh in between", async () => {
+    // The A5 handoff: row 1's payout mints a change note that row 2 (same
+    // lane) reserves through the lane claim, made spendable by the
+    // background resolveChangeNote — not by any refreshNotes. The refresh
+    // mock below is deliberately a no-op: it cannot materialize the note,
+    // so this test fails if the handoff ever regresses to a scan detour.
+    const notes: Array<{ id: string; amount: bigint; blinding: string }> = [
+      { id: "n1", amount: 3n * 10n ** 9n, blinding: "b-n1" },
+    ]
+    let resolved = 0
+    const withdraws: string[] = []
+    const client: EngineClient = {
+      init: async () => {},
+      unlock: async () => {},
+      publicKey: new PublicKey("11111111111111111111111111111111"),
+      refreshNotes: async () => {},
+      depositSOL: async () => {
+        throw new Error("no deposits expected")
+      },
+      depositSPL: async () => {
+        throw new Error("no deposits expected")
+      },
+      withdrawSOL: async (lamports, _recipient, opts) => {
+        const pins = (opts?.inputNotes ?? []).map((p) => p.blinding)
+        if (pins.length !== 1) throw new Error(`expected 1 pin, got ${pins.length}`)
+        const i = notes.findIndex((n) => n.blinding === pins[0])
+        if (i < 0) throw new Error(`pinned note ${pins[0]} is not spendable`)
+        const held = notes[i].amount
+        if (held < BigInt(lamports)) throw new Error("pin smaller than gross")
+        notes.splice(i, 1)
+        withdraws.push(pins[0])
+        const change = held - BigInt(lamports)
+        // real SDK: the change note is saved pending (index is a guess) and
+        // excluded from unspentNotes until resolveChangeNote pins the leaf
+        if (change > 0n) {
+          return {
+            signature: "SIG-1",
+            changeNote: { amount: change.toString(), blinding: "b-chg", index: 99 },
+          }
+        }
+        return { signature: "SIG-2" }
+      },
+      withdrawSPL: async () => {
+        throw new Error("not used")
+      },
+      transferNoteSOL: async () => {
+        throw new Error("not used")
+      },
+      transferNoteSPL: async () => {
+        throw new Error("not used")
+      },
+      resolveChangeNote: async (_tree, _mint, change) => {
+        resolved++
+        // indexer saw the leaf: the note becomes spendable at its true index
+        notes.push({ id: `chg-${change.blinding}`, amount: BigInt(change.amount), blinding: change.blinding })
+      },
+    }
+    const engine = new PayrollEngine(
+      laneDeps(client, () =>
+        notes.map((n) => ({ id: n.id, amount: n.amount.toString(), blinding: n.blinding })),
+      ),
+    )
+    const receipt = await engine.run(
+      req({
+        vaultRaw: 10n ** 19n,
+        entries: [
+          { address: "A".repeat(32), amountHuman: "1" },
+          { address: "B".repeat(32), amountHuman: "1" },
+        ],
+        lanes: 1,
+      }),
+    )
+    expect(receipt.summary).toEqual({ sent: 2, failed: 0, total: 2 })
+    // row 2 spent row 1's change note — the claimed blinding, no refresh
+    expect(withdraws).toEqual(["b-n1", "b-chg"])
+    // each payout that minted change fired exactly one background resolve
+    expect(resolved).toBe(2)
   })
 
   it("tops the verified vault up at funding when the notes cannot cover the run", async () => {

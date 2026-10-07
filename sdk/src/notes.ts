@@ -99,6 +99,24 @@ export function markNoteSpent(
   persist(wallet, notes)
 }
 
+/**
+ * Pin a pending note's authoritative leaf index (matched by blinding — the
+ * pre-send index is a guess, so it cannot key the lookup) and un-pend it.
+ * A note whose blinding is absent (already healed by a sync scan, or spent)
+ * is left alone.
+ */
+export function resolvePendingNote(
+  wallet: PublicKey,
+  match: { mintAddress: string; blinding: string; index: number },
+): void {
+  const notes = loadNotes(wallet).map((n) =>
+    n.mintAddress === match.mintAddress && n.blinding === match.blinding
+      ? { ...n, index: match.index, pending: false }
+      : n,
+  )
+  persist(wallet, notes)
+}
+
 export function markNoteSpentByIndex(
   wallet: PublicKey,
   mintAddress: string,

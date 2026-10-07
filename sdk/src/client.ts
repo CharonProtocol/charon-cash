@@ -30,6 +30,7 @@ import {
 import { fetchRecipientKeys } from "./recipients"
 import {
   bytesToHex,
+  fetchCommitmentLeaf,
   fetchMerkleProof,
   fetchRelayerInfo,
   fetchBlockhash,
@@ -57,6 +58,7 @@ import {
   purgeLegacyStorage,
   removeStaleNote,
   readLegacyNotes,
+  resolvePendingNote,
   saveNote,
   setSyncOffset,
   unspentNotes,
@@ -1262,9 +1264,10 @@ export class PrivacyCashClient {
     }
 
     for (const n of inputNotes) markNoteSpent(this.publicKey, n.id, signature)
+    let changeIndex = -1
     if (change.gt(new BN(0))) {
       await waitForLeafIndex(args.treeKey, nextLeafIndex).catch(() => { })
-      const changeIndex = await this.locateNoteLeaf(
+      changeIndex = await this.locateNoteLeaf(
         args.treeKey,
         nextLeafIndex,
         outputs[0],
@@ -1291,6 +1294,59 @@ export class PrivacyCashClient {
       feeLamports: fee.toNumber(),
       changeLamports: change.toString(),
       nullifiers,
+      // withdrawInternal's changeIndex comes from locateNoteLeaf against the
+      // indexed tree, so unlike the transfer path's guess it is authoritative
+      changeNote:
+        change.gt(new BN(0)) && changeIndex >= 0
+          ? {
+            amount: outputs[0].amount.toString(),
+            blinding: outputs[0].blinding.toString(),
+            index: changeIndex,
+          }
+          : undefined,
+    }
+  }
+
+  /**
+   * Replace a pending change note's guessed leaf index with the relayer's
+   * authoritative one, matched by blinding. Polls the commitment lookup while
+   * the tx lands; giving up leaves the note pending (the next syncNotes scan
+   * heals it the old way). Index-independent: the commitment is rebuilt from
+   * amount + blinding alone.
+   */
+  async resolveChangeNote(
+    treeKey: string,
+    mintAddress: string | undefined,
+    change: { amount: string; blinding: string },
+    opts: { timeoutMs?: number; intervalMs?: number } = {},
+  ): Promise<void> {
+    const mint = mintAddress ?? (treeKey === SOL_TREE_KEY ? WRAPPED_SOL_MINT : undefined)
+    if (!mint) throw new Error("resolveChangeNote: mintAddress required for non-SOL trees")
+    const timeoutMs = opts.timeoutMs ?? 8_000
+    const intervalMs = opts.intervalMs ?? 300
+    const utxo = new Utxo({
+      wasm: this.wasm!,
+      amount: change.amount,
+      blinding: change.blinding,
+      keypair: this.utxoKeypair!,
+      mintAddress: mint,
+    })
+    const commitment = fieldToHex32(utxo.getCommitment())
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      try {
+        const hit = await fetchCommitmentLeaf(commitment, treeKey)
+        resolvePendingNote(this.publicKey, {
+          mintAddress: mint,
+          blinding: change.blinding,
+          index: hit.leafIndex,
+        })
+        await this.persistNotes().catch(() => {})
+        return
+      } catch {
+        // 404 until the sync indexes the leaf — keep polling
+      }
+      await new Promise((r) => setTimeout(r, intervalMs))
     }
   }
 
