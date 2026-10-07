@@ -197,15 +197,19 @@ interface PinnedNotes {
  * reservation mid-payout. Mirrors the SDK's largest-first selection so pinned
  * calls behave exactly like auto-selected ones.
  */
-class NoteLedger {
+export class NoteLedger {
   private free = new Map<string, { id: string; amount: bigint; blinding: string }>()
   private reserved = new Set<string>()
   /** Per-lane change-note claims (A5): lane -> the blinding its last payout minted. */
-  private laneClaims = new Map<number, string>()
+  private laneClaims = new Map<number, { blinding: string; seenFree: boolean; at: number }>()
+  /** Claims outlive the reloads that fire while their note is still pending —
+   * expiry needs evidence: the note observed free and then gone, or a
+   * no-landing age past the 8s resolve window. */
+  private static readonly CLAIM_LAND_TIMEOUT_MS = 10_000
   /** Lanes holding a reservation or mid-transfer; waiters poll while this is > 0. */
   busy = 0
 
-  reload(notes: NoteRef[]): void {
+  reload(notes: NoteRef[], now: number = Date.now()): void {
     const seen = new Set<string>()
     for (const n of notes) {
       seen.add(n.id)
@@ -219,21 +223,25 @@ class NoteLedger {
     for (const id of [...this.reserved]) {
       if (!seen.has(id)) this.reserved.delete(id)
     }
-    // A claim whose note landed is spent material; one whose note vanished
-    // (healed/rescanned away) is stale either way — expire it.
-    for (const [lane, blinding] of [...this.laneClaims]) {
-      if (![...this.free.values()].some((n) => n.blinding === blinding)) {
+    // A pending note must not void its claim: reloads fire every ~1.5s under
+    // load while the note is still invisible to listNotes. Expire on evidence
+    // only — landed-then-gone (spent/healed), or no landing within the cap.
+    for (const [lane, claim] of [...this.laneClaims]) {
+      const landed = [...this.free.values()].some((n) => n.blinding === claim.blinding)
+      if (landed) {
+        claim.seenFree = true
+      } else if (claim.seenFree || now - claim.at > NoteLedger.CLAIM_LAND_TIMEOUT_MS) {
         this.laneClaims.delete(lane)
       }
     }
   }
 
   claimForLane(lane: number): string | undefined {
-    return this.laneClaims.get(lane)
+    return this.laneClaims.get(lane)?.blinding
   }
 
-  setLaneClaim(lane: number, blinding: string): void {
-    this.laneClaims.set(lane, blinding)
+  setLaneClaim(lane: number, blinding: string, now: number = Date.now()): void {
+    this.laneClaims.set(lane, { blinding, seenFree: false, at: now })
   }
 
   /** Largest note covering gross (preferring the lane's claimed change note),
@@ -507,7 +515,7 @@ export class PayrollEngine {
     }
 
     const ledger = this.deps.listNotes ? new NoteLedger() : null
-    if (ledger && this.deps.listNotes) ledger.reload(this.deps.listNotes(req.asset))
+    if (ledger && this.deps.listNotes) ledger.reload(this.deps.listNotes(req.asset), this.deps.now())
 
     const selfAddress = this.deps.client.publicKey?.toBase58()
 
@@ -515,7 +523,7 @@ export class PayrollEngine {
     let lastFromScratchAt = 0
     let refreshInFlight: Promise<void> | null = null
     const reloadLedger = (): void => {
-      if (ledger && this.deps.listNotes) ledger.reload(this.deps.listNotes(req.asset))
+      if (ledger && this.deps.listNotes) ledger.reload(this.deps.listNotes(req.asset), this.deps.now())
     }
     // bring fresh notes (change notes land after each relay) into the ledger,
     // at most one scan in flight and never more often than the gap
@@ -754,7 +762,7 @@ export class PayrollEngine {
       change: ChangeNoteRef,
     ): void => {
       if (!ledger) return
-      ledger.setLaneClaim(lane, change.blinding)
+      ledger.setLaneClaim(lane, change.blinding, this.deps.now())
       const resolving = this.deps.client.resolveChangeNote?.(
         treeKeyOf(req.asset),
         req.asset.kind === "sol" ? undefined : req.asset.mint,

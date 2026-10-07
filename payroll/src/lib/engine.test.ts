@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { PublicKey } from "@solana/web3.js"
-import { PayrollEngine, ADJUDICATE_POLLS, type EngineClient, type RunRequest, type RunSnapshot } from "./engine"
+import { PayrollEngine, NoteLedger, ADJUDICATE_POLLS, type EngineClient, type RunRequest, type RunSnapshot } from "./engine"
 import type { Asset, PayrollEntry } from "./types"
 
 const E: PayrollEntry[] = [
@@ -574,6 +574,52 @@ function laneDeps(client: EngineClient, listNotes: () => ReturnType<ReturnType<t
     sleep: (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms / 50)),
   }
 }
+
+describe("NoteLedger lane claims", () => {
+  const note = (id: string, sol: string, blinding: string) => ({
+    id,
+    amount: BigInt(Number(sol) * 1e9 as unknown as number).toString(),
+    blinding,
+  })
+
+  it("keeps a claim through reloads that fire before its pending note lands", () => {
+    // The reviewer finding: under load, confirm-driven refreshes reload the
+    // ledger every ~1.5s while a just-minted change note is still pending
+    // (invisible to listNotes). Expiring the claim on that reload loses the
+    // lane's affinity — the deliverable only worked in the quiet case.
+    const ledger = new NoteLedger()
+    ledger.reload([note("n1", "3", "b-n1")])
+    const pin = ledger.tryReserve(1_000_000_000n)
+    ledger.commitSpent(pin!)
+    ledger.setLaneClaim(0, "b-chg")
+
+    // mid-flight reload: the claimed note is pending, so listNotes can't see it
+    ledger.reload([])
+    expect(ledger.claimForLane(0)).toBe("b-chg")
+
+    // resolve lands the note — the lane must prefer it over a larger note
+    ledger.reload([note("big", "2.5", "b-big"), note("chg", "2", "b-chg")])
+    const next = ledger.tryReserve(1_000_000_000n, ledger.claimForLane(0))
+    expect(next!.blindings).toEqual(["b-chg"])
+  })
+
+  it("expires a claim once its note lands and later vanishes, or never lands", () => {
+    const ledger = new NoteLedger()
+    ledger.setLaneClaim(0, "b-chg", 1_000)
+    // claim survives a pending-only reload (fix) ...
+    ledger.reload([], 2_000)
+    expect(ledger.claimForLane(0)).toBe("b-chg")
+    // ... until the no-landing cap past the resolve timeout (8s) ...
+    ledger.reload([], 11_500)
+    expect(ledger.claimForLane(0)).toBeUndefined()
+
+    // ... and a landed claim expires after the note is consumed or healed away
+    ledger.setLaneClaim(1, "b-x", 1_000)
+    ledger.reload([note("x", "2", "b-x")], 2_000)
+    ledger.reload([], 3_000)
+    expect(ledger.claimForLane(1)).toBeUndefined()
+  })
+})
 
 describe("PayrollEngine lanes", () => {
   it("pays a fragmented vault from one fresh deposit instead of merging fragments", async () => {
