@@ -1,4 +1,5 @@
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
+import BN from "bn.js";
 import { type Note } from "./notes";
 export interface Signer {
     publicKey: PublicKey;
@@ -10,7 +11,23 @@ export interface DepositResult {
     amountLamports: number;
     leafIndex: number;
     nullifiers?: string[];
+    /** Every note the deposit minted (absent for the single-note shape). */
+    notes?: Array<{
+        amount: string;
+        blinding: string;
+        leafIndex: number;
+    }>;
 }
+/**
+ * Split a deposit into two self-notes (⌊total/2⌋ + remainder) so a wide
+ * payroll fan-out starts from two lane-worthy notes and skips one halving
+ * wave. The circuit only checks that the outputs sum to ext − fee, which
+ * holds for any split; both halves must be > 0 to be spendable notes.
+ */
+export declare function splitDepositAmounts(extAmount: BN, fee: BN): {
+    half: BN;
+    rem: BN;
+};
 export interface WithdrawResult {
     signature: string;
     recipientLamports: number;
@@ -131,7 +148,9 @@ export declare class PrivacyCashClient {
      * it authoritatively on the next scan).
      */
     private locateNoteLeaf;
-    depositSOL(amountLamports: number): Promise<DepositResult>;
+    depositSOL(amountLamports: number, opts?: {
+        split?: boolean;
+    }): Promise<DepositResult>;
     withdrawSOL(grossLamports: number, recipient: PublicKey | string, opts?: {
         relay?: boolean;
         inputNotes?: Array<{
@@ -169,7 +188,9 @@ export declare class PrivacyCashClient {
         leafIndex: number;
         commitment: string;
     }>;
-    depositSPL(mint: PublicKey | string, amountRaw: number | string): Promise<DepositResult>;
+    depositSPL(mint: PublicKey | string, amountRaw: number | string, opts?: {
+        split?: boolean;
+    }): Promise<DepositResult>;
     withdrawSPL(mint: PublicKey | string, grossRaw: number | string, recipient: PublicKey | string, opts?: {
         relay?: boolean;
         inputNotes?: Array<{
@@ -214,6 +235,20 @@ export declare class PrivacyCashClient {
     /** Poll until the indexer can serve a Merkle proof for `leafIndex` (mirror caught up). */
     private waitForNoteIndexed;
     private withdrawInternal;
+    /**
+     * Replace a pending change note's guessed leaf index with the relayer's
+     * authoritative one, matched by blinding. Polls the commitment lookup while
+     * the tx lands; giving up leaves the note pending (the next syncNotes scan
+     * heals it the old way). Index-independent: the commitment is rebuilt from
+     * amount + blinding alone.
+     */
+    resolveChangeNote(treeKey: string, mintAddress: string | undefined, change: {
+        amount: string;
+        blinding: string;
+    }, opts?: {
+        timeoutMs?: number;
+        intervalMs?: number;
+    }): Promise<void>;
     /**
      * Shared shielded-transfer flow (ext=0): output 0 is a note encrypted to the
      * recipient's registered x25519 key and committed to their note pubkey;

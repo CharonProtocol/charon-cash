@@ -104,6 +104,17 @@ export declare function nullifierInfo(hashHex: string): Promise<{
 }>;
 export declare function fetchUtxoRange(treeKey: string, start: number, end: number): Promise<UtxoRangePage>;
 export declare function checkEncryptedOutput(encryptedHex: string, treeKey?: string): Promise<UtxoCheckResult>;
+export interface CommitmentLookup {
+    treeKey: string;
+    commitment: string;
+    leafIndex: number;
+}
+/**
+ * Authoritative leaf index for a commitment (the relayer assigns indexes, so
+ * the transfer path's own index is only a guess until the tx is indexed).
+ * 404 while the tx is still landing — callers poll.
+ */
+export declare function fetchCommitmentLeaf(commitmentHex: string, treeKey: string): Promise<CommitmentLookup>;
 export interface WaitOpts {
     timeoutMs?: number;
     intervalMs?: number;

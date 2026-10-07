@@ -5,12 +5,25 @@ import BN from "bn.js";
 import { envProgramId, FIELD_SIZE, MERKLE_TREE_DEPTH, RECEIVE_SIGN_MESSAGE, SIGN_MESSAGE, SOL_TREE_KEY, WRAPPED_SOL_MINT, } from "./constants";
 import { EncryptionService, Keypair, Utxo, encryptUtxoTo, getExtDataHash, getMintAddressField, } from "./crypto";
 import { fetchRecipientKeys } from "./recipients";
-import { bytesToHex, fetchMerkleProof, fetchRelayerInfo, fetchBlockhash, fetchTreeState, fetchUtxoRange, fieldToHex32, isNullifierSpent, nullifiersSpent, nullifierInfo, submitTransaction, relayWithdraw, waitForLeafIndex, getBackendUrl, } from "./merkle";
-import { clearNotes, exportNotes, getSyncOffset, importNotes, loadNotes, markNoteSpent, newNoteId, purgeLegacyStorage, removeStaleNote, readLegacyNotes, saveNote, setSyncOffset, unspentNotes, upsertNote, markNoteSpentByIndex, } from "./notes";
+import { bytesToHex, fetchCommitmentLeaf, fetchMerkleProof, fetchRelayerInfo, fetchBlockhash, fetchTreeState, fetchUtxoRange, fieldToHex32, isNullifierSpent, nullifiersSpent, nullifierInfo, submitTransaction, relayWithdraw, waitForLeafIndex, getBackendUrl, } from "./merkle";
+import { clearNotes, exportNotes, getSyncOffset, importNotes, loadNotes, markNoteSpent, newNoteId, purgeLegacyStorage, removeStaleNote, readLegacyNotes, resolvePendingNote, saveNote, setSyncOffset, unspentNotes, upsertNote, markNoteSpentByIndex, } from "./notes";
 import { pushEncryptedNotes, pullEncryptedNotes } from "./notestore";
 import { parseProofToBytesArray, parseToBytesArray, prove } from "./prover";
 import { buildTransactSplTransaction, buildTransactTransaction, } from "./program";
 import { ensureAlt, envAltAddress, splAltAddresses, } from "./alt";
+/**
+ * Split a deposit into two self-notes (⌊total/2⌋ + remainder) so a wide
+ * payroll fan-out starts from two lane-worthy notes and skips one halving
+ * wave. The circuit only checks that the outputs sum to ext − fee, which
+ * holds for any split; both halves must be > 0 to be spendable notes.
+ */
+export function splitDepositAmounts(extAmount, fee) {
+    const total = extAmount.sub(fee);
+    if (total.ltn(2))
+        throw new Error("split deposit needs a total of at least 2 (ext − fee)");
+    const half = total.div(new BN(2));
+    return { half, rem: total.sub(half) };
+}
 const DEPOSIT_FEE = 0;
 // D1 bills rows READ per page request: a 2000-wide page made every routine
 // sync burn thousands of billed rows for a handful of leaves (the free tier
@@ -418,7 +431,7 @@ export class PrivacyCashClient {
         }
         return -1;
     }
-    async depositSOL(amountLamports) {
+    async depositSOL(amountLamports, opts) {
         await this.unlock();
         const treeKey = SOL_TREE_KEY;
         const onChain = await fetchTreeState(treeKey);
@@ -427,6 +440,11 @@ export class PrivacyCashClient {
         const extAmount = new BN(amountLamports);
         const fee = new BN(DEPOSIT_FEE);
         const dummyPath = new Array(MERKLE_TREE_DEPTH).fill("0");
+        // Unsplit: output 0 takes the whole total and output 1 is the empty dummy
+        // — amounts identical to the pre-split behavior.
+        const { half, rem } = opts?.split === true
+            ? splitDepositAmounts(extAmount, fee)
+            : { half: extAmount.sub(fee), rem: new BN(0) };
         const inputs = [
             new Utxo({ wasm: this.wasm, keypair: this.utxoKeypair }),
             new Utxo({ wasm: this.wasm, keypair: this.utxoKeypair }),
@@ -434,14 +452,14 @@ export class PrivacyCashClient {
         const outputs = [
             new Utxo({
                 wasm: this.wasm,
-                amount: extAmount.sub(fee).toString(),
+                amount: half.toString(),
                 keypair: this.utxoKeypair,
                 index: nextLeafIndex,
                 mintAddress: WRAPPED_SOL_MINT,
             }),
             new Utxo({
                 wasm: this.wasm,
-                amount: "0",
+                amount: rem.toString(),
                 keypair: this.utxoKeypair,
                 index: nextLeafIndex + 1,
                 mintAddress: WRAPPED_SOL_MINT,
@@ -478,6 +496,19 @@ export class PrivacyCashClient {
             depositTx: signature,
             pending: true,
         });
+        if (rem.gtn(0)) {
+            saveNote(this.publicKey, {
+                id: newNoteId(),
+                amount: outputs[1].amount.toString(),
+                blinding: outputs[1].blinding.toString(),
+                index: nextLeafIndex + 1,
+                mintAddress: WRAPPED_SOL_MINT,
+                spent: false,
+                createdAt: Date.now(),
+                depositTx: signature,
+                pending: true,
+            });
+        }
         await this.persistNotes().catch(() => { });
         await this.waitForLeaves(treeKey, nextLeafIndex + 1);
         const leafIndex = await this.locateNoteLeaf(treeKey, nextLeafIndex, outputs[0]);
@@ -497,9 +528,43 @@ export class PrivacyCashClient {
                 createdAt: Date.now(),
                 depositTx: signature,
             });
+            // The two outputs of one deposit land as adjacent leaves of the same
+            // transact (append_many), so the second note sits at leafIndex + 1.
+            if (rem.gtn(0)) {
+                removeStaleNote(this.publicKey, WRAPPED_SOL_MINT, outputs[1].amount.toString(), outputs[1].blinding.toString(), nextLeafIndex + 1);
+                upsertNote(this.publicKey, {
+                    id: newNoteId(),
+                    amount: outputs[1].amount.toString(),
+                    blinding: outputs[1].blinding.toString(),
+                    index: leafIndex + 1,
+                    mintAddress: WRAPPED_SOL_MINT,
+                    spent: false,
+                    createdAt: Date.now(),
+                    depositTx: signature,
+                });
+            }
             await this.persistNotes().catch(() => { });
         }
-        return { signature, amountLamports, leafIndex, nullifiers };
+        return {
+            signature,
+            amountLamports,
+            leafIndex,
+            nullifiers,
+            notes: rem.gtn(0)
+                ? [
+                    {
+                        amount: outputs[0].amount.toString(),
+                        blinding: outputs[0].blinding.toString(),
+                        leafIndex,
+                    },
+                    {
+                        amount: outputs[1].amount.toString(),
+                        blinding: outputs[1].blinding.toString(),
+                        leafIndex: leafIndex >= 0 ? leafIndex + 1 : -1,
+                    },
+                ]
+                : undefined,
+        };
     }
     async withdrawSOL(grossLamports, recipient, opts) {
         await this.unlock();
@@ -562,7 +627,7 @@ export class PrivacyCashClient {
             inputNotes: opts?.inputNotes,
         });
     }
-    async depositSPL(mint, amountRaw) {
+    async depositSPL(mint, amountRaw, opts) {
         await this.unlock();
         const mintPk = toPubkey(mint);
         const mintStr = mintPk.toBase58();
@@ -573,6 +638,11 @@ export class PrivacyCashClient {
         const extAmount = new BN(amountRaw.toString());
         const fee = new BN(DEPOSIT_FEE);
         const dummyPath = new Array(MERKLE_TREE_DEPTH).fill("0");
+        // Unsplit: output 0 takes the whole total and output 1 is the empty dummy
+        // — amounts identical to the pre-split behavior.
+        const { half, rem } = opts?.split === true
+            ? splitDepositAmounts(extAmount, fee)
+            : { half: extAmount.sub(fee), rem: new BN(0) };
         const inputs = [
             new Utxo({ wasm: this.wasm, keypair: this.utxoKeypair, mintAddress: mintStr }),
             new Utxo({ wasm: this.wasm, keypair: this.utxoKeypair, mintAddress: mintStr }),
@@ -580,14 +650,14 @@ export class PrivacyCashClient {
         const outputs = [
             new Utxo({
                 wasm: this.wasm,
-                amount: extAmount.sub(fee).toString(),
+                amount: half.toString(),
                 keypair: this.utxoKeypair,
                 index: nextLeafIndex,
                 mintAddress: mintStr,
             }),
             new Utxo({
                 wasm: this.wasm,
-                amount: "0",
+                amount: rem.toString(),
                 keypair: this.utxoKeypair,
                 index: nextLeafIndex + 1,
                 mintAddress: mintStr,
@@ -629,6 +699,19 @@ export class PrivacyCashClient {
             depositTx: signature,
             pending: true,
         });
+        if (rem.gtn(0)) {
+            saveNote(this.publicKey, {
+                id: newNoteId(),
+                amount: outputs[1].amount.toString(),
+                blinding: outputs[1].blinding.toString(),
+                index: nextLeafIndex + 1,
+                mintAddress: mintStr,
+                spent: false,
+                createdAt: Date.now(),
+                depositTx: signature,
+                pending: true,
+            });
+        }
         await this.persistNotes().catch(() => { });
         await this.waitForLeaves(treeKey, nextLeafIndex + 1);
         const leafIndex = await this.locateNoteLeaf(treeKey, nextLeafIndex, outputs[0]);
@@ -648,6 +731,21 @@ export class PrivacyCashClient {
                 createdAt: Date.now(),
                 depositTx: signature,
             });
+            // The two outputs of one deposit land as adjacent leaves of the same
+            // transact (append_many), so the second note sits at leafIndex + 1.
+            if (rem.gtn(0)) {
+                removeStaleNote(this.publicKey, mintStr, outputs[1].amount.toString(), outputs[1].blinding.toString(), nextLeafIndex + 1);
+                upsertNote(this.publicKey, {
+                    id: newNoteId(),
+                    amount: outputs[1].amount.toString(),
+                    blinding: outputs[1].blinding.toString(),
+                    index: leafIndex + 1,
+                    mintAddress: mintStr,
+                    spent: false,
+                    createdAt: Date.now(),
+                    depositTx: signature,
+                });
+            }
             await this.persistNotes().catch(() => { });
         }
         return {
@@ -655,6 +753,20 @@ export class PrivacyCashClient {
             amountLamports: Number(amountRaw),
             leafIndex,
             nullifiers,
+            notes: rem.gtn(0)
+                ? [
+                    {
+                        amount: outputs[0].amount.toString(),
+                        blinding: outputs[0].blinding.toString(),
+                        leafIndex,
+                    },
+                    {
+                        amount: outputs[1].amount.toString(),
+                        blinding: outputs[1].blinding.toString(),
+                        leafIndex: leafIndex >= 0 ? leafIndex + 1 : -1,
+                    },
+                ]
+                : undefined,
         };
     }
     async withdrawSPL(mint, grossRaw, recipient, opts) {
@@ -958,9 +1070,10 @@ export class PrivacyCashClient {
         }
         for (const n of inputNotes)
             markNoteSpent(this.publicKey, n.id, signature);
+        let changeIndex = -1;
         if (change.gt(new BN(0))) {
             await waitForLeafIndex(args.treeKey, nextLeafIndex).catch(() => { });
-            const changeIndex = await this.locateNoteLeaf(args.treeKey, nextLeafIndex, outputs[0]).catch(() => -1);
+            changeIndex = await this.locateNoteLeaf(args.treeKey, nextLeafIndex, outputs[0]).catch(() => -1);
             saveNote(this.publicKey, {
                 id: newNoteId(),
                 amount: outputs[0].amount.toString(),
@@ -982,7 +1095,55 @@ export class PrivacyCashClient {
             feeLamports: fee.toNumber(),
             changeLamports: change.toString(),
             nullifiers,
+            // withdrawInternal's changeIndex comes from locateNoteLeaf against the
+            // indexed tree, so unlike the transfer path's guess it is authoritative
+            changeNote: change.gt(new BN(0)) && changeIndex >= 0
+                ? {
+                    amount: outputs[0].amount.toString(),
+                    blinding: outputs[0].blinding.toString(),
+                    index: changeIndex,
+                }
+                : undefined,
         };
+    }
+    /**
+     * Replace a pending change note's guessed leaf index with the relayer's
+     * authoritative one, matched by blinding. Polls the commitment lookup while
+     * the tx lands; giving up leaves the note pending (the next syncNotes scan
+     * heals it the old way). Index-independent: the commitment is rebuilt from
+     * amount + blinding alone.
+     */
+    async resolveChangeNote(treeKey, mintAddress, change, opts = {}) {
+        const mint = mintAddress ?? (treeKey === SOL_TREE_KEY ? WRAPPED_SOL_MINT : undefined);
+        if (!mint)
+            throw new Error("resolveChangeNote: mintAddress required for non-SOL trees");
+        const timeoutMs = opts.timeoutMs ?? 8_000;
+        const intervalMs = opts.intervalMs ?? 300;
+        const utxo = new Utxo({
+            wasm: this.wasm,
+            amount: change.amount,
+            blinding: change.blinding,
+            keypair: this.utxoKeypair,
+            mintAddress: mint,
+        });
+        const commitment = fieldToHex32(utxo.getCommitment());
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            try {
+                const hit = await fetchCommitmentLeaf(commitment, treeKey);
+                resolvePendingNote(this.publicKey, {
+                    mintAddress: mint,
+                    blinding: change.blinding,
+                    index: hit.leafIndex,
+                });
+                await this.persistNotes().catch(() => { });
+                return;
+            }
+            catch {
+                // 404 until the sync indexes the leaf — keep polling
+            }
+            await new Promise((r) => setTimeout(r, intervalMs));
+        }
     }
     /**
      * Shared shielded-transfer flow (ext=0): output 0 is a note encrypted to the

@@ -277,6 +277,20 @@ export async function checkEncryptedOutput(encryptedHex, treeKey) {
         slot: Number(r.slot),
     };
 }
+/**
+ * Authoritative leaf index for a commitment (the relayer assigns indexes, so
+ * the transfer path's own index is only a guess until the tx is indexed).
+ * 404 while the tx is still landing — callers poll.
+ */
+export async function fetchCommitmentLeaf(commitmentHex, treeKey) {
+    const hex = commitmentHex.replace(/^0x/i, "").toLowerCase();
+    const r = await getJson(`/api/commitment/${encodeURIComponent(hex)}?tree_key=${encodeURIComponent(treeKey)}`);
+    return {
+        treeKey: r.tree_key,
+        commitment: r.commitment,
+        leafIndex: Number(r.leaf_index),
+    };
+}
 /** Poll until `next_leaf_index > minLeafIndex` (i.e. leaves through minLeafIndex exist). */
 export async function waitForLeafIndex(treeKey, minLeafIndex, opts = {}) {
     const timeoutMs = opts.timeoutMs ?? 60_000;
