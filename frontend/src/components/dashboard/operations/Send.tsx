@@ -4,7 +4,7 @@ import { AnimatePresence, m, useReducedMotion } from "motion/react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { PublicKey } from "@solana/web3.js";
-import { assertPaymentSupported, parseTokenAmount } from "../../../lib/payment";
+import { parseTokenAmount } from "../../../lib/payment";
 import { usePaymentTransaction } from "../../../hooks/usePaymentTransaction";
 import { TokenSelector } from "../TokenSelector";
 import { TokenIcon, type Token } from "../TokenIcon";
@@ -38,7 +38,6 @@ export function Send({ context }: { context: PaymentContext }) {
     event.preventDefault();
     try {
       validate();
-      assertPaymentSupported("send", token);
       try {
         new PublicKey(recipient.trim());
       } catch {

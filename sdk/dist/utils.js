@@ -18,8 +18,14 @@ export function getMintAddressField(mint) {
     const mintBytes = mint.toBytes();
     return new BN(mintBytes.slice(0, 31), "be").toString();
 }
-export function deriveAccounts(programId, nullifierHash0, nullifierHash1) {
-    const [treeAccount] = PublicKey.findProgramAddressSync([Buffer.from(SEED.TREE_ACCOUNT)], programId);
+export function deriveAccounts(programId, nullifierHash0, nullifierHash1, mintAddress) {
+    const treeAccountSeeds = [
+        Buffer.from(SEED.TREE_ACCOUNT),
+    ];
+    if (mintAddress) {
+        treeAccountSeeds.push(mintAddress.toBuffer());
+    }
+    const [treeAccount] = PublicKey.findProgramAddressSync(treeAccountSeeds, programId);
     const [treeTokenAccount] = PublicKey.findProgramAddressSync([Buffer.from(SEED.TREE_TOKEN)], programId);
     const [globalConfig] = PublicKey.findProgramAddressSync([Buffer.from(SEED.GLOBAL_CONFIG)], programId);
     const [nullifier0, bump0] = PublicKey.findProgramAddressSync([Buffer.from(SEED.NULLIFIER0), Buffer.from(nullifierHash0)], programId);

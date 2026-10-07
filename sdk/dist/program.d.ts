@@ -60,7 +60,14 @@ export type TransferArgs = {
     };
     signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>;
 };
-export declare function transactSol({ inputUtxos, extAmount, fee, mintAddress, lightwasm, recipientKey, encryptionService, signer, connection, signTransaction, circuit, }: TransactArgs): Promise<string>;
-export declare function transferSol({ inputUtxos, transferAmount, fee, mintAddress, lightwasm, recipientKey, encryptionService, signer, connection, signTransaction, circuit, }: TransferArgs): Promise<string>;
-export declare function transactSpl({ inputUtxos, extAmount, fee, mintAddress, lightwasm, recipientKey, encryptionService, signer, connection, signTransaction, circuit, }: TransactArgs): Promise<string>;
+export declare function transactSol({ inputUtxos, extAmount, fee, mintAddress, lightwasm, recipientKey, encryptionService, signer, connection, signTransaction, circuit, }: TransactArgs): Promise<void>;
+export declare function shieldedTransferSol({ inputUtxos, transferAmount, fee, mintAddress, lightwasm, recipientKey, encryptionService, signer, connection, signTransaction, circuit, }: TransferArgs): Promise<string>;
+export declare function transactSpl({ inputUtxos, extAmount, fee, mintAddress, lightwasm, recipientKey, encryptionService, signer, connection, signTransaction, circuit, }: TransactArgs): Promise<void>;
+/**
+ * This does shielded transfer for spl tokens.
+ *
+ * @param param0
+ * @returns
+ */
+export declare function shieldedTransferSpl({ inputUtxos, transferAmount, fee, mintAddress, lightwasm, recipientKey, encryptionService, signer, connection, signTransaction, circuit, }: TransferArgs): Promise<string>;
 //# sourceMappingURL=program.d.ts.map

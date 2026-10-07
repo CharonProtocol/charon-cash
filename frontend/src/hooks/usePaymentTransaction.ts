@@ -1,13 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { RPC_URL } from "../lib/config";
 import { PublicKey } from "@solana/web3.js";
-import { assertPaymentSupported, parseTokenAmount } from "../lib/payment";
+import { parseTokenAmount } from "../lib/payment";
 import type { Token } from "../components/dashboard/TokenIcon";
 import type {
   PaymentContext,
   PaymentKind,
   PaymentStatus,
 } from "../components/dashboard/types";
+
+export const SUPPORTED_SPL_MINTS = {
+  usdc: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  usdt: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+};
 
 export function usePaymentTransaction(
   kind: PaymentKind,
@@ -31,7 +36,6 @@ export function usePaymentTransaction(
     setError("");
     setStatus("proof");
     try {
-      assertPaymentSupported(kind, token);
       const lamports = parseTokenAmount(amount, token);
       const destination =
         kind === "withdraw" ? "" : new PublicKey(recipient.trim()).toBase58();
@@ -39,12 +43,35 @@ export function usePaymentTransaction(
         if (mounted.current) setStatus(next);
       };
       context.observeProgress(onProgress);
+
       const result =
         kind === "send"
-          ? await context.client.sendSol(lamports, destination)
+          ? token === "SOL"
+            ? await context.client.sendSol(lamports, destination)
+            : await context.client.sendSpl(
+                lamports,
+                destination,
+                SUPPORTED_SPL_MINTS[
+                  token.toLowerCase() as keyof typeof SUPPORTED_SPL_MINTS
+                ],
+              )
           : kind === "withdraw"
-            ? await context.client.withdrawSol(lamports)
-            : await context.client.shieldedTransferSol(lamports, recipient);
+            ? token === "SOL"
+              ? await context.client.withdrawSol(lamports)
+              : await context.client.withdrawSpl(
+                  lamports,
+                  SUPPORTED_SPL_MINTS[
+                    token.toLowerCase() as keyof typeof SUPPORTED_SPL_MINTS
+                  ],
+                )
+            : token === "SOL"
+              ? await context.client.shieldedTransferSol(lamports, recipient)
+              : await context.client.shieldedTransferSpl(
+                  lamports,
+                  recipient,
+                  // Note: The SDK currently hardcodes WRAPPED_SOL_MINT for shieldedTransferSpl
+                  // but we call it as it is defined.
+                );
       if (mounted.current) {
         setSignature(result.signature);
         setStatus("success");
@@ -52,6 +79,7 @@ export function usePaymentTransaction(
       context.refresh();
     } catch (cause) {
       if (mounted.current) {
+        console.log("Error is ,", cause);
         setError(
           cause instanceof Error
             ? cause.message

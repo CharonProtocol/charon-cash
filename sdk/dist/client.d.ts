@@ -1,4 +1,5 @@
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
+import { Utxo } from "./model/utxo";
 import BN from "bn.js";
 export interface Signer {
     publicKey: PublicKey;
@@ -35,16 +36,31 @@ export declare class CharonProtocol {
         owner: Signer;
     }): Promise<CharonProtocol>;
     sendSol(amountInLamports: number, recipientKey: string): Promise<{
-        signature: string;
+        signature: void;
     }>;
     withdrawSol(amountInLamports: number): Promise<{
-        signature: string;
+        signature: void;
     }>;
     shieldedTransferSol(amountInLamports: number, recipientKey: string): Promise<{
         signature: string;
     }>;
+    sendSpl(amount: number, recipientKey: string, mintAddress: string): Promise<{
+        signature: void;
+    }>;
+    withdrawSpl(amount: number, mintAddress: string): Promise<{
+        signature: void;
+    }>;
+    shieldedTransferSpl(amount: number, recipientKey: string): Promise<{
+        signature: string;
+    }>;
     syncUtxos(): Promise<void>;
     private recalculateBalances;
+    /**
+     * @param mintAddress
+     * @param amount : For Sol , it has to be in Lamports.
+     * @returns
+     */
+    getRequiredUtxosForAmount(mintAddress: string, amount: BN): Promise<[Utxo[], UtxoRef[]]>;
     stopClient(): Promise<void>;
 }
 export {};

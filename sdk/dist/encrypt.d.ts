@@ -32,7 +32,7 @@ export declare class EncryptionService {
      * `[version (8B) | ephemeral_pubkey (32B) | iv/nonce (32B) | ciphertext + authTag (16B)]`
      * @returns The decrypted output: `raw UTXO bytes`
      */
-    decrypt(encryptedOutput: Uint8Array): Promise<Uint8Array<ArrayBuffer>>;
+    decrypt(encryptedOutput: Uint8Array): Promise<Uint8Array<ArrayBufferLike>>;
     generateEncryptionDecryptionKey(sharedSecret: Uint8Array): Promise<Uint8Array<ArrayBufferLike> & Uint8Array<ArrayBuffer>>;
 }
 export declare function generateX25519CipherKeypair(seed?: Uint8Array | string): Promise<CipherKeypair>;

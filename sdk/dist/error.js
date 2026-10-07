@@ -10,6 +10,7 @@ export var CharonProtocolErrorCode;
 (function (CharonProtocolErrorCode) {
     CharonProtocolErrorCode["INVALID_INPUT"] = "INVALID_INPUT";
     CharonProtocolErrorCode["INVALID_UTXO_COUNT"] = "INVALID_UTXO_COUNT";
+    CharonProtocolErrorCode["INVALID_MINT"] = "INVALID_MINT";
     CharonProtocolErrorCode["API_ERROR"] = "API_ERROR";
     CharonProtocolErrorCode["ENCRYPTION_ERROR"] = "ENCRYPTION_ERROR";
     CharonProtocolErrorCode["PROOF_GENERATION_ERROR"] = "PROOF_GENERATION_ERROR";

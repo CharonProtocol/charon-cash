@@ -4,7 +4,7 @@ import { AnimatePresence, m, useReducedMotion } from "motion/react";
 import { ArrowRight } from "lucide-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { formatSol } from "../../../lib/amount";
-import { assertPaymentSupported, parseTokenAmount } from "../../../lib/payment";
+import { parseTokenAmount } from "../../../lib/payment";
 import { usePaymentTransaction } from "../../../hooks/usePaymentTransaction";
 import { TokenSelector } from "../TokenSelector";
 import { TokenIcon, type Token } from "../TokenIcon";
@@ -47,10 +47,10 @@ export function Withdraw({ context }: { context: PaymentContext }) {
     event.preventDefault();
     try {
       validate();
-      assertPaymentSupported("withdraw", token);
       if (!context.connected)
         throw new Error("Connect your wallet to continue.");
-      if (!context.client) throw new Error("Your account is still initializing.");
+      if (!context.client)
+        throw new Error("Your account is still initializing.");
       setValidation("");
       setStep(processingStep);
       await transaction.submit(amount, "", token);
@@ -73,8 +73,7 @@ export function Withdraw({ context }: { context: PaymentContext }) {
       return 0;
     }
   })();
-  const fee =
-    token === "SOL" ? Math.ceil((units * 25) / 10000) : 0;
+  const fee = token === "SOL" ? Math.ceil((units * 25) / 10000) : 0;
   const accountControls = (
     <>
       {!context.connected ? (
@@ -96,54 +95,57 @@ export function Withdraw({ context }: { context: PaymentContext }) {
     </p>
   );
   return (
-    <OperationLayout title="Withdraw" direction="private to wallet">
-    <div className="flex min-h-0 flex-1 flex-col justify-between gap-3">
-      <AnimatePresence
-        mode="wait"
-        initial={false}
-      >
-        <m.div
-          key={step}
-          className="flex min-h-0 w-full flex-1 flex-col gap-5 [@media(max-height:560px)]:gap-2"
-          initial={{ opacity: 0, y: reduced ? 0 : 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: reduced ? 0 : -6 }}
-          transition={{ duration: reduced ? 0 : 0.18 }}
-          onAnimationComplete={() => {
-            heading.current?.focus();
-          }}
+    <OperationLayout
+      title="Withdraw"
+      direction="private to wallet"
+    >
+      <div className="flex min-h-0 flex-1 flex-col justify-between gap-3">
+        <AnimatePresence
+          mode="wait"
+          initial={false}
         >
-          {step === processingStep ? (
-            <ProcessingStep
-              status={transaction.status}
-              kind="withdraw"
-              amount={amount}
-              token={token}
-              error={transaction.error}
-              explorerUrl={transaction.explorerUrl}
-              onReset={reset}
-              onBack={() => {
-                transaction.reset();
-                setStep(0);
-              }}
-            />
-          ) : (
-            <>
-              <TokenSelector
-                value={token}
-                onChange={(next) => {
-                  setToken(next);
-                  setValidation("");
+          <m.div
+            key={step}
+            className="flex min-h-0 w-full flex-1 flex-col gap-5 [@media(max-height:560px)]:gap-2"
+            initial={{ opacity: 0, y: reduced ? 0 : 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: reduced ? 0 : -6 }}
+            transition={{ duration: reduced ? 0 : 0.18 }}
+            onAnimationComplete={() => {
+              heading.current?.focus();
+            }}
+          >
+            {step === processingStep ? (
+              <ProcessingStep
+                status={transaction.status}
+                kind="withdraw"
+                amount={amount}
+                token={token}
+                error={transaction.error}
+                explorerUrl={transaction.explorerUrl}
+                onReset={reset}
+                onBack={() => {
+                  transaction.reset();
+                  setStep(0);
                 }}
               />
-              <h2
-                className="shrink-0 text-[clamp(14px,2.5dvh,21px)] font-normal text-neutral-500 outline-none!"
-                ref={heading}
-                tabIndex={-1}
-              >
-                {`Enter the Amount of ${token} : `}
-              </h2>
-              <form
+            ) : (
+              <>
+                <TokenSelector
+                  value={token}
+                  onChange={(next) => {
+                    setToken(next);
+                    setValidation("");
+                  }}
+                />
+                <h2
+                  className="shrink-0 text-[clamp(14px,2.5dvh,21px)] font-normal text-neutral-500 outline-none!"
+                  ref={heading}
+                  tabIndex={-1}
+                >
+                  {`Enter the Amount of ${token} : `}
+                </h2>
+                <form
                   className={FORM}
                   onSubmit={confirm}
                 >
@@ -193,33 +195,33 @@ export function Withdraw({ context }: { context: PaymentContext }) {
                         : "Connect your wallet to see your private balance"}
                   </p>
                   <>
+                    <p className={NOTE}>
+                      To your connected wallet
+                      {context.address
+                        ? ` · ${context.address.slice(0, 4)}…${context.address.slice(-4)}`
+                        : ""}
+                    </p>
+                    {token === "SOL" && units > fee && (
                       <p className={NOTE}>
-                        To your connected wallet
-                        {context.address
-                          ? ` · ${context.address.slice(0, 4)}…${context.address.slice(-4)}`
-                          : ""}
+                        Fee: {formatSol(String(fee))} SOL · You receive{" "}
+                        {formatSol(String(units - fee))} SOL
                       </p>
-                      {token === "SOL" && units > fee && (
-                        <p className={NOTE}>
-                          Fee: {formatSol(String(fee))} SOL · You receive{" "}
-                          {formatSol(String(units - fee))} SOL
-                        </p>
-                      )}
-                      <div className="mt-2 flex justify-center">
-                        {accountControls}
-                      </div>
+                    )}
+                    <div className="mt-2 flex justify-center">
+                      {accountControls}
+                    </div>
                   </>
                   {errorMessage}
-              </form>
-            </>
-          )}
-        </m.div>
-      </AnimatePresence>
-      <StepIndicator
-        step={step}
-        labels={["Amount", "Withdraw"]}
-      />
-    </div>
+                </form>
+              </>
+            )}
+          </m.div>
+        </AnimatePresence>
+        <StepIndicator
+          step={step}
+          labels={["Amount", "Withdraw"]}
+        />
+      </div>
     </OperationLayout>
   );
 }

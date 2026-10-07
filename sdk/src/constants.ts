@@ -19,11 +19,16 @@ export const PROGRAM_ID = new PublicKey(
   "A6jNiYjV9g7omJ4zHAyiDQtcRewobsko7gs9UjZ2pWRa",
 );
 export const ALT_ADDRESS = new PublicKey(
-  "6nD6BeY9hTkjrS9Yjzp3wVccsFrSJubPK99bRMKYM3aj",
+  "7foo2AGTFZeQaTnmzQ9gqomZ4m4Xv2sreVKNFFu6ZX2o",
 );
 export const FEE_RECIPIENT = new PublicKey(
   "5kHwyJA15XjiHYxUTGif8NoH25h1dTxjqhscTnf4V1Ua",
 );
+
+export const SUPPORTED_SPL_MINTS = [
+  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+];
 
 export const API_URL = "http://127.0.0.1:8080";
 

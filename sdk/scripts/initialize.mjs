@@ -9,6 +9,10 @@ import {
   TransactionMessage,
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
+import {
+  createAssociatedTokenAccountInstruction,
+  getAssociatedTokenAddressSync,
+} from "@solana/spl-token";
 
 const RPC_URL = process.env.RPC_URL || "http://127.0.0.1:8899";
 
@@ -91,6 +95,38 @@ const ix = new TransactionInstruction({
 const transaction = new Transaction();
 
 transaction.add(ix);
+
+const usdcMint = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+const usdtMint = new PublicKey("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB");
+
+const createAtaIfMintExists = async (mint, owner, allowOwnerOffCurve) => {
+  const mintInfo = await connection.getAccountInfo(mint);
+  if (mintInfo) {
+    const ata = getAssociatedTokenAddressSync(mint, owner, allowOwnerOffCurve);
+    // Check if ATA already exists
+    const ataInfo = await connection.getAccountInfo(ata);
+    if (!ataInfo) {
+      const ataIx = createAssociatedTokenAccountInstruction(
+        authority.publicKey,
+        ata,
+        owner,
+        mint,
+      );
+      transaction.add(ataIx);
+      console.log(
+        `Added instruction to create ATA for mint ${mint.toBase58()} and owner ${owner.toBase58()}`,
+      );
+    }
+  }
+};
+
+await createAtaIfMintExists(usdcMint, globalConfig, true);
+await createAtaIfMintExists(usdtMint, globalConfig, true);
+const feeRecipient = new PublicKey(
+  "5kHwyJA15XjiHYxUTGif8NoH25h1dTxjqhscTnf4V1Ua",
+);
+await createAtaIfMintExists(usdcMint, feeRecipient, true);
+await createAtaIfMintExists(usdtMint, feeRecipient, true);
 
 // Send
 const txSignature = await sendAndConfirmTransaction(connection, transaction, [

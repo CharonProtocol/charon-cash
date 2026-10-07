@@ -55,9 +55,16 @@ export function deriveAccounts(
   programId: PublicKey,
   nullifierHash0: Uint8Array,
   nullifierHash1: Uint8Array,
+  mintAddress?: PublicKey,
 ): TransactAccounts {
+  const treeAccountSeeds: (Buffer | Uint8Array)[] = [
+    Buffer.from(SEED.TREE_ACCOUNT),
+  ];
+  if (mintAddress) {
+    treeAccountSeeds.push(mintAddress.toBuffer());
+  }
   const [treeAccount] = PublicKey.findProgramAddressSync(
-    [Buffer.from(SEED.TREE_ACCOUNT)],
+    treeAccountSeeds,
     programId,
   );
   const [treeTokenAccount] = PublicKey.findProgramAddressSync(

@@ -23,7 +23,7 @@ export interface TransactAccounts {
     bump0: number;
     bump1: number;
 }
-export declare function deriveAccounts(programId: PublicKey, nullifierHash0: Uint8Array, nullifierHash1: Uint8Array): TransactAccounts;
+export declare function deriveAccounts(programId: PublicKey, nullifierHash0: Uint8Array, nullifierHash1: Uint8Array, mintAddress?: PublicKey): TransactAccounts;
 export declare function deriveNullifiers(nullifierHash: Uint8Array): PublicKey[] | undefined;
 export declare function poseidonStringToBytes32(hashStr: string): Uint8Array;
 export declare function serializeProofAndExtData(proof: ProofBytes, extData: ExtData, isSpl: boolean | undefined, bump0: number, bump1: number): Buffer<ArrayBuffer>;

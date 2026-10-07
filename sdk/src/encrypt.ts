@@ -14,6 +14,7 @@ import { x25519 as webX25519 } from "@noble/curves/webcrypto.js";
 import * as webCryptoHash from "@noble/hashes/webcrypto.js";
 import * as webCryptoCipher from "@noble/ciphers/webcrypto.js";
 import { randomBytes } from "@noble/ciphers/utils.js";
+import { init, compress, decompress } from "@bokuweb/zstd-wasm";
 import { CharonProtocolError, CharonProtocolErrorCode } from "./error";
 
 interface CipherKeypair {
@@ -50,6 +51,7 @@ export class EncryptionService {
 
   public static async startEncryptionService(masterSeed: Uint8Array | string) {
     try {
+      await init();
       const CipherKeypair = await generateX25519CipherKeypair(masterSeed);
       return new EncryptionService(CipherKeypair);
     } catch (error) {
@@ -72,6 +74,7 @@ export class EncryptionService {
    */
   async encrypt(data: Uint8Array, targetViewingKey: Uint8Array) {
     try {
+      await init();
       // Note's ephemeral CipherKeypair used for sharedSecret/Encryption
       // After encryption secret key will be discarded making the target only one that can
       // decrypt the note .
@@ -86,15 +89,7 @@ export class EncryptionService {
         await this.generateEncryptionDecryptionKey(sharedSecret);
 
       // compression should happen before encryption
-      const cs = new CompressionStream("gzip");
-
-      const compressedPromise = new Response(cs.readable).arrayBuffer();
-
-      const writer = cs.writable.getWriter();
-      await writer.write(data as Uint8Array<ArrayBuffer>);
-      await writer.close();
-
-      const compressedData = new Uint8Array(await compressedPromise);
+      const compressedData = compress(data);
       const ciphertext = await aes_encrypt(compressedData, encryptionKey);
 
       // EncryptionService.ENCRYPTION_VERSION_V1.length + noteEphemeralCipherKeypair.publicKey.length +ciphertext.length;
@@ -122,6 +117,7 @@ export class EncryptionService {
    */
   async decrypt(encryptedOutput: Uint8Array) {
     try {
+      await init();
       const version = encryptedOutput.slice(0, 8);
 
       const ephemeralPubkey = encryptedOutput.slice(8, 40);
@@ -142,14 +138,7 @@ export class EncryptionService {
       );
 
       // decompression should happen after decryption
-      const cs = new DecompressionStream("gzip");
-      const decompressedPromise = new Response(cs.readable).arrayBuffer();
-
-      const writer = cs.writable.getWriter();
-      await writer.write(deciphertext);
-      await writer.close();
-
-      const decompressedData = new Uint8Array(await decompressedPromise);
+      const decompressedData = decompress(deciphertext);
 
       return decompressedData;
     } catch (error) {

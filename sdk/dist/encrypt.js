@@ -14,6 +14,7 @@ import { x25519 as webX25519 } from "@noble/curves/webcrypto.js";
 import * as webCryptoHash from "@noble/hashes/webcrypto.js";
 import * as webCryptoCipher from "@noble/ciphers/webcrypto.js";
 import { randomBytes } from "@noble/ciphers/utils.js";
+import { init, compress, decompress } from "@bokuweb/zstd-wasm";
 import { CharonProtocolError, CharonProtocolErrorCode } from "./error";
 export class EncryptionError extends CharonProtocolError {
     constructor(message, options) {
@@ -38,6 +39,7 @@ export class EncryptionService {
     }
     static async startEncryptionService(masterSeed) {
         try {
+            await init();
             const CipherKeypair = await generateX25519CipherKeypair(masterSeed);
             return new EncryptionService(CipherKeypair);
         }
@@ -59,6 +61,7 @@ export class EncryptionService {
      */
     async encrypt(data, targetViewingKey) {
         try {
+            await init();
             // Note's ephemeral CipherKeypair used for sharedSecret/Encryption
             // After encryption secret key will be discarded making the target only one that can
             // decrypt the note .
@@ -66,12 +69,7 @@ export class EncryptionService {
             const sharedSecret = await generateSharedSecret(noteEphemeralCipherKeypair, targetViewingKey);
             const encryptionKey = await this.generateEncryptionDecryptionKey(sharedSecret);
             // compression should happen before encryption
-            const cs = new CompressionStream("gzip");
-            const compressedPromise = new Response(cs.readable).arrayBuffer();
-            const writer = cs.writable.getWriter();
-            await writer.write(data);
-            await writer.close();
-            const compressedData = new Uint8Array(await compressedPromise);
+            const compressedData = compress(data);
             const ciphertext = await aes_encrypt(compressedData, encryptionKey);
             // EncryptionService.ENCRYPTION_VERSION_V1.length + noteEphemeralCipherKeypair.publicKey.length +ciphertext.length;
             const encryptedOutputLength = 8 + 32 + ciphertext.length;
@@ -96,6 +94,7 @@ export class EncryptionService {
      */
     async decrypt(encryptedOutput) {
         try {
+            await init();
             const version = encryptedOutput.slice(0, 8);
             const ephemeralPubkey = encryptedOutput.slice(8, 40);
             const sharedSecret = await generateSharedSecret(this.CipherKeypair, ephemeralPubkey);
@@ -103,12 +102,7 @@ export class EncryptionService {
             const ciphertext = encryptedOutput.slice(40);
             const deciphertext = await aes_decrypt(Buffer.from(ciphertext), decryptionKey);
             // decompression should happen after decryption
-            const cs = new DecompressionStream("gzip");
-            const decompressedPromise = new Response(cs.readable).arrayBuffer();
-            const writer = cs.writable.getWriter();
-            await writer.write(deciphertext);
-            await writer.close();
-            const decompressedData = new Uint8Array(await decompressedPromise);
+            const decompressedData = decompress(deciphertext);
             return decompressedData;
         }
         catch (error) {

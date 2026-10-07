@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { PublicKey } from "@solana/web3.js";
 import { formatSol } from "../../../lib/amount";
-import { assertPaymentSupported, parseTokenAmount } from "../../../lib/payment";
+import { parseTokenAmount } from "../../../lib/payment";
 import { usePaymentTransaction } from "../../../hooks/usePaymentTransaction";
 import { TokenSelector } from "../TokenSelector";
 import { TokenIcon, type Token } from "../TokenIcon";
@@ -49,7 +49,6 @@ export function ShieldedTransfer({ context }: { context: PaymentContext }) {
     event.preventDefault();
     try {
       validate();
-      assertPaymentSupported("transfer", token);
       try {
         new PublicKey(recipient.trim());
       } catch {
