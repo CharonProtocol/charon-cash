@@ -727,6 +727,9 @@ export class PayrollEngine {
       return topUpInFlight
     }
 
+    // Confirms detached from the payout lanes (A6); drained before settle.
+    const confirms: Array<Promise<void>> = []
+
     /**
      * A row's change note is the next row's input on this lane. Claim it by
      * blinding so tryReserve prefers it without a refresh detour, and let
@@ -834,20 +837,38 @@ export class PayrollEngine {
           row.error = undefined
           row.relayedAt = this.deps.now()
           row.status = "relayed"
-          this.emit("paying", funding?.txSignature)
-          if (changeNote) claimLaneChange(lane, changeNote)
-          const confirmStart = this.deps.now()
-          row.status = (await this.deps.confirmSignature(sig)) ? "confirmed" : "confirming"
-          timing.confirmMs = this.deps.now() - confirmStart
-          row.confirmedAt = this.deps.now()
           row.timing = timing
           this.emit("paying", funding?.txSignature)
+          if (changeNote) claimLaneChange(lane, changeNote)
+          // The nullifiers are irreversibly on the chain the moment the
+          // relayer accepted the tx — holding the pins through the confirm
+          // only starves the other lanes. Spent at relay time; a
+          // relay-OK-but-chain-fail leaves the ledger short one note,
+          // matching the SDK's markNoteSpent semantics (the next refresh
+          // resurrects the truth).
           if (pinned && ledger) {
             ledger.commitSpent(pinned)
             ledger.busy--
             pinned = null
           }
-          void scheduleRefresh()
+          // Confirm off the critical path: this worker picks up its next row
+          // now; run() awaits every confirm before settle() reads statuses.
+          const confirmStart = this.deps.now()
+          confirms.push(
+            this.deps.confirmSignature(sig)
+              .then((ok) => {
+                timing.confirmMs = this.deps.now() - confirmStart
+                row.status = ok ? "confirmed" : "confirming"
+                row.confirmedAt = this.deps.now()
+                this.emit("paying", funding?.txSignature)
+                void scheduleRefresh()
+              })
+              .catch(() => {
+                // a dead websocket is not a failed payout — settle keeps
+                // this row "confirming" rather than mapping relayed→failed
+                row.status = "confirming"
+              }),
+          )
           return
         } catch (e) {
           const msg = (e as Error).message
@@ -1017,6 +1038,9 @@ export class PayrollEngine {
     const laneCount = ledger ? Math.min(Math.max(1, req.lanes ?? LANES), LANES, rows.length) : 1
     this.laneCount = laneCount
     await Promise.all(Array.from({ length: laneCount }, (_, lane) => worker(lane)))
+    // settle() maps anything not confirmed/confirming to failed, so every
+    // detached confirm must have landed its final status first
+    await Promise.allSettled(confirms)
 
     if (this.cancelled) {
       for (const r of rows) {

@@ -711,6 +711,91 @@ describe("PayrollEngine lanes", () => {
     expect(resolved).toBe(2)
   })
 
+  it("starts the next row before the previous row's confirm resolves, and waits for confirms before the receipt", async () => {
+    // A6: the confirm must not sit on the payout lane — row 2 relays while
+    // row 1's confirm is still parked on a gate only this test holds. If
+    // confirms ever move back onto the lane, the second withdraw cannot
+    // happen before releaseConfirm() and this test hangs/fails.
+    const notes = [
+      { id: "n1", amount: 2n * 10n ** 9n, blinding: "b-n1" },
+      { id: "n2", amount: 2n * 10n ** 9n, blinding: "b-n2" },
+    ]
+    let releaseConfirm!: () => void
+    const confirmGate = new Promise<void>((r) => {
+      releaseConfirm = r
+    })
+    let confirmsSeen = 0
+    const withdraws: string[] = []
+    const client: EngineClient = {
+      init: async () => {},
+      unlock: async () => {},
+      publicKey: new PublicKey("11111111111111111111111111111111"),
+      refreshNotes: async () => {},
+      depositSOL: async () => {
+        throw new Error("no deposits expected")
+      },
+      depositSPL: async () => {
+        throw new Error("no deposits expected")
+      },
+      withdrawSOL: async (lamports, _recipient, opts) => {
+        const pins = (opts?.inputNotes ?? []).map((p) => p.blinding)
+        const i = notes.findIndex((n) => n.blinding === pins[0])
+        if (i < 0) throw new Error(`pinned note ${pins[0]} is not spendable`)
+        if (notes[i].amount < BigInt(lamports)) throw new Error("pin smaller than gross")
+        notes.splice(i, 1)
+        withdraws.push(pins[0])
+        return { signature: `SIG-${pins[0]}` }
+      },
+      withdrawSPL: async () => {
+        throw new Error("not used")
+      },
+      transferNoteSOL: async () => {
+        throw new Error("not used")
+      },
+      transferNoteSPL: async () => {
+        throw new Error("not used")
+      },
+    }
+    const engine = new PayrollEngine({
+      client,
+      listNotes: () =>
+        notes.map((n) => ({ id: n.id, amount: n.amount.toString(), blinding: n.blinding })),
+      waitUntilIndexed: async () => {},
+      confirmSignature: async () => {
+        confirmsSeen++
+        await confirmGate
+        return true
+      },
+      now: () => Date.now(),
+      newId: () => "run1",
+      sleep: (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms / 50)),
+    })
+    const runP = engine.run(
+      req({
+        vaultRaw: 10n ** 19n,
+        entries: [
+          { address: "A".repeat(32), amountHuman: "1" },
+          { address: "B".repeat(32), amountHuman: "1" },
+        ],
+        lanes: 1,
+      }),
+    )
+    // row 2's payout relays while row 1's confirm is still gated
+    for (let i = 0; i < 100 && withdraws.length < 2; i++) {
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    expect(withdraws).toEqual(["b-n1", "b-n2"])
+    // both confirms started (detached) but sit parked on the gate — neither
+    // run() nor the lanes waited on them
+    expect(confirmsSeen).toBe(2)
+    releaseConfirm()
+    const receipt = await runP
+    // the receipt is only issued after the detached confirms land, so both
+    // rows settle as sent (not stuck on relayed → failed)
+    expect(receipt.summary).toEqual({ sent: 2, failed: 0, total: 2 })
+    expect(confirmsSeen).toBe(2)
+  })
+
   it("tops the verified vault up at funding when the notes cannot cover the run", async () => {
     // 6 SOL of notes vs two 5 SOL rows: the verified balance (not the
     // caller's optimistic estimate) shows the gap, so funding deposits the
