@@ -91,6 +91,24 @@ export interface DepositResult {
   amountLamports: number
   leafIndex: number
   nullifiers?: string[]
+  /** Every note the deposit minted (absent for the single-note shape). */
+  notes?: Array<{ amount: string; blinding: string; leafIndex: number }>
+}
+
+/**
+ * Split a deposit into two self-notes (⌊total/2⌋ + remainder) so a wide
+ * payroll fan-out starts from two lane-worthy notes and skips one halving
+ * wave. The circuit only checks that the outputs sum to ext − fee, which
+ * holds for any split; both halves must be > 0 to be spendable notes.
+ */
+export function splitDepositAmounts(
+  extAmount: BN,
+  fee: BN,
+): { half: BN; rem: BN } {
+  const total = extAmount.sub(fee)
+  if (total.ltn(2)) throw new Error("split deposit needs a total of at least 2 (ext − fee)")
+  const half = total.div(new BN(2))
+  return { half, rem: total.sub(half) }
 }
 
 export interface WithdrawResult {
@@ -594,7 +612,10 @@ export class PrivacyCashClient {
     return -1
   }
 
-  async depositSOL(amountLamports: number): Promise<DepositResult> {
+  async depositSOL(
+    amountLamports: number,
+    opts?: { split?: boolean },
+  ): Promise<DepositResult> {
     await this.unlock()
     const treeKey = SOL_TREE_KEY
     const onChain = await fetchTreeState(treeKey)
@@ -604,6 +625,12 @@ export class PrivacyCashClient {
     const extAmount = new BN(amountLamports)
     const fee = new BN(DEPOSIT_FEE)
     const dummyPath = new Array(MERKLE_TREE_DEPTH).fill("0")
+    // Unsplit: output 0 takes the whole total and output 1 is the empty dummy
+    // — amounts identical to the pre-split behavior.
+    const { half, rem } =
+      opts?.split === true
+        ? splitDepositAmounts(extAmount, fee)
+        : { half: extAmount.sub(fee), rem: new BN(0) }
 
     const inputs = [
       new Utxo({ wasm: this.wasm!, keypair: this.utxoKeypair! }),
@@ -612,14 +639,14 @@ export class PrivacyCashClient {
     const outputs = [
       new Utxo({
         wasm: this.wasm!,
-        amount: extAmount.sub(fee).toString(),
+        amount: half.toString(),
         keypair: this.utxoKeypair!,
         index: nextLeafIndex,
         mintAddress: WRAPPED_SOL_MINT,
       }),
       new Utxo({
         wasm: this.wasm!,
-        amount: "0",
+        amount: rem.toString(),
         keypair: this.utxoKeypair!,
         index: nextLeafIndex + 1,
         mintAddress: WRAPPED_SOL_MINT,
@@ -659,6 +686,19 @@ export class PrivacyCashClient {
       depositTx: signature,
       pending: true,
     })
+    if (rem.gtn(0)) {
+      saveNote(this.publicKey, {
+        id: newNoteId(),
+        amount: outputs[1].amount.toString(),
+        blinding: outputs[1].blinding.toString(),
+        index: nextLeafIndex + 1,
+        mintAddress: WRAPPED_SOL_MINT,
+        spent: false,
+        createdAt: Date.now(),
+        depositTx: signature,
+        pending: true,
+      })
+    }
     await this.persistNotes().catch(() => {})
 
     await this.waitForLeaves(treeKey, nextLeafIndex + 1)
@@ -686,10 +726,50 @@ export class PrivacyCashClient {
         createdAt: Date.now(),
         depositTx: signature,
       })
+      // The two outputs of one deposit land as adjacent leaves of the same
+      // transact (append_many), so the second note sits at leafIndex + 1.
+      if (rem.gtn(0)) {
+        removeStaleNote(
+          this.publicKey,
+          WRAPPED_SOL_MINT,
+          outputs[1].amount.toString(),
+          outputs[1].blinding.toString(),
+          nextLeafIndex + 1,
+        )
+        upsertNote(this.publicKey, {
+          id: newNoteId(),
+          amount: outputs[1].amount.toString(),
+          blinding: outputs[1].blinding.toString(),
+          index: leafIndex + 1,
+          mintAddress: WRAPPED_SOL_MINT,
+          spent: false,
+          createdAt: Date.now(),
+          depositTx: signature,
+        })
+      }
       await this.persistNotes().catch(() => {})
     }
 
-    return { signature, amountLamports, leafIndex, nullifiers }
+    return {
+      signature,
+      amountLamports,
+      leafIndex,
+      nullifiers,
+      notes: rem.gtn(0)
+        ? [
+            {
+              amount: outputs[0].amount.toString(),
+              blinding: outputs[0].blinding.toString(),
+              leafIndex,
+            },
+            {
+              amount: outputs[1].amount.toString(),
+              blinding: outputs[1].blinding.toString(),
+              leafIndex: leafIndex >= 0 ? leafIndex + 1 : -1,
+            },
+          ]
+        : undefined,
+    }
   }
 
   async withdrawSOL(
@@ -781,6 +861,7 @@ export class PrivacyCashClient {
   async depositSPL(
     mint: PublicKey | string,
     amountRaw: number | string,
+    opts?: { split?: boolean },
   ): Promise<DepositResult> {
     await this.unlock()
     const mintPk = toPubkey(mint)
@@ -794,6 +875,12 @@ export class PrivacyCashClient {
     const extAmount = new BN(amountRaw.toString())
     const fee = new BN(DEPOSIT_FEE)
     const dummyPath = new Array(MERKLE_TREE_DEPTH).fill("0")
+    // Unsplit: output 0 takes the whole total and output 1 is the empty dummy
+    // — amounts identical to the pre-split behavior.
+    const { half, rem } =
+      opts?.split === true
+        ? splitDepositAmounts(extAmount, fee)
+        : { half: extAmount.sub(fee), rem: new BN(0) }
 
     const inputs = [
       new Utxo({ wasm: this.wasm!, keypair: this.utxoKeypair!, mintAddress: mintStr }),
@@ -802,14 +889,14 @@ export class PrivacyCashClient {
     const outputs = [
       new Utxo({
         wasm: this.wasm!,
-        amount: extAmount.sub(fee).toString(),
+        amount: half.toString(),
         keypair: this.utxoKeypair!,
         index: nextLeafIndex,
         mintAddress: mintStr,
       }),
       new Utxo({
         wasm: this.wasm!,
-        amount: "0",
+        amount: rem.toString(),
         keypair: this.utxoKeypair!,
         index: nextLeafIndex + 1,
         mintAddress: mintStr,
@@ -855,6 +942,19 @@ export class PrivacyCashClient {
       depositTx: signature,
       pending: true,
     })
+    if (rem.gtn(0)) {
+      saveNote(this.publicKey, {
+        id: newNoteId(),
+        amount: outputs[1].amount.toString(),
+        blinding: outputs[1].blinding.toString(),
+        index: nextLeafIndex + 1,
+        mintAddress: mintStr,
+        spent: false,
+        createdAt: Date.now(),
+        depositTx: signature,
+        pending: true,
+      })
+    }
     await this.persistNotes().catch(() => {})
 
     await this.waitForLeaves(treeKey, nextLeafIndex + 1)
@@ -882,6 +982,27 @@ export class PrivacyCashClient {
         createdAt: Date.now(),
         depositTx: signature,
       })
+      // The two outputs of one deposit land as adjacent leaves of the same
+      // transact (append_many), so the second note sits at leafIndex + 1.
+      if (rem.gtn(0)) {
+        removeStaleNote(
+          this.publicKey,
+          mintStr,
+          outputs[1].amount.toString(),
+          outputs[1].blinding.toString(),
+          nextLeafIndex + 1,
+        )
+        upsertNote(this.publicKey, {
+          id: newNoteId(),
+          amount: outputs[1].amount.toString(),
+          blinding: outputs[1].blinding.toString(),
+          index: leafIndex + 1,
+          mintAddress: mintStr,
+          spent: false,
+          createdAt: Date.now(),
+          depositTx: signature,
+        })
+      }
       await this.persistNotes().catch(() => {})
     }
 
@@ -890,6 +1011,20 @@ export class PrivacyCashClient {
       amountLamports: Number(amountRaw),
       leafIndex,
       nullifiers,
+      notes: rem.gtn(0)
+        ? [
+            {
+              amount: outputs[0].amount.toString(),
+              blinding: outputs[0].blinding.toString(),
+              leafIndex,
+            },
+            {
+              amount: outputs[1].amount.toString(),
+              blinding: outputs[1].blinding.toString(),
+              leafIndex: leafIndex >= 0 ? leafIndex + 1 : -1,
+            },
+          ]
+        : undefined,
     }
   }
 

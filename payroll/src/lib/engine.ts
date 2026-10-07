@@ -79,8 +79,12 @@ export interface EngineClient {
   init(): Promise<void>
   unlock(): Promise<void>
   refreshNotes(opts?: { fromScratch?: boolean; recheckSpent?: boolean }): Promise<unknown>
-  depositSOL(lamports: number): Promise<{ signature: string; leafIndex: number }>
-  depositSPL(mint: string, raw: number | string): Promise<{ signature: string; leafIndex: number }>
+  depositSOL(lamports: number, opts?: { split?: boolean }): Promise<{ signature: string; leafIndex: number }>
+  depositSPL(
+    mint: string,
+    raw: number | string,
+    opts?: { split?: boolean },
+  ): Promise<{ signature: string; leafIndex: number }>
   withdrawSOL(
     lamports: number,
     recipient: string,
@@ -474,10 +478,18 @@ export class PayrollEngine {
         let lastLeaf = -1
         const amount = Number(plan.shortfall + splitBudget)
         if (amount <= 0 || !Number.isSafeInteger(amount)) throw new Error("bad deposit size")
+        // A wide run starts its fan-out from two half-notes instead of one —
+        // one fewer halving wave (a proof + relay per split) before the lanes
+        // open. Only when each half can fund the widest row alone; otherwise
+        // the split would buy a merge chain, not lanes.
+        const maxGross = plan.rows.reduce((m, r) => (r.gross > m ? r.gross : m), 0n)
+        const wantSplit =
+          plan.rows.length >= SPLIT_MIN_ROWS && (plan.shortfall + splitBudget) / 2n >= maxGross
+        const splitOpt = wantSplit ? { split: true } : undefined
         const dep =
           req.asset.kind === "sol"
-            ? await this.deps.client.depositSOL(amount)
-            : await this.deps.client.depositSPL(req.asset.mint, amount)
+            ? await this.deps.client.depositSOL(amount, splitOpt)
+            : await this.deps.client.depositSPL(req.asset.mint, amount, splitOpt)
         firstSig = dep.signature
         lastLeaf = dep.leafIndex
         await this.deps.waitUntilIndexed(treeKeyOf(req.asset), lastLeaf)

@@ -796,6 +796,79 @@ describe("PayrollEngine lanes", () => {
     expect(confirmsSeen).toBe(2)
   })
 
+  it("funding splits the deposit in two for wide runs, single note when a half cannot fund the widest row", async () => {
+    // B1: from TWO lane-worthy notes the fan-out needs one fewer halving
+    // wave to hit the maxGross floor (6 splits → 8 lane notes vs 7 from a
+    // single note) — the funding deposit lands as two halves in the same tx.
+    // When a half could not fund the widest row alone, the split would buy
+    // a merge chain, not lanes, so funding falls back to the single-note
+    // shape.
+    const build = () => {
+      const notes: Array<{ id: string; amount: bigint }> = []
+      const deposits: number[] = []
+      const withdraws: Array<{ lamports: number; recipient: string; pins: string[] }> = []
+      const merges: Array<{ net: bigint; pins: string[] }> = []
+      const splits: Array<{ net: bigint; pins: string[] }> = []
+      const base = laneClient({ notes, withdrawMs: 0, withdraws, merges, splits, deposits })
+      const client: EngineClient = {
+        ...base.client,
+        // honor the split contract the real SDK ships: one tx, two self notes
+        depositSOL: async (lamports, opts) => {
+          deposits.push(lamports)
+          if (opts?.split) {
+            const half = Math.floor(lamports / 2)
+            notes.push({ id: `dep-a${deposits.length}`, amount: BigInt(half) })
+            notes.push({ id: `dep-b${deposits.length}`, amount: BigInt(lamports - half) })
+          } else {
+            notes.push({ id: `dep${deposits.length}`, amount: BigInt(lamports) })
+          }
+          return {
+            signature: `DEP-${deposits.length}`,
+            leafIndex: 70 + deposits.length,
+            commitment: `0xd${deposits.length}`,
+          }
+        },
+      }
+      return { engine: new PayrollEngine(laneDeps(client, base.listNotes)), deposits, splits }
+    }
+
+    const wide = build()
+    const wideReceipt = await wide.engine.run(
+      req({
+        vaultRaw: 0n,
+        mode: "shielded",
+        entries: Array.from({ length: 12 }, (_, i) => ({
+          address: String(i).repeat(32),
+          amountHuman: "1",
+        })),
+      }),
+    )
+    expect(wide.deposits).toHaveLength(1)
+    // 6 = one fewer halving wave than the 7 splits a single-note start pays
+    expect(wideReceipt.splits).toBe(6)
+    expect(wideReceipt.summary).toEqual({ sent: 12, failed: 0, total: 12 })
+
+    // 11 rows of 0.1 + one 6 SOL row: total 7.1 SOL, so a half (≈3.55) cannot
+    // fund the widest row (≈6.06) — funding must NOT split
+    const narrow = build()
+    const narrowReceipt = await narrow.engine.run(
+      req({
+        vaultRaw: 0n,
+        mode: "shielded",
+        entries: [
+          ...Array.from({ length: 11 }, (_, i) => ({
+            address: String(i).repeat(32),
+            amountHuman: "0.1",
+          })),
+          { address: "Z".repeat(32), amountHuman: "6" },
+        ],
+      }),
+    )
+    expect(narrow.deposits).toHaveLength(1)
+    expect(narrowReceipt.splits).toBeUndefined()
+    expect(narrowReceipt.summary).toEqual({ sent: 12, failed: 0, total: 12 })
+  })
+
   it("tops the verified vault up at funding when the notes cannot cover the run", async () => {
     // 6 SOL of notes vs two 5 SOL rows: the verified balance (not the
     // caller's optimistic estimate) shows the gap, so funding deposits the
