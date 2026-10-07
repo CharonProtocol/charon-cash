@@ -192,25 +192,41 @@ export function EmployerApp({ page }: { page: Page }) {
           { fileHash, asset, entries, bps, vaultRaw, mode, minTransferFee, lanes },
           setSnapshot,
         )
-        // Local telemetry: per-row timing breakdown + failures land in
-        // /tmp/run-telemetry.json so "where the time goes" is always answerable.
+        // Run telemetry: per-row stage timings land in localStorage (last 5
+        // runs) and the console, so "where did the time go" stays answerable
+        // on prod — the /api/debug endpoint only exists on the local shim.
+        const tel = {
+          at: new Date().toISOString(),
+          mode,
+          lanes,
+          rows: entries.length,
+          startedAt: r.startedAt,
+          fundedAt: r.fundedAt,
+          finishedAt: r.finishedAt,
+          summary: r.summary,
+          splits: r.splits,
+          timing: r.timing,
+          perRow: r.entries.map((e) => ({
+            status: e.status,
+            attempts: e.attempts,
+            error: e.error,
+            timing: e.timing,
+          })),
+        }
+        try {
+          const key = "payroll:run-telemetry"
+          const log = JSON.parse(localStorage.getItem(key) ?? "[]") as unknown[]
+          log.unshift(tel)
+          localStorage.setItem(key, JSON.stringify(log.slice(0, 5)))
+        } catch {
+          /* private mode / storage full — the console copy still has it */
+        }
+        console.table(tel.perRow.map((p, i) => ({ row: i + 1, status: p.status, ...p.timing })))
+        console.log("[run-telemetry]", tel)
         void fetch(`${getBackendUrl()}/api/debug/run-telemetry`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            at: new Date().toISOString(),
-            mode,
-            lanes,
-            rows: entries.length,
-            summary: r.summary,
-            splits: r.splits,
-            perRow: r.entries.map((e) => ({
-              status: e.status,
-              attempts: e.attempts,
-              error: e.error,
-              timing: e.timing,
-            })),
-          }),
+          body: JSON.stringify(tel),
         }).catch(() => {})
         await refreshVault()
         setReceipt(r)

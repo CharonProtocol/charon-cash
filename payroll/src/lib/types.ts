@@ -40,8 +40,9 @@ export interface ReceiptEntry {
   startedAt?: number
   relayedAt?: number
   confirmedAt?: number
-  /** Stage timings (reserve / prep / prove+relay / confirm) in ms. */
+  /** Stage timings (queue / reserve / prep / prove+relay / confirm) in ms. */
   timing?: {
+    queueMs?: number
     reserveMs?: number
     prepMs?: number
     proveRelayMs?: number
@@ -66,8 +67,9 @@ export interface RunReceipt {
   merges?: number
   /** Funding-note splits the engine ran up front so lanes prove in parallel. */
   splits?: number
-  /** Mean stage durations across paid rows (reserve / prep / prove+relay / confirm). */
+  /** Mean stage durations across paid rows (queue / reserve / prep / prove+relay / confirm). */
   timing?: {
+    queueMs?: number
     reserveMs?: number
     prepMs?: number
     proveRelayMs?: number

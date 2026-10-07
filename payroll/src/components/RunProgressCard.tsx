@@ -242,6 +242,7 @@ function RunTimeline({
   splits?: number
   lanes?: number
   timing?: {
+    queueMs?: number
     reserveMs?: number
     prepMs?: number
     proveRelayMs?: number
@@ -277,7 +278,7 @@ function RunTimeline({
           (splits !== undefined && splits > 0 ? ` · ${splits} lane split${splits === 1 ? "" : "s"}` : "") +
           (lanes !== undefined ? ` · ${lanes} lane${lanes === 1 ? "" : "s"} used` : "") +
           (timing
-            ? ` · avg/tx: pool ${timing.reserveMs !== undefined ? fmtTime(timing.reserveMs / 1000) : "—"} · prep ${timing.prepMs !== undefined ? fmtTime(timing.prepMs / 1000) : "—"} · prove+relay ${timing.proveRelayMs !== undefined ? fmtTime(timing.proveRelayMs / 1000) : "—"}${browserProverInfo()?.avgMs ? ` (prove ≈ ${(browserProverInfo()!.avgMs! / 1000).toFixed(1)}s)` : ""} · confirm ${timing.confirmMs !== undefined ? fmtTime(timing.confirmMs / 1000) : "—"}`
+            ? ` · avg/tx: queue ${timing.queueMs !== undefined ? fmtTime(timing.queueMs / 1000) : "—"} · pool ${timing.reserveMs !== undefined ? fmtTime(timing.reserveMs / 1000) : "—"} · prep ${timing.prepMs !== undefined ? fmtTime(timing.prepMs / 1000) : "—"} · prove+relay ${timing.proveRelayMs !== undefined ? fmtTime(timing.proveRelayMs / 1000) : "—"}${browserProverInfo()?.avgMs ? ` (prove ≈ ${(browserProverInfo()!.avgMs! / 1000).toFixed(1)}s)` : ""} · confirm ${timing.confirmMs !== undefined ? fmtTime(timing.confirmMs / 1000) : "—"}`
             : "")
         }
         right={payoutsSpanMs !== undefined ? fmtTime(payoutsSpanMs / 1000) : "—"}

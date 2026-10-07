@@ -14,6 +14,8 @@ import { saveRun } from "./store"
 import type { Asset, EntryStatus, PayrollEntry, RunMode, RunReceipt } from "./types"
 
 export interface RowTiming {
+  /** Funding confirmed → a lane worker picked the row up. */
+  queueMs?: number
   /** Waiting for a spendable note reservation (pool contention). */
   reserveMs?: number
   /** Recipient keys + merkle proof fetch before proving starts. */
@@ -789,11 +791,16 @@ export class PayrollEngine {
           return
         }
         row.attempts = attempt
-        if (!row.startedAt) row.startedAt = this.deps.now()
+        const timing: RowTiming = {}
+        if (!row.startedAt) {
+          row.startedAt = this.deps.now()
+          // how long the row stood in line before a lane took it — fundedAt
+          // when the run had to fund, else the payout-phase start
+          timing.queueMs = row.startedAt - (this.fundedAt ?? payoutsStart)
+        }
         row.status = "proving"
         this.emit("paying", funding?.txSignature)
         let pinned: PinnedNotes | null = null
-        const timing: RowTiming = {}
         // set the moment the SDK hands the tx to the relay — anything thrown
         // before this is a pre-broadcast failure and must release the pins
         // for retry, never be mistaken for a landed payout
@@ -1062,6 +1069,9 @@ export class PayrollEngine {
     }
     const laneCount = ledger ? Math.min(Math.max(1, req.lanes ?? LANES), LANES, rows.length) : 1
     this.laneCount = laneCount
+    // the line forms here: rows stamped before this moment waited on funding
+    // splits, after it on lane contention — queueMs names which
+    const payoutsStart = this.deps.now()
     await Promise.all(Array.from({ length: laneCount }, (_, lane) => worker(lane)))
     // settle() maps anything not confirmed/confirming to failed, so every
     // detached confirm must have landed its final status first
@@ -1104,6 +1114,7 @@ export class PayrollEngine {
       startedAt: r.startedAt,
       relayedAt: r.relayedAt,
       confirmedAt: r.confirmedAt,
+      timing: r.timing,
     }))
     const finishedAt = this.deps.now()
     const receipt: RunReceipt = {
@@ -1140,8 +1151,8 @@ export function treeKeyOf(asset: Asset): string {
 
 /** Per-stage means across the rows that completed, for the timing table. */
 function meanTiming(rows: RowState[]): RowTiming | undefined {
-  const sum: Required<RowTiming> = { reserveMs: 0, prepMs: 0, proveRelayMs: 0, confirmMs: 0 }
-  const n: Required<RowTiming> = { reserveMs: 0, prepMs: 0, proveRelayMs: 0, confirmMs: 0 }
+  const sum: Required<RowTiming> = { queueMs: 0, reserveMs: 0, prepMs: 0, proveRelayMs: 0, confirmMs: 0 }
+  const n: Required<RowTiming> = { queueMs: 0, reserveMs: 0, prepMs: 0, proveRelayMs: 0, confirmMs: 0 }
   for (const r of rows) {
     if (!r.timing) continue
     for (const k of Object.keys(sum) as Array<keyof RowTiming>) {
@@ -1152,10 +1163,11 @@ function meanTiming(rows: RowState[]): RowTiming | undefined {
       }
     }
   }
-  if (n.reserveMs + n.prepMs + n.proveRelayMs + n.confirmMs === 0) return undefined
+  if (n.queueMs + n.reserveMs + n.prepMs + n.proveRelayMs + n.confirmMs === 0) return undefined
   const mean = (k: keyof RowTiming): number | undefined =>
     n[k] === 0 ? undefined : Math.round(sum[k] / n[k]!)
   return {
+    queueMs: mean("queueMs"),
     reserveMs: mean("reserveMs"),
     prepMs: mean("prepMs"),
     proveRelayMs: mean("proveRelayMs"),

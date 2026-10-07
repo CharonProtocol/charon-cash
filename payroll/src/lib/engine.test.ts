@@ -1274,4 +1274,24 @@ describe("mid-run refresh policy", () => {
     }
     expect(refreshOpts.at(-1)?.quick, "final sync stays a full sweep").toBeUndefined()
   })
+
+  it("receipt keeps per-row stage timings and names the lane-queue wait", async () => {
+    const lane = laneClient({
+      notes: [{ id: "n1", amount: 10n ** 12n }],
+      withdrawMs: 5,
+      withdraws: [],
+    })
+    const engine = new PayrollEngine(laneDeps(lane.client, lane.listNotes))
+    const receipt = await engine.run(
+      req({ vaultRaw: 10n ** 18n, asset: { kind: "sol" } as Asset, mode: "shielded" }),
+    )
+    expect(receipt.summary).toEqual({ sent: 3, failed: 0, total: 3 })
+    // The telemetry POST and the Ledger read per-row stages from receipt
+    // entries — settle() must copy the live timing object across.
+    for (const e of receipt.entries) {
+      expect(e.timing?.reserveMs, `reserve ${e.address}`).toBeGreaterThanOrEqual(0)
+      expect(e.timing?.queueMs, `queue ${e.address}`).toBeGreaterThanOrEqual(0)
+    }
+    expect(receipt.timing?.queueMs).toBeGreaterThanOrEqual(0)
+  })
 })
