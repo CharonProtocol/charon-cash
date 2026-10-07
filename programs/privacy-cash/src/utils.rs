@@ -188,24 +188,15 @@ pub fn check_public_amount(ext_amount: i64, fee: u64, public_amount_bytes: [u8; 
         return false;
     }
 
-    let expected = if ext_amount >= 0 {
-        let deposit = ext_amount as u64;
-
-        // A deposit that does not exceed its own fee produces nothing.
-        if deposit <= fee {
-            return false;
-        }
-
+    let net_amount: i128 = (ext_amount as i128) - (fee as i128);
+    let expected = if net_amount >= 0 {
         let mut bytes = [0u8; 32];
-        bytes[24..].copy_from_slice(&(deposit - fee).to_be_bytes());
+        bytes[16..].copy_from_slice(&(net_amount as u128).to_be_bytes());
         bytes
     } else {
-        // `|ext_amount| + fee < 2^65`, so the sum never reaches `r` and the
-        // subtraction below cannot borrow.
-        let total = ext_amount.unsigned_abs() as u128 + fee as u128;
-
+        let abs_net = net_amount.unsigned_abs();
         let mut bytes = [0u8; 32];
-        bytes[16..].copy_from_slice(&total.to_be_bytes());
+        bytes[16..].copy_from_slice(&abs_net.to_be_bytes());
 
         match sub_be(&FR_BE, &bytes) {
             (negated, false) => negated,
@@ -344,10 +335,6 @@ mod tests {
                 };
                 Fr::from(abs_ext_amount as u64)
             };
-
-            if ext_amount >= 0 && ext_amount_fr <= fee_fr {
-                return false;
-            }
 
             let result_public_amount = if ext_amount >= 0 {
                 ext_amount_fr - fee_fr
