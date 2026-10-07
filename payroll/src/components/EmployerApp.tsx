@@ -174,7 +174,10 @@ export function EmployerApp({ page }: { page: Page }) {
         // run needs a different split (1 lane → 1×all-cores, bigger runs →
         // up to 2 workers).
         try {
-          const info = await ensureBrowserProver({ workers: recommendedWorkers(lanes) })
+          // ?provers=N forces the pool size (field tuning: e.g. 6 to test a
+          // wider shape than the recommendation); default = recommended
+          const forced = Number(new URLSearchParams(window.location.search).get("provers") ?? "") || undefined
+          const info = await ensureBrowserProver({ workers: forced ?? recommendedWorkers(lanes) })
           toast.info(`Prover: ${info.workers} ${info.mode === "mt" ? "MT" : "ST"} worker${info.workers === 1 ? "" : "s"}${info.mode === "mt" ? ` × ${info.threads} threads` : ""} · run: ${lanes} lane${lanes === 1 ? "" : "s"}`)
         } catch (e) {
           toast.warning(`Browser prover unavailable, using snarkjs: ${(e as Error).message}`)

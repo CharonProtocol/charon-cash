@@ -73,11 +73,8 @@ class BrowserProverPool {
       typeof SharedArrayBuffer !== "undefined" &&
       (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true
     const cores = navigator.hardwareConcurrency || 4
-    // MT: fewer workers, each with a slice of the cores (2 workers × 4 on an
-    // 8-core machine) — one proof uses its worker's whole slice, so 1-lane
-    // latency drops to ~a second while 2 proofs still run in parallel.
-    const count = isolated ? Math.max(1, Math.min(workers, Math.max(1, Math.floor(cores / 3)))) : workers
-    this.threadsPerWorker = isolated ? Math.max(2, Math.floor(cores / count)) : 1
+    const { count, threadsPerWorker } = poolShape(workers, cores, isolated)
+    this.threadsPerWorker = threadsPerWorker
     this.mode = isolated ? "mt" : "st"
     const spawns = Array.from({ length: count }, () =>
       new Promise<Worker>((resolve, reject) => {
@@ -230,11 +227,13 @@ export function ensureBrowserProver(opts?: { workers?: number }): Promise<Browse
   if (!starting) {
     starting = (async () => {
       const p = new BrowserProverPool()
-      // MT default = ONE worker owning all cores (the v2_prover branch's
-      // shape): proofs queue through it at ~0.6-0.9s each regardless of
-      // lanes. ST (non-isolated pages) keeps one worker per core.
+      // MT default (no explicit request) = ONE worker owning all cores — the
+      // 1-lane latency shape. A run's ensureBrowserProver({workers}) must
+      // reach start() here: 555507f wrote `mt ? 1 : opts?.workers ?? …`,
+      // which threw the request away — every MT page ran 1×8 threads and
+      // 100-row runs proved serially (3m55s vs the ST pool's 2m21s).
       const mt = typeof SharedArrayBuffer !== "undefined" && (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true
-      await p.start(mt ? 1 : opts?.workers ?? workerCount())
+      await p.start(opts?.workers ?? (mt ? 1 : workerCount()))
       const override: ProverOverride = (input) => p.prove(input)
       setProver(override)
       pool = p
@@ -255,21 +254,40 @@ export function browserProverInfo(): BrowserProverInfo | null {
   return info(pool)
 }
 
-/** Recommended worker count for a run with `lanes` parallel chains: MT
- * proofs queue through rayon, so each extra worker only pays off when the
- * machine has cores to feed it. 1 lane → 1 worker with everything; 2+
- * lanes → 2 workers on small machines, 4 from 12 lanes, 6 from 24 lanes —
- * the count scales with cores (÷4 floor) so a 32-core box automatically
- * gets 6 workers × 5 threads without any manual config; single-threaded
- * pages keep the per-core pool. */
-export function recommendedWorkers(lanes: number): number {
-  const cores = navigator.hardwareConcurrency || 4
-  const mt =
-    typeof SharedArrayBuffer !== "undefined" &&
-    (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true
+/** Turn a requested worker count into the concrete pool shape. Threaded
+ *  pages split the cores so every worker keeps ≥2 threads (8 cores never
+ *  yield more than 4×2); single-threaded pages run one worker per slot. */
+export function poolShape(
+  requested: number,
+  cores: number,
+  isolated: boolean,
+): { count: number; threadsPerWorker: number } {
+  if (!isolated) return { count: Math.max(1, requested), threadsPerWorker: 1 }
+  const count = Math.max(1, Math.min(requested, Math.floor(cores / 2)))
+  return { count, threadsPerWorker: Math.max(2, Math.floor(cores / count)) }
+}
+
+/** Recommended MT pool size for a run with `lanes` parallel chains. 1 lane →
+ *  1 worker with ALL cores (latency); small runs → 2×4; 8+ lanes → the
+ *  throughput shape (≤4 workers × 2 threads on 8 cores — the field-measured
+ *  6×1 ST pool did 2m21s/100 rows while 1 MT worker × 8 threads does 3m55s:
+ *  rayon scaling is sublinear, so more small teams beat one big team when
+ *  proofs queue). 24+ lanes on big machines → 6, the auto-scale intent. */
+export function mtPoolShape(lanes: number, cores: number): number {
+  if (lanes <= 1) return 1
+  if (lanes < 8) return 2
+  if (lanes >= 24) return Math.min(6, Math.floor(cores / 2))
+  return Math.min(4, Math.max(2, Math.floor(cores / 2)))
+}
+
+/** Recommended worker count for a run with `lanes` parallel chains. */
+export function recommendedWorkers(lanes: number, coresOverride?: number, mtOverride?: boolean): number {
+  const cores = coresOverride ?? (navigator.hardwareConcurrency || 4)
+  const mt = mtOverride ??
+    (typeof SharedArrayBuffer !== "undefined" &&
+      (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true)
   if (!mt) return workerCount()
-  const cap = lanes >= 24 ? 6 : lanes >= 12 ? 4 : 2
-  return Math.max(1, Math.min(lanes, Math.floor(cores / 4), cap))
+  return mtPoolShape(lanes, cores)
 }
 
 // Prove directly through the pool (bypasses the SDK's prove()); used by the
