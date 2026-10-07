@@ -62,21 +62,25 @@ class BrowserProverPool {
   threadsPerWorker = 1
   activeThreads = 0
 
-  async start(workers: number): Promise<void> {
+  async start(workers: number, modeOverride?: "mt" | "st"): Promise<void> {
     const zkey = await (await fetch("/circuit/transaction2.zkey")).arrayBuffer()
     const graph = await (await fetch("/prover-wasm/transaction2.graph")).arrayBuffer()
     // Threaded build when the page is cross-origin isolated: each mt worker
-    // runs a rayon pool, so fewer workers, each splitting the cores. A proof
-    // then takes 0.6-0.9s on all cores instead of ~3.7s on one — big for
-    // 1-lane latency, on par at high lane counts.
+    // runs a rayon pool, splitting the cores — good for 1-2 lane latency.
+    // Queued runs (8+ lanes) instead run independent single-thread workers:
+    // same busy-core count as a team split, zero rayon coordination, and the
+    // only field-measured fast wall (2m21s/100) came from exactly that shape.
     const isolated =
       typeof SharedArrayBuffer !== "undefined" &&
       (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true
-    const cores = navigator.hardwareConcurrency || 4
-    const { count, threadsPerWorker } = poolShape(workers, cores, isolated)
-    this.threadsPerWorker = threadsPerWorker
-    this.mode = isolated ? "mt" : "st"
-    const spawns = Array.from({ length: count }, () =>
+    const mode = modeOverride ?? (isolated ? "mt" : "st")
+    const shape =
+      mode === "mt"
+        ? poolShape(workers, navigator.hardwareConcurrency || 4, isolated)
+        : { count: Math.max(1, workers), threadsPerWorker: 1 }
+    this.threadsPerWorker = shape.threadsPerWorker
+    this.mode = mode
+    const spawns = Array.from({ length: shape.count }, () =>
       new Promise<Worker>((resolve, reject) => {
         // MT workers come from a RAW static module (/prover-mt-worker.mjs):
         // the rayon snippet self-spawns relative to its own URL, which only
@@ -207,10 +211,14 @@ function workerCount(): number {
 
 // Idempotent: fetches artifacts + spawns workers once, then installs the
 // setProver hook. Concurrent callers share the same startup.
-export function ensureBrowserProver(opts?: { workers?: number }): Promise<BrowserProverInfo> {
-  // A run can request a specific pool shape (1 lane → 1 worker with ALL
-  // cores); re-init when the live pool doesn't match.
-  if (pool && opts?.workers !== undefined && pool.size() !== opts.workers) {
+export function ensureBrowserProver(opts?: { workers?: number; mode?: "mt" | "st" }): Promise<BrowserProverInfo> {
+  // A run can request a specific pool shape (proverPlan); re-init when the
+  // live pool doesn't match it — size or engine mode.
+  if (
+    pool &&
+    opts?.workers !== undefined &&
+    (pool.size() !== opts.workers || (opts.mode !== undefined && pool.mode !== opts.mode))
+  ) {
     const restart = pool
       .stop()
       .then(() => {
@@ -227,13 +235,11 @@ export function ensureBrowserProver(opts?: { workers?: number }): Promise<Browse
   if (!starting) {
     starting = (async () => {
       const p = new BrowserProverPool()
-      // MT default (no explicit request) = ONE worker owning all cores — the
-      // 1-lane latency shape. A run's ensureBrowserProver({workers}) must
-      // reach start() here: 555507f wrote `mt ? 1 : opts?.workers ?? …`,
-      // which threw the request away — every MT page ran 1×8 threads and
-      // 100-row runs proved serially (3m55s vs the ST pool's 2m21s).
+      // No explicit request → latency default: ONE MT worker owning all
+      // cores on isolated pages, the ST pool otherwise. Runs always pass
+      // proverPlan's {workers, mode} and reach start() verbatim.
       const mt = typeof SharedArrayBuffer !== "undefined" && (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true
-      await p.start(opts?.workers ?? (mt ? 1 : workerCount()))
+      await p.start(opts?.workers ?? (mt ? 1 : workerCount()), opts?.mode)
       const override: ProverOverride = (input) => p.prove(input)
       setProver(override)
       pool = p
@@ -267,27 +273,17 @@ export function poolShape(
   return { count, threadsPerWorker: Math.max(2, Math.floor(cores / count)) }
 }
 
-/** Recommended MT pool size for a run with `lanes` parallel chains. 1 lane →
- *  1 worker with ALL cores (latency); small runs → 2×4; 8+ lanes → the
- *  throughput shape (≤4 workers × 2 threads on 8 cores — the field-measured
- *  6×1 ST pool did 2m21s/100 rows while 1 MT worker × 8 threads does 3m55s:
- *  rayon scaling is sublinear, so more small teams beat one big team when
- *  proofs queue). 24+ lanes on big machines → 6, the auto-scale intent. */
-export function mtPoolShape(lanes: number, cores: number): number {
-  if (lanes <= 1) return 1
-  if (lanes < 8) return 2
-  if (lanes >= 24) return Math.min(6, Math.floor(cores / 2))
-  return Math.min(4, Math.max(2, Math.floor(cores / 2)))
-}
-
-/** Recommended worker count for a run with `lanes` parallel chains. */
-export function recommendedWorkers(lanes: number, coresOverride?: number, mtOverride?: boolean): number {
-  const cores = coresOverride ?? (navigator.hardwareConcurrency || 4)
-  const mt = mtOverride ??
-    (typeof SharedArrayBuffer !== "undefined" &&
-      (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true)
-  if (!mt) return workerCount()
-  return mtPoolShape(lanes, cores)
+/** Prover engine plan for a run with `lanes` parallel chains on `cores`
+ *  logical cores. 1-2 lanes are latency-bound → MT teams that split the
+ *  whole machine. Queued runs (3+ lanes waiting) are throughput-bound → the
+ *  ST pool of independent single-thread workers: the Oct-4 field baseline
+ *  (2m21s/100 rows) ran that shape, while both MT splits measured on the
+ *  same 4-core machine were slower (1×4 MT = 3m55s, 2×2 MT = 3m48s) — rayon
+ *  team splits cost coordination and win nothing when proofs queue. */
+export function proverPlan(lanes: number, cores: number): { mode: "mt" | "st"; workers: number } {
+  if (lanes <= 1) return { mode: "mt", workers: 1 }
+  if (lanes === 2) return { mode: "mt", workers: 2 }
+  return { mode: "st", workers: Math.max(2, Math.min(cores >= 8 ? 6 : 4, cores)) }
 }
 
 // Prove directly through the pool (bypasses the SDK's prove()); used by the

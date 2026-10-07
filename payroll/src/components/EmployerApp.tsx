@@ -19,7 +19,7 @@ import { TeamPage } from "@/components/TeamPage"
 import { UploadCard } from "@/components/UploadCard"
 import { WalletBar } from "@/components/WalletBar"
 import { usePayrollClient } from "@/hooks/usePayrollClient"
-import { ensureBrowserProver, recommendedWorkers } from "@/lib/browserProver"
+import { ensureBrowserProver, proverPlan } from "@/lib/browserProver"
 import { createEngine, type RunSnapshot } from "@/lib/engine"
 import { lamportsToSol, shortHash } from "@/lib/format"
 import { estimateTotals } from "@/lib/estimate"
@@ -170,14 +170,15 @@ export function EmployerApp({ page }: { page: Page }) {
       try {
         // Prove client-side on the wasm-arkworks engine (standard circuit);
         // falls back to in-page snarkjs if the worker pool can't start.
-        // The pool shape is dynamic: recommendedWorkers re-inits it when a
-        // run needs a different split (1 lane → 1×all-cores, bigger runs →
-        // up to 2 workers).
+        // The pool engine is dynamic: proverPlan re-inits it when a run
+        // needs a different shape (1-2 lanes → MT teams, queued runs → the
+        // field-proven ST pool of independent single-thread workers).
         try {
           // ?provers=N forces the pool size (field tuning: e.g. 6 to test a
-          // wider shape than the recommendation); default = recommended
+          // wider shape than the recommendation); default = proverPlan
           const forced = Number(new URLSearchParams(window.location.search).get("provers") ?? "") || undefined
-          const info = await ensureBrowserProver({ workers: forced ?? recommendedWorkers(lanes) })
+          const plan = proverPlan(lanes, navigator.hardwareConcurrency || 4)
+          const info = await ensureBrowserProver({ workers: forced ?? plan.workers, mode: plan.mode })
           toast.info(`Prover: ${info.workers} ${info.mode === "mt" ? "MT" : "ST"} worker${info.workers === 1 ? "" : "s"}${info.mode === "mt" ? ` × ${info.threads} threads` : ""} · run: ${lanes} lane${lanes === 1 ? "" : "s"}`)
         } catch (e) {
           toast.warning(`Browser prover unavailable, using snarkjs: ${(e as Error).message}`)
