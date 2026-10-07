@@ -261,31 +261,6 @@ pub async fn proof(store: &Store, tree_key: &str, leaf_index: u32) -> AppResult<
     )))
 }
 
-pub async fn is_known_root(store: &Store, tree_key: &str, root: [u8; 32]) -> AppResult<bool> {
-    if root == [0u8; 32] {
-        return Ok(false);
-    }
-    let data = load_tree(store, tree_key)
-        .await
-        .map_err(|e| AppError::internal(format!("load tree {tree_key}: {e}")))?;
-    let cur = data.root_index;
-    let mut i = cur;
-    loop {
-        if data.root_history[i] == root {
-            return Ok(true);
-        }
-        if i == 0 {
-            i = ROOT_HISTORY_SIZE - 1;
-        } else {
-            i -= 1;
-        }
-        if i == cur {
-            break;
-        }
-    }
-    Ok(false)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

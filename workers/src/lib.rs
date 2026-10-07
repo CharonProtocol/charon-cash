@@ -31,7 +31,7 @@ mod validate;
 static STATE: OnceLock<std::result::Result<Arc<state::AppState>, String>> = OnceLock::new();
 
 #[event(fetch)]
-async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
+async fn main(req: Request, env: Env, ctx: Context) -> Result<Response> {
     let state = match STATE.get_or_init(|| state::AppState::from_env(&env).map(Arc::new)) {
         Ok(s) => Arc::clone(s),
         Err(e) => {
@@ -39,7 +39,16 @@ async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             return Ok(error::AppError::internal(format!("worker env: {e}")).to_response());
         }
     };
-    routes::router(state).run(req, env).await
+    let resp = routes::router(Arc::clone(&state)).run(req, env).await?;
+    // Drain the post-send indexing queue: worker 0.6 exposes wait_until only
+    // on this Context (not RouteContext), so the pump lives here — the relay
+    // response already left; wait_until keeps the invocation alive while the
+    // mirror catches up.
+    for sig in relayer::drain_index_queue() {
+        let st = Arc::clone(&state);
+        ctx.wait_until(async move { sync::index_after_send(&st, &sig).await });
+    }
+    Ok(resp)
 }
 
 /// Cron tick (every minute, wrangler.toml `[triggers]`): keeps the D1 mirror

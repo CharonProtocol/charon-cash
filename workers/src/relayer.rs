@@ -8,20 +8,18 @@ use std::sync::{Mutex, OnceLock};
 use crate::accounts as acc;
 use crate::accounts::create_ata_idempotent_ix;
 use crate::dto::{
-    tree_key_for, AltAccountResponse, BlockhashResponse, InitializeSplRequest, MintFeeInfo,
-    RelayResponse, RelayerInfo, SubmitRequest, TransactInput, TransactKind,
-    UpdateConfigRequest, UpdateDepositLimitRequest, UpdateDepositLimitSplRequest, WithdrawRequest,
+    AltAccountResponse, BlockhashResponse, InitializeSplRequest, MintFeeInfo, RelayResponse,
+    RelayerInfo, SubmitRequest, TransactInput, TransactKind, UpdateConfigRequest,
+    UpdateDepositLimitRequest, UpdateDepositLimitSplRequest, WithdrawRequest,
 };
 use crate::error::{AppError, AppResult};
 use crate::instruction as ixenc;
-use crate::merkle;
 use crate::rpc::sleep_ms;
 use crate::solana::alt::parse_alt_addresses;
 use crate::solana::b58;
 use crate::solana::pubkey::Pubkey;
 use crate::solana::wire::{self, AccountMeta, Instruction};
 use crate::state::AppState;
-use crate::sync;
 use crate::validate;
 
 /// Nullifiers reserved by a submit in progress, with the reservation time. A
@@ -388,12 +386,6 @@ pub async fn relay_withdraw(state: &AppState, req: WithdrawRequest) -> AppResult
         ));
     }
 
-    let tree_key = tree_key_for(t.kind, t.mint.as_ref());
-
-    if let Err(e) = sync::sync_tree_forced(state).await {
-        worker::console_warn!("pre-withdraw sync skipped: {e}");
-    }
-
     let spent_sig = match (
         state.store.nullifier_spent_by(&hex::encode(t.input_nullifiers[0])).await,
         state.store.nullifier_spent_by(&hex::encode(t.input_nullifiers[1])).await,
@@ -411,6 +403,15 @@ pub async fn relay_withdraw(state: &AppState, req: WithdrawRequest) -> AppResult
         ));
     }
 
+    // Authoritative root check before any fee/ATA work: a doomed request
+    // fails here instead of burning a simulate and a 60s in-flight slot.
+    if !chain_root_known(state, t.kind, t.mint.as_ref(), &t.root).await? {
+        return Err(AppError::bad_request(
+            "UNKNOWN_ROOT",
+            "proof root is not in the on-chain root history (tree may have advanced)",
+        ));
+    }
+
     let (fee_recipient_key, mint_address) = match t.kind {
         TransactKind::Sol => (state.fee_recipient, acc::sol_address()),
         TransactKind::Spl => {
@@ -424,13 +425,6 @@ pub async fn relay_withdraw(state: &AppState, req: WithdrawRequest) -> AppResult
 
     let (wfr, fem) = fee_rates(state).await?;
     validate::check_fee(&t, wfr, fem)?;
-
-    if !merkle::is_known_root(&state.store, &tree_key, t.root).await? {
-        return Err(AppError::bad_request(
-            "UNKNOWN_ROOT",
-            "proof root is not in the known root history (tree may have advanced)",
-        ));
-    }
 
     let n0 = t.input_nullifiers[0];
     let n1 = t.input_nullifiers[1];
@@ -465,11 +459,16 @@ pub async fn relay_withdraw(state: &AppState, req: WithdrawRequest) -> AppResult
     };
 
     match sent {
-        Ok(sig) => Ok(RelayResponse {
-            signature: sig,
-            slot: None,
-            status: "submitted".to_string(),
-        }),
+        Ok(sig) => {
+            // Hand the tx to background indexing instead of syncing inline —
+            // the response returns now; main() pumps the queue via wait_until.
+            index_queue().lock().unwrap().push(sig.clone());
+            Ok(RelayResponse {
+                signature: sig,
+                slot: None,
+                status: "submitted".to_string(),
+            })
+        }
         Err(e) => {
             let mut set = in_flight().lock().unwrap();
             in_flight_remove(&mut set, &[n0, n1]);
@@ -477,6 +476,60 @@ pub async fn relay_withdraw(state: &AppState, req: WithdrawRequest) -> AppResult
         }
     }
 }
+
+/// Signatures of relayed withdrawals awaiting background indexing, drained by
+/// main() after the response. Isolate-level like fee_cache: the queue only
+/// needs to survive until the same invocation's main() returns, and main()
+/// pumps with its own Arc to the one shared AppState.
+fn index_queue() -> &'static Mutex<Vec<String>> {
+    static Q: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
+    Q.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+pub fn drain_index_queue() -> Vec<String> {
+    index_queue().lock().unwrap().drain(..).collect()
+}
+
+/// Authoritative root check: read the tree PDA's root ring straight from the
+/// chain rather than the D1 mirror (which can trail the newest tx by one
+/// sync). Mirrors the program's own check — any byte-equal root in its
+/// 100-slot history array is accepted. Layout: root_index u8 @12,
+/// root_history[100] @848..4048.
+async fn chain_root_known(
+    state: &AppState,
+    kind: TransactKind,
+    mint: Option<&Pubkey>,
+    root: &[u8; 32],
+) -> AppResult<bool> {
+    if *root == [0u8; 32] {
+        return Ok(false);
+    }
+    let pda = match kind {
+        TransactKind::Sol => acc::tree_account_sol(&state.program_id).0,
+        TransactKind::Spl => {
+            let mint = mint
+                .ok_or_else(|| AppError::bad_request("MISSING_MINT", "spl requires mint"))?;
+            acc::tree_account_spl(&state.program_id, mint).0
+        }
+    };
+    let Some(data) = state
+        .rpc
+        .get_account(&pda)
+        .await
+        .map_err(|e| AppError::upstream(format!("tree account fetch: {e}")))?
+    else {
+        return Err(AppError::internal(format!("tree account {pda} missing")));
+    };
+    if data.len() < 848 + 32 * ROOT_RING_LEN {
+        return Err(AppError::internal(format!(
+            "tree account {pda} too small: {} bytes",
+            data.len()
+        )));
+    }
+    Ok((0..ROOT_RING_LEN).any(|i| data[848 + i * 32..848 + i * 32 + 32] == *root))
+}
+
+const ROOT_RING_LEN: usize = 100;
 
 /// Broadcast a client-signed transaction (hex wire bytes, legacy or v0).
 /// The relayer holds no user key: it only verifies the tx targets the

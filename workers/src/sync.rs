@@ -3,9 +3,10 @@
 //! `sync_tree()` is called at the top of tree-state / proof / nullifier /
 //! utxo reads and is throttled: a walk that started less than
 //! `SYNC_MIN_INTERVAL_MS` ago satisfies the read without another RPC sweep.
-//! The relayer calls `sync_tree_forced()` (pre-submit and after every
-//! confirmed send) so freshly landed txs are always indexed before the
-//! client's next read.
+//! `sync_tree_forced()` runs from the cron tick and from
+//! `index_after_send()` — the relay path itself no longer syncs: the root
+//! check reads the chain directly, and the post-send pump indexes in the
+//! background via wait_until.
 //!
 //! The walk is incremental: signatures are fetched newest→oldest until the
 //! cursor signature appears (or the page runs out), only the signatures
@@ -53,6 +54,27 @@ pub async fn sync_tree_forced(state: &AppState) -> Result<SyncReport, String> {
     let result = sync_locked(state).await;
     state.store.release_lock(&token).await?;
     result
+}
+
+/// Post-send indexing, off the relay's critical path: wait for the relayed tx
+/// to show a confirmation status (≈400ms apart, bounded), then force one sync
+/// so the mirror covers it before the client's next read. Coalescing is free —
+/// sync_tree_forced's lock turns concurrent pumps into a single walk. A timed-
+/// out poll still syncs: the walk defers unindexed txs to the next pass.
+pub async fn index_after_send(state: &AppState, signature: &str) {
+    for _ in 0..25 {
+        match state.rpc.get_signature_status(signature).await {
+            Ok(Some(_)) => break,
+            Ok(None) => crate::rpc::sleep_ms(400).await,
+            Err(e) => {
+                worker::console_warn!("index_after_send: {signature}: {e}");
+                break;
+            }
+        }
+    }
+    if let Err(e) = sync_tree_forced(state).await {
+        worker::console_warn!("index_after_send sync: {e}");
+    }
 }
 
 async fn sync_locked(state: &AppState) -> Result<SyncReport, String> {
