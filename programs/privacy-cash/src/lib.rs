@@ -18,7 +18,7 @@ pub mod merkle_tree;
 pub mod state;
 pub mod utils;
 
-declare_id!("HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV");
+declare_id!("A6jNiYjV9g7omJ4zHAyiDQtcRewobsko7gs9UjZ2pWRa");
 
 // The widest instruction, `transact_spl`, takes 16 accounts. Sizing the
 // entrypoint's account array to that instead of the 255-slot default keeps the

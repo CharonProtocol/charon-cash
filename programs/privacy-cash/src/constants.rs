@@ -14,12 +14,6 @@ pub const ALLOW_ALL_SPL_TOKENS: bool = true;
 pub const ALLOWED_TOKENS: &[[u8; 32]] = &[
     pubkey!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"), // USDC
     pubkey!("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"), // USDT
-    pubkey!("oreoU2P8bN6jkk3jbaiVxYnG1dCXcYxwhwyK9jSybcp"),  // ORE
-    pubkey!("A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS"), // ZEC
-    pubkey!("sTorERYB6xAZ1SSbwpK3zoK2EEwbBrc7TZAzg1uCGiH"),  // stORE (legacy)
-    pubkey!("9BEcn9aPEmhSPbPQeFGjidRiEKki46fVQDyPpSQXPA2D"), // jlUSDC
-    pubkey!("2uQsyo1fXXQkDtcpXnLofWy88PxcvnfH2L8FPSE62FVU"), // jlWSOL
-    pubkey!("storenSbvkfzircixnaosc5CbzNZVrHJ6S3EKrS1yqR"),  // stORE
 ];
 
 pub const SOL_ADDRESS: [u8; 32] = pubkey!("11111111111111111111111111111112");
@@ -48,15 +42,12 @@ pub const NULLIFIER1_SEED: &[u8] = b"nullifier1";
 // `tests::singleton_pdas_are_canonical` pins each bump to
 // `Pubkey::find_program_address`.
 
-pub const TREE_ACCOUNT_BUMP: u8 = 254;
+pub const TREE_ACCOUNT_BUMP: u8 = 255;
 pub const TREE_TOKEN_ACCOUNT_BUMP: u8 = 255;
 pub const GLOBAL_CONFIG_BUMP: u8 = 255;
 
-pub const TREE_ACCOUNT_ADDRESS: [u8; 32] = derive_address_const(
-    &[TREE_ACCOUNT_SEED],
-    Some(TREE_ACCOUNT_BUMP),
-    &crate::ID,
-);
+pub const TREE_ACCOUNT_ADDRESS: [u8; 32] =
+    derive_address_const(&[TREE_ACCOUNT_SEED], Some(TREE_ACCOUNT_BUMP), &crate::ID);
 
 pub const TREE_TOKEN_ACCOUNT_ADDRESS: [u8; 32] = derive_address_const(
     &[TREE_TOKEN_ACCOUNT_SEED],
@@ -64,11 +55,8 @@ pub const TREE_TOKEN_ACCOUNT_ADDRESS: [u8; 32] = derive_address_const(
     &crate::ID,
 );
 
-pub const GLOBAL_CONFIG_ADDRESS: [u8; 32] = derive_address_const(
-    &[GLOBAL_CONFIG_SEED],
-    Some(GLOBAL_CONFIG_BUMP),
-    &crate::ID,
-);
+pub const GLOBAL_CONFIG_ADDRESS: [u8; 32] =
+    derive_address_const(&[GLOBAL_CONFIG_SEED], Some(GLOBAL_CONFIG_BUMP), &crate::ID);
 
 #[cfg(test)]
 mod tests {

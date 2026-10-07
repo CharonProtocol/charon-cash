@@ -1,45 +1,53 @@
 mod common;
 
-use mollusk_svm::{Mollusk, result::Check};
+use mollusk_svm::{result::Check, Mollusk};
 
-use solana_sdk::{
-    native_token::LAMPORTS_PER_SOL,
-    signature::{Keypair, Signer},
-    instruction::Instruction,
-    account::Account,
-    rent::Rent
-};
 use common::{
-    prover::{DepositProofToSubmit, ProofInput, prove, deposit_artifacts_to_submit },
-    utils::{get_ext_data_hash, ExtData, calculate_deposit_fee, calculate_withdrawal_fee},
-    constants::{DEPOSIT_FEE_RATE, FEE_ERROR_MARGIN, FEE_RECIPIENT_ACCOUNT, FIELD_SIZE_DECIMAL, WITHDRAW_FEE_RATE, DEFAULT_HEIGHT},
+    constants::{
+        DEFAULT_HEIGHT, DEPOSIT_FEE_RATE, FEE_ERROR_MARGIN, FEE_RECIPIENT_ACCOUNT,
+        FIELD_SIZE_DECIMAL, WITHDRAW_FEE_RATE,
+    },
+    merkle_tree::MerkleTree,
+    prover::{deposit_artifacts_to_submit, prove, DepositProofToSubmit, ProofInput},
+    utils::{calculate_deposit_fee, calculate_withdrawal_fee, get_ext_data_hash, ExtData},
     utxo::Utxo,
-    merkle_tree::MerkleTree
+};
+use solana_sdk::{
+    account::Account,
+    instruction::Instruction,
+    native_token::LAMPORTS_PER_SOL,
+    rent::Rent,
+    signature::{Keypair, Signer},
 };
 use solana_transaction::AccountMeta;
 
-use std::{path::PathBuf, str::FromStr};
 use num_bigint::{BigInt, BigUint};
 use privacy_cash::{
-    constants, instructions::{IntiailizeTreeTokenAccountParams, PrivacyCashInstructions},
+    constants,
+    instructions::{IntiailizeTreeTokenAccountParams, PrivacyCashInstructions},
     merkle_tree::MerkleTree as OnChainMerkleTree,
     state::{
-        GlobalConfig, MerkleTreeAccount, transact::{ExtDataMinified, Proof},
+        transact::{ExtDataMinified, Proof},
+        GlobalConfig, MerkleTreeAccount,
     },
 };
+use std::{path::PathBuf, str::FromStr};
 
-use light_hasher::{Poseidon, zero_bytes::poseidon::ZERO_BYTES};
-use solana_sdk_ids::system_program::ID as SYSTEM_PROGRAM;
+use light_hasher::{zero_bytes::poseidon::ZERO_BYTES, Poseidon};
 use solana_program::pubkey::Pubkey;
-use spl_associated_token_account::get_associated_token_address;
-use spl_token::state::{Mint, Account as SplTokenAccount, AccountState};
 use solana_program_pack::Pack;
 use solana_sdk::program_option::COption;
+use solana_sdk_ids::system_program::ID as SYSTEM_PROGRAM;
+use spl_associated_token_account::get_associated_token_address;
+use spl_token::state::{Account as SplTokenAccount, AccountState, Mint};
 
-const PROGRAM_ID: &str = "HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV";
+const PROGRAM_ID: &str = "A6jNiYjV9g7omJ4zHAyiDQtcRewobsko7gs9UjZ2pWRa";
 
 pub fn create_ext_data_minified(ext_data: &ExtData) -> ExtDataMinified {
-    ExtDataMinified { ext_amount: ext_data.ext_amount, fee: ext_data.fee }
+    ExtDataMinified {
+        ext_amount: ext_data.ext_amount,
+        fee: ext_data.fee,
+    }
 }
 
 pub fn format_proof(proof: DepositProofToSubmit) -> Proof {
@@ -64,14 +72,23 @@ pub struct NullifierPdas {
 }
 
 pub fn find_nullifier_pdas(program_id: &Pubkey, proof: &Proof) -> NullifierPdas {
-    let (nullifier0, bump0) = Pubkey::find_program_address(&[b"nullifier0", &proof.input_nullifiers[0]], program_id);
-    let (nullifier1, bump1) = Pubkey::find_program_address(&[b"nullifier1", &proof.input_nullifiers[1]], program_id);
-    NullifierPdas { nullifier0, nullifier1, bump0, bump1 }
+    let (nullifier0, bump0) =
+        Pubkey::find_program_address(&[b"nullifier0", &proof.input_nullifiers[0]], program_id);
+    let (nullifier1, bump1) =
+        Pubkey::find_program_address(&[b"nullifier1", &proof.input_nullifiers[1]], program_id);
+    NullifierPdas {
+        nullifier0,
+        nullifier1,
+        bump0,
+        bump1,
+    }
 }
 
 pub fn find_cross_check_nullifier_pdas(program_id: &Pubkey, proof: &Proof) -> (Pubkey, Pubkey) {
-    let (nullifier2_pda, _) = Pubkey::find_program_address(&[b"nullifier0", &proof.input_nullifiers[1]], program_id);
-    let (nullifier3_pda, _) = Pubkey::find_program_address(&[b"nullifier1", &proof.input_nullifiers[0]], program_id);
+    let (nullifier2_pda, _) =
+        Pubkey::find_program_address(&[b"nullifier0", &proof.input_nullifiers[1]], program_id);
+    let (nullifier3_pda, _) =
+        Pubkey::find_program_address(&[b"nullifier1", &proof.input_nullifiers[0]], program_id);
     (nullifier2_pda, nullifier3_pda)
 }
 
@@ -102,10 +119,20 @@ pub struct InitiailizeParams {
 }
 
 pub fn build_initialize_ix(
-    program_id: Pubkey, authority: Pubkey, tree_account: Pubkey, tree_token_account: Pubkey,
-    global_config: Pubkey, tree_account_bump: u8, tree_token_account_bump: u8, global_config_bump: u8,
+    program_id: Pubkey,
+    authority: Pubkey,
+    tree_account: Pubkey,
+    tree_token_account: Pubkey,
+    global_config: Pubkey,
+    tree_account_bump: u8,
+    tree_token_account_bump: u8,
+    global_config_bump: u8,
 ) -> Instruction {
-    let params = InitiailizeParams { tree_account_bump, tree_token_account_bump, global_config_bump };
+    let params = InitiailizeParams {
+        tree_account_bump,
+        tree_token_account_bump,
+        global_config_bump,
+    };
     let mut data = vec![PrivacyCashInstructions::Initialize as u8];
     data.extend_from_slice(bytemuck::bytes_of(&params));
 
@@ -118,15 +145,28 @@ pub fn build_initialize_ix(
             AccountMeta::new(authority, true),
             AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
         ],
-        data
+        data,
     }
 }
 
 pub fn build_transact_ix(
-    program_id: Pubkey, proof: &Proof, ext_data_minified: &ExtDataMinified,
-    encrypted_output1: &[u8], encrypted_output2: &[u8], nullifier_bump0: u8, nullifier_bump1: u8,
-    tree_account: Pubkey, nullifier0: Pubkey, nullifier1: Pubkey, nullifier2: Pubkey, nullifier3: Pubkey,
-    tree_token_account: Pubkey, global_config: Pubkey, recipient: Pubkey, fee_recipient: Pubkey, signer: Pubkey,
+    program_id: Pubkey,
+    proof: &Proof,
+    ext_data_minified: &ExtDataMinified,
+    encrypted_output1: &[u8],
+    encrypted_output2: &[u8],
+    nullifier_bump0: u8,
+    nullifier_bump1: u8,
+    tree_account: Pubkey,
+    nullifier0: Pubkey,
+    nullifier1: Pubkey,
+    nullifier2: Pubkey,
+    nullifier3: Pubkey,
+    tree_token_account: Pubkey,
+    global_config: Pubkey,
+    recipient: Pubkey,
+    fee_recipient: Pubkey,
+    signer: Pubkey,
 ) -> Instruction {
     let mut data = Vec::new();
     data.push(PrivacyCashInstructions::Transact as u8);
@@ -159,15 +199,25 @@ pub fn build_transact_ix(
 }
 
 fn build_update_global_config_ix(
-    program_id: Pubkey, global_config: Pubkey, authority: Pubkey,
-    deposit_fee_rate: Option<u64>, withdrawal_fee_rate: Option<u64>, fee_error_margin: Option<u64>,
+    program_id: Pubkey,
+    global_config: Pubkey,
+    authority: Pubkey,
+    deposit_fee_rate: Option<u64>,
+    withdrawal_fee_rate: Option<u64>,
+    fee_error_margin: Option<u64>,
 ) -> Instruction {
     let mut data = Vec::new();
     data.push(PrivacyCashInstructions::UpdateGlobalConfig as u8);
-    let update_mask =
-        match deposit_fee_rate { Some(_) => constants::UPDATE_DEPOSIT_FEE, None => 0 } |
-        match withdrawal_fee_rate { Some(_) => constants::UPDATE_WITHDRAWAL_FEE, None => 0 } |
-        match fee_error_margin { Some(_) => constants::UPDATE_FEE_ERROR_MARGIN, None => 0 };
+    let update_mask = match deposit_fee_rate {
+        Some(_) => constants::UPDATE_DEPOSIT_FEE,
+        None => 0,
+    } | match withdrawal_fee_rate {
+        Some(_) => constants::UPDATE_WITHDRAWAL_FEE,
+        None => 0,
+    } | match fee_error_margin {
+        Some(_) => constants::UPDATE_FEE_ERROR_MARGIN,
+        None => 0,
+    };
     data.extend_from_slice(&(deposit_fee_rate.unwrap_or(0) as u16).to_le_bytes());
     data.extend_from_slice(&(withdrawal_fee_rate.unwrap_or(0) as u16).to_le_bytes());
     data.extend_from_slice(&(fee_error_margin.unwrap_or(0) as u16).to_le_bytes());
@@ -192,9 +242,16 @@ pub struct UpdateDepositLimitParams {
 }
 
 pub fn build_update_deposit_limit_ix(
-    program_id: Pubkey, tree_account: Pubkey, authority: Pubkey, new_limit: u64, tree_account_bump: u8,
+    program_id: Pubkey,
+    tree_account: Pubkey,
+    authority: Pubkey,
+    new_limit: u64,
+    tree_account_bump: u8,
 ) -> Instruction {
-    let params = UpdateDepositLimitParams { new_limit: new_limit.to_le_bytes(), tree_account_bump };
+    let params = UpdateDepositLimitParams {
+        new_limit: new_limit.to_le_bytes(),
+        tree_account_bump,
+    };
     let mut data = vec![PrivacyCashInstructions::UpdateDepositLimit as u8];
     data.extend_from_slice(bytemuck::bytes_of(&params));
 
@@ -216,9 +273,17 @@ pub struct UpdateDepositLimitSplParams {
 }
 
 pub fn build_update_deposit_limit_for_spl_ix(
-    program_id: Pubkey, tree_account: Pubkey, mint: Pubkey, authority: Pubkey, new_limit: u64, tree_account_bump: u8,
+    program_id: Pubkey,
+    tree_account: Pubkey,
+    mint: Pubkey,
+    authority: Pubkey,
+    new_limit: u64,
+    tree_account_bump: u8,
 ) -> Instruction {
-    let params = UpdateDepositLimitSplParams { new_limit: new_limit.to_le_bytes(), tree_account_bump };
+    let params = UpdateDepositLimitSplParams {
+        new_limit: new_limit.to_le_bytes(),
+        tree_account_bump,
+    };
     let mut data = vec![PrivacyCashInstructions::UpdateDepositLimitForSpl as u8];
     data.extend_from_slice(bytemuck::bytes_of(&params));
 
@@ -234,8 +299,13 @@ pub fn build_update_deposit_limit_for_spl_ix(
 }
 
 pub fn build_initialize_for_spl_ix(
-    program_id: Pubkey, authority: Pubkey, spl_tree_account: Pubkey, mint: Pubkey,
-    global_config: Pubkey, tree_account_bump: u8, max_deposit_amount: u64,
+    program_id: Pubkey,
+    authority: Pubkey,
+    spl_tree_account: Pubkey,
+    mint: Pubkey,
+    global_config: Pubkey,
+    tree_account_bump: u8,
+    max_deposit_amount: u64,
 ) -> Instruction {
     let params = IntiailizeTreeTokenAccountParams {
         max_deposit_amount,
@@ -259,11 +329,26 @@ pub fn build_initialize_for_spl_ix(
 }
 
 pub fn build_transact_spl_ix(
-    program_id: Pubkey, proof: &Proof, ext_data_minified: &ExtDataMinified,
-    encrypted_output1: &[u8], encrypted_output2: &[u8], nullifier_bump0: u8, nullifier_bump1: u8,
-    spl_tree_account: Pubkey, nullifier0: Pubkey, nullifier1: Pubkey, nullifier2: Pubkey, nullifier3: Pubkey,
-    global_config: Pubkey, signer: Pubkey, mint: Pubkey, signer_ata: Pubkey,
-    recipient: Pubkey, recipient_ata: Pubkey, spl_tree_ata: Pubkey, fee_recipient_ata: Pubkey,
+    program_id: Pubkey,
+    proof: &Proof,
+    ext_data_minified: &ExtDataMinified,
+    encrypted_output1: &[u8],
+    encrypted_output2: &[u8],
+    nullifier_bump0: u8,
+    nullifier_bump1: u8,
+    spl_tree_account: Pubkey,
+    nullifier0: Pubkey,
+    nullifier1: Pubkey,
+    nullifier2: Pubkey,
+    nullifier3: Pubkey,
+    global_config: Pubkey,
+    signer: Pubkey,
+    mint: Pubkey,
+    signer_ata: Pubkey,
+    recipient: Pubkey,
+    recipient_ata: Pubkey,
+    spl_tree_ata: Pubkey,
+    fee_recipient_ata: Pubkey,
 ) -> Instruction {
     let mut data = Vec::new();
     data.push(PrivacyCashInstructions::TransactSpl as u8);
@@ -304,7 +389,13 @@ fn setup() -> BenchContext {
     let program_id = Pubkey::from_str_const(PROGRAM_ID);
 
     std::env::set_var("RUST_LOG", "off");
-    let mut mollusk = Mollusk::new(&program_id, concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/deploy/privacy_cash"));
+    let mut mollusk = Mollusk::new(
+        &program_id,
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../target/deploy/privacy_cash"
+        ),
+    );
 
     let authority = Keypair::new();
     let funding_account = Keypair::new();
@@ -319,15 +410,26 @@ fn setup() -> BenchContext {
     let merkle_tree = MerkleTree::new(DEFAULT_HEIGHT, Vec::new());
 
     let (tree_account, tree_bump) = Pubkey::find_program_address(&[b"merkle_tree"], &program_id);
-    let (tree_token_account, tree_token_bump) = Pubkey::find_program_address(&[b"tree_token"], &program_id);
-    let (global_config, global_config_bump) = Pubkey::find_program_address(&[b"global_config"], &program_id);
+    let (tree_token_account, tree_token_bump) =
+        Pubkey::find_program_address(&[b"tree_token"], &program_id);
+    let (global_config, global_config_bump) =
+        Pubkey::find_program_address(&[b"global_config"], &program_id);
 
     BenchContext {
         mollusk,
         program_id,
-        authority, funding_account, recipient, fee_recipient, random_user, attacker,
-        tree_account, tree_token_account, global_config,
-        tree_bump, tree_token_bump, global_config_bump,
+        authority,
+        funding_account,
+        recipient,
+        fee_recipient,
+        random_user,
+        attacker,
+        tree_account,
+        tree_token_account,
+        global_config,
+        tree_bump,
+        tree_token_bump,
+        global_config_bump,
         merkle_tree,
     }
 }
@@ -343,7 +445,13 @@ fn funded_account(lamports: u64) -> Account {
 fn system_program_keyed_account() -> (Pubkey, Account) {
     (
         SYSTEM_PROGRAM,
-        Account { lamports: 1, data: vec![], owner: solana_sdk_ids::native_loader::ID, executable: true, rent_epoch: 0 },
+        Account {
+            lamports: 1,
+            data: vec![],
+            owner: solana_sdk_ids::native_loader::ID,
+            executable: true,
+            rent_epoch: 0,
+        },
     )
 }
 
@@ -375,16 +483,31 @@ fn genesis_tree_account(authority: Pubkey, bump: u8) -> Account {
         authority: authority.to_bytes(),
     };
 
-    account_with_data(Pubkey::from_str_const(PROGRAM_ID), bytemuck::bytes_of(&tree).to_vec())
+    account_with_data(
+        Pubkey::from_str_const(PROGRAM_ID),
+        bytemuck::bytes_of(&tree).to_vec(),
+    )
 }
 
 fn global_config_account(
-    authority: Pubkey, bump: u8, deposit_fee_rate: u16, withdrawal_fee_rate: u16, fee_error_margin: u16,
+    authority: Pubkey,
+    bump: u8,
+    deposit_fee_rate: u16,
+    withdrawal_fee_rate: u16,
+    fee_error_margin: u16,
 ) -> Account {
     let cfg = GlobalConfig {
-        authority: authority.to_bytes(), deposit_fee_rate, withdrawal_fee_rate, fee_error_margin, _padding: 0, bump,
+        authority: authority.to_bytes(),
+        deposit_fee_rate,
+        withdrawal_fee_rate,
+        fee_error_margin,
+        _padding: 0,
+        bump,
     };
-    account_with_data(Pubkey::from_str_const(PROGRAM_ID), bytemuck::bytes_of(&cfg).to_vec())
+    account_with_data(
+        Pubkey::from_str_const(PROGRAM_ID),
+        bytemuck::bytes_of(&cfg).to_vec(),
+    )
 }
 
 #[repr(C)]
@@ -423,7 +546,9 @@ fn mint_account(mint_authority: Pubkey) -> Account {
 
 fn token_account(mint: Pubkey, owner: Pubkey, amount: u64) -> Account {
     let acct = SplTokenAccount {
-        mint, owner, amount,
+        mint,
+        owner,
+        amount,
         delegate: COption::None,
         state: AccountState::Initialized,
         is_native: COption::None,
@@ -457,10 +582,17 @@ impl RemEuclidBigInt for BigInt {
 }
 
 fn key_base_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("artifacts").join("circuits").join("transaction2")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("artifacts")
+        .join("circuits")
+        .join("transaction2")
 }
 
-fn seed_one_deposit(ctx: &BenchContext, amount: u64, off_chain_tree: &mut MerkleTree) -> (Utxo, MerkleTreeAccount) {
+fn seed_one_deposit(
+    ctx: &BenchContext,
+    amount: u64,
+    off_chain_tree: &mut MerkleTree,
+) -> (Utxo, MerkleTreeAccount) {
     let output_index = off_chain_tree.elements().len() as u64;
     let deposited = Utxo::new_with_index(amount, output_index);
     let change = Utxo::new(0);
@@ -494,7 +626,10 @@ fn seed_one_deposit(ctx: &BenchContext, amount: u64, off_chain_tree: &mut Merkle
 
 enum Verify {
     Success,
-    SuccessAndAccountData { pubkey: Pubkey, expected_data: Vec<u8> },
+    SuccessAndAccountData {
+        pubkey: Pubkey,
+        expected_data: Vec<u8>,
+    },
 }
 
 struct Entry {
@@ -515,13 +650,17 @@ fn run_and_report(mollusk: &Mollusk, entries: Vec<Entry>) {
     for entry in &entries {
         let checks = match &entry.verify {
             Verify::Success => vec![Check::success()],
-            Verify::SuccessAndAccountData { pubkey, expected_data } => vec![
+            Verify::SuccessAndAccountData {
+                pubkey,
+                expected_data,
+            } => vec![
                 Check::success(),
                 Check::account(pubkey).data(expected_data).build(),
             ],
         };
 
-        let result = mollusk.process_and_validate_instruction(&entry.instruction, &entry.accounts, &checks);
+        let result =
+            mollusk.process_and_validate_instruction(&entry.instruction, &entry.accounts, &checks);
         let pinocchio_cu = result.compute_units_consumed;
         let anchor_cu = entry.anchor_cu;
 
@@ -547,45 +686,82 @@ fn run_and_report(mollusk: &Mollusk, entries: Vec<Entry>) {
 
 fn scenario_initialize(ctx: &BenchContext) -> Entry {
     let instruction = build_initialize_ix(
-        ctx.program_id, ctx.authority.pubkey(), ctx.tree_account, ctx.tree_token_account,
-        ctx.global_config, ctx.tree_bump, ctx.tree_token_bump, ctx.global_config_bump,
+        ctx.program_id,
+        ctx.authority.pubkey(),
+        ctx.tree_account,
+        ctx.tree_token_account,
+        ctx.global_config,
+        ctx.tree_bump,
+        ctx.tree_token_bump,
+        ctx.global_config_bump,
     );
     let accounts = vec![
         (ctx.tree_account, uninitialized_account()),
         (ctx.tree_token_account, uninitialized_account()),
         (ctx.global_config, uninitialized_account()),
-        (ctx.authority.pubkey(), funded_account(10 * LAMPORTS_PER_SOL)),
+        (
+            ctx.authority.pubkey(),
+            funded_account(10 * LAMPORTS_PER_SOL),
+        ),
         system_program_keyed_account(),
     ];
-    Entry { name: "initialize", instruction, accounts, verify: Verify::Success, anchor_cu: 29917 }
+    Entry {
+        name: "initialize",
+        instruction,
+        accounts,
+        verify: Verify::Success,
+        anchor_cu: 29917,
+    }
 }
 
 fn scenario_update_global_config(
     ctx: &BenchContext,
-    deposit_fee_rate: Option<u64>, withdrawal_fee_rate: Option<u64>, fee_error_margin: Option<u64>,
+    deposit_fee_rate: Option<u64>,
+    withdrawal_fee_rate: Option<u64>,
+    fee_error_margin: Option<u64>,
     name: &'static str,
     anchor_cu: u64,
 ) -> Entry {
     let instruction = build_update_global_config_ix(
-        ctx.program_id, ctx.global_config, ctx.authority.pubkey(),
-        deposit_fee_rate, withdrawal_fee_rate, fee_error_margin,
+        ctx.program_id,
+        ctx.global_config,
+        ctx.authority.pubkey(),
+        deposit_fee_rate,
+        withdrawal_fee_rate,
+        fee_error_margin,
     );
     let accounts = vec![
-        (ctx.global_config, global_config_account(ctx.authority.pubkey(), ctx.global_config_bump, 0, 25, 500)),
+        (
+            ctx.global_config,
+            global_config_account(ctx.authority.pubkey(), ctx.global_config_bump, 0, 25, 500),
+        ),
         (ctx.authority.pubkey(), funded_account(LAMPORTS_PER_SOL)),
     ];
-    Entry { name, instruction, accounts, verify: Verify::Success, anchor_cu }
+    Entry {
+        name,
+        instruction,
+        accounts,
+        verify: Verify::Success,
+        anchor_cu,
+    }
 }
 
 fn scenario_update_deposit_limit(ctx: &BenchContext) -> Entry {
     let new_limit: u64 = 5_000_000_000_000;
 
     let before = genesis_tree_account(ctx.authority.pubkey(), ctx.tree_bump);
-    let mut expected_tree = *bytemuck::from_bytes::<MerkleTreeAccount>(&before.data[..MerkleTreeAccount::LEN]);
+    let mut expected_tree =
+        *bytemuck::from_bytes::<MerkleTreeAccount>(&before.data[..MerkleTreeAccount::LEN]);
     expected_tree.max_deposit_amount = new_limit;
     let expected_data = bytemuck::bytes_of(&expected_tree).to_vec();
 
-    let instruction = build_update_deposit_limit_ix(ctx.program_id, ctx.tree_account, ctx.authority.pubkey(), new_limit, ctx.tree_bump);
+    let instruction = build_update_deposit_limit_ix(
+        ctx.program_id,
+        ctx.tree_account,
+        ctx.authority.pubkey(),
+        new_limit,
+        ctx.tree_bump,
+    );
     let accounts = vec![
         (ctx.tree_account, before),
         (ctx.authority.pubkey(), funded_account(LAMPORTS_PER_SOL)),
@@ -595,22 +771,34 @@ fn scenario_update_deposit_limit(ctx: &BenchContext) -> Entry {
         name: "update_deposit_limit",
         instruction,
         accounts,
-        verify: Verify::SuccessAndAccountData { pubkey: ctx.tree_account, expected_data },
+        verify: Verify::SuccessAndAccountData {
+            pubkey: ctx.tree_account,
+            expected_data,
+        },
         anchor_cu: 3461,
     }
 }
 
 fn scenario_update_deposit_limit_for_spl(ctx: &BenchContext) -> Entry {
     let mint = Pubkey::new_unique();
-    let (spl_tree_account, spl_tree_bump) = Pubkey::find_program_address(&[b"merkle_tree", mint.as_ref()], &ctx.program_id);
+    let (spl_tree_account, spl_tree_bump) =
+        Pubkey::find_program_address(&[b"merkle_tree", mint.as_ref()], &ctx.program_id);
     let new_limit: u64 = 7_000_000_000_000;
 
     let before = genesis_tree_account(ctx.authority.pubkey(), spl_tree_bump);
-    let mut expected_tree = *bytemuck::from_bytes::<MerkleTreeAccount>(&before.data[..MerkleTreeAccount::LEN]);
+    let mut expected_tree =
+        *bytemuck::from_bytes::<MerkleTreeAccount>(&before.data[..MerkleTreeAccount::LEN]);
     expected_tree.max_deposit_amount = new_limit;
     let expected_data = bytemuck::bytes_of(&expected_tree).to_vec();
 
-    let instruction = build_update_deposit_limit_for_spl_ix(ctx.program_id, spl_tree_account, mint, ctx.authority.pubkey(), new_limit, spl_tree_bump);
+    let instruction = build_update_deposit_limit_for_spl_ix(
+        ctx.program_id,
+        spl_tree_account,
+        mint,
+        ctx.authority.pubkey(),
+        new_limit,
+        spl_tree_bump,
+    );
     let accounts = vec![
         (spl_tree_account, before),
         (mint, mint_account(ctx.authority.pubkey())),
@@ -621,26 +809,54 @@ fn scenario_update_deposit_limit_for_spl(ctx: &BenchContext) -> Entry {
         name: "update_deposit_limit_for_spl",
         instruction,
         accounts,
-        verify: Verify::SuccessAndAccountData { pubkey: spl_tree_account, expected_data },
+        verify: Verify::SuccessAndAccountData {
+            pubkey: spl_tree_account,
+            expected_data,
+        },
         anchor_cu: 0,
     }
 }
 
 fn scenario_initialize_tree_account_for_spl_token(ctx: &BenchContext) -> Entry {
     let mint = Pubkey::new_unique();
-    let (spl_tree_account, spl_tree_bump) = Pubkey::find_program_address(&[b"merkle_tree", mint.as_ref()], &ctx.program_id);
+    let (spl_tree_account, spl_tree_bump) =
+        Pubkey::find_program_address(&[b"merkle_tree", mint.as_ref()], &ctx.program_id);
 
     let instruction = build_initialize_for_spl_ix(
-        ctx.program_id, ctx.authority.pubkey(), spl_tree_account, mint, ctx.global_config, spl_tree_bump, 50_000_000_000_000,
+        ctx.program_id,
+        ctx.authority.pubkey(),
+        spl_tree_account,
+        mint,
+        ctx.global_config,
+        spl_tree_bump,
+        50_000_000_000_000,
     );
     let accounts = vec![
         (spl_tree_account, uninitialized_account()),
         (mint, mint_account(ctx.authority.pubkey())),
-        (ctx.global_config, global_config_account(ctx.authority.pubkey(), ctx.global_config_bump, DEPOSIT_FEE_RATE, WITHDRAW_FEE_RATE, FEE_ERROR_MARGIN)),
-        (ctx.authority.pubkey(), funded_account(10 * LAMPORTS_PER_SOL)),
+        (
+            ctx.global_config,
+            global_config_account(
+                ctx.authority.pubkey(),
+                ctx.global_config_bump,
+                DEPOSIT_FEE_RATE,
+                WITHDRAW_FEE_RATE,
+                FEE_ERROR_MARGIN,
+            ),
+        ),
+        (
+            ctx.authority.pubkey(),
+            funded_account(10 * LAMPORTS_PER_SOL),
+        ),
         system_program_keyed_account(),
     ];
-    Entry { name: "initialize_tree_account_for_spl_token", instruction, accounts, verify: Verify::Success, anchor_cu: 0 }
+    Entry {
+        name: "initialize_tree_account_for_spl_token",
+        instruction,
+        accounts,
+        verify: Verify::Success,
+        anchor_cu: 0,
+    }
 }
 
 fn scenario_transact_deposit_first(ctx: &BenchContext) -> Entry {
@@ -654,7 +870,9 @@ fn scenario_transact_deposit_first(ctx: &BenchContext) -> Entry {
         encrypted_output2: b"depositEncryptedOutput2".to_vec(),
         fee: deposit_fee_u64,
         fee_recipient: FEE_RECIPIENT_ACCOUNT.to_bytes(),
-        mint_address: Pubkey::from_str("11111111111111111111111111111112").unwrap().to_bytes(),
+        mint_address: Pubkey::from_str("11111111111111111111111111111112")
+            .unwrap()
+            .to_bytes(),
     };
 
     let deposit_inputs = [Utxo::empty(), Utxo::empty()];
@@ -664,7 +882,10 @@ fn scenario_transact_deposit_first(ctx: &BenchContext) -> Entry {
     let output_index = ctx.merkle_tree.elements().len() as u64;
     let deposit_outputs = [
         Utxo::new_with_index(
-            public_amount_number.clone().try_into().expect("public amount should fit in u64"),
+            public_amount_number
+                .clone()
+                .try_into()
+                .expect("public amount should fit in u64"),
             output_index,
         ),
         Utxo::new(0),
@@ -681,8 +902,12 @@ fn scenario_transact_deposit_first(ctx: &BenchContext) -> Entry {
         deposit_inputs[1].get_nullifier().unwrap(),
     ];
     let deposit_output_commitments = [
-        deposit_outputs[0].get_commitment().expect("failed to compute output commitment"),
-        deposit_outputs[1].get_commitment().expect("failed to compute output commitment"),
+        deposit_outputs[0]
+            .get_commitment()
+            .expect("failed to compute output commitment"),
+        deposit_outputs[1]
+            .get_commitment()
+            .expect("failed to compute output commitment"),
     ];
 
     let deposit_root = ctx.merkle_tree.root();
@@ -694,47 +919,102 @@ fn scenario_transact_deposit_first(ctx: &BenchContext) -> Entry {
         output_commitment: deposit_output_commitments,
         public_amount: public_amount_number,
         ext_data_hash: deposit_ext_data_hash,
-        in_amount: deposit_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
-        in_private_key: deposit_inputs.iter().map(|x| x.keypair.privkey.clone()).collect(),
-        in_blinding: deposit_inputs.iter().map(|x| BigUint::from(x.blinding.clone())).collect(),
+        in_amount: deposit_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
+        in_private_key: deposit_inputs
+            .iter()
+            .map(|x| x.keypair.privkey.clone())
+            .collect(),
+        in_blinding: deposit_inputs
+            .iter()
+            .map(|x| BigUint::from(x.blinding.clone()))
+            .collect(),
         mint_address: deposit_inputs[0].mint_address.to_string(),
         in_path_indices: deposit_input_merkle_path_indices,
         in_path_elements: deposit_input_merkle_path_elements,
-        out_amount: deposit_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
-        out_blinding: deposit_outputs.iter().map(|x| BigUint::from(x.blinding.clone())).collect(),
-        out_pubkey: deposit_outputs.iter().map(|x| x.keypair.pubkey.clone()).collect(),
+        out_amount: deposit_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
+        out_blinding: deposit_outputs
+            .iter()
+            .map(|x| BigUint::from(x.blinding.clone()))
+            .collect(),
+        out_pubkey: deposit_outputs
+            .iter()
+            .map(|x| x.keypair.pubkey.clone())
+            .collect(),
     };
 
     let deposit_proof_result = prove(&deposit_input, &key_base_path()).unwrap();
-    let deposit_proof_to_submit = format_proof(deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap());
+    let deposit_proof_to_submit =
+        format_proof(deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap());
 
     let deposit_nullifiers = find_nullifier_pdas(&ctx.program_id, &deposit_proof_to_submit);
-    let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(&ctx.program_id, &deposit_proof_to_submit);
+    let deposit_cross_check_nullifiers =
+        find_cross_check_nullifier_pdas(&ctx.program_id, &deposit_proof_to_submit);
 
     let instruction = build_transact_ix(
-        ctx.program_id, &deposit_proof_to_submit, &create_ext_data_minified(&deposit_ext_data),
-        &deposit_ext_data.encrypted_output1, &deposit_ext_data.encrypted_output2,
-        deposit_nullifiers.bump0, deposit_nullifiers.bump1,
-        ctx.tree_account, deposit_nullifiers.nullifier0, deposit_nullifiers.nullifier1,
-        deposit_cross_check_nullifiers.0, deposit_cross_check_nullifiers.1,
-        ctx.tree_token_account, ctx.global_config, ctx.recipient.pubkey(), FEE_RECIPIENT_ACCOUNT, ctx.random_user.pubkey(),
+        ctx.program_id,
+        &deposit_proof_to_submit,
+        &create_ext_data_minified(&deposit_ext_data),
+        &deposit_ext_data.encrypted_output1,
+        &deposit_ext_data.encrypted_output2,
+        deposit_nullifiers.bump0,
+        deposit_nullifiers.bump1,
+        ctx.tree_account,
+        deposit_nullifiers.nullifier0,
+        deposit_nullifiers.nullifier1,
+        deposit_cross_check_nullifiers.0,
+        deposit_cross_check_nullifiers.1,
+        ctx.tree_token_account,
+        ctx.global_config,
+        ctx.recipient.pubkey(),
+        FEE_RECIPIENT_ACCOUNT,
+        ctx.random_user.pubkey(),
     );
 
     let accounts = vec![
-        (ctx.tree_account, genesis_tree_account(ctx.authority.pubkey(), ctx.tree_bump)),
+        (
+            ctx.tree_account,
+            genesis_tree_account(ctx.authority.pubkey(), ctx.tree_bump),
+        ),
         (deposit_nullifiers.nullifier0, uninitialized_account()),
         (deposit_nullifiers.nullifier1, uninitialized_account()),
         (deposit_cross_check_nullifiers.0, uninitialized_account()),
         (deposit_cross_check_nullifiers.1, uninitialized_account()),
-        (ctx.tree_token_account, tree_token_account_account(ctx.authority.pubkey(), ctx.tree_token_bump)),
-        (ctx.global_config, global_config_account(ctx.authority.pubkey(), ctx.global_config_bump, DEPOSIT_FEE_RATE, WITHDRAW_FEE_RATE, FEE_ERROR_MARGIN)),
+        (
+            ctx.tree_token_account,
+            tree_token_account_account(ctx.authority.pubkey(), ctx.tree_token_bump),
+        ),
+        (
+            ctx.global_config,
+            global_config_account(
+                ctx.authority.pubkey(),
+                ctx.global_config_bump,
+                DEPOSIT_FEE_RATE,
+                WITHDRAW_FEE_RATE,
+                FEE_ERROR_MARGIN,
+            ),
+        ),
         (ctx.recipient.pubkey(), uninitialized_account()),
         (FEE_RECIPIENT_ACCOUNT, uninitialized_account()),
-        (ctx.random_user.pubkey(), funded_account(10 * LAMPORTS_PER_SOL)),
+        (
+            ctx.random_user.pubkey(),
+            funded_account(10 * LAMPORTS_PER_SOL),
+        ),
         system_program_keyed_account(),
     ];
 
-    Entry { name: "transact_deposit_first", instruction, accounts, verify: Verify::Success, anchor_cu: 246876 }
+    Entry {
+        name: "transact_deposit_first",
+        instruction,
+        accounts,
+        verify: Verify::Success,
+        anchor_cu: 246876,
+    }
 }
 
 fn scenario_transact_withdraw(ctx: &BenchContext) -> Entry {
@@ -749,7 +1029,8 @@ fn scenario_transact_withdraw(ctx: &BenchContext) -> Entry {
     let outputs_sum: u64 = withdraw_outputs.iter().map(|x| x.amount).sum();
     let withdraw_fee = calculate_withdrawal_fee(inputs_sum);
 
-    let ext_amount = BigInt::from(withdraw_fee) + BigInt::from(outputs_sum) - BigInt::from(inputs_sum);
+    let ext_amount =
+        BigInt::from(withdraw_fee) + BigInt::from(outputs_sum) - BigInt::from(inputs_sum);
     let public_amount = compute_public_amount(&ext_amount, withdraw_fee);
 
     let output_index = 0usize;
@@ -777,7 +1058,9 @@ fn scenario_transact_withdraw(ctx: &BenchContext) -> Entry {
         encrypted_output2: b"withdrawEncryptedOutput2".to_vec(),
         fee: withdraw_fee,
         fee_recipient: FEE_RECIPIENT_ACCOUNT.to_bytes(),
-        mint_address: Pubkey::from_str("11111111111111111111111111111112").unwrap().to_bytes(),
+        mint_address: Pubkey::from_str("11111111111111111111111111111112")
+            .unwrap()
+            .to_bytes(),
     };
     let ext_data_hash = get_ext_data_hash(&ext_data);
 
@@ -787,15 +1070,33 @@ fn scenario_transact_withdraw(ctx: &BenchContext) -> Entry {
         output_commitment: output_commitments,
         public_amount,
         ext_data_hash,
-        in_amount: withdraw_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
-        in_private_key: withdraw_inputs.iter().map(|x| x.keypair.privkey.clone()).collect(),
-        in_blinding: withdraw_inputs.iter().map(|x| BigUint::from(x.blinding.clone())).collect(),
+        in_amount: withdraw_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
+        in_private_key: withdraw_inputs
+            .iter()
+            .map(|x| x.keypair.privkey.clone())
+            .collect(),
+        in_blinding: withdraw_inputs
+            .iter()
+            .map(|x| BigUint::from(x.blinding.clone()))
+            .collect(),
         mint_address: withdraw_inputs[0].mint_address.to_string(),
         in_path_indices: input_merkle_path_indices,
         in_path_elements: input_merkle_path_elements,
-        out_amount: withdraw_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
-        out_blinding: withdraw_outputs.iter().map(|x| BigUint::from(x.blinding.clone())).collect(),
-        out_pubkey: withdraw_outputs.iter().map(|x| x.keypair.pubkey.clone()).collect(),
+        out_amount: withdraw_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
+        out_blinding: withdraw_outputs
+            .iter()
+            .map(|x| BigUint::from(x.blinding.clone()))
+            .collect(),
+        out_pubkey: withdraw_outputs
+            .iter()
+            .map(|x| x.keypair.pubkey.clone())
+            .collect(),
     };
 
     let proof_result = prove(&proof_input, &key_base_path()).unwrap();
@@ -805,28 +1106,68 @@ fn scenario_transact_withdraw(ctx: &BenchContext) -> Entry {
     let cross_check = find_cross_check_nullifier_pdas(&ctx.program_id, &proof_to_submit);
 
     let instruction = build_transact_ix(
-        ctx.program_id, &proof_to_submit, &create_ext_data_minified(&ext_data),
-        &ext_data.encrypted_output1, &ext_data.encrypted_output2,
-        nullifiers.bump0, nullifiers.bump1,
-        ctx.tree_account, nullifiers.nullifier0, nullifiers.nullifier1, cross_check.0, cross_check.1,
-        ctx.tree_token_account, ctx.global_config, ctx.recipient.pubkey(), FEE_RECIPIENT_ACCOUNT, ctx.random_user.pubkey(),
+        ctx.program_id,
+        &proof_to_submit,
+        &create_ext_data_minified(&ext_data),
+        &ext_data.encrypted_output1,
+        &ext_data.encrypted_output2,
+        nullifiers.bump0,
+        nullifiers.bump1,
+        ctx.tree_account,
+        nullifiers.nullifier0,
+        nullifiers.nullifier1,
+        cross_check.0,
+        cross_check.1,
+        ctx.tree_token_account,
+        ctx.global_config,
+        ctx.recipient.pubkey(),
+        FEE_RECIPIENT_ACCOUNT,
+        ctx.random_user.pubkey(),
     );
 
     let accounts = vec![
-        (ctx.tree_account, account_with_data(ctx.program_id, bytemuck::bytes_of(&on_chain_tree).to_vec())),
+        (
+            ctx.tree_account,
+            account_with_data(ctx.program_id, bytemuck::bytes_of(&on_chain_tree).to_vec()),
+        ),
         (nullifiers.nullifier0, uninitialized_account()),
         (nullifiers.nullifier1, uninitialized_account()),
         (cross_check.0, uninitialized_account()),
         (cross_check.1, uninitialized_account()),
-        (ctx.tree_token_account, funded_tree_token_account(ctx.authority.pubkey(), ctx.tree_token_bump, 10 * LAMPORTS_PER_SOL)),
-        (ctx.global_config, global_config_account(ctx.authority.pubkey(), ctx.global_config_bump, DEPOSIT_FEE_RATE, WITHDRAW_FEE_RATE, FEE_ERROR_MARGIN)),
+        (
+            ctx.tree_token_account,
+            funded_tree_token_account(
+                ctx.authority.pubkey(),
+                ctx.tree_token_bump,
+                10 * LAMPORTS_PER_SOL,
+            ),
+        ),
+        (
+            ctx.global_config,
+            global_config_account(
+                ctx.authority.pubkey(),
+                ctx.global_config_bump,
+                DEPOSIT_FEE_RATE,
+                WITHDRAW_FEE_RATE,
+                FEE_ERROR_MARGIN,
+            ),
+        ),
         (ctx.recipient.pubkey(), uninitialized_account()),
         (FEE_RECIPIENT_ACCOUNT, uninitialized_account()),
-        (ctx.random_user.pubkey(), funded_account(10 * LAMPORTS_PER_SOL)),
+        (
+            ctx.random_user.pubkey(),
+            funded_account(10 * LAMPORTS_PER_SOL),
+        ),
         system_program_keyed_account(),
     ];
 
-    Entry { name: "transact_withdraw_partial", instruction, accounts, verify: Verify::Success, anchor_cu: 246876 }
+    Entry {
+        name: "transact_withdraw_partial",
+        instruction,
+        accounts,
+        verify: Verify::Success,
+        anchor_cu: 246876,
+    }
 }
 
 fn scenario_transact_spl_deposit(ctx: &BenchContext, tree_ata_exists: bool) -> Entry {
@@ -858,8 +1199,14 @@ fn scenario_transact_spl_deposit(ctx: &BenchContext, tree_ata_exists: bool) -> E
     let output_index = spl_merkle_tree.elements().len() as u64;
 
     let deposit_outputs = [
-        Utxo::new_with_mint(public_amount_number.clone().try_into().expect("public amount should fit in u64"), mint)
-            .with_index(output_index),
+        Utxo::new_with_mint(
+            public_amount_number
+                .clone()
+                .try_into()
+                .expect("public amount should fit in u64"),
+            mint,
+        )
+        .with_index(output_index),
         Utxo::new_with_mint(0, mint),
     ];
 
@@ -868,8 +1215,12 @@ fn scenario_transact_spl_deposit(ctx: &BenchContext, tree_ata_exists: bool) -> E
         deposit_inputs[1].get_nullifier().unwrap(),
     ];
     let deposit_output_commitments = [
-        deposit_outputs[0].get_commitment().expect("failed to compute output commitment"),
-        deposit_outputs[1].get_commitment().expect("failed to compute output commitment"),
+        deposit_outputs[0]
+            .get_commitment()
+            .expect("failed to compute output commitment"),
+        deposit_outputs[1]
+            .get_commitment()
+            .expect("failed to compute output commitment"),
     ];
 
     let deposit_root = spl_merkle_tree.root();
@@ -881,37 +1232,70 @@ fn scenario_transact_spl_deposit(ctx: &BenchContext, tree_ata_exists: bool) -> E
         output_commitment: deposit_output_commitments,
         public_amount: public_amount_number,
         ext_data_hash: deposit_ext_data_hash,
-        in_amount: deposit_inputs.iter().map(|x| BigUint::from(x.amount)).collect(),
-        in_private_key: deposit_inputs.iter().map(|x| x.keypair.privkey.clone()).collect(),
-        in_blinding: deposit_inputs.iter().map(|x| BigUint::from(x.blinding.clone())).collect(),
+        in_amount: deposit_inputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
+        in_private_key: deposit_inputs
+            .iter()
+            .map(|x| x.keypair.privkey.clone())
+            .collect(),
+        in_blinding: deposit_inputs
+            .iter()
+            .map(|x| BigUint::from(x.blinding.clone()))
+            .collect(),
         mint_address: mint.to_string(),
         in_path_indices: [0usize; 2],
         in_path_elements: vec![
             vec![[0u8; 32]; spl_merkle_tree.levels],
             vec![[0u8; 32]; spl_merkle_tree.levels],
         ],
-        out_amount: deposit_outputs.iter().map(|x| BigUint::from(x.amount)).collect(),
-        out_blinding: deposit_outputs.iter().map(|x| BigUint::from(x.blinding.clone())).collect(),
-        out_pubkey: deposit_outputs.iter().map(|x| x.keypair.pubkey.clone()).collect(),
+        out_amount: deposit_outputs
+            .iter()
+            .map(|x| BigUint::from(x.amount))
+            .collect(),
+        out_blinding: deposit_outputs
+            .iter()
+            .map(|x| BigUint::from(x.blinding.clone()))
+            .collect(),
+        out_pubkey: deposit_outputs
+            .iter()
+            .map(|x| x.keypair.pubkey.clone())
+            .collect(),
     };
 
     let deposit_proof_result = prove(&deposit_input, &key_base_path()).unwrap();
-    let deposit_proof_to_submit = format_proof(deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap());
+    let deposit_proof_to_submit =
+        format_proof(deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap());
 
     let deposit_nullifiers = find_nullifier_pdas(&ctx.program_id, &deposit_proof_to_submit);
-    let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(&ctx.program_id, &deposit_proof_to_submit);
+    let deposit_cross_check_nullifiers =
+        find_cross_check_nullifier_pdas(&ctx.program_id, &deposit_proof_to_submit);
 
-    let (spl_tree_account, spl_tree_bump) = Pubkey::find_program_address(&[b"merkle_tree", mint.as_ref()], &ctx.program_id);
+    let (spl_tree_account, spl_tree_bump) =
+        Pubkey::find_program_address(&[b"merkle_tree", mint.as_ref()], &ctx.program_id);
 
     let instruction = build_transact_spl_ix(
-        ctx.program_id, &deposit_proof_to_submit, &create_ext_data_minified(&deposit_ext_data),
-        &deposit_ext_data.encrypted_output1, &deposit_ext_data.encrypted_output2,
-        deposit_nullifiers.bump0, deposit_nullifiers.bump1,
-        spl_tree_account, deposit_nullifiers.nullifier0, deposit_nullifiers.nullifier1,
-        deposit_cross_check_nullifiers.0, deposit_cross_check_nullifiers.1,
-        ctx.global_config, ctx.random_user.pubkey(), mint,
+        ctx.program_id,
+        &deposit_proof_to_submit,
+        &create_ext_data_minified(&deposit_ext_data),
+        &deposit_ext_data.encrypted_output1,
+        &deposit_ext_data.encrypted_output2,
+        deposit_nullifiers.bump0,
+        deposit_nullifiers.bump1,
+        spl_tree_account,
+        deposit_nullifiers.nullifier0,
+        deposit_nullifiers.nullifier1,
+        deposit_cross_check_nullifiers.0,
+        deposit_cross_check_nullifiers.1,
+        ctx.global_config,
+        ctx.random_user.pubkey(),
+        mint,
         get_associated_token_address(&ctx.random_user.pubkey(), &mint),
-        ctx.recipient.pubkey(), recipient_ata, spl_tree_ata, fee_recipient_ata,
+        ctx.recipient.pubkey(),
+        recipient_ata,
+        spl_tree_ata,
+        fee_recipient_ata,
     );
 
     let spl_tree_ata_account = if tree_ata_exists {
@@ -921,15 +1305,33 @@ fn scenario_transact_spl_deposit(ctx: &BenchContext, tree_ata_exists: bool) -> E
     };
 
     let accounts = vec![
-        (spl_tree_account, genesis_tree_account(ctx.authority.pubkey(), spl_tree_bump)),
+        (
+            spl_tree_account,
+            genesis_tree_account(ctx.authority.pubkey(), spl_tree_bump),
+        ),
         (deposit_nullifiers.nullifier0, uninitialized_account()),
         (deposit_nullifiers.nullifier1, uninitialized_account()),
         (deposit_cross_check_nullifiers.0, uninitialized_account()),
         (deposit_cross_check_nullifiers.1, uninitialized_account()),
-        (ctx.global_config, global_config_account(ctx.authority.pubkey(), ctx.global_config_bump, DEPOSIT_FEE_RATE, WITHDRAW_FEE_RATE, FEE_ERROR_MARGIN)),
-        (ctx.random_user.pubkey(), funded_account(10 * LAMPORTS_PER_SOL)),
+        (
+            ctx.global_config,
+            global_config_account(
+                ctx.authority.pubkey(),
+                ctx.global_config_bump,
+                DEPOSIT_FEE_RATE,
+                WITHDRAW_FEE_RATE,
+                FEE_ERROR_MARGIN,
+            ),
+        ),
+        (
+            ctx.random_user.pubkey(),
+            funded_account(10 * LAMPORTS_PER_SOL),
+        ),
         (mint, mint_account(ctx.authority.pubkey())),
-        (get_associated_token_address(&ctx.random_user.pubkey(), &mint), token_account(mint, ctx.random_user.pubkey(), deposit_amount * 10)),
+        (
+            get_associated_token_address(&ctx.random_user.pubkey(), &mint),
+            token_account(mint, ctx.random_user.pubkey(), deposit_amount * 10),
+        ),
         (ctx.recipient.pubkey(), uninitialized_account()),
         (recipient_ata, uninitialized_account()),
         (spl_tree_ata, spl_tree_ata_account),
@@ -940,7 +1342,11 @@ fn scenario_transact_spl_deposit(ctx: &BenchContext, tree_ata_exists: bool) -> E
     ];
 
     Entry {
-        name: if tree_ata_exists { "transact_spl_deposit_ata_exists" } else { "transact_spl_deposit_ata_missing" },
+        name: if tree_ata_exists {
+            "transact_spl_deposit_ata_exists"
+        } else {
+            "transact_spl_deposit_ata_missing"
+        },
         instruction,
         accounts,
         verify: Verify::Success,
@@ -952,16 +1358,26 @@ fn scenario_transact_spl_deposit(ctx: &BenchContext, tree_ata_exists: bool) -> E
 fn bench_all() {
     let ctx = setup();
 
-    run_and_report(&ctx.mollusk, vec![
-        scenario_initialize(&ctx),
-        scenario_update_global_config(&ctx, None, Some(50), None, "update_global_config_one_field", 3659),
-        // scenario_update_global_config(&ctx, Some(10), Some(60), Some(300), "update_global_config_all_fields", 0), Find anchor CU count for this
-        scenario_update_deposit_limit(&ctx),
-        scenario_update_deposit_limit_for_spl(&ctx),
-        scenario_initialize_tree_account_for_spl_token(&ctx),
-        scenario_transact_deposit_first(&ctx),
-        scenario_transact_withdraw(&ctx),
-        scenario_transact_spl_deposit(&ctx, true),
-        scenario_transact_spl_deposit(&ctx, false),
-    ]);
+    run_and_report(
+        &ctx.mollusk,
+        vec![
+            scenario_initialize(&ctx),
+            scenario_update_global_config(
+                &ctx,
+                None,
+                Some(50),
+                None,
+                "update_global_config_one_field",
+                3659,
+            ),
+            // scenario_update_global_config(&ctx, Some(10), Some(60), Some(300), "update_global_config_all_fields", 0), Find anchor CU count for this
+            scenario_update_deposit_limit(&ctx),
+            scenario_update_deposit_limit_for_spl(&ctx),
+            scenario_initialize_tree_account_for_spl_token(&ctx),
+            scenario_transact_deposit_first(&ctx),
+            scenario_transact_withdraw(&ctx),
+            scenario_transact_spl_deposit(&ctx, true),
+            scenario_transact_spl_deposit(&ctx, false),
+        ],
+    );
 }

@@ -9,9 +9,24 @@ use ark_std::{rand::thread_rng, UniformRand};
 use num_bigint::{BigInt, BigUint, Sign};
 use once_cell::sync::Lazy;
 use solana_sdk::bs58;
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Mutex;
 use std::{fs::File, path::Path};
 use wasmer::Store;
+
+static PROVER_CACHE: Lazy<
+    Mutex<
+        HashMap<
+            PathBuf,
+            (
+                ark_groth16::ProvingKey<Bn254>,
+                ark_circom::index::NPIndex<Fr>,
+            ),
+        >,
+    >,
+> = Lazy::new(|| Mutex::new(HashMap::new()));
 
 use crate::common::constants::FIELD_SIZE_DECIMAL;
 use crate::common::utils::get_mint_address_field;
@@ -90,9 +105,14 @@ pub fn prove(input: &ProofInput, key_base_path: &Path) -> Result<DepositProofArt
         .map_err(anyhow::Error::msg)?;
 
     // 2) Load the exact SnarkJS zkey.
-    let mut zkey_file = File::open(&zkey_path)
-        .map_err(|e| anyhow!("cannot open zkey {}: {e}", zkey_path.display()))?;
-    let (pk, np_index) = read_zkey(&mut zkey_file)?;
+    let mut cache_guard = PROVER_CACHE.lock().unwrap();
+    if !cache_guard.contains_key(key_base_path) {
+        let mut zkey_file = File::open(&zkey_path)
+            .map_err(|e| anyhow!("cannot open zkey {}: {e}", zkey_path.display()))?;
+        let (pk, np_index) = read_zkey(&mut zkey_file)?;
+        cache_guard.insert(key_base_path.to_path_buf(), (pk, np_index));
+    }
+    let (pk, np_index) = cache_guard.get(key_base_path).unwrap();
 
     // 3) Prove using the witness + matrices from the zkey.
     let mut rng = thread_rng();
@@ -100,12 +120,12 @@ pub fn prove(input: &ProofInput, key_base_path: &Path) -> Result<DepositProofArt
     let s = Fr::rand(&mut rng);
 
     let mut matrices = Vec::new();
-    matrices.push(np_index.a);
-    matrices.push(np_index.b);
-    matrices.push(np_index.c);
+    matrices.push(np_index.a.clone());
+    matrices.push(np_index.b.clone());
+    matrices.push(np_index.c.clone());
 
     let proof = Groth16::<Bn254, CircomReduction>::create_proof_with_reduction_and_matrices(
-        &pk,
+        pk,
         r,
         s,
         &matrices,

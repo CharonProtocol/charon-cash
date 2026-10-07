@@ -43,7 +43,7 @@ use spl_token::{
 };
 use std::{path::PathBuf, str::FromStr};
 
-const PROGRAM_ID: &str = "HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV";
+const PROGRAM_ID: &str = "A6jNiYjV9g7omJ4zHAyiDQtcRewobsko7gs9UjZ2pWRa";
 
 pub fn generate_random_nullifier() -> [u8; 32] {
     let mut nullifier = [0u8; 32];
