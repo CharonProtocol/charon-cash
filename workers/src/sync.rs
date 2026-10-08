@@ -57,12 +57,18 @@ pub async fn sync_tree_forced(state: &AppState) -> Result<SyncReport, String> {
 }
 
 /// Post-send indexing, off the relay's critical path: wait for the relayed tx
-/// to show a confirmation status (≈400ms apart, bounded), then force one sync
-/// so the mirror covers it before the client's next read. Coalescing is free —
-/// sync_tree_forced's lock turns concurrent pumps into a single walk. A timed-
-/// out poll still syncs: the walk defers unindexed txs to the next pass.
+/// to show a confirmation status (≈400ms apart, bounded), then force syncs
+/// until the mirror has actually absorbed the signature. Coalescing is free —
+/// sync_tree_forced's lock turns concurrent pumps into a single walk.
+///
+/// One walk is not enough under load: a busy sync lock turns a forced walk
+/// into a silent no-op (Ok-empty from the CAS skip), and a torn write wave can
+/// drop a tx's leaves while the cursor still advances — the commitment then
+/// 404s forever, the client's change-note resolve never lands, and every lane
+/// hop falls back to a full refresh. `has_tx` is the goal condition; retries
+/// are what picks a tx up after a coalesced walk indexed only its siblings.
 pub async fn index_after_send(state: &AppState, signature: &str) {
-    for _ in 0..25 {
+    for _ in 0..8 {
         match state.rpc.get_signature_status(signature).await {
             Ok(Some(_)) => break,
             Ok(None) => crate::rpc::sleep_ms(400).await,
@@ -72,9 +78,20 @@ pub async fn index_after_send(state: &AppState, signature: &str) {
             }
         }
     }
-    if let Err(e) = sync_tree_forced(state).await {
-        worker::console_warn!("index_after_send sync: {e}");
+    for attempt in 0..3 {
+        if let Err(e) = sync_tree_forced(state).await {
+            worker::console_warn!("index_after_send sync: {signature}: {e}");
+        }
+        match state.store.has_tx(signature).await {
+            Ok(true) => return,
+            Ok(false) => {}
+            Err(e) => worker::console_warn!("index_after_send check: {signature}: {e}"),
+        }
+        if attempt < 2 {
+            crate::rpc::sleep_ms(1_000).await;
+        }
     }
+    worker::console_warn!("index_after_send: {signature}: not indexed after retries");
 }
 
 async fn sync_locked(state: &AppState) -> Result<SyncReport, String> {
