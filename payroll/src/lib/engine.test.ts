@@ -1294,4 +1294,33 @@ describe("mid-run refresh policy", () => {
     }
     expect(receipt.timing?.queueMs).toBeGreaterThanOrEqual(0)
   })
+
+  it("a post-submit throw still stamps the prove+relay window", async () => {
+    const lane = laneClient({
+      notes: [{ id: "n1", amount: 10n ** 12n }],
+      withdrawMs: 5,
+      withdraws: [],
+    })
+    // Relay accepted the tx and then the response was lost: onSubmitted
+    // fired (prep stamped, prove+relay window opened) and the SDK threw
+    // after that — exactly the shape the adjudication path has to time.
+    const client: EngineClient = {
+      ...lane.client,
+      transferNoteSOL: async (_recipient, _netLamports, opts) => {
+        await opts?.onSubmitted?.({})
+        throw new Error("relay dropped the response")
+      },
+    }
+    const engine = new PayrollEngine(laneDeps(client, lane.listNotes))
+    const receipt = await engine.run(
+      req({ vaultRaw: 10n ** 18n, asset: { kind: "sol" } as Asset, mode: "shielded" }),
+    )
+    expect(receipt.summary).toEqual({ sent: 0, failed: 3, total: 3 })
+    for (const e of receipt.entries) {
+      expect(e.timing?.prepMs, `prep ${e.address}`).toBeGreaterThanOrEqual(0)
+      // the stamp under test: without it every relay-lost row reported
+      // proveRelay as undefined and its slice of the wall was unattributable
+      expect(e.timing?.proveRelayMs, `proveRelay ${e.address}`).toBeGreaterThanOrEqual(0)
+    }
+  })
 })

@@ -20,6 +20,9 @@ interface PendingEntry {
   id: number
   inputJson: string
   startedAt: number
+  /** Set when a slot actually dispatches the job — startedAt→dispatch is the
+   *  in-pool queue wait, dispatch→reply the real service time. */
+  dispatchedAt?: number
   resolve: (p: { proof: SnarkjsProof; publicSignals: string[] }) => void
   reject: (e: Error) => void
 }
@@ -58,6 +61,8 @@ class BrowserProverPool {
   private id = 1
   proveCount = 0
   proveTotalMs = 0
+  serviceCount = 0
+  serviceTotalMs = 0
   mode: "mt" | "st" = "st"
   threadsPerWorker = 1
   activeThreads = 0
@@ -147,6 +152,10 @@ class BrowserProverPool {
       slot.worker.removeEventListener("message", onMsg)
       this.proveCount++
       this.proveTotalMs += performance.now() - e.startedAt
+      if (e.dispatchedAt !== undefined) {
+        this.serviceCount++
+        this.serviceTotalMs += performance.now() - e.dispatchedAt
+      }
       if (d.type === "proof") {
         // The raw MT worker returns the wasm's compressed-hex output; the
         // bundled ST worker already applies the snarkjs conversion itself.
@@ -172,11 +181,16 @@ class BrowserProverPool {
       if (next) this.run(slot, next)
     }
     slot.worker.addEventListener("message", onMsg)
+    e.dispatchedAt = performance.now()
     slot.worker.postMessage({ type: "prove", id: e.id, inputJson: e.inputJson })
   }
 
   avgMs(): number {
     return this.proveCount ? Math.round(this.proveTotalMs / this.proveCount) : 0
+  }
+
+  serviceMs(): number {
+    return this.serviceCount ? Math.round(this.serviceTotalMs / this.serviceCount) : 0
   }
 
   size(): number {
@@ -195,6 +209,8 @@ let starting: Promise<void> | null = null
 export interface BrowserProverInfo {
   workers: number
   avgMs: number
+  /** Mean dispatch→reply time — the actual proof math, slot-queue wait excluded. */
+  serviceMs: number
   proves: number
   mode: "mt" | "st"
   threads: number
@@ -252,7 +268,7 @@ export function ensureBrowserProver(opts?: { workers?: number; mode?: "mt" | "st
 }
 
 function info(p: BrowserProverPool): BrowserProverInfo {
-  return { workers: p.size(), avgMs: p.avgMs(), proves: p.proveCount, mode: p.mode, threads: p.activeThreads }
+  return { workers: p.size(), avgMs: p.avgMs(), serviceMs: p.serviceMs(), proves: p.proveCount, mode: p.mode, threads: p.activeThreads }
 }
 
 export function browserProverInfo(): BrowserProverInfo | null {

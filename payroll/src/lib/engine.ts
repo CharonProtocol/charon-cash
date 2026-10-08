@@ -805,6 +805,9 @@ export class PayrollEngine {
         // before this is a pre-broadcast failure and must release the pins
         // for retry, never be mistaken for a landed payout
         let submitted = false
+        // prove+relay window start; reset by onSubmitted so the catch's
+        // post-submit stamp below measures only the relay leg
+        let proveStart = 0
         try {
           const reserveStart = this.deps.now()
           pinned = await reserveFor(gross, lane)
@@ -815,6 +818,7 @@ export class PayrollEngine {
               if (ledger) ledger.busy--
             }
             row.status = "failed"
+            row.timing = timing
             row.error = "cancelled"
             return
           }
@@ -824,6 +828,7 @@ export class PayrollEngine {
           if (!pinned && ledger) {
             const total = ledger.totalFree()
             row.status = "failed"
+            row.timing = timing
             row.error =
               `insufficient private balance: no free note covers ${gross.toString()} ` +
               `(vault has ${total.toString()} across ${ledger.freeNotes().length} notes)`
@@ -838,7 +843,7 @@ export class PayrollEngine {
             // Exact net in the note; the SDK takes its fee from the sender's
             // remaining notes, so no gross solve is needed here.
             const net = Number(planRow.net)
-            let proveStart = this.deps.now()
+            proveStart = this.deps.now()
             const onSubmitted = async (): Promise<void> => {
               submitted = true
               timing.prepMs = this.deps.now() - reserveStart - (timing.reserveMs ?? 0)
@@ -904,6 +909,12 @@ export class PayrollEngine {
           return
         } catch (e) {
           const msg = (e as Error).message
+          // A post-submit throw (relay 409, lost response) still proved and
+          // relayed — stamp that window now or the adjudication path below
+          // assigns a timing with prep/confirm but no proveRelayMs.
+          if (submitted && timing.proveRelayMs === undefined) {
+            timing.proveRelayMs = this.deps.now() - proveStart
+          }
           // A pinned note can vanish from the SDK's live spendable set
           // between the ledger reload and the tx build (a landing lane's
           // scan marks notes spent mid-flight). Re-sync before the retry so
@@ -977,6 +988,9 @@ export class PayrollEngine {
             return
           }
           row.error = msg
+          // failed rows carry their last attempt's stages too — the wall of
+          // a run with retries is otherwise partly unattributable
+          row.timing = timing
           if (attempt === ATTEMPTS) row.status = "failed"
           else await this.deps.sleep(500 * 2 ** (attempt - 1))
         }

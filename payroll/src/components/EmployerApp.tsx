@@ -174,11 +174,14 @@ export function EmployerApp({ page }: { page: Page }) {
         // needs a different shape (1-2 lanes → MT teams, queued runs → the
         // field-proven ST pool of independent single-thread workers).
         try {
-          // ?provers=N forces the pool size (field tuning: e.g. 6 to test a
-          // wider shape than the recommendation); default = proverPlan
-          const forced = Number(new URLSearchParams(window.location.search).get("provers") ?? "") || undefined
+          // ?provers=N forces the pool size, ?mode=mt|st forces the engine
+          // (field A/B without redeploys); default = proverPlan
+          const params = new URLSearchParams(window.location.search)
+          const forced = Number(params.get("provers") ?? "") || undefined
+          const rawMode = params.get("mode")
+          const forcedMode: "mt" | "st" | undefined = rawMode === "mt" || rawMode === "st" ? rawMode : undefined
           const plan = proverPlan(lanes, navigator.hardwareConcurrency || 4)
-          const info = await ensureBrowserProver({ workers: forced ?? plan.workers, mode: plan.mode })
+          const info = await ensureBrowserProver({ workers: forced ?? plan.workers, mode: forcedMode ?? plan.mode })
           toast.info(`Prover: ${info.workers} ${info.mode === "mt" ? "MT" : "ST"} worker${info.workers === 1 ? "" : "s"}${info.mode === "mt" ? ` × ${info.threads} threads` : ""} · run: ${lanes} lane${lanes === 1 ? "" : "s"}`)
         } catch (e) {
           toast.warning(`Browser prover unavailable, using snarkjs: ${(e as Error).message}`)
