@@ -426,7 +426,7 @@ pub fn setup() -> TestContextSpl {
     // Replace the path with your actual built .so.
     svm.add_program(
         program_id,
-        include_bytes!("../target/deploy/privacy_cash.so"),
+        include_bytes!("../../../target/deploy/privacy_cash.so"),
     )
     .unwrap();
 
