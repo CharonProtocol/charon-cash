@@ -154,7 +154,13 @@ async fn sync_locked(state: &AppState) -> Result<SyncReport, String> {
     // torn mirror: every proof then folds to the wrong root). Cap each pass
     // to a few txs so the whole pass — backfill included — fits the budget;
     // repeated syncs chew through history in bounded, resumable steps.
-    const BACKFILL_CHUNK: usize = 3;
+    // 6 is the throughput floor, not just a safety cap: an 8-lane payroll
+    // run relays ~1 tx/s and each lane's next input note stays unspendable
+    // until its tx is indexed — a 3-tx pass can't hold that pace, the mirror
+    // lag balloons, and lanes starve in bursts (field-measured: 406s wall
+    // with 2.2 effective lanes out of 8). 1 sigs fetch + 6×(1 getTransaction
+    // + 5 stmts) ≈ 37 subrequests, inside the cap with headroom.
+    const BACKFILL_CHUNK: usize = 6;
     let chunk_complete = pending.len() <= BACKFILL_CHUNK;
     if !chunk_complete {
         pending.truncate(BACKFILL_CHUNK);
