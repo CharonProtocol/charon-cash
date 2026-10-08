@@ -184,7 +184,14 @@ export async function prove(input) {
         throw new Error("prover returned no result");
     return parseProof(out);
 }
-/** Parse public signals into 32-byte big-endian field-element byte arrays. */
+/**
+ * Parse public signals into 32-byte big-endian field-element byte arrays.
+ *
+ * `extDataHash` is already the little-endian reading of the SHA-256 digest
+ * (see `circuit_inputs` in the prover crate). Reversing here only writes that
+ * field element big-endian, which is the byte order the proof and the program
+ * store. Do not pre-swap the hash before `prove()`.
+ */
 export function parseToBytesArray(publicSignals) {
     return JSON.parse(JSON.stringify(publicSignals)).map((s) => Array.from(utils.leInt2Buff(utils.unstringifyBigInts(s), 32)).reverse());
 }

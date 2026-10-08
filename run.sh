@@ -45,12 +45,10 @@ else
 fi
 
 echo "==========================================================="
-echo "▶ 3/10 Building program..."
-cargo build-sbf --manifest-path programs/privacy-cash/Cargo.toml
-
-echo "==========================================================="
-echo "▶ 4/10 Updating IDs and Keypairs..."
-# Program ID
+echo "▶ 3/10 Updating IDs and Keypairs..."
+# Program ID must be known before the SBF build: singleton PDA addresses
+# (`TREE_ACCOUNT_ADDRESS` and friends) are compile-time constants of
+# `declare_id!` plus the canonical bumps for that id.
 [ -f target/deploy/privacy-cash-program.json ] || solana-keygen new --no-bip39-passphrase --silent -o target/deploy/privacy-cash-program.json
 PROG=$(solana-keygen pubkey target/deploy/privacy-cash-program.json)
 echo "  Program ID: $PROG"
@@ -71,26 +69,38 @@ solana airdrop 10 "$RELAYER_PUBKEY" --url localhost >/dev/null 2>&1 || true
 # Update lib.rs with Program ID
 perl -0pi -e 's/declare_id!\("[^"]+"\);/declare_id!("'"$PROG"'");/' programs/privacy-cash/src/lib.rs
 
-# Update backend/.env
+pda_bump() {
+  local seed="$1"
+  (cd "$PROJECT_ROOT/sdk" && SEED="$seed" PROGRAM_ID="$PROG" node --input-type=module -e '
+import { PublicKey } from "@solana/web3.js";
+const [, bump] = PublicKey.findProgramAddressSync(
+  [Buffer.from(process.env.SEED)],
+  new PublicKey(process.env.PROGRAM_ID),
+);
+process.stdout.write(String(bump));
+')
+}
+
+TREE_ACCOUNT_BUMP=$(pda_bump merkle_tree)
+TREE_TOKEN_ACCOUNT_BUMP=$(pda_bump tree_token)
+GLOBAL_CONFIG_BUMP=$(pda_bump global_config)
+echo "  Canonical PDA bumps: merkle_tree=$TREE_ACCOUNT_BUMP tree_token=$TREE_TOKEN_ACCOUNT_BUMP global_config=$GLOBAL_CONFIG_BUMP"
+perl -pi -e 's/pub const TREE_ACCOUNT_BUMP: u8 = \d+;/pub const TREE_ACCOUNT_BUMP: u8 = '"$TREE_ACCOUNT_BUMP"';/' programs/privacy-cash/src/constants.rs
+perl -pi -e 's/pub const TREE_TOKEN_ACCOUNT_BUMP: u8 = \d+;/pub const TREE_TOKEN_ACCOUNT_BUMP: u8 = '"$TREE_TOKEN_ACCOUNT_BUMP"';/' programs/privacy-cash/src/constants.rs
+perl -pi -e 's/pub const GLOBAL_CONFIG_BUMP: u8 = \d+;/pub const GLOBAL_CONFIG_BUMP: u8 = '"$GLOBAL_CONFIG_BUMP"';/' programs/privacy-cash/src/constants.rs
+
+# Update backend/.env (perl -i, not sed -i: BSD sed on macOS treats the
+# filename as the script and fails with "undefined label").
 if [ -f backend/.env ]; then
-  # Remove any existing RELAYER_KEYPAIR, PROGRAM_ID, and DATABASE_URL lines
-  sed -i '/^PROGRAM_ID=/d' backend/.env
-  sed -i '/^RELAYER_KEYPAIR=/d' backend/.env
-  sed -i '/^DATABASE_URL=/d' backend/.env
-  sed -i '/^RELAYER_FEE_RECIPIENT=/d' backend/.env
-  sed -i '/^RELAYER_FEE_RECIPIENT_KEYPAIR=/d' backend/.env
-  echo "PROGRAM_ID=$PROG" >> backend/.env
-  echo "RELAYER_KEYPAIR=$RELAYER_KP_PATH" >> backend/.env
-  echo "DATABASE_URL=postgres://postgres:postgres@localhost:5433/privacy_cash" >> backend/.env
-  echo "RELAYER_FEE_RECIPIENT=$FEE_RECIPIENT_PUBKEY" >> backend/.env
-  echo "RELAYER_FEE_RECIPIENT_KEYPAIR=$PROJECT_ROOT/target/deploy/fee-recipient.json" >> backend/.env
-else
-  echo "PROGRAM_ID=$PROG" >> backend/.env
-  echo "RELAYER_KEYPAIR=$RELAYER_KP_PATH" >> backend/.env
-  echo "DATABASE_URL=postgres://postgres:postgres@localhost:5433/privacy_cash" >> backend/.env
-  echo "RELAYER_FEE_RECIPIENT=$FEE_RECIPIENT_PUBKEY" >> backend/.env
-  echo "RELAYER_FEE_RECIPIENT_KEYPAIR=$PROJECT_ROOT/target/deploy/fee-recipient.json" >> backend/.env
+  perl -ni -e 'print unless /^(PROGRAM_ID|RELAYER_KEYPAIR|DATABASE_URL|RELAYER_FEE_RECIPIENT|RELAYER_FEE_RECIPIENT_KEYPAIR)=/' backend/.env
 fi
+{
+  echo "PROGRAM_ID=$PROG"
+  echo "RELAYER_KEYPAIR=$RELAYER_KP_PATH"
+  echo "DATABASE_URL=postgres://postgres:postgres@localhost:5433/privacy_cash"
+  echo "RELAYER_FEE_RECIPIENT=$FEE_RECIPIENT_PUBKEY"
+  echo "RELAYER_FEE_RECIPIENT_KEYPAIR=$PROJECT_ROOT/target/deploy/fee-recipient.json"
+} >> backend/.env
 
 # Write to sdk/.env
 cat > sdk/.env <<EOF
@@ -98,6 +108,10 @@ PROGRAM_ID=$PROG
 FEE_RECIPIENT=$FEE_RECIPIENT_PUBKEY
 RELAYER_ADDRESS=$RELAYER_PUBKEY
 EOF
+
+echo "==========================================================="
+echo "▶ 4/10 Building program..."
+cargo build-sbf --manifest-path programs/privacy-cash/Cargo.toml
 
 echo "==========================================================="
 echo "▶ 5/10 Deploying program..."
@@ -116,14 +130,16 @@ echo "▶ 6/10 Running SDK setup scripts (initialize, init-spl, alt-init)..."
   ALT_OUTPUT=$(RELAYER_ADDRESS=$RELAYER_PUBKEY FEE_RECIPIENT=$FEE_RECIPIENT_PUBKEY PROGRAM_ID=$PROG bun run scripts/alt-init.mjs)
   echo "$ALT_OUTPUT" | sed 's/^/    /'
   
-  ALT_ADDRESS=$(echo "$ALT_OUTPUT" | grep -oP 'ALT created: \K[a-zA-Z0-9]+' || true)
+  ALT_ADDRESS=$(printf '%s\n' "$ALT_OUTPUT" | perl -ne 'print $1 if /ALT created: ([a-zA-Z0-9]+)/')
   if [ -n "$ALT_ADDRESS" ]; then
     echo "  Extracted ALT address: $ALT_ADDRESS"
     # Append new ALT to sdk/.env
     echo "ALT_ADDRESS=$ALT_ADDRESS" >> .env
     
     # Append ALT to backend/.env
-    sed -i '/^RELAYER_ALT_ADDRESS=/d' ../backend/.env || true
+    if [ -f ../backend/.env ]; then
+      perl -ni -e 'print unless /^RELAYER_ALT_ADDRESS=/' ../backend/.env
+    fi
     echo "RELAYER_ALT_ADDRESS=$ALT_ADDRESS" >> ../backend/.env
     
     # Write everything to frontend/.env for Vite

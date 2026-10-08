@@ -22,10 +22,6 @@ export declare const SEED: {
 export declare const SOL_TREE_KEY = "sol";
 export declare const DEPOSIT_FEE_RATE = 0;
 export declare const WITHDRAW_FEE_RATE = 25;
-export declare const CIRCUIT: {
-    WASM_URL: string;
-    ZKEY_URL: string;
-};
 export declare function backendUrl(): string;
 export declare function envProgramId(): PublicKey | null;
 //# sourceMappingURL=constants.d.ts.map

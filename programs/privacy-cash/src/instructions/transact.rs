@@ -1,15 +1,15 @@
 use crate::{
     constants::{
-        GLOBAL_CONFIG_SEED, NULLIFIER0_SEED, NULLIFIER1_SEED, SOL_ADDRESS, TREE_ACCOUNT_SEED,
-        TREE_TOKEN_ACCOUNT_SEED,
+        GLOBAL_CONFIG_ADDRESS, NULLIFIER0_SEED, NULLIFIER1_SEED, SOL_ADDRESS, TREE_ACCOUNT_ADDRESS,
+        TREE_TOKEN_ACCOUNT_ADDRESS,
     },
     error::PrivacyCashError,
     helper::{
-        init_nullifier_account, verify_cross_nullifier, verify_initialized, verify_pda,
+        init_nullifier_account, verify_address, verify_cross_nullifier, verify_initialized,
         verify_program_id, verify_signer,
     },
     merkle_tree::MerkleTree,
-    state::{GlobalConfig, MerkleTreeAccount, TransactArgs, TreeTokenAccount},
+    state::{GlobalConfig, MerkleTreeAccount, TransactArgs},
     utils::{
         calculate_complete_ext_data_hash, check_public_amount, ext_data_hash_matches, validate_fee,
         verify_proof, VERIFYING_KEY,
@@ -47,26 +47,14 @@ pub fn process_transact(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
     verify_initialized(tree_token_account)?;
     verify_initialized(global_config)?;
 
-    {
-        let token_data = tree_token_account.try_borrow()?;
-        let token = try_from_bytes::<TreeTokenAccount>(&token_data[..TreeTokenAccount::LEN])
-            .map_err(|_| ProgramError::InvalidAccountData)?;
-        verify_pda(
-            tree_token_account,
-            &[TREE_TOKEN_ACCOUNT_SEED, &[token.bump]],
-            &crate::ID,
-        )?;
-    }
+    verify_address(tree_account, &TREE_ACCOUNT_ADDRESS)?;
+    verify_address(tree_token_account, &TREE_TOKEN_ACCOUNT_ADDRESS)?;
+    verify_address(global_config, &GLOBAL_CONFIG_ADDRESS)?;
 
     let global = {
         let global_data = global_config.try_borrow()?;
         let global = try_from_bytes::<GlobalConfig>(&global_data[..GlobalConfig::LEN])
             .map_err(|_| ProgramError::InvalidAccountData)?;
-        verify_pda(
-            global_config,
-            &[GLOBAL_CONFIG_SEED, &[global.bump]],
-            &crate::ID,
-        )?;
         *global
     };
 
@@ -80,9 +68,9 @@ pub fn process_transact(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
 
     let max_deposit_amount = {
         let tree_data = tree_account.try_borrow()?;
-        let tree = bytemuck::try_from_bytes::<MerkleTreeAccount>(&tree_data[..MerkleTreeAccount::LEN])
-            .map_err(|_| ProgramError::InvalidAccountData)?;
-        verify_pda(tree_account, &[TREE_ACCOUNT_SEED, &[tree.bump]], &crate::ID)?;
+        let tree =
+            bytemuck::try_from_bytes::<MerkleTreeAccount>(&tree_data[..MerkleTreeAccount::LEN])
+                .map_err(|_| ProgramError::InvalidAccountData)?;
         if !MerkleTree::is_known_root(tree, proof.root) {
             return Err(PrivacyCashError::UnknownRoot.into());
         }

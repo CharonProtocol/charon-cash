@@ -2,7 +2,7 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{Connection, Executor, PgConnection, PgExecutor, PgPool, Postgres, Row, Transaction};
 use std::str::FromStr;
 
-use crate::indexer::{IndexedTransact, TransactKind};
+use crate::indexer::{IndexedSwap, IndexedTransact, TransactKind};
 use crate::response::{ApiError, ApiErrorCode};
 
 #[derive(Clone)]
@@ -83,12 +83,11 @@ impl Db {
     }
 
     pub async fn has_wallet_pubkey(&self, wallet_pubkey: &str) -> Result<bool, DbError> {
-        let query = sqlx::query("SELECT * FROM users WHERE wallet_pubkey = $1")
+        let row = sqlx::query("SELECT 1 FROM users WHERE wallet_pubkey = $1")
             .bind(wallet_pubkey)
-            .fetch_one(&self.pool)
+            .fetch_optional(&self.pool)
             .await?;
-
-        Ok(!query.is_empty())
+        Ok(row.is_some())
     }
 
     pub async fn next_index(&self, tree_key: &str) -> Result<u32, DbError> {
@@ -117,7 +116,10 @@ impl Db {
         tree_key: &String,
     ) -> Result<Vec<(u64, Vec<u8>)>, DbError> {
         let rows = sqlx::query::<sqlx::Postgres>(
-            "SELECT * FROM commitments WHERE tree_key = $1 AND leaf_index >= $2 LIMIT $3",
+            "SELECT leaf_index, commitment FROM commitments
+             WHERE tree_key = $1 AND leaf_index >= $2
+             ORDER BY leaf_index ASC
+             LIMIT $3",
         )
         .bind(tree_key)
         .bind(leaf_index as i64)
@@ -229,6 +231,73 @@ impl Db {
 
         conn.commit().await?;
 
+        Ok(())
+    }
+
+    /// One swap writes two leaves on each tree and four ciphertexts.
+    /// `indexed_txs.signature` is the primary key, so the swap is one row.
+    pub async fn insert_swap(&self, tx: &IndexedSwap) -> Result<(), DbError> {
+        let mut conn = self.pool.begin().await?;
+
+        sqlx::query(
+            "INSERT INTO indexed_txs (signature, slot, tree_key, kind)
+             VALUES ($1, $2, $3, 'swap')
+             ON CONFLICT (signature) DO NOTHING",
+        )
+        .bind(tx.signature.as_str())
+        .bind(tx.slot as i64)
+        .bind(tx.in_tree_key.as_str())
+        .execute(&mut *conn)
+        .await?;
+
+        sqlx::query(
+            "INSERT INTO commitments (leaf_index, tree_key, commitment)
+             VALUES ($1,$2,$3),($4,$5,$6),($7,$8,$9),($10,$11,$12)",
+        )
+        .bind(tx.in_index as i64)
+        .bind(tx.in_tree_key.as_str())
+        .bind(&tx.decoded.in_commitments[0])
+        .bind((tx.in_index + 1) as i64)
+        .bind(tx.in_tree_key.as_str())
+        .bind(&tx.decoded.in_commitments[1])
+        .bind(tx.out_index as i64)
+        .bind(tx.out_tree_key.as_str())
+        .bind(&tx.decoded.out_commitments[0])
+        .bind((tx.out_index + 1) as i64)
+        .bind(tx.out_tree_key.as_str())
+        .bind(&tx.decoded.out_commitments[1])
+        .execute(&mut *conn)
+        .await?;
+
+        sqlx::query("INSERT INTO utxos (ciphertext) VALUES ($1),($2),($3),($4)")
+            .bind(tx.decoded.encrypted_outputs[0].as_slice())
+            .bind(tx.decoded.encrypted_outputs[1].as_slice())
+            .bind(tx.decoded.encrypted_outputs[2].as_slice())
+            .bind(tx.decoded.encrypted_outputs[3].as_slice())
+            .execute(&mut *conn)
+            .await?;
+
+        for (tree_key, next_index) in [
+            (tx.in_tree_key.as_str(), tx.in_index + 2),
+            (tx.out_tree_key.as_str(), tx.out_index + 2),
+        ] {
+            sqlx::query(
+                "INSERT INTO trees (tree_key, next_index) VALUES ($1, $2)
+                 ON CONFLICT (tree_key) DO UPDATE SET next_index = EXCLUDED.next_index",
+            )
+            .bind(tree_key)
+            .bind(next_index as i64)
+            .execute(&mut *conn)
+            .await?;
+        }
+
+        sqlx::query("UPDATE indexer_cursor SET last_signature = $1, last_slot = $2 WHERE id = 1")
+            .bind(&tx.signature)
+            .bind(tx.slot as i64)
+            .execute(&mut *conn)
+            .await?;
+
+        conn.commit().await?;
         Ok(())
     }
 }

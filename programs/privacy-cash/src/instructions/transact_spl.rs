@@ -1,12 +1,12 @@
 use crate::{
     constants::{
-        ALLOWED_TOKENS, ALLOW_ALL_SPL_TOKENS, GLOBAL_CONFIG_SEED, NULLIFIER0_SEED, NULLIFIER1_SEED,
-        TREE_ACCOUNT_SEED,
+        ALLOWED_TOKENS, ALLOW_ALL_SPL_TOKENS, GLOBAL_CONFIG_ADDRESS, GLOBAL_CONFIG_BUMP,
+        GLOBAL_CONFIG_SEED, NULLIFIER0_SEED, NULLIFIER1_SEED, TREE_ACCOUNT_SEED,
     },
     error::PrivacyCashError,
     helper::{
-        init_nullifier_account, verify_cross_nullifier, verify_initialized, verify_pda,
-        verify_program_id, verify_signer,
+        init_nullifier_account, verify_address, verify_cross_nullifier, verify_initialized,
+        verify_pda, verify_program_id, verify_signer,
     },
     merkle_tree::MerkleTree,
     state::{GlobalConfig, MerkleTreeAccount, TransactArgs},
@@ -68,15 +68,25 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
         }
     }
 
+    // Bind `tree_ata` to `mint`. On a first-ever deposit `tree_ata` doesn't
+    // exist yet and is validated instead by `CreateIdempotent` below; on
+    // every other path (withdrawal, fee payment, or a repeat deposit) it
+    // already exists and must belong to this tree's mint, or `global_config`
+    // -- the shared SPL-vault authority for every mint's tree -- could be
+    // used to sign a transfer out of a completely different mint's vault.
+    if !tree_ata.is_data_empty() {
+        let tree_ata_account = TokenAccount::from_account_view(tree_ata)?;
+        if tree_ata_account.mint() != mint.address() {
+            return Err(PrivacyCashError::InvalidMintAddress.into());
+        }
+    }
+
+    verify_address(global_config, &GLOBAL_CONFIG_ADDRESS)?;
+
     let global = {
         let global_data = global_config.try_borrow()?;
         let global = try_from_bytes::<GlobalConfig>(&global_data[..GlobalConfig::LEN])
             .map_err(|_| ProgramError::InvalidAccountData)?;
-        verify_pda(
-            global_config,
-            &[GLOBAL_CONFIG_SEED, &[global.bump]],
-            &crate::ID,
-        )?;
         *global
     };
 
@@ -156,7 +166,10 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
     )?;
 
     // PDA signer seeds for the tree's ATA (authority == global_config PDA).
-    let global_bump = [global.bump];
+    // The bump is the constant, not `global.bump`: `verify_address` above
+    // already pinned this account to the canonical address, so the two agree
+    // and the constant cannot be influenced by account data.
+    let global_bump = [GLOBAL_CONFIG_BUMP];
     let global_seeds = [Seed::from(GLOBAL_CONFIG_SEED), Seed::from(&global_bump)];
 
     if ext_amount > 0 {

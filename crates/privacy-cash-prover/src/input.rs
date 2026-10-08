@@ -44,8 +44,12 @@ pub fn get_mint_address_field(mint: &str) -> String {
 }
 
 /// Circom signal name -> flattened values, in circuit declaration order.
-/// `extDataHash` is little-endian (the on-chain hash is reduced LE); every
-/// other 32-byte value is big-endian.
+///
+/// The SDK passes `extDataHash` as the raw SHA-256 digest, first byte first.
+/// The circuit signal, and the bytes stored in the proof, are that digest read
+/// little-endian. On-chain `ext_data_hash_matches` does the same reversal
+/// (`swab32`) before comparing, so this conversion has to stay here. Do not
+/// also reverse the bytes in the SDK.
 pub fn circuit_inputs(input: &ProofInput) -> Result<Vec<(String, Vec<BigUint>)>> {
     let be = |b: &[u8; 32]| BigUint::from_bytes_be(b);
     Ok(vec![
@@ -266,5 +270,40 @@ mod tests {
         );
         let already = get_mint_address_field(usdc);
         assert_eq!(get_mint_address_field(&already), already);
+    }
+
+    /// Raw hash bytes in, little-endian field element out. Matches
+    /// `ext_data_hash_matches`, which compares `swab32(sha256)` to the proof.
+    #[test]
+    fn ext_data_hash_signal_is_little_endian_digest() {
+        let mut raw = [0u8; 32];
+        raw[0] = 7;
+        raw[15] = 9;
+        raw[31] = 3;
+        let input = ProofInput {
+            root: [0u8; 32],
+            input_nullifier: [[0u8; 32]; 2],
+            output_commitment: [[0u8; 32]; 2],
+            public_amount: BigUint::from(0u8),
+            ext_data_hash: raw,
+            in_amount: vec![],
+            in_private_key: vec![],
+            in_blinding: vec![],
+            mint_address: SOL_MINT_PLACEHOLDER.to_string(),
+            in_path_indices: [0, 0],
+            in_path_elements: vec![],
+            out_amount: vec![],
+            out_blinding: vec![],
+            out_pubkey: vec![],
+        };
+        let signal = circuit_inputs(&input)
+            .unwrap()
+            .into_iter()
+            .find(|(name, _)| name == "extDataHash")
+            .unwrap()
+            .1
+            .remove(0);
+        assert_eq!(signal, BigUint::from_bytes_le(&raw));
+        assert_ne!(signal, BigUint::from_bytes_be(&raw));
     }
 }

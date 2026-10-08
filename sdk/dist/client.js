@@ -7,6 +7,7 @@ import BN from "bn.js";
 import { DEPOSIT_FEE_RATE, SUPPORTED_SPL_MINTS, WITHDRAW_FEE_RATE, WRAPPED_SOL_MINT, } from "./constants";
 import { API } from "./api";
 import { shieldedTransferSol, shieldedTransferSpl, transactSol, transactSpl, } from "./program";
+import { swapPrivate } from "./swap";
 import { CharonProtocolError, CharonProtocolErrorCode } from "./error";
 export const SIGN_MESSAGE = "Privacy Money account sign in";
 export class CharonProtocol {
@@ -184,6 +185,31 @@ export class CharonProtocol {
         }
         this.recalculateBalances();
         return { signature: txid };
+    }
+    /**
+     * Private SOL↔SPL swap. `amountIn` is lamports for SOL and base units for SPL.
+     * The relayer signs the transaction.
+     */
+    async swap(fromMint, outMint, amountIn) {
+        await this.syncUtxos();
+        const [inputUtxos, requiredutxos] = await this.getRequiredUtxosForAmount(fromMint, new BN(amountIn));
+        const signature = await swapPrivate({
+            fromMint,
+            outMint,
+            amountIn: new BN(amountIn),
+            inputUtxos,
+            lightwasm: this.lightwasm,
+            encryptionService: this.encryptionService,
+        });
+        for (const spent of requiredutxos) {
+            await this.storageService.removeUtxo(spent.utxoId);
+            const noteSummary = this.utxoByMint.get(fromMint);
+            if (noteSummary) {
+                noteSummary.utxos = noteSummary.utxos.filter((note) => note.utxoId !== spent.utxoId);
+            }
+        }
+        this.recalculateBalances();
+        return { signature };
     }
     async sendSpl(amount, recipientKey, mintAddress) {
         if (!SUPPORTED_SPL_MINTS.includes(mintAddress)) {

@@ -79,7 +79,7 @@ export function Dashboard() {
                 >
                   {operation === "send" && <Send context={context} />}
                   {operation === "withdraw" && <Withdraw context={context} />}
-                  {operation === "swap" && <Swap />}
+                  {operation === "swap" && <Swap context={context} />}
                   {operation === "payroll" && <Payroll />}
                   {operation === "transfer" && (
                     <ShieldedTransfer context={context} />
@@ -92,8 +92,7 @@ export function Dashboard() {
                 value={operation}
                 busy={busy}
                 onChange={(next) => {
-                  if (!busy && next !== "swap" && next !== "payroll")
-                    setOperation(next);
+                  if (!busy && next !== "payroll") setOperation(next);
                 }}
               />
             </div>

@@ -36,4 +36,21 @@ export declare function getExtDataHash(ext: {
     feeRecipient: PublicKey | string;
     mintAddress: PublicKey | string;
 }): Uint8Array;
+/** In-leg hash. Byte layout matches `calculate_swap_in_ext_data_hash`. */
+export declare function getSwapInExtDataHash(args: {
+    extAmountIn: BN | number | string;
+    encryptedOutput1: Uint8Array;
+    encryptedOutput2: Uint8Array;
+    inMint: PublicKey | string;
+    outMint: PublicKey | string;
+    minAmountOut: BN | number | string;
+    outCommitments: [Uint8Array, Uint8Array];
+}): Uint8Array;
+/** Out-leg hash. Does not mention the in-leg. Matches `calculate_swap_out_ext_data_hash`. */
+export declare function getSwapOutExtDataHash(args: {
+    extAmountOut: BN | number | string;
+    encryptedOutput1: Uint8Array;
+    encryptedOutput2: Uint8Array;
+    outMint: PublicKey | string;
+}): Uint8Array;
 //# sourceMappingURL=utils.d.ts.map

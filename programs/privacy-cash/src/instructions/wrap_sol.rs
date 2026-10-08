@@ -1,10 +1,9 @@
 use crate::{
-    constants::{TREE_TOKEN_ACCOUNT_SEED, WSOL_MINT},
+    constants::{GLOBAL_CONFIG_ADDRESS, TREE_TOKEN_ACCOUNT_ADDRESS, WSOL_MINT},
     error::PrivacyCashError,
-    helper::{verify_pda, verify_program_id, verify_signer},
+    helper::{verify_address, verify_program_id, verify_signer},
     state::TreeTokenAccount,
 };
-use bytemuck::try_from_bytes;
 use pinocchio::{
     error::ProgramError,
     sysvars::{rent::Rent, Sysvar},
@@ -52,16 +51,7 @@ pub fn process_wrap_sol(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
         return Err(PrivacyCashError::InvalidSwapAmount.into());
     }
 
-    {
-        let token_data = sol_vault.try_borrow()?;
-        let token = try_from_bytes::<TreeTokenAccount>(&token_data[..TreeTokenAccount::LEN])
-            .map_err(|_| ProgramError::InvalidAccountData)?;
-        verify_pda(
-            sol_vault,
-            &[TREE_TOKEN_ACCOUNT_SEED, &[token.bump]],
-            &crate::ID,
-        )?;
-    }
+    verify_address(sol_vault, &TREE_TOKEN_ACCOUNT_ADDRESS)?;
 
     let rent_exempt_minimum = Rent::get()?.try_minimum_balance(TreeTokenAccount::LEN)?;
     let required = amount
@@ -75,6 +65,16 @@ pub fn process_wrap_sol(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
         let token = TokenAccount::from_account_view(pool_wsol)?;
         if token.mint() != wsol_mint.address() {
             return Err(PrivacyCashError::InvalidTokenAccountMintAddress.into());
+        }
+        // Owner is compared from the raw token-account bytes. A field compare
+        // against a compile-time constant is deleted by SBF LLVM because
+        // `from_account_view` transmutes the buffer (owner is undef).
+        let data = pool_wsol.try_borrow()?;
+        let owner: &[u8; 32] = data[32..64]
+            .try_into()
+            .map_err(|_| ProgramError::InvalidAccountData)?;
+        if owner != &GLOBAL_CONFIG_ADDRESS {
+            return Err(PrivacyCashError::InvalidTokenAccount.into());
         }
     }
 

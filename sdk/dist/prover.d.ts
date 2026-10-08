@@ -72,6 +72,13 @@ export declare function preloadProver(): Promise<void>;
  * including the spend key, is never sent over the network.
  */
 export declare function prove(input: Record<string, unknown>): Promise<Groth16Proof>;
-/** Parse public signals into 32-byte big-endian field-element byte arrays. */
+/**
+ * Parse public signals into 32-byte big-endian field-element byte arrays.
+ *
+ * `extDataHash` is already the little-endian reading of the SHA-256 digest
+ * (see `circuit_inputs` in the prover crate). Reversing here only writes that
+ * field element big-endian, which is the byte order the proof and the program
+ * store. Do not pre-swap the hash before `prove()`.
+ */
 export declare function parseToBytesArray(publicSignals: string[]): number[][];
 //# sourceMappingURL=prover.d.ts.map

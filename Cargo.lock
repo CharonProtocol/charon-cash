@@ -3747,7 +3747,10 @@ version = "7.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6bf16d3731ade36df5d69ced3f9f58e68485355da4228bdf30418d03c471fab"
 dependencies = [
+ "ark-bn254 0.5.0",
+ "ark-ff 0.5.0",
  "borsh",
+ "light-poseidon 0.4.0",
  "num-bigint 0.4.8",
  "solana-define-syscall 5.2.0",
  "thiserror 2.0.18",
@@ -4794,6 +4797,7 @@ dependencies = [
  "solana-message 3.1.0",
  "solana-native-token 3.0.0",
  "solana-program",
+ "solana-program-error 3.0.1",
  "solana-program-pack",
  "solana-rpc-client",
  "solana-sdk",

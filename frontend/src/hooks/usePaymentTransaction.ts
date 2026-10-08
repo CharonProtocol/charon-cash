@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { RPC_URL } from "../lib/config";
 import { PublicKey } from "@solana/web3.js";
-import { parseTokenAmount } from "../lib/payment";
+import { parseTokenAmount, SOL_POOL_MINT } from "../lib/payment";
 import type { Token } from "../components/dashboard/TokenIcon";
 import type {
   PaymentContext,
@@ -29,7 +29,12 @@ export function usePaymentTransaction(
       mounted.current = false;
     };
   }, []);
-  const submit = async (amount: string, recipient: string, token: Token) => {
+  const submit = async (
+    amount: string,
+    recipient: string,
+    token: Token,
+    outToken?: Token,
+  ) => {
     if (!context.client || running.current) return;
     running.current = true;
     context.onBusyChange(true);
@@ -38,14 +43,34 @@ export function usePaymentTransaction(
     try {
       const lamports = parseTokenAmount(amount, token);
       const destination =
-        kind === "withdraw" ? "" : new PublicKey(recipient.trim()).toBase58();
+        kind === "withdraw" || kind === "swap"
+          ? ""
+          : new PublicKey(recipient.trim()).toBase58();
       const onProgress = (next: "proof" | "signing" | "confirming") => {
         if (mounted.current) setStatus(next);
       };
       context.observeProgress(onProgress);
 
+      const mintOf = (asset: Token) =>
+        asset === "SOL"
+          ? SOL_POOL_MINT
+          : SUPPORTED_SPL_MINTS[
+              asset.toLowerCase() as keyof typeof SUPPORTED_SPL_MINTS
+            ];
+
+      if (kind === "swap") {
+        if (!outToken || outToken === token) {
+          throw new Error("Choose a different output asset.");
+        }
+        if (token !== "SOL" && outToken !== "SOL") {
+          throw new Error("Swap SOL with USDC or USDT.");
+        }
+      }
+
       const result =
-        kind === "send"
+        kind === "swap"
+          ? await context.client.swap(mintOf(token), mintOf(outToken!), lamports)
+          : kind === "send"
           ? token === "SOL"
             ? await context.client.sendSol(lamports, destination)
             : await context.client.sendSpl(

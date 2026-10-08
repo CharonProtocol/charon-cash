@@ -1,6 +1,7 @@
 mod common;
 
 use mollusk_svm::{Mollusk, result::Check};
+use solana_program_error::ProgramError;
 
 use solana_sdk::{
     native_token::LAMPORTS_PER_SOL,
@@ -36,7 +37,7 @@ use spl_token::state::{Mint, Account as SplTokenAccount, AccountState};
 use solana_program_pack::Pack;
 use solana_sdk::program_option::COption;
 
-const PROGRAM_ID: &str = "Dz8MTy797RkN55JhgLCuKQ3sWDs4YHBipEoThADFFf58";
+const PROGRAM_ID: &str = "36xGVBG86254oWi7dHJb9dstzarx1gk1pTvQ9Gmn598j";
 
 pub fn create_ext_data_minified(ext_data: &ExtData) -> ExtDataMinified {
     ExtDataMinified { ext_amount: ext_data.ext_amount, fee: ext_data.fee }
@@ -304,10 +305,13 @@ fn setup() -> BenchContext {
     let program_id = Pubkey::from_str_const(PROGRAM_ID);
 
     std::env::set_var("RUST_LOG", "off");
-    std::env::set_var(
-        "SBF_OUT_DIR",
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/deploy"),
-    );
+    let sbf_out = std::env::var_os("CARGO_TARGET_DIR")
+        .map(|dir| PathBuf::from(dir).join("deploy"))
+        .filter(|dir| dir.join("privacy_cash.so").exists())
+        .unwrap_or_else(|| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/deploy")
+        });
+    std::env::set_var("SBF_OUT_DIR", sbf_out.canonicalize().unwrap_or(sbf_out));
     let mut mollusk = Mollusk::new(&program_id, "privacy_cash");
 
     let authority = Keypair::new();
@@ -1096,6 +1100,55 @@ fn wrap_sol_set_lamports_balances() {
             ),
         ],
         &accounts,
+    );
+}
+
+#[test]
+fn wrap_sol_rejects_attacker_owned_wsol() {
+    let ctx = setup();
+    let wrap_amount = LAMPORTS_PER_SOL;
+    let vault = funded_tree_token_account(
+        ctx.authority.pubkey(),
+        ctx.tree_token_bump,
+        wrap_amount,
+    );
+    let pool_wsol_key = Pubkey::new_unique();
+    assert_ne!(ctx.random_user.pubkey(), ctx.global_config);
+    let pool_wsol = native_token_account(ctx.random_user.pubkey());
+    assert_eq!(&pool_wsol.data[32..64], ctx.random_user.pubkey().as_ref());
+    let native_mint = spl_token::native_mint::ID;
+
+    let mut data = vec![PrivacyCashInstructions::WrapSol as u8];
+    data.extend_from_slice(&wrap_amount.to_le_bytes());
+
+    let instruction = Instruction {
+        program_id: ctx.program_id,
+        accounts: vec![
+            AccountMeta::new(ctx.tree_token_account, false),
+            AccountMeta::new(pool_wsol_key, false),
+            AccountMeta::new_readonly(native_mint, false),
+            AccountMeta::new(ctx.random_user.pubkey(), true),
+            AccountMeta::new_readonly(spl_token::ID, false),
+            AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
+        ],
+        data,
+    };
+
+    let accounts = vec![
+        (ctx.tree_token_account, vault),
+        (pool_wsol_key, pool_wsol),
+        (native_mint, native_mint_account()),
+        (ctx.random_user.pubkey(), funded_account(10 * LAMPORTS_PER_SOL)),
+        mollusk_svm_programs_token::token::keyed_account(),
+        system_program_keyed_account(),
+    ];
+
+    ctx.mollusk.process_and_validate_instruction(
+        &instruction,
+        &accounts,
+        &[Check::err(ProgramError::Custom(
+            privacy_cash::error::PrivacyCashError::InvalidTokenAccount as u32,
+        ))],
     );
 }
 

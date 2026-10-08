@@ -2,8 +2,8 @@ use bytemuck::{from_bytes_mut, Pod, Zeroable};
 use pinocchio::{error::ProgramError, AccountView, ProgramResult};
 
 use crate::{
-    constants::TREE_ACCOUNT_SEED,
-    helper::{verify_authority, verify_initialized, verify_pda, verify_signer},
+    constants::TREE_ACCOUNT_ADDRESS,
+    helper::{verify_address, verify_authority, verify_initialized, verify_signer},
     state::MerkleTreeAccount,
 };
 
@@ -29,13 +29,7 @@ pub fn process_update_deposit_limit(accounts: &[AccountView], data: &[u8]) -> Pr
     let params = bytemuck::try_pod_read_unaligned::<UpdateDepositLimitParams>(data)
         .map_err(|_| ProgramError::InvalidInstructionData)?;
 
-    let tree_account_bump = [params.tree_account_bump];
-
-    verify_pda(
-        tree_account,
-        &[TREE_ACCOUNT_SEED, &tree_account_bump],
-        &crate::ID,
-    )?;
+    verify_address(tree_account, &TREE_ACCOUNT_ADDRESS)?;
 
     let mut tree_account_data = tree_account.try_borrow_mut()?;
     let tree_account =

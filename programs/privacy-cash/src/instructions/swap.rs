@@ -1,22 +1,21 @@
 use crate::{
     constants::{
-        ALLOWED_TOKENS, ALLOW_ALL_SPL_TOKENS, GLOBAL_CONFIG_SEED, JUPITER_PROGRAM_ID,
-        NULLIFIER0_SEED, NULLIFIER1_SEED, SOL_ADDRESS, TREE_ACCOUNT_SEED, TREE_TOKEN_ACCOUNT_SEED,
-        WSOL_MINT,
+        ALLOWED_TOKENS, ALLOW_ALL_SPL_TOKENS, GLOBAL_CONFIG_ADDRESS, GLOBAL_CONFIG_BUMP,
+        GLOBAL_CONFIG_SEED, JUPITER_PROGRAM_ID, NULLIFIER0_SEED, NULLIFIER1_SEED, SOL_ADDRESS,
+        TREE_ACCOUNT_ADDRESS, TREE_ACCOUNT_SEED, TREE_TOKEN_ACCOUNT_ADDRESS, WSOL_MINT,
     },
     error::PrivacyCashError,
     helper::{
-        init_nullifier_account, verify_cross_nullifier, verify_initialized, verify_pda,
-        verify_program_id, verify_signer,
+        init_nullifier_account, verify_address, verify_cross_nullifier, verify_initialized,
+        verify_pda, verify_program_id, verify_signer,
     },
     merkle_tree::MerkleTree,
-    state::{GlobalConfig, MerkleTreeAccount, SwapArgs, TreeTokenAccount},
+    state::{MerkleTreeAccount, SwapArgs},
     utils::{
         calculate_swap_in_ext_data_hash, calculate_swap_out_ext_data_hash, check_public_amount,
         ext_data_hash_matches, verify_proof, VERIFYING_KEY,
     },
 };
-use bytemuck::try_from_bytes;
 use light_hasher::Poseidon;
 use pinocchio::{
     cpi::{invoke_signed_with_slice, Seed, Signer},
@@ -50,8 +49,8 @@ enum SwapDir {
 /// 12 wsol_mint, 13 pool_wsol, 14 spl_mint, 15 pool_spl,
 /// 16 signer, 17 jupiter, 18 token_program, 19 ata_program, 20 system_program.
 ///
-/// Direction is inferred from `in_tree`: SOL tree is `[merkle_tree, bump]`;
-/// SPL tree is `[merkle_tree, mint, bump]`.
+/// Direction is inferred from `in_tree`: the SOL tree is the singleton at
+/// `TREE_ACCOUNT_ADDRESS`; an SPL tree is `[merkle_tree, mint, bump]`.
 #[inline(never)]
 pub fn process_swap(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     if accounts.len() < FIXED_ACCOUNTS {
@@ -105,50 +104,12 @@ pub fn process_swap(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
         return Err(PrivacyCashError::InvalidMintAddress.into());
     }
 
-    {
-        let token_data = sol_vault.try_borrow()?;
-        let token = try_from_bytes::<TreeTokenAccount>(&token_data[..TreeTokenAccount::LEN])
-            .map_err(|_| ProgramError::InvalidAccountData)?;
-        verify_pda(
-            sol_vault,
-            &[TREE_TOKEN_ACCOUNT_SEED, &[token.bump]],
-            &crate::ID,
-        )?;
-    }
+    verify_address(sol_vault, &TREE_TOKEN_ACCOUNT_ADDRESS)?;
+    verify_address(global_config, &GLOBAL_CONFIG_ADDRESS)?;
 
-    let global_bump = {
-        let global_data = global_config.try_borrow()?;
-        let global = try_from_bytes::<GlobalConfig>(&global_data[..GlobalConfig::LEN])
-            .map_err(|_| ProgramError::InvalidAccountData)?;
-        verify_pda(
-            global_config,
-            &[GLOBAL_CONFIG_SEED, &[global.bump]],
-            &crate::ID,
-        )?;
-        global.bump
-    };
-
-    let in_tree_bump = {
-        let tree_data = in_tree_account.try_borrow()?;
-        let tree = try_from_bytes::<MerkleTreeAccount>(&tree_data[..MerkleTreeAccount::LEN])
-            .map_err(|_| PrivacyCashError::InvalidMerkleTreeAccount)?;
-        tree.bump
-    };
-
-    let dir = if verify_pda(
-        in_tree_account,
-        &[TREE_ACCOUNT_SEED, &[in_tree_bump]],
-        &crate::ID,
-    )
-    .is_ok()
-    {
+    let dir = if in_tree_account.address().as_array() == &TREE_ACCOUNT_ADDRESS {
         SwapDir::SolToSpl
     } else {
-        verify_pda(
-            in_tree_account,
-            &[TREE_ACCOUNT_SEED, &spl_mint_address, &[in_tree_bump]],
-            &crate::ID,
-        )?;
         SwapDir::SplToSol
     };
 
@@ -165,11 +126,7 @@ pub fn process_swap(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
         .map_err(|_| PrivacyCashError::InvalidMerkleTreeAccount)?;
 
         match dir {
-            SwapDir::SolToSpl => verify_pda(
-                in_tree_account,
-                &[TREE_ACCOUNT_SEED, &[tree.bump]],
-                &crate::ID,
-            )?,
+            SwapDir::SolToSpl => verify_address(in_tree_account, &TREE_ACCOUNT_ADDRESS)?,
             SwapDir::SplToSol => verify_pda(
                 in_tree_account,
                 &[TREE_ACCOUNT_SEED, &spl_mint_address, &[tree.bump]],
@@ -211,11 +168,7 @@ pub fn process_swap(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
                 &[TREE_ACCOUNT_SEED, &spl_mint_address, &[tree.bump]],
                 &crate::ID,
             )?,
-            SwapDir::SplToSol => verify_pda(
-                out_tree_account,
-                &[TREE_ACCOUNT_SEED, &[tree.bump]],
-                &crate::ID,
-            )?,
+            SwapDir::SplToSol => verify_address(out_tree_account, &TREE_ACCOUNT_ADDRESS)?,
         }
 
         if !MerkleTree::is_known_root(tree, proof_out.root) {
@@ -305,7 +258,7 @@ pub fn process_swap(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     verify_pool_token_account(pool_spl_account, global_config, spl_mint)?;
     log!("swap pool atas ok");
 
-    let global_bump_seed = [global_bump];
+    let global_bump_seed = [GLOBAL_CONFIG_BUMP];
     let global_seeds = [
         Seed::from(GLOBAL_CONFIG_SEED),
         Seed::from(&global_bump_seed),

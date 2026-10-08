@@ -65,6 +65,18 @@ pub fn verify_pda<const N: usize>(
     Ok(())
 }
 
+/// Checks an account against a compile-time address.
+///
+/// Used for the program's singleton PDAs, whose seeds have no runtime
+/// component and whose addresses are therefore constants. See
+/// `constants::TREE_ACCOUNT_ADDRESS` and friends.
+pub fn verify_address(account: &AccountView, expected: &[u8; 32]) -> ProgramResult {
+    if account.address().as_array() != expected {
+        return Err(ProgramError::InvalidAccountData);
+    }
+    Ok(())
+}
+
 pub fn verify_cross_nullifier(account: &AccountView) -> ProgramResult {
     if account.owned_by(&Address::from(crate::ID)) && !account.is_data_empty() {
         return Err(ProgramError::InvalidAccountData);

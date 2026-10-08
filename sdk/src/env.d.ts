@@ -8,10 +8,6 @@ interface ImportMeta {
   readonly env: ImportMetaEnv
 }
 
-declare module "snarkjs" {
-  export const groth16: any
-}
-
 declare module "ffjavascript" {
   export const utils: any
 }

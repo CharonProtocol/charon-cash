@@ -1,7 +1,7 @@
 import type { CharonProtocol } from 'charonprotocol-sdk';
 export type TransactionStage = 'proof' | 'signing' | 'confirming';
-export type PaymentKind = 'send' | 'transfer' | 'withdraw';
-export type DashboardOperation = PaymentKind | 'swap' | 'payroll';
+export type PaymentKind = 'send' | 'transfer' | 'withdraw' | 'swap';
+export type DashboardOperation = PaymentKind | 'payroll';
 export type PaymentContext = {
   client: CharonProtocol | null;
   address?: string;

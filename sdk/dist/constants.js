@@ -31,10 +31,6 @@ export const SEED = {
 export const SOL_TREE_KEY = "sol";
 export const DEPOSIT_FEE_RATE = 0;
 export const WITHDRAW_FEE_RATE = 25;
-export const CIRCUIT = {
-    WASM_URL: new URL("./circuits/transaction2.wasm", import.meta.url).href,
-    ZKEY_URL: new URL("./circuits/transaction2.zkey", import.meta.url).href,
-};
 function getEnv() {
     try {
         return (import.meta.env ?? {});

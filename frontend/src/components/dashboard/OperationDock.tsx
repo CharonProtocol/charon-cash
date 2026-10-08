@@ -11,7 +11,7 @@ import type { DashboardOperation } from "./types";
 const ITEMS = [
   { id: "send", label: "Send", icon: ArrowUpRight },
   { id: "transfer", label: "Shielded Transfer", icon: ShieldIcon },
-  { id: "swap", label: "Swap", icon: ArrowLeftRight, disabled: true },
+  { id: "swap", label: "Swap", icon: ArrowLeftRight },
   { id: "payroll", label: "Payroll", icon: DollarSign, disabled: true },
   { id: "withdraw", label: "Withdraw", icon: BanknoteArrowDown },
 ] as const;

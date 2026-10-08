@@ -18,6 +18,7 @@ import {
   transactSol,
   transactSpl,
 } from "./program";
+import { swapPrivate } from "./swap";
 import { CharonProtocolError, CharonProtocolErrorCode } from "./error";
 
 export interface Signer {
@@ -322,6 +323,38 @@ export class CharonProtocol {
 
     this.recalculateBalances();
     return { signature: txid };
+  }
+
+  /**
+   * Private SOL↔SPL swap. `amountIn` is lamports for SOL and base units for SPL.
+   * The relayer signs the transaction.
+   */
+  async swap(fromMint: string, outMint: string, amountIn: number) {
+    await this.syncUtxos();
+    const [inputUtxos, requiredutxos] = await this.getRequiredUtxosForAmount(
+      fromMint,
+      new BN(amountIn),
+    );
+    const signature = await swapPrivate({
+      fromMint,
+      outMint,
+      amountIn: new BN(amountIn),
+      inputUtxos,
+      lightwasm: this.lightwasm,
+      encryptionService: this.encryptionService,
+    });
+
+    for (const spent of requiredutxos) {
+      await this.storageService.removeUtxo(spent.utxoId);
+      const noteSummary = this.utxoByMint.get(fromMint);
+      if (noteSummary) {
+        noteSummary.utxos = noteSummary.utxos.filter(
+          (note) => note.utxoId !== spent.utxoId,
+        );
+      }
+    }
+    this.recalculateBalances();
+    return { signature };
   }
 
   async sendSpl(amount: number, recipientKey: string, mintAddress: string) {

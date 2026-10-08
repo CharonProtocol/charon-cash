@@ -43,6 +43,13 @@ export declare class CharonProtocol {
     shieldedTransferSol(amountInLamports: number, recipientKey: string): Promise<{
         signature: any;
     }>;
+    /**
+     * Private SOL↔SPL swap. `amountIn` is lamports for SOL and base units for SPL.
+     * The relayer signs the transaction.
+     */
+    swap(fromMint: string, outMint: string, amountIn: number): Promise<{
+        signature: string;
+    }>;
     sendSpl(amount: number, recipientKey: string, mintAddress: string): Promise<{
         signature: any;
     }>;
