@@ -1494,7 +1494,12 @@ export class PrivacyCashClient {
   ): Promise<void> {
     const mint = mintAddress ?? (treeKey === SOL_TREE_KEY ? WRAPPED_SOL_MINT : undefined)
     if (!mint) throw new Error("resolveChangeNote: mintAddress required for non-SOL trees")
-    const timeoutMs = opts.timeoutMs ?? 8_000
+    // Field-measured floor: under an 8-lane run the mirror indexes a relay
+    // ~5-10s after broadcast (confirm wait + sync pass). An 8s window gave
+    // up right before the leaf landed, stranding the note pending until the
+    // next full refresh — lanes then starved in bursts. 20s covers the
+    // worst healthy lag; giving up still heals via the next syncNotes scan.
+    const timeoutMs = opts.timeoutMs ?? 20_000
     const intervalMs = opts.intervalMs ?? 300
     const utxo = new Utxo({
       wasm: this.wasm!,
