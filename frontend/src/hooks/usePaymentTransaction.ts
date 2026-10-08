@@ -68,6 +68,9 @@ export function usePaymentTransaction(
               ? await context.client.shieldedTransferSol(lamports, recipient)
               : await context.client.shieldedTransferSpl(
                   lamports,
+                  SUPPORTED_SPL_MINTS[
+                    token.toLowerCase() as keyof typeof SUPPORTED_SPL_MINTS
+                  ],
                   recipient,
                   // Note: The SDK currently hardcodes WRAPPED_SOL_MINT for shieldedTransferSpl
                   // but we call it as it is defined.

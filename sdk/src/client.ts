@@ -394,9 +394,12 @@ export class CharonProtocol {
     return { signature: txid };
   }
 
-  async shieldedTransferSpl(amount: number, recipientKey: string) {
+  async shieldedTransferSpl(
+    amount: number,
+    mintAddress: string,
+    recipientKey: string,
+  ) {
     await this.syncUtxos();
-    let mintAddress = WRAPPED_SOL_MINT;
 
     let [inputUtxos, requiredutxos] = await this.getRequiredUtxosForAmount(
       mintAddress,

@@ -17,7 +17,7 @@ import {
 const RPC_URL = process.env.RPC_URL || "http://127.0.0.1:8899";
 
 const PROGRAM_ID = new PublicKey(
-  "7nzEvHS6iyWApy1UMT8ewTiJjENP53o3gubhkcmSMfMp",
+  process.env.PROGRAM_ID || "7nzEvHS6iyWApy1UMT8ewTiJjENP53o3gubhkcmSMfMp",
 );
 
 // Create authority
@@ -123,7 +123,7 @@ const createAtaIfMintExists = async (mint, owner, allowOwnerOffCurve) => {
 await createAtaIfMintExists(usdcMint, globalConfig, true);
 await createAtaIfMintExists(usdtMint, globalConfig, true);
 const feeRecipient = new PublicKey(
-  "5kHwyJA15XjiHYxUTGif8NoH25h1dTxjqhscTnf4V1Ua",
+  process.env.FEE_RECIPIENT || "5kHwyJA15XjiHYxUTGif8NoH25h1dTxjqhscTnf4V1Ua",
 );
 await createAtaIfMintExists(usdcMint, feeRecipient, true);
 await createAtaIfMintExists(usdtMint, feeRecipient, true);

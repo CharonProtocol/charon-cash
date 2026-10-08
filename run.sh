@@ -5,6 +5,9 @@ set -u # exit on undefined variables
 
 # Change to the root of the project
 cd "$(dirname "$0")"
+PROJECT_ROOT=$(pwd)
+
+export PATH="$HOME/.local/bin:$HOME/.local/share/solana/install/active_release/bin:$HOME/.cargo/bin:$PATH"
 
 # Logs directory
 L=/tmp/privacy-cash
@@ -17,24 +20,28 @@ rpc_up() {
 
 echo "==========================================================="
 echo "▶ 1/10 Starting Surfpool..."
-if rpc_up; then 
-  echo "  Surfpool already running."
-else
-  nohup surfpool start -g ~/yellowstone/config.json > "$L-surfpool.log" 2>&1 &
-  echo "  Waiting for Surfpool to start..."
-  for i in $(seq 1 60); do 
-    rpc_up && break
-    sleep 1
-  done
-  rpc_up && echo "  Surfpool started successfully." || { echo "  ✗ Surfpool didn't start. Check $L-surfpool.log"; exit 1; }
-fi
+pkill -f surfpool >/dev/null 2>&1 || true
+pkill -f solana-test-validator >/dev/null 2>&1 || true
+fuser -k 8899/tcp >/dev/null 2>&1 || true
+fuser -k 8900/tcp >/dev/null 2>&1 || true
+sleep 1
+(cd /tmp && nohup surfpool start -g ~/yellowstone/config.json > "$L-surfpool.log" 2>&1 &)
+echo "  Waiting for Surfpool to start..."
+for i in $(seq 1 60); do 
+  rpc_up && break
+  sleep 1
+done
+rpc_up && echo "  Surfpool started successfully." || { echo "  ✗ Surfpool didn't start. Check $L-surfpool.log"; exit 1; }
 
 echo "==========================================================="
 echo "▶ 2/10 Starting Postgres database..."
-if docker start privacycash-pg >/dev/null 2>&1 || docker run -d --name privacycash-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=privacy_cash -p 5432:5432 postgres:16-alpine >/dev/null 2>&1; then
-  echo "  Postgres started on :5432"
+# Always remove the old container to ensure a fresh database state
+docker rm -f privacycash-pg >/dev/null 2>&1 || true
+
+if docker run -d --name privacycash-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=privacy_cash -p 5433:5432 postgres:16-alpine >/dev/null 2>&1; then
+  echo "  Postgres (fresh) started on :5433"
 else
-  echo "  ⚠ Docker not running, skipping database start."
+  echo "  ⚠ Docker not running or failed to start container, skipping database start."
 fi
 
 echo "==========================================================="
@@ -42,46 +49,92 @@ echo "▶ 3/10 Building program..."
 cargo build-sbf --manifest-path programs/privacy-cash/Cargo.toml
 
 echo "==========================================================="
-echo "▶ 4/10 Updating Program ID..."
+echo "▶ 4/10 Updating IDs and Keypairs..."
+# Program ID
 [ -f target/deploy/privacy-cash-program.json ] || solana-keygen new --no-bip39-passphrase --silent -o target/deploy/privacy-cash-program.json
 PROG=$(solana-keygen pubkey target/deploy/privacy-cash-program.json)
-echo "  New Program ID: $PROG"
+echo "  Program ID: $PROG"
 
-# Update lib.rs
+# Fee Recipient Keypair
+[ -f target/deploy/fee-recipient.json ] || solana-keygen new --no-bip39-passphrase --silent -o target/deploy/fee-recipient.json
+FEE_RECIPIENT_PUBKEY=$(solana-keygen pubkey target/deploy/fee-recipient.json)
+echo "  Fee Recipient: $FEE_RECIPIENT_PUBKEY"
+
+# Relayer Keypair
+[ -f target/deploy/relayer.json ] || solana-keygen new --no-bip39-passphrase --silent -o target/deploy/relayer.json
+RELAYER_PUBKEY=$(solana-keygen pubkey target/deploy/relayer.json)
+echo "  Relayer: $RELAYER_PUBKEY"
+RELAYER_KP_PATH="$PROJECT_ROOT/target/deploy/relayer.json"
+echo "  Funding Relayer..."
+solana airdrop 10 "$RELAYER_PUBKEY" --url localhost >/dev/null 2>&1 || true
+
+# Update lib.rs with Program ID
 perl -0pi -e 's/declare_id!\("[^"]+"\);/declare_id!("'"$PROG"'");/' programs/privacy-cash/src/lib.rs
 
 # Update backend/.env
 if [ -f backend/.env ]; then
-  sed -i "s/^PROGRAM_ID=.*/PROGRAM_ID=$PROG/" backend/.env
+  # Remove any existing RELAYER_KEYPAIR, PROGRAM_ID, and DATABASE_URL lines
+  sed -i '/^PROGRAM_ID=/d' backend/.env
+  sed -i '/^RELAYER_KEYPAIR=/d' backend/.env
+  sed -i '/^DATABASE_URL=/d' backend/.env
+  sed -i '/^RELAYER_FEE_RECIPIENT=/d' backend/.env
+  sed -i '/^RELAYER_FEE_RECIPIENT_KEYPAIR=/d' backend/.env
+  echo "PROGRAM_ID=$PROG" >> backend/.env
+  echo "RELAYER_KEYPAIR=$RELAYER_KP_PATH" >> backend/.env
+  echo "DATABASE_URL=postgres://postgres:postgres@localhost:5433/privacy_cash" >> backend/.env
+  echo "RELAYER_FEE_RECIPIENT=$FEE_RECIPIENT_PUBKEY" >> backend/.env
+  echo "RELAYER_FEE_RECIPIENT_KEYPAIR=$PROJECT_ROOT/target/deploy/fee-recipient.json" >> backend/.env
 else
   echo "PROGRAM_ID=$PROG" >> backend/.env
+  echo "RELAYER_KEYPAIR=$RELAYER_KP_PATH" >> backend/.env
+  echo "DATABASE_URL=postgres://postgres:postgres@localhost:5433/privacy_cash" >> backend/.env
+  echo "RELAYER_FEE_RECIPIENT=$FEE_RECIPIENT_PUBKEY" >> backend/.env
+  echo "RELAYER_FEE_RECIPIENT_KEYPAIR=$PROJECT_ROOT/target/deploy/fee-recipient.json" >> backend/.env
 fi
 
-# Update sdk/src/constants.ts
-perl -0pi -e 's/export const PROGRAM_ID = new PublicKey\(\s*["\x27][^"\x27]+["\x27]\s*\);/export const PROGRAM_ID = new PublicKey(\n  "'"$PROG"'"\n);/' sdk/src/constants.ts
+# Write to sdk/.env
+cat > sdk/.env <<EOF
+PROGRAM_ID=$PROG
+FEE_RECIPIENT=$FEE_RECIPIENT_PUBKEY
+RELAYER_ADDRESS=$RELAYER_PUBKEY
+EOF
 
 echo "==========================================================="
 echo "▶ 5/10 Deploying program..."
 cp target/deploy/privacy_cash.so target/deploy/privacy-cash.so 2>/dev/null || true
-solana --url localhost --keypair "$HOME/.config/solana/id.json" program deploy target/deploy/privacy-cash.so --program-id target/deploy/privacy-cash-program.json
+solana --url localhost --keypair "$HOME/.config/solana/id.json" program deploy target/deploy/privacy-cash.so --program-id target/deploy/privacy-cash-program.json --use-rpc
 
 echo "==========================================================="
 echo "▶ 6/10 Running SDK setup scripts (initialize, init-spl, alt-init)..."
 (
   cd sdk
-  PROGRAM_ID=$PROG bun run scripts/initialize.mjs
+  FEE_RECIPIENT=$FEE_RECIPIENT_PUBKEY PROGRAM_ID=$PROG bun run scripts/initialize.mjs
   PROGRAM_ID=$PROG bun run scripts/init-spl.mjs
   
   # Run alt-init and capture output
   echo "  Running alt-init.mjs..."
-  ALT_OUTPUT=$(PROGRAM_ID=$PROG bun run scripts/alt-init.mjs)
+  ALT_OUTPUT=$(RELAYER_ADDRESS=$RELAYER_PUBKEY FEE_RECIPIENT=$FEE_RECIPIENT_PUBKEY PROGRAM_ID=$PROG bun run scripts/alt-init.mjs)
   echo "$ALT_OUTPUT" | sed 's/^/    /'
   
   ALT_ADDRESS=$(echo "$ALT_OUTPUT" | grep -oP 'ALT created: \K[a-zA-Z0-9]+' || true)
   if [ -n "$ALT_ADDRESS" ]; then
     echo "  Extracted ALT address: $ALT_ADDRESS"
-    # Update sdk/src/constants.ts with new ALT
-    perl -0pi -e 's/export const ALT_ADDRESS = new PublicKey\(\s*["\x27][^"\x27]+["\x27]\s*\);/export const ALT_ADDRESS = new PublicKey(\n  "'"$ALT_ADDRESS"'"\n);/' src/constants.ts
+    # Append new ALT to sdk/.env
+    echo "ALT_ADDRESS=$ALT_ADDRESS" >> .env
+    
+    # Append ALT to backend/.env
+    sed -i '/^RELAYER_ALT_ADDRESS=/d' ../backend/.env || true
+    echo "RELAYER_ALT_ADDRESS=$ALT_ADDRESS" >> ../backend/.env
+    
+    # Write everything to frontend/.env for Vite
+    cat > ../frontend/.env <<EOF
+VITE_BACKEND_URL=http://localhost:8080
+VITE_SOLANA_RPC_URL=http://localhost:8899
+VITE_PROGRAM_ID=$PROG
+VITE_FEE_RECIPIENT=$FEE_RECIPIENT_PUBKEY
+VITE_ALT_ADDRESS=$ALT_ADDRESS
+EOF
+    echo "  Wrote frontend/.env"
   else
     echo "  ⚠ Could not parse ALT address."
   fi

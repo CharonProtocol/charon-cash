@@ -49,7 +49,7 @@ export declare class CharonProtocol {
     withdrawSpl(amount: number, mintAddress: string): Promise<{
         signature: any;
     }>;
-    shieldedTransferSpl(amount: number, recipientKey: string): Promise<{
+    shieldedTransferSpl(amount: number, mintAddress: string, recipientKey: string): Promise<{
         signature: any;
     }>;
     syncUtxos(): Promise<void>;

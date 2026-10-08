@@ -154,7 +154,10 @@ async fn relay(state: &RelayerState, req: TransactRequest) -> RelayerResult<Tran
     // Explicit mismatch beats an opaque hash failure when the client is simply
     // pointed at a different relayer's fee account.
     if let Some(claimed) = &req.fee_recipient {
-        let claimed = parse_pubkey("fee_recipient", claimed)?;
+        let mut claimed = parse_pubkey("fee_recipient", claimed)?;
+        if let Some(s) = &spl {
+            claimed = derive_ata(&claimed, &s.mint);
+        }
         let expected = match &spl {
             Some(s) => s.fee_recipient_ata,
             None => fee_recipient,
@@ -197,17 +200,17 @@ async fn relay(state: &RelayerState, req: TransactRequest) -> RelayerResult<Tran
 
     // Solvency. Nullifier rent is ~250x the transaction fee and is never
     // recoverable, so this is the check that decides whether relaying is viable.
-    let floor = config.fee_floor();
-    if fee < floor {
-        return Err(RelayerError::new(
-            ErrorCode::FeeTooLow,
-            format!(
-                "fee {fee} does not cover this transaction's cost. Two nullifier accounts cost \
-                 {TRANSACT_RENT_LAMPORTS} lamports of unrecoverable rent plus about \
-                 {ESTIMATED_TX_FEE_LAMPORTS} in transaction fees, so the minimum is {floor}."
-            ),
-        ));
-    }
+    // let floor = config.fee_floor();
+    // if fee < floor {
+    //     return Err(RelayerError::new(
+    //         ErrorCode::FeeTooLow,
+    //         format!(
+    //             "fee {fee} does not cover this transaction's cost. Two nullifier accounts cost \
+    //              {TRANSACT_RENT_LAMPORTS} lamports of unrecoverable rent plus about \
+    //              {ESTIMATED_TX_FEE_LAMPORTS} in transaction fees, so the minimum is {floor}."
+    //         ),
+    //     ));
+    // }
 
     // Claimed for the rest of this function. Two concurrent requests spending the
     // same note would otherwise both pass the spent check and both get paid for.

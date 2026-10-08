@@ -262,7 +262,6 @@ export async function shieldedTransferSol({ inputUtxos, transferAmount, fee, min
     const encryptedOutput1 = await encryptionService.encrypt(outputUtxos[0].serialize(), recipientViewingKey);
     // any change should get back to the sender appropriately
     const encryptedOutput2 = await encryptionService.encrypt(outputUtxos[1].serialize(), encryptionService.getViewingKey());
-    let recipient = recipientKey;
     const extData = {
         // recipient - just a placeholder, not actually used for deposits.
         recipient: FEE_RECIPIENT, // Using fee recipient as dummy recipient for deposit,
@@ -515,8 +514,11 @@ export async function transactSpl({ inputUtxos, extAmount, fee, mintAddress, lig
                 isWritable: true,
             },
             { pubkey: feeRecipientAta, isSigner: false, isWritable: true },
-            { pubkey: TOKEN_PROGRAM_ID,
-                isSigner: false, isWritable: false },
+            {
+                pubkey: TOKEN_PROGRAM_ID,
+                isSigner: false,
+                isWritable: false,
+            },
             {
                 pubkey: ASSOCIATED_TOKEN_PROGRAM_ID,
                 isSigner: false,

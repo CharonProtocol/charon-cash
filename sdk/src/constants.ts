@@ -7,7 +7,7 @@ export const FIELD_SIZE = new BN(
 
 export const MERKLE_TREE_DEPTH = 26;
 
-export const SOL_MINT = new PublicKey("11111111111111111111111111111111");
+export const SOL_MINT = new PublicKey("11111111111111111111111111111112");
 export const WRAPPED_SOL_MINT = "11111111111111111111111111111112";
 
 export const SIGN_MESSAGE = "Privacy Money account sign in";
@@ -16,13 +16,19 @@ export const DISC_TRANSACT = 2;
 export const DISC_TRANSACT_SPL = 3;
 
 export const PROGRAM_ID = new PublicKey(
-  "7nzEvHS6iyWApy1UMT8ewTiJjENP53o3gubhkcmSMfMp",
+  (typeof process !== "undefined" && process.env.PROGRAM_ID) ||
+    getEnv().VITE_PROGRAM_ID ||
+    "7nzEvHS6iyWApy1UMT8ewTiJjENP53o3gubhkcmSMfMp",
 );
 export const ALT_ADDRESS = new PublicKey(
-  "AzWpFvcXRGPm9bZiqaQipq5GRVgKLN7vJ2rSCCY21Ent",
+  (typeof process !== "undefined" && process.env.ALT_ADDRESS) ||
+    getEnv().VITE_ALT_ADDRESS ||
+    "AzWpFvcXRGPm9bZiqaQipq5GRVgKLN7vJ2rSCCY21Ent",
 );
 export const FEE_RECIPIENT = new PublicKey(
-  "5kHwyJA15XjiHYxUTGif8NoH25h1dTxjqhscTnf4V1Ua",
+  (typeof process !== "undefined" && process.env.FEE_RECIPIENT) ||
+    getEnv().VITE_FEE_RECIPIENT ||
+    "5kHwyJA15XjiHYxUTGif8NoH25h1dTxjqhscTnf4V1Ua",
 );
 
 export const SUPPORTED_SPL_MINTS = [

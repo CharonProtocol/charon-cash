@@ -236,9 +236,8 @@ export class CharonProtocol {
         this.recalculateBalances();
         return { signature: txid };
     }
-    async shieldedTransferSpl(amount, recipientKey) {
+    async shieldedTransferSpl(amount, mintAddress, recipientKey) {
         await this.syncUtxos();
-        let mintAddress = WRAPPED_SOL_MINT;
         let [inputUtxos, requiredutxos] = await this.getRequiredUtxosForAmount(mintAddress, new BN(amount));
         const fee = new BN(0);
         // extAmount is the amount for withdrawals and deposits so fee excluded

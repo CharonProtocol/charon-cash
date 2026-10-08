@@ -107,13 +107,16 @@ async fn main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!("privacy-cash backend listening on {addr}");
 
-    if let Ok(relayer_config) = crate::relayer::config::RelayerConfig::from_env() {
-        tracing::info!("Relayer config found, starting relayer services");
-        let relayer_state = crate::relayer::state::RelayerState::new(relayer_config);
-        crate::relayer::float::spawn(relayer_state.clone());
-        app = app.merge(crate::relayer::routes::router(relayer_state));
-    } else {
-        tracing::warn!("Relayer config not found or invalid, running without relayer");
+    match crate::relayer::config::RelayerConfig::from_env() {
+        Ok(relayer_config) => {
+            tracing::info!("Relayer config found, starting relayer services");
+            let relayer_state = crate::relayer::state::RelayerState::new(relayer_config);
+            crate::relayer::float::spawn(relayer_state.clone());
+            app = app.merge(crate::relayer::routes::router(relayer_state));
+        }
+        Err(e) => {
+            tracing::error!("Relayer config not found or invalid: {:#}", e);
+        }
     }
 
     // `into_make_service_with_connect_info` is required so handlers can see the peer address

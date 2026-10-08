@@ -15,7 +15,7 @@ pub fn router(state: RelayerState) -> Router {
     let body_limit = state.config.max_body_bytes;
 
     Router::new()
-        .route("/health", get(misc::health))
+        .route("/api/relayer/health", get(misc::health))
         .route("/metrics", get(misc::metrics))
         .route("/api/relayer/info", get(misc::info))
         .route("/api/relayer/blockhash", get(misc::blockhash))

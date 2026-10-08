@@ -164,17 +164,20 @@ async fn proof(
     let commitments: Vec<&str> = query_params.commitments.split(",").collect();
 
     let commitment1: [u8; 32] = match commitments[0].parse::<BigUint>() {
-        Ok(b) => match b.to_bytes_be().try_into().map_err(|_| {
-            ApiResponse::error(
-                ApiError::new(
-                    ApiErrorCode::InvalidInput,
-                    "commitment 1 must be exactly 32 bytes",
-                ),
-                req_id.clone(),
-            )
-        }) {
-            Ok(value) => value,
-            Err(e) => return e,
+        Ok(b) => {
+            let bytes = b.to_bytes_be();
+            if bytes.len() > 32 {
+                return ApiResponse::error(
+                    ApiError::new(
+                        ApiErrorCode::InvalidInput,
+                        "commitment 1 must be exactly 32 bytes",
+                    ),
+                    req_id.clone(),
+                );
+            }
+            let mut arr = [0u8; 32];
+            arr[32 - bytes.len()..].copy_from_slice(&bytes);
+            arr
         },
         Err(_) => {
             return ApiResponse::error(
@@ -188,17 +191,20 @@ async fn proof(
     };
 
     let commitment2: [u8; 32] = match commitments[1].parse::<BigUint>() {
-        Ok(b) => match b.to_bytes_be().try_into().map_err(|_| {
-            ApiResponse::error(
-                ApiError::new(
-                    ApiErrorCode::InvalidInput,
-                    "commitment 2 must be exactly 32 bytes",
-                ),
-                req_id.clone(),
-            )
-        }) {
-            Ok(value) => value,
-            Err(e) => return e,
+        Ok(b) => {
+            let bytes = b.to_bytes_be();
+            if bytes.len() > 32 {
+                return ApiResponse::error(
+                    ApiError::new(
+                        ApiErrorCode::InvalidInput,
+                        "commitment 2 must be exactly 32 bytes",
+                    ),
+                    req_id.clone(),
+                );
+            }
+            let mut arr = [0u8; 32];
+            arr[32 - bytes.len()..].copy_from_slice(&bytes);
+            arr
         },
         Err(_) => {
             return ApiResponse::error(

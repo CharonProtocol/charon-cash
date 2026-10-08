@@ -21,10 +21,6 @@ import {
   API_URL,
   SOL_MINT,
   PROGRAM_ID,
-
-
-
-
 } from "./constants";
 import BN from "bn.js";
 import { EncryptionService } from "./encrypt";
@@ -40,12 +36,8 @@ import { CircuitParams, parseToBytesArray, ProofBytes, prove } from "./prover";
 import { CharonProtocolError, CharonProtocolErrorCode } from "./error";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
-
-
   getAssociatedTokenAddress,
   TOKEN_PROGRAM_ID,
-
-
 } from "@solana/spl-token";
 
 export class ProgramError extends CharonProtocolError {
@@ -251,9 +243,6 @@ export async function transactSol({
   const programAccounts = deriveAccounts(
     PROGRAM_ID,
 
-
-
-
     Uint8Array.from(proofToSubmit.inputNullifiers[0]),
     Uint8Array.from(proofToSubmit.inputNullifiers[1]),
   );
@@ -268,7 +257,6 @@ export async function transactSol({
 
   const ix = new TransactionInstruction({
     programId: PROGRAM_ID,
-
 
     keys: [
       {
@@ -447,7 +435,6 @@ export async function shieldedTransferSol({
     encryptionService.getViewingKey(),
   );
 
-  let recipient = recipientKey;
   const extData: ExtData = {
     // recipient - just a placeholder, not actually used for deposits.
     recipient: FEE_RECIPIENT, // Using fee recipient as dummy recipient for deposit,
@@ -500,10 +487,6 @@ export async function shieldedTransferSol({
 
   const programAccounts = deriveAccounts(
     PROGRAM_ID,
-
-
-
-
     Uint8Array.from(proofToSubmit.inputNullifiers[0]),
     Uint8Array.from(proofToSubmit.inputNullifiers[1]),
   );
@@ -516,7 +499,8 @@ export async function shieldedTransferSol({
     programAccounts.bump1,
   );
 
-  const toHex = (arr: number[] | Uint8Array) => Buffer.from(arr).toString("hex");
+  const toHex = (arr: number[] | Uint8Array) =>
+    Buffer.from(arr).toString("hex");
 
   const proofPayload = {
     proof_a: toHex(proofToSubmit.proofA),
@@ -725,9 +709,6 @@ export async function transactSpl({
   const programAccounts = deriveAccounts(
     PROGRAM_ID,
 
-
-
-
     Uint8Array.from(proofToSubmit.inputNullifiers[0]),
     Uint8Array.from(proofToSubmit.inputNullifiers[1]),
     new PublicKey(mintAddress),
@@ -749,7 +730,6 @@ export async function transactSpl({
 
   const ix = new TransactionInstruction({
     programId: PROGRAM_ID,
-
 
     keys: [
       {
@@ -812,12 +792,14 @@ export async function transactSpl({
       },
 
       { pubkey: feeRecipientAta, isSigner: false, isWritable: true },
-      { pubkey: TOKEN_PROGRAM_ID,
+      {
+        pubkey: TOKEN_PROGRAM_ID,
 
- isSigner: false, isWritable: false },
+        isSigner: false,
+        isWritable: false,
+      },
       {
         pubkey: ASSOCIATED_TOKEN_PROGRAM_ID,
-
 
         isSigner: false,
         isWritable: false,
@@ -1022,9 +1004,6 @@ export async function shieldedTransferSpl({
   const programAccounts = deriveAccounts(
     PROGRAM_ID,
 
-
-
-
     Uint8Array.from(proofToSubmit.inputNullifiers[0]),
     Uint8Array.from(proofToSubmit.inputNullifiers[1]),
     new PublicKey(mintAddress),
@@ -1038,7 +1017,8 @@ export async function shieldedTransferSpl({
     programAccounts.bump1,
   );
 
-  const toHex = (arr: number[] | Uint8Array) => Buffer.from(arr).toString("hex");
+  const toHex = (arr: number[] | Uint8Array) =>
+    Buffer.from(arr).toString("hex");
 
   const proofPayload = {
     proof_a: toHex(proofToSubmit.proofA),
