@@ -8,7 +8,6 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "postinstall": "node scripts/setup-native-deps.mjs",
     "test": "vitest run"
   },
   "dependencies": {

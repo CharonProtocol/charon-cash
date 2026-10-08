@@ -17,19 +17,19 @@ use serde::{Deserialize, Serialize};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signer::Signer;
 
-use crate::build::{
+use crate::relayer::build::{
     build_swap_instruction, build_wrap_sol_instruction, create_ata_idempotent,
     derive_swap_accounts, set_compute_unit_limit, sync_native, SwapIxParams,
 };
-use crate::chain::is_sol_mixer_mint;
-use crate::error::{ErrorCode, RelayerError, RelayerResult};
-use crate::parse::{
+use crate::relayer::chain::is_sol_mixer_mint;
+use crate::relayer::error::{ErrorCode, RelayerError, RelayerResult};
+use crate::relayer::parse::{
     decode_bounded_hex, parse_i64, parse_pubkey, ProofPayload, MAX_ENCRYPTED_OUTPUT_BYTES,
     MAX_ROUTE_DATA_BYTES,
 };
-use crate::send::{confirm, send_with_retry, ConfirmOutcome};
-use crate::state::AppState;
-use crate::txv1::{compile_v1_transaction, sign_v1_transaction, CompileV1Params, V1_MAX_SIZE};
+use crate::relayer::send::{confirm, send_with_retry, ConfirmOutcome};
+use crate::relayer::state::RelayerState;
+use crate::relayer::txv1::{compile_v1_transaction, sign_v1_transaction, CompileV1Params, V1_MAX_SIZE};
 
 const SWAP_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 const MAX_ROUTE_ACCOUNTS: usize = 64;
@@ -67,7 +67,7 @@ pub struct SwapResponse {
 }
 
 pub async fn swap(
-    State(state): State<AppState>,
+    State(state): State<RelayerState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(req): Json<SwapRequest>,
 ) -> RelayerResult<Json<SwapResponse>> {
@@ -85,7 +85,7 @@ pub async fn swap(
     }
 }
 
-async fn relay_swap(state: &AppState, req: SwapRequest) -> RelayerResult<SwapResponse> {
+async fn relay_swap(state: &RelayerState, req: SwapRequest) -> RelayerResult<SwapResponse> {
     let config = &state.config;
     let payer = config.signer.pubkey();
 
@@ -163,7 +163,7 @@ async fn relay_swap(state: &AppState, req: SwapRequest) -> RelayerResult<SwapRes
 
     let mut instructions = vec![
         set_compute_unit_limit(SWAP_COMPUTE_UNIT_LIMIT),
-        create_ata_idempotent(&payer, &swap_accounts.global_config, &crate::chain::NATIVE_MINT),
+        create_ata_idempotent(&payer, &swap_accounts.global_config, &crate::relayer::chain::NATIVE_MINT),
         create_ata_idempotent(&payer, &swap_accounts.global_config, &spl_mint),
     ];
     if sol_to_spl {

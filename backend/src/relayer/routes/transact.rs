@@ -26,24 +26,24 @@ use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signer::Signer;
 use solana_sdk::transaction::VersionedTransaction;
 
-use crate::alt::fetch_lookup_table;
-use crate::build::{
+use crate::relayer::alt::fetch_lookup_table;
+use crate::relayer::build::{
     build_transact_instruction, create_ata_idempotent, set_compute_unit_limit,
     set_compute_unit_price, SplExtras, TransactIxParams,
 };
-use crate::chain::{
+use crate::relayer::chain::{
     derive_ata, derive_spl_tree_account, derive_transact_pdas, fetch_tree_snapshot,
     nullifiers_spent, unknown_root, TREE_ACCOUNT_SEED,
 };
-use crate::config::{ESTIMATED_TX_FEE_LAMPORTS, TRANSACT_RENT_LAMPORTS};
-use crate::error::{ErrorCode, RelayerError, RelayerResult};
-use crate::extdata::{complete_ext_data_hash, ext_data_hash_matches, ExtData};
-use crate::parse::{
+use crate::relayer::config::{ESTIMATED_TX_FEE_LAMPORTS, TRANSACT_RENT_LAMPORTS};
+use crate::relayer::error::{ErrorCode, RelayerError, RelayerResult};
+use crate::relayer::extdata::{complete_ext_data_hash, ext_data_hash_matches, ExtData};
+use crate::relayer::parse::{
     decode_bounded_hex, mint_hash_bytes, parse_i64, parse_pubkey, parse_u64, ProofPayload,
     MAX_ENCRYPTED_OUTPUT_BYTES,
 };
-use crate::send::{confirm, send_with_retry, simulate, ConfirmOutcome};
-use crate::state::AppState;
+use crate::relayer::send::{confirm, send_with_retry, simulate, ConfirmOutcome};
+use crate::relayer::state::RelayerState;
 
 /// Native SOL transactions fit inline; the priority fee is dropped first if the
 /// packet is tight.
@@ -87,7 +87,7 @@ pub struct TransactResponse {
 }
 
 pub async fn transact(
-    State(state): State<AppState>,
+    State(state): State<RelayerState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(req): Json<TransactRequest>,
 ) -> RelayerResult<Json<TransactResponse>> {
@@ -106,7 +106,7 @@ pub async fn transact(
     }
 }
 
-async fn relay(state: &AppState, req: TransactRequest) -> RelayerResult<TransactResponse> {
+async fn relay(state: &RelayerState, req: TransactRequest) -> RelayerResult<TransactResponse> {
     let config = &state.config;
     let proof = req.proof.decode()?;
     let ext_amount = parse_i64("ext_amount", &req.ext_amount)?;
@@ -299,8 +299,8 @@ fn reject_deposit(ext_amount: i64) -> RelayerResult<()> {
 /// the submitted message diverging.
 #[allow(clippy::too_many_arguments)]
 async fn assemble(
-    state: &AppState,
-    proof: &crate::build::ProofBytes,
+    state: &RelayerState,
+    proof: &crate::relayer::build::ProofBytes,
     ext_amount: i64,
     fee: u64,
     recipient: Pubkey,
@@ -363,7 +363,7 @@ async fn assemble(
             .map_err(|e| RelayerError::internal(format!("cannot compile transaction: {e}")))?;
         let tx = VersionedTransaction::try_new(message, &[config.signer.as_ref()])
             .map_err(|e| RelayerError::internal(format!("cannot sign transaction: {e}")))?;
-        crate::wire::serialize(&tx)
+        crate::relayer::wire::serialize(&tx)
     };
 
     let with_priority: Vec<_> = pre

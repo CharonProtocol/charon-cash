@@ -6,8 +6,8 @@
 use solana_sdk::pubkey::Pubkey;
 use std::str::FromStr;
 
-use crate::build::ProofBytes;
-use crate::error::{ErrorCode, RelayerError, RelayerResult};
+use crate::relayer::build::ProofBytes;
+use crate::relayer::error::{ErrorCode, RelayerError, RelayerResult};
 
 /// Ciphertexts are ~200 bytes in practice. The cap exists so a caller cannot make
 /// us hash and simulate megabytes before we discover the transaction is too large.

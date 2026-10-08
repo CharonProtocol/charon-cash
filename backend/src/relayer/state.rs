@@ -3,17 +3,17 @@ use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::chain::{fetch_fee_rates, FeeRates};
-use crate::config::Config;
-use crate::error::{ErrorCode, RelayerError, RelayerResult};
-use crate::ratelimit::RateLimiter;
-use crate::rpc::RpcClient;
+use crate::relayer::chain::{fetch_fee_rates, FeeRates};
+use crate::relayer::config::RelayerConfig;
+use crate::relayer::error::{ErrorCode, RelayerError, RelayerResult};
+use crate::relayer::ratelimit::RateLimiter;
+use crate::relayer::rpc::RpcClient;
 
 const FEE_RATE_TTL: Duration = Duration::from_secs(60);
 
 #[derive(Clone)]
-pub struct AppState {
-    pub config: Arc<Config>,
+pub struct RelayerState {
+    pub config: Arc<RelayerConfig>,
     pub rpc: Arc<RpcClient>,
     pub limiter: Arc<RateLimiter>,
     pub metrics: Arc<Metrics>,
@@ -21,8 +21,8 @@ pub struct AppState {
     fee_rates: Arc<Mutex<Option<(FeeRates, Instant)>>>,
 }
 
-impl AppState {
-    pub fn new(config: Config) -> Self {
+impl RelayerState {
+    pub fn new(config: RelayerConfig) -> Self {
         let rpc = RpcClient::new(config.rpc_url.clone());
         let limiter = RateLimiter::new(
             config.rate_limit_per_ip_per_min,

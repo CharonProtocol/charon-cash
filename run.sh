@@ -1,101 +1,134 @@
 #!/usr/bin/env bash
-# Start the full privacy-cash local stack:
-#   postgres (docker) · surfpool · program deploy · backend shim · frontend
-# Idempotent — safe to re-run. Logs: /tmp/privacy-cash-{surfpool,backend,frontend}.log
-set -u
+# run.sh - Local development flow automation for Privacy Cash
+set -e # exit on error
+set -u # exit on undefined variables
+
+# Change to the root of the project
 cd "$(dirname "$0")"
-export PATH="$HOME/.local/bin:$HOME/.local/share/solana/install/active_release/bin:$HOME/.cargo/bin:$PATH"
 
+# Logs directory
 L=/tmp/privacy-cash
-rpc_up() { curl -s -m2 -X POST http://localhost:8899 -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'; }
-wait_http() { local url="$1" i; for i in $(seq 1 40); do curl -s -m2 -o /dev/null "$url" 2>/dev/null && return 0; sleep 1; done; return 1; }
+mkdir -p "$(dirname "$L")"
 
-echo "▶ 1/5  Postgres (docker) — optional, only the Rust backend needs it…"
-if docker start privacycash-pg >/dev/null 2>&1 || docker run -d --name privacycash-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=privacy_cash -p 5432:5432 pgvector/pgvector:pg16 >/dev/null 2>&1; then
-  echo "    db=privacy_cash on :5432"
+# Utility to check if Surfpool is up
+rpc_up() { 
+  curl -s -m2 -X POST http://localhost:8899 -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'
+}
+
+echo "==========================================================="
+echo "▶ 1/10 Starting Surfpool..."
+if rpc_up; then 
+  echo "  Surfpool already running."
 else
-  echo "    ⚠ docker not running — skipped (backend shim reads on-chain, Postgres optional)"
+  nohup surfpool start -g ~/yellowstone/config.json > "$L-surfpool.log" 2>&1 &
+  echo "  Waiting for Surfpool to start..."
+  for i in $(seq 1 60); do 
+    rpc_up && break
+    sleep 1
+  done
+  rpc_up && echo "  Surfpool started successfully." || { echo "  ✗ Surfpool didn't start. Check $L-surfpool.log"; exit 1; }
 fi
 
-echo "▶ 2/5  Surfpool (local Solana, :8899)…"
-if rpc_up; then echo "    already running"; else
-  nohup surfpool start > "$L-surfpool.log" 2>&1 &
-  echo "    starting (log $L-surfpool.log)…"
-  for i in $(seq 1 60); do rpc_up && break; sleep 1; done
-  rpc_up && echo "    up" || { echo "    ✗ surfpool didn't come up — run 'surfpool start' in a terminal, then re-run ./run.sh"; exit 1; }
+echo "==========================================================="
+echo "▶ 2/10 Starting Postgres database..."
+if docker start privacycash-pg >/dev/null 2>&1 || docker run -d --name privacycash-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=privacy_cash -p 5432:5432 postgres:16-alpine >/dev/null 2>&1; then
+  echo "  Postgres started on :5432"
+else
+  echo "  ⚠ Docker not running, skipping database start."
 fi
 
-echo "▶ 3/5  Program (deploy if missing)…"
+echo "==========================================================="
+echo "▶ 3/10 Building program..."
+cargo build-sbf --manifest-path programs/privacy-cash/Cargo.toml
+
+echo "==========================================================="
+echo "▶ 4/10 Updating Program ID..."
 [ -f target/deploy/privacy-cash-program.json ] || solana-keygen new --no-bip39-passphrase --silent -o target/deploy/privacy-cash-program.json
 PROG=$(solana-keygen pubkey target/deploy/privacy-cash-program.json)
-EXISTING_ALT=""
-if [ -f frontend/.env ]; then
-  EXISTING_ALT=$(grep -E '^VITE_ALT_ADDRESS=' frontend/.env 2>/dev/null | cut -d= -f2- || true)
-fi
+echo "  New Program ID: $PROG"
+
+# Update lib.rs
 perl -0pi -e 's/declare_id!\("[^"]+"\);/declare_id!("'"$PROG"'");/' programs/privacy-cash/src/lib.rs
-if solana --url localhost program show "$PROG" >/dev/null 2>&1; then
-  echo "    $PROG already deployed"
+
+# Update backend/.env
+if [ -f backend/.env ]; then
+  sed -i "s/^PROGRAM_ID=.*/PROGRAM_ID=$PROG/" backend/.env
 else
-  cargo build-sbf --manifest-path programs/privacy-cash/Cargo.toml 2>&1 | tail -1
-  cp target/deploy/privacy_cash.so target/deploy/privacy-cash.so 2>/dev/null
-  solana --url localhost --keypair "$HOME/.config/solana/id.json" program deploy target/deploy/privacy-cash.so --program-id target/deploy/privacy-cash-program.json 2>&1 | grep "Program Id"
+  echo "PROGRAM_ID=$PROG" >> backend/.env
 fi
-cat > frontend/.env <<EOF
-VITE_BACKEND_URL=http://localhost:8080
-VITE_SOLANA_RPC_URL=http://localhost:8899
-VITE_PROGRAM_ID=$PROG
-EOF
-# Preserve any existing ALT address across re-runs
-if [ -n "${EXISTING_ALT:-}" ]; then
-  echo "VITE_ALT_ADDRESS=$EXISTING_ALT" >> frontend/.env
-fi
-echo "    program=$PROG  (frontend/.env written)"
 
-echo "▶ 3b/5 Address Lookup Table (needed for SPL txs)…"
-( cd frontend && PROGRAM_ID="$PROG" VITE_ALT_ADDRESS="${EXISTING_ALT:-}" bun scripts/create-alt.mjs 2>&1 | sed 's/^/    /' ) || echo "    ⚠ ALT create failed — SPL deposit will try to create one via wallet"
+# Update sdk/src/constants.ts
+perl -0pi -e 's/export const PROGRAM_ID = new PublicKey\(\s*["\x27][^"\x27]+["\x27]\s*\);/export const PROGRAM_ID = new PublicKey(\n  "'"$PROG"'"\n);/' sdk/src/constants.ts
 
-echo "▶ 3c/6 Browser Groth16 prover (wasm + circuit artifacts)…"
-CIRCUITS=programs/privacy-cash/artifacts/circuits
-( cd programs/privacy-cash && shasum -a 256 -c artifacts/circuits/SHA256SUMS --quiet ) \
-  || { echo "    ✗ circuit artifacts do not match SHA256SUMS"; exit 1; }
-PROVER_WASM=sdk/prover-wasm/privacy_cash_prover_bg.wasm
-PROVER_WASM_MT=sdk/prover-wasm-mt/privacy_cash_prover_bg.wasm
-if [ "$FRESH" = "1" ] || [ ! -f "$PROVER_WASM" ] || [ ! -f "$PROVER_WASM_MT" ]; then
-  command -v wasm-pack >/dev/null || { echo "    ✗ wasm-pack missing: cargo install wasm-pack --locked"; exit 1; }
-  # Threaded variant needs nightly + rust-src (build-std with atomics).
-  rustup toolchain install nightly --profile minimal --component rust-src \
-    --target wasm32-unknown-unknown >/dev/null 2>&1 \
-    || { echo "    ✗ could not install nightly toolchain (needed for threaded prover)"; exit 1; }
-  ( set -o pipefail; cd sdk && bun run build:prover 2>&1 | grep -E "Done|rror" | sed 's/^/    /' ) || { echo "    ✗ prover wasm build failed"; exit 1; }
-  [ -f "$PROVER_WASM_MT" ] || { echo "    ✗ threaded prover wasm missing after build"; exit 1; }
-fi
-mkdir -p frontend/public/circuit
-rm -f frontend/public/circuit/transaction2.wasm
-cp "$CIRCUITS/transaction2.zkey" "$CIRCUITS/transaction2.graph" frontend/public/circuit/
-echo "    $PROVER_WASM, $PROVER_WASM_MT, frontend/public/circuit/{transaction2.zkey,transaction2.graph}"
+echo "==========================================================="
+echo "▶ 5/10 Deploying program..."
+cp target/deploy/privacy_cash.so target/deploy/privacy-cash.so 2>/dev/null || true
+solana --url localhost --keypair "$HOME/.config/solana/id.json" program deploy target/deploy/privacy-cash.so --program-id target/deploy/privacy-cash-program.json
 
-echo "▶ 3d/6 SDK (frontend imports dist/)…"
-( cd sdk && bun run build 2>&1 | tail -5 | sed 's/^/    /' ) || { echo "    ✗ sdk build failed"; exit 1; }
+echo "==========================================================="
+echo "▶ 6/10 Running SDK setup scripts (initialize, init-spl, alt-init)..."
+(
+  cd sdk
+  PROGRAM_ID=$PROG bun run scripts/initialize.mjs
+  PROGRAM_ID=$PROG bun run scripts/init-spl.mjs
+  
+  # Run alt-init and capture output
+  echo "  Running alt-init.mjs..."
+  ALT_OUTPUT=$(PROGRAM_ID=$PROG bun run scripts/alt-init.mjs)
+  echo "$ALT_OUTPUT" | sed 's/^/    /'
+  
+  ALT_ADDRESS=$(echo "$ALT_OUTPUT" | grep -oP 'ALT created: \K[a-zA-Z0-9]+' || true)
+  if [ -n "$ALT_ADDRESS" ]; then
+    echo "  Extracted ALT address: $ALT_ADDRESS"
+    # Update sdk/src/constants.ts with new ALT
+    perl -0pi -e 's/export const ALT_ADDRESS = new PublicKey\(\s*["\x27][^"\x27]+["\x27]\s*\);/export const ALT_ADDRESS = new PublicKey(\n  "'"$ALT_ADDRESS"'"\n);/' src/constants.ts
+  else
+    echo "  ⚠ Could not parse ALT address."
+  fi
+)
 
-echo "▶ 4/6  Backend shim (:8080, reads on-chain via RPC, signs v1 swaps)…"
-pkill -f backend-shim.mjs >/dev/null 2>&1 || true; sleep 1
-( cd frontend && PROGRAM_ID="$PROG" nohup bun scripts/backend-shim.mjs > "$L-backend.log" 2>&1 & )
-wait_http http://localhost:8080/health && echo "    up" || { echo "    ✗ failed (log $L-backend.log)"; exit 1; }
+echo "==========================================================="
+echo "▶ 7/10 Building SDK..."
+(
+  cd sdk
+  bun run build
+)
 
-echo "▶ 5/5  Frontend (:5173)…"
-pkill -f "vite" >/dev/null 2>&1; sleep 1
-( cd frontend && nohup bun run dev > "$L-frontend.log" 2>&1 & )
-wait_http http://localhost:5173 && echo "    up" || { echo "    ✗ failed (log $L-frontend.log)"; exit 1; }
+echo "==========================================================="
+echo "▶ 8/10 Starting Backend (Relayer)..."
+pkill -f "privacy_cash_backend" >/dev/null 2>&1 || true
+pkill -f "privacy-cash-backend" >/dev/null 2>&1 || true
+# Kill any existing cargo run just in case
+pkill -f "cargo run" >/dev/null 2>&1 || true
+sleep 1
 
-cat <<EOF
+(
+  cd backend
+  nohup cargo run > "$L-backend.log" 2>&1 &
+)
+echo "  Backend started in background. Logs: $L-backend.log"
 
-✅  all up — open  http://localhost:5173
-    frontend  http://localhost:5173
-    backend   http://localhost:8080   (program $PROG)
-    rpc       http://localhost:8899
-    logs      /tmp/privacy-cash-{surfpool,backend,frontend}.log
+echo "==========================================================="
+echo "▶ 9/10 Linking SDK to frontend..."
+(
+  cd frontend
+  bun add charonprotocol-sdk@workspace:*
+)
 
-    fund your Phantom wallet on surfpool:
-      solana airdrop 2 <phantom-address> --url localhost
-    (Phantom network = http://localhost:8899)
-EOF
+echo "==========================================================="
+echo "▶ 10/10 Starting Frontend..."
+pkill -f "vite" >/dev/null 2>&1 || true
+sleep 1
+
+(
+  cd frontend
+  nohup bun run dev > "$L-frontend.log" 2>&1 &
+)
+echo "  Frontend started in background. Logs: $L-frontend.log"
+
+echo "==========================================================="
+echo "✅ Local development flow successfully started!"
+echo "   Backend:  http://localhost:8080"
+echo "   Frontend: http://localhost:5173"
+echo "   RPC:      http://localhost:8899"
+echo "   Logs:     $L-*.log"

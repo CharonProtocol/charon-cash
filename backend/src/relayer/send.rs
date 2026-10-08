@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use solana_sdk::signature::Signature;
 
-use crate::error::{ErrorCode, RelayerError, RelayerResult};
-use crate::rpc::RpcClient;
+use crate::relayer::error::{ErrorCode, RelayerError, RelayerResult};
+use crate::relayer::rpc::RpcClient;
 
 const SEND_ATTEMPTS: usize = 5;
 const RETRY_DELAY: Duration = Duration::from_millis(900);

@@ -7,9 +7,9 @@
 use solana_sdk::message::AddressLookupTableAccount;
 use solana_sdk::pubkey::Pubkey;
 
-use crate::rpc::RpcClient;
+use crate::relayer::rpc::RpcClient;
 
-use crate::error::{RelayerError, RelayerResult};
+use crate::relayer::error::{RelayerError, RelayerResult};
 
 /// Fixed header before the address array in a lookup table account: discriminant,
 /// deactivation slot, last extended slot and index, an optional authority, padding.

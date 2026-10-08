@@ -4,6 +4,7 @@ mod db;
 mod error;
 mod indexer;
 mod merkle;
+mod relayer;
 mod response;
 mod routes;
 mod state;
@@ -19,7 +20,6 @@ use config::Config;
 use db::Db;
 use indexer::spawn_indexer;
 use routes::router;
-use solana_sdk::signer::keypair::Keypair;
 use state::AppState;
 use tokio::sync::RwLock;
 use tower_http::request_id::{MakeRequestId, MakeRequestUuid, RequestId};
@@ -61,7 +61,7 @@ async fn main() -> anyhow::Result<()> {
         config: config.clone(),
     };
 
-    let app = router(state)
+    let mut app = router(state)
         .layer(
             tower_http::trace::TraceLayer::new_for_http()
                 .make_span_with(|request: &Request<_>| {
@@ -107,7 +107,18 @@ async fn main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!("privacy-cash backend listening on {addr}");
 
-    axum::serve(listener, app).await?;
+    if let Ok(relayer_config) = crate::relayer::config::RelayerConfig::from_env() {
+        tracing::info!("Relayer config found, starting relayer services");
+        let relayer_state = crate::relayer::state::RelayerState::new(relayer_config);
+        crate::relayer::float::spawn(relayer_state.clone());
+        app = app.merge(crate::relayer::routes::router(relayer_state));
+    } else {
+        tracing::warn!("Relayer config not found or invalid, running without relayer");
+    }
+
+    // `into_make_service_with_connect_info` is required so handlers can see the peer address
+    // for per-IP rate limiting, which the relayer uses.
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?;
     Ok(())
 }
 

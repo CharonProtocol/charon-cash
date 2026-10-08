@@ -9,11 +9,11 @@ use axum::Json;
 use serde::Serialize;
 use solana_sdk::signer::Signer;
 
-use crate::chain::derive_ata;
-use crate::config::{ESTIMATED_TX_FEE_LAMPORTS, NULLIFIER_RENT_LAMPORTS, TRANSACT_RENT_LAMPORTS};
-use crate::error::RelayerResult;
-use crate::parse::parse_pubkey;
-use crate::state::AppState;
+use crate::relayer::chain::derive_ata;
+use crate::relayer::config::{ESTIMATED_TX_FEE_LAMPORTS, NULLIFIER_RENT_LAMPORTS, TRANSACT_RENT_LAMPORTS};
+use crate::relayer::error::RelayerResult;
+use crate::relayer::parse::parse_pubkey;
+use crate::relayer::state::RelayerState;
 
 #[derive(Serialize)]
 pub struct MintInfo {
@@ -41,7 +41,7 @@ pub struct RelayerInfoResponse {
     pub spl_relay_available: bool,
 }
 
-pub async fn info(State(state): State<AppState>) -> RelayerResult<Json<RelayerInfoResponse>> {
+pub async fn info(State(state): State<RelayerState>) -> RelayerResult<Json<RelayerInfoResponse>> {
     let rates = state.fee_rates().await?;
     let config = &state.config;
     let supported_mints = config
@@ -74,7 +74,7 @@ pub struct BlockhashResponse {
     pub slot: u64,
 }
 
-pub async fn blockhash(State(state): State<AppState>) -> RelayerResult<Json<BlockhashResponse>> {
+pub async fn blockhash(State(state): State<RelayerState>) -> RelayerResult<Json<BlockhashResponse>> {
     let info = state.rpc.get_latest_blockhash().await?;
     Ok(Json(BlockhashResponse {
         blockhash: info.blockhash.to_string(),
@@ -95,7 +95,7 @@ pub struct AltResponse {
 /// false` rather than a 404 keeps "not created yet" off the error path, since that
 /// is the normal first-run state.
 pub async fn alt(
-    State(state): State<AppState>,
+    State(state): State<RelayerState>,
     Path(address): Path<String>,
 ) -> RelayerResult<Json<AltResponse>> {
     let address = parse_pubkey("address", &address)?;
@@ -118,7 +118,7 @@ pub struct HealthResponse {
     pub fee_recipient: String,
 }
 
-pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
+pub async fn health(State(state): State<RelayerState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         ok: true,
         signer: state.config.signer.pubkey().to_string(),
@@ -145,7 +145,7 @@ pub struct MetricsResponse {
     pub min_signer_balance_lamports: u64,
 }
 
-pub async fn metrics(State(state): State<AppState>) -> RelayerResult<Json<MetricsResponse>> {
+pub async fn metrics(State(state): State<RelayerState>) -> RelayerResult<Json<MetricsResponse>> {
     let m = &state.metrics;
     let signer_balance = state
         .rpc

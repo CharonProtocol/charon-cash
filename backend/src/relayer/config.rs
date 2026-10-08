@@ -21,7 +21,7 @@ pub const TRANSACT_RENT_LAMPORTS: u64 = NULLIFIER_RENT_LAMPORTS * 2;
 pub const ESTIMATED_TX_FEE_LAMPORTS: u64 = 7_000;
 
 #[derive(Clone)]
-pub struct Config {
+pub struct RelayerConfig {
     pub bind_addr: String,
     pub rpc_url: String,
     pub program_id: Pubkey,
@@ -52,7 +52,7 @@ pub struct Config {
     pub supported_mints: Vec<Pubkey>,
 }
 
-impl Config {
+impl RelayerConfig {
     pub fn from_env() -> Result<Self> {
         let program_id = env_or("PROGRAM_ID", "HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV");
         let signer = load_keypair()?;

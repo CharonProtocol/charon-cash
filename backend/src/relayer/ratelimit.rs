@@ -8,7 +8,7 @@ use std::net::IpAddr;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use crate::error::{ErrorCode, RelayerError, RelayerResult};
+use crate::relayer::error::{ErrorCode, RelayerError, RelayerResult};
 
 const WINDOW: Duration = Duration::from_secs(60);
 /// Forget idle callers so the map cannot grow without bound from spoofed traffic.

@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{ErrorCode, RelayerError, RelayerResult};
+use crate::relayer::error::{ErrorCode, RelayerError, RelayerResult};
 
 pub fn serialize<T: Serialize>(value: &T) -> RelayerResult<Vec<u8>> {
     bincode::serialize(value)
@@ -35,7 +35,7 @@ mod tests {
     fn versioned_transactions_round_trip() {
         let payer = Keypair::new();
         let ix = Instruction {
-            program_id: crate::chain::SYSTEM_PROGRAM_ID,
+            program_id: crate::relayer::chain::SYSTEM_PROGRAM_ID,
             accounts: vec![AccountMeta::new(payer.pubkey(), true)],
             data: vec![2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
         };

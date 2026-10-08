@@ -1,6 +1,6 @@
 /target
-node_modules
-
+*/node_modules
+*/dist
 Cargo.lock
 # CI builds the deployed program and prover against reviewed dependency versions.
 !/Cargo.lock

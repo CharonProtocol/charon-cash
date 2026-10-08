@@ -16,7 +16,7 @@ use solana_sdk::signature::Signature;
 use std::str::FromStr;
 use std::time::Duration;
 
-use crate::error::{RelayerError, RelayerResult};
+use crate::relayer::error::{RelayerError, RelayerResult};
 
 pub struct RpcClient {
     url: String,

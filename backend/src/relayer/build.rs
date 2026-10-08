@@ -7,7 +7,7 @@
 use solana_sdk::instruction::{AccountMeta, Instruction};
 use solana_sdk::pubkey::Pubkey;
 
-use crate::chain::{
+use crate::relayer::chain::{
     derive_ata, derive_spl_tree_account, derive_transact_pdas, ATA_PROGRAM_ID, TOKEN_PROGRAM_ID,
 };
 
@@ -117,7 +117,7 @@ pub fn build_transact_instruction(params: &TransactIxParams<'_>) -> Instruction 
             AccountMeta::new(params.recipient, false),
             AccountMeta::new(params.fee_recipient, false),
             AccountMeta::new(params.signer, true),
-            AccountMeta::new_readonly(crate::chain::SYSTEM_PROGRAM_ID, false),
+            AccountMeta::new_readonly(crate::relayer::chain::SYSTEM_PROGRAM_ID, false),
         ],
         Some(spl) => {
             let tree_account = derive_spl_tree_account(&params.program_id, &spl.mint);
@@ -138,7 +138,7 @@ pub fn build_transact_instruction(params: &TransactIxParams<'_>) -> Instruction 
                 AccountMeta::new(spl.fee_recipient_ata, false),
                 AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
                 AccountMeta::new_readonly(ATA_PROGRAM_ID, false),
-                AccountMeta::new_readonly(crate::chain::SYSTEM_PROGRAM_ID, false),
+                AccountMeta::new_readonly(crate::relayer::chain::SYSTEM_PROGRAM_ID, false),
             ]
         }
     };
@@ -183,7 +183,7 @@ pub fn create_ata_idempotent(payer: &Pubkey, owner: &Pubkey, mint: &Pubkey) -> I
             AccountMeta::new(ata, false),
             AccountMeta::new_readonly(*owner, false),
             AccountMeta::new_readonly(*mint, false),
-            AccountMeta::new_readonly(crate::chain::SYSTEM_PROGRAM_ID, false),
+            AccountMeta::new_readonly(crate::relayer::chain::SYSTEM_PROGRAM_ID, false),
             AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
         ],
         data: vec![1],
@@ -213,13 +213,13 @@ pub struct SwapAccounts {
 
 pub fn derive_swap_accounts(program_id: &Pubkey, spl_mint: &Pubkey) -> SwapAccounts {
     let (sol_tree_account, _) =
-        Pubkey::find_program_address(&[crate::chain::TREE_ACCOUNT_SEED], program_id);
+        Pubkey::find_program_address(&[crate::relayer::chain::TREE_ACCOUNT_SEED], program_id);
     let (tree_token_account, _) =
-        Pubkey::find_program_address(&[crate::chain::TREE_TOKEN_ACCOUNT_SEED], program_id);
+        Pubkey::find_program_address(&[crate::relayer::chain::TREE_TOKEN_ACCOUNT_SEED], program_id);
     let (global_config, _) =
-        Pubkey::find_program_address(&[crate::chain::GLOBAL_CONFIG_SEED], program_id);
+        Pubkey::find_program_address(&[crate::relayer::chain::GLOBAL_CONFIG_SEED], program_id);
     let (out_tree_account, _) = Pubkey::find_program_address(
-        &[crate::chain::TREE_ACCOUNT_SEED, spl_mint.as_ref()],
+        &[crate::relayer::chain::TREE_ACCOUNT_SEED, spl_mint.as_ref()],
         program_id,
     );
     SwapAccounts {
@@ -227,7 +227,7 @@ pub fn derive_swap_accounts(program_id: &Pubkey, spl_mint: &Pubkey) -> SwapAccou
         tree_token_account,
         global_config,
         out_tree_account,
-        pool_wsol_account: derive_ata(&global_config, &crate::chain::NATIVE_MINT),
+        pool_wsol_account: derive_ata(&global_config, &crate::relayer::chain::NATIVE_MINT),
         pool_spl_account: derive_ata(&global_config, spl_mint),
     }
 }
@@ -323,15 +323,15 @@ pub fn build_swap_instruction(params: &SwapIxParams<'_>) -> Result<Instruction, 
         AccountMeta::new(swap.tree_token_account, false),
         AccountMeta::new(out_tree, false),
         AccountMeta::new(swap.global_config, false),
-        AccountMeta::new_readonly(crate::chain::NATIVE_MINT, false),
+        AccountMeta::new_readonly(crate::relayer::chain::NATIVE_MINT, false),
         AccountMeta::new(swap.pool_wsol_account, false),
         AccountMeta::new_readonly(params.spl_mint, false),
         AccountMeta::new(swap.pool_spl_account, false),
         AccountMeta::new(params.signer, true),
-        AccountMeta::new_readonly(crate::chain::JUPITER_PROGRAM_ID, false),
+        AccountMeta::new_readonly(crate::relayer::chain::JUPITER_PROGRAM_ID, false),
         AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
         AccountMeta::new_readonly(ATA_PROGRAM_ID, false),
-        AccountMeta::new_readonly(crate::chain::SYSTEM_PROGRAM_ID, false),
+        AccountMeta::new_readonly(crate::relayer::chain::SYSTEM_PROGRAM_ID, false),
     ];
 
     let mut jupiter_account_indices: Vec<u8> = Vec::with_capacity(params.route_accounts.len());
@@ -368,10 +368,10 @@ pub fn build_swap_instruction(params: &SwapIxParams<'_>) -> Result<Instruction, 
 /// not a CPI in the same instruction as `set_lamports`.
 pub fn build_wrap_sol_instruction(program_id: &Pubkey, signer: &Pubkey, amount: u64) -> Instruction {
     let (tree_token_account, _) =
-        Pubkey::find_program_address(&[crate::chain::TREE_TOKEN_ACCOUNT_SEED], program_id);
+        Pubkey::find_program_address(&[crate::relayer::chain::TREE_TOKEN_ACCOUNT_SEED], program_id);
     let (global_config, _) =
-        Pubkey::find_program_address(&[crate::chain::GLOBAL_CONFIG_SEED], program_id);
-    let pool_wsol_account = derive_ata(&global_config, &crate::chain::NATIVE_MINT);
+        Pubkey::find_program_address(&[crate::relayer::chain::GLOBAL_CONFIG_SEED], program_id);
+    let pool_wsol_account = derive_ata(&global_config, &crate::relayer::chain::NATIVE_MINT);
 
     let mut data = Vec::with_capacity(9);
     data.push(DISC_WRAP_SOL);
@@ -382,10 +382,10 @@ pub fn build_wrap_sol_instruction(program_id: &Pubkey, signer: &Pubkey, amount: 
         accounts: vec![
             AccountMeta::new(tree_token_account, false),
             AccountMeta::new(pool_wsol_account, false),
-            AccountMeta::new_readonly(crate::chain::NATIVE_MINT, false),
+            AccountMeta::new_readonly(crate::relayer::chain::NATIVE_MINT, false),
             AccountMeta::new(*signer, true),
             AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
-            AccountMeta::new_readonly(crate::chain::SYSTEM_PROGRAM_ID, false),
+            AccountMeta::new_readonly(crate::relayer::chain::SYSTEM_PROGRAM_ID, false),
         ],
         data,
     }

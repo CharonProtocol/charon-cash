@@ -35,22 +35,22 @@ export declare class CharonProtocol {
         owner: Signer;
     }): Promise<CharonProtocol>;
     sendSol(amountInLamports: number, recipientKey: string): Promise<{
-        signature: string;
+        signature: any;
     }>;
     withdrawSol(amountInLamports: number): Promise<{
-        signature: string;
+        signature: any;
     }>;
     shieldedTransferSol(amountInLamports: number, recipientKey: string): Promise<{
-        signature: string;
+        signature: any;
     }>;
     sendSpl(amount: number, recipientKey: string, mintAddress: string): Promise<{
-        signature: string;
+        signature: any;
     }>;
     withdrawSpl(amount: number, mintAddress: string): Promise<{
-        signature: string;
+        signature: any;
     }>;
     shieldedTransferSpl(amount: number, recipientKey: string): Promise<{
-        signature: string;
+        signature: any;
     }>;
     syncUtxos(): Promise<void>;
     private recalculateBalances;

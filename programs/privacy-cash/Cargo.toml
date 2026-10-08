@@ -17,7 +17,7 @@ bytemuck = { version = "1.25.0", features = ["derive","min_const_generics"] }
 num-derive = "0.4.2"
 solana-clock = "3.0.1"
 shank = "0.4.8"
-light-hasher = "4.0.0"
+light-hasher = "7.0.0"
 solana-bn254 = "3.2.1"
 
 [dev-dependencies]

@@ -6,9 +6,9 @@
 
 use solana_sdk::pubkey::Pubkey;
 
-use crate::rpc::RpcClient;
+use crate::relayer::rpc::RpcClient;
 
-use crate::error::{ErrorCode, RelayerError, RelayerResult};
+use crate::relayer::error::{ErrorCode, RelayerError, RelayerResult};
 
 pub const GLOBAL_CONFIG_SEED: &[u8] = b"global_config";
 pub const TREE_ACCOUNT_SEED: &[u8] = b"merkle_tree";

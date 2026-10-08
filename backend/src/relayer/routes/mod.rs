@@ -9,9 +9,9 @@ use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
-use crate::state::AppState;
+use crate::relayer::state::RelayerState;
 
-pub fn router(state: AppState) -> Router {
+pub fn router(state: RelayerState) -> Router {
     let body_limit = state.config.max_body_bytes;
 
     Router::new()

@@ -18,7 +18,13 @@ import {
   FEE_RECIPIENT,
   FIELD_SIZE,
   MERKLE_TREE_DEPTH,
+  API_URL,
+  SOL_MINT,
   PROGRAM_ID,
+
+
+
+
 } from "./constants";
 import BN from "bn.js";
 import { EncryptionService } from "./encrypt";
@@ -34,8 +40,12 @@ import { CircuitParams, parseToBytesArray, ProofBytes, prove } from "./prover";
 import { CharonProtocolError, CharonProtocolErrorCode } from "./error";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
+
+
   getAssociatedTokenAddress,
   TOKEN_PROGRAM_ID,
+
+
 } from "@solana/spl-token";
 
 export class ProgramError extends CharonProtocolError {
@@ -240,6 +250,10 @@ export async function transactSol({
 
   const programAccounts = deriveAccounts(
     PROGRAM_ID,
+
+
+
+
     Uint8Array.from(proofToSubmit.inputNullifiers[0]),
     Uint8Array.from(proofToSubmit.inputNullifiers[1]),
   );
@@ -254,6 +268,8 @@ export async function transactSol({
 
   const ix = new TransactionInstruction({
     programId: PROGRAM_ID,
+
+
     keys: [
       {
         pubkey: programAccounts.treeAccount,
@@ -324,14 +340,20 @@ export async function transactSol({
   let signedTx = await signTransaction(versionedTransaction);
 
   try {
-    let txid = await sendAndConfirmRawTransaction(
-      connection,
-      Buffer.from(signedTx.serialize()),
-      {
-        commitment: "finalized",
-      },
-    );
-    return txid;
+    const rawTxHex = Buffer.from(signedTx.serialize()).toString("hex");
+    const response = await fetch(`${API_URL}/api/relayer/submit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transaction: rawTxHex }),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      throw new Error(`Relayer submit failed: ${response.status} ${errBody}`);
+    }
+
+    const data = await response.json();
+    return data.signature;
   } catch (error) {
     if (error instanceof SendTransactionError) {
       let logs = error.logs;
@@ -478,6 +500,10 @@ export async function shieldedTransferSol({
 
   const programAccounts = deriveAccounts(
     PROGRAM_ID,
+
+
+
+
     Uint8Array.from(proofToSubmit.inputNullifiers[0]),
     Uint8Array.from(proofToSubmit.inputNullifiers[1]),
   );
@@ -490,84 +516,45 @@ export async function shieldedTransferSol({
     programAccounts.bump1,
   );
 
-  const ix = new TransactionInstruction({
-    programId: PROGRAM_ID,
-    keys: [
-      {
-        pubkey: programAccounts.treeAccount,
-        isSigner: false,
-        isWritable: true,
-      },
-      {
-        pubkey: programAccounts.nullifier0,
-        isSigner: false,
-        isWritable: true,
-      },
-      {
-        pubkey: programAccounts.nullifier1,
-        isSigner: false,
-        isWritable: true,
-      },
-      {
-        pubkey: programAccounts.nullifier2,
-        isSigner: false,
-        isWritable: false,
-      },
-      {
-        pubkey: programAccounts.nullifier3,
-        isSigner: false,
-        isWritable: false,
-      },
-      {
-        pubkey: programAccounts.treeTokenAccount,
-        isSigner: false,
-        isWritable: true,
-      },
-      {
-        pubkey: programAccounts.globalConfig,
-        isSigner: false,
-        isWritable: false,
-      },
-      {
-        pubkey: FEE_RECIPIENT,
-        isSigner: false,
-        isWritable: true,
-      },
-      { pubkey: FEE_RECIPIENT, isSigner: false, isWritable: true },
-      { pubkey: signer, isSigner: true, isWritable: true },
-      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-    ],
-    data: ixData,
-  });
+  const toHex = (arr: number[] | Uint8Array) => Buffer.from(arr).toString("hex");
 
-  const addressLookTable = (await connection.getAddressLookupTable(ALT_ADDRESS))
-    .value!;
+  const proofPayload = {
+    proof_a: toHex(proofToSubmit.proofA),
+    proof_b: toHex(proofToSubmit.proofB),
+    proof_c: toHex(proofToSubmit.proofC),
+    root: toHex(proofToSubmit.root),
+    public_amount: toHex(proofToSubmit.publicAmount),
+    ext_data_hash: toHex(proofToSubmit.extDataHash),
+    input_nullifiers: proofToSubmit.inputNullifiers.map(toHex),
+    output_commitments: proofToSubmit.outputCommitments.map(toHex),
+  };
 
-  if (!addressLookTable) {
-    throw new Error("Lookup table not found or not yet active");
-  }
-  const limitIx = ComputeBudgetProgram.setComputeUnitLimit({
-    units: 1_000_000,
-  });
-
-  const messageV0 = new TransactionMessage({
-    instructions: [limitIx, ix],
-    payerKey: signer,
-    recentBlockhash: (await connection.getLatestBlockhash()).blockhash,
-  }).compileToV0Message([addressLookTable]);
-
-  let versionedTransaction = new VersionedTransaction(messageV0);
-  let signedTx = await signTransaction(versionedTransaction);
+  const transactPayload = {
+    proof: proofPayload,
+    ext_amount: extData.extAmount.toString(),
+    fee: extData.fee.toString(),
+    encrypted_output1: toHex(extData.encryptedOutput1),
+    encrypted_output2: toHex(extData.encryptedOutput2),
+    recipient: FEE_RECIPIENT.toBase58(),
+    mint: SOL_MINT.toBase58(),
+    is_spl: false,
+    fee_recipient: FEE_RECIPIENT.toBase58(),
+  };
 
   try {
-    let txid = await sendAndConfirmRawTransaction(
-      connection,
-      Buffer.from(signedTx.serialize()),
-      {
-        commitment: "finalized",
-      },
-    );
-    return txid;
+    const response = await fetch(`${API_URL}/api/relayer/transact`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(transactPayload),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      throw new Error(`Relayer transact failed: ${response.status} ${errBody}`);
+    }
+
+    const data = await response.json();
+    return data.signature;
   } catch (error) {
     if (error instanceof SendTransactionError) {
       let logs = error.logs;
@@ -737,6 +724,10 @@ export async function transactSpl({
 
   const programAccounts = deriveAccounts(
     PROGRAM_ID,
+
+
+
+
     Uint8Array.from(proofToSubmit.inputNullifiers[0]),
     Uint8Array.from(proofToSubmit.inputNullifiers[1]),
     new PublicKey(mintAddress),
@@ -758,6 +749,8 @@ export async function transactSpl({
 
   const ix = new TransactionInstruction({
     programId: PROGRAM_ID,
+
+
     keys: [
       {
         pubkey: programAccounts.treeAccount,
@@ -819,9 +812,13 @@ export async function transactSpl({
       },
 
       { pubkey: feeRecipientAta, isSigner: false, isWritable: true },
-      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID,
+
+ isSigner: false, isWritable: false },
       {
         pubkey: ASSOCIATED_TOKEN_PROGRAM_ID,
+
+
         isSigner: false,
         isWritable: false,
       },
@@ -851,14 +848,20 @@ export async function transactSpl({
   let signedTx = await signTransaction(versionedTransaction);
 
   try {
-    let txid = await sendAndConfirmRawTransaction(
-      connection,
-      Buffer.from(signedTx.serialize()),
-      {
-        commitment: "finalized",
-      },
-    );
-    return txid;
+    const rawTxHex = Buffer.from(signedTx.serialize()).toString("hex");
+    const response = await fetch(`${API_URL}/api/relayer/submit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transaction: rawTxHex }),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      throw new Error(`Relayer submit failed: ${response.status} ${errBody}`);
+    }
+
+    const data = await response.json();
+    return data.signature;
   } catch (error) {
     if (error instanceof SendTransactionError) {
       let logs = error.logs;
@@ -1018,6 +1021,10 @@ export async function shieldedTransferSpl({
 
   const programAccounts = deriveAccounts(
     PROGRAM_ID,
+
+
+
+
     Uint8Array.from(proofToSubmit.inputNullifiers[0]),
     Uint8Array.from(proofToSubmit.inputNullifiers[1]),
     new PublicKey(mintAddress),
@@ -1031,115 +1038,46 @@ export async function shieldedTransferSpl({
     programAccounts.bump1,
   );
 
-  const treeTokenAta = await getAssociatedTokenAddress(
-    new PublicKey(mintAddress),
-    programAccounts.globalConfig,
-    true,
-  );
+  const toHex = (arr: number[] | Uint8Array) => Buffer.from(arr).toString("hex");
 
-  const ix = new TransactionInstruction({
-    programId: PROGRAM_ID,
-    keys: [
-      {
-        pubkey: programAccounts.treeAccount,
-        isSigner: false,
-        isWritable: true,
-      },
-      {
-        pubkey: programAccounts.nullifier0,
-        isSigner: false,
-        isWritable: true,
-      },
-      {
-        pubkey: programAccounts.nullifier1,
-        isSigner: false,
-        isWritable: true,
-      },
-      {
-        pubkey: programAccounts.nullifier2,
-        isSigner: false,
-        isWritable: false,
-      },
-      {
-        pubkey: programAccounts.nullifier3,
-        isSigner: false,
-        isWritable: false,
-      },
-      {
-        pubkey: programAccounts.globalConfig,
-        isSigner: false,
-        isWritable: false,
-      },
-      // signer
-      { pubkey: signer, isSigner: true, isWritable: true },
+  const proofPayload = {
+    proof_a: toHex(proofToSubmit.proofA),
+    proof_b: toHex(proofToSubmit.proofB),
+    proof_c: toHex(proofToSubmit.proofC),
+    root: toHex(proofToSubmit.root),
+    public_amount: toHex(proofToSubmit.publicAmount),
+    ext_data_hash: toHex(proofToSubmit.extDataHash),
+    input_nullifiers: proofToSubmit.inputNullifiers.map(toHex),
+    output_commitments: proofToSubmit.outputCommitments.map(toHex),
+  };
 
-      // spl token mint
-      {
-        pubkey: new PublicKey(mintAddress),
-        isSigner: false,
-        isWritable: false,
-      },
-      // signer's token account
-      { pubkey: signerAta, isSigner: false, isWritable: true },
-      // recipient based on amount
-      {
-        pubkey: FEE_RECIPIENT,
-        isSigner: false,
-        isWritable: true,
-      },
-      // recipientAta
-      {
-        pubkey: feeRecipientAta,
-        isSigner: false,
-        isWritable: true,
-      },
-      // tree ata
-      {
-        pubkey: treeTokenAta,
-        isSigner: false,
-        isWritable: true,
-      },
-
-      { pubkey: feeRecipientAta, isSigner: false, isWritable: true },
-      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-      {
-        pubkey: ASSOCIATED_TOKEN_PROGRAM_ID,
-        isSigner: false,
-        isWritable: false,
-      },
-      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-    ],
-    data: ixData,
-  });
-
-  const addressLookTable = (await connection.getAddressLookupTable(ALT_ADDRESS))
-    .value!;
-
-  if (!addressLookTable) {
-    throw new Error("Lookup table not found or not yet active");
-  }
-  const limitIx = ComputeBudgetProgram.setComputeUnitLimit({
-    units: 1_000_000,
-  });
-
-  const messageV0 = new TransactionMessage({
-    instructions: [limitIx, ix],
-    payerKey: signer,
-    recentBlockhash: (await connection.getLatestBlockhash()).blockhash,
-  }).compileToV0Message([addressLookTable]);
-
-  let versionedTransaction = new VersionedTransaction(messageV0);
-  let signedTx = await signTransaction(versionedTransaction);
+  const transactPayload = {
+    proof: proofPayload,
+    ext_amount: extData.extAmount.toString(),
+    fee: extData.fee.toString(),
+    encrypted_output1: toHex(extData.encryptedOutput1),
+    encrypted_output2: toHex(extData.encryptedOutput2),
+    recipient: FEE_RECIPIENT.toBase58(),
+    mint: mintAddress,
+    is_spl: true,
+    fee_recipient: FEE_RECIPIENT.toBase58(),
+    recipient_token_account: feeRecipientAta.toBase58(),
+  };
 
   try {
-    let txid = await sendAndConfirmRawTransaction(
-      connection,
-      Buffer.from(signedTx.serialize()),
-      {
-        commitment: "finalized",
-      },
-    );
-    return txid;
+    const response = await fetch(`${API_URL}/api/relayer/transact`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(transactPayload),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      throw new Error(`Relayer transact failed: ${response.status} ${errBody}`);
+    }
+
+    const data = await response.json();
+    return data.signature;
   } catch (error) {
     if (error instanceof SendTransactionError) {
       let logs = error.logs;

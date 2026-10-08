@@ -15,12 +15,12 @@ use serde::{Deserialize, Serialize};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::transaction::VersionedTransaction;
 
-use crate::build::COMPUTE_BUDGET_PROGRAM_ID;
-use crate::chain::{ATA_PROGRAM_ID, SYSTEM_PROGRAM_ID, TOKEN_PROGRAM_ID};
-use crate::error::{ErrorCode, RelayerError, RelayerResult};
-use crate::parse::decode_hex;
-use crate::send::{confirm, send_with_retry, ConfirmOutcome};
-use crate::state::AppState;
+use crate::relayer::build::COMPUTE_BUDGET_PROGRAM_ID;
+use crate::relayer::chain::{ATA_PROGRAM_ID, SYSTEM_PROGRAM_ID, TOKEN_PROGRAM_ID};
+use crate::relayer::error::{ErrorCode, RelayerError, RelayerResult};
+use crate::relayer::parse::decode_hex;
+use crate::relayer::send::{confirm, send_with_retry, ConfirmOutcome};
+use crate::relayer::state::RelayerState;
 
 const ADDRESS_LOOKUP_TABLE_PROGRAM_ID: Pubkey =
     solana_sdk::pubkey!("AddressLookupTab1e1111111111111111111111111");
@@ -38,7 +38,7 @@ pub struct SubmitResponse {
 }
 
 pub async fn submit(
-    State(state): State<AppState>,
+    State(state): State<RelayerState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(req): Json<SubmitRequest>,
 ) -> RelayerResult<Json<SubmitResponse>> {
@@ -48,7 +48,7 @@ pub async fn submit(
     }
 
     let bytes = decode_hex("transaction", &req.transaction)?;
-    let tx: VersionedTransaction = crate::wire::deserialize(&bytes)?;
+    let tx: VersionedTransaction = crate::relayer::wire::deserialize(&bytes)?;
 
     assert_programs_allowed(&state, &tx)?;
     assert_already_signed(&tx)?;
@@ -76,7 +76,7 @@ pub async fn submit(
 /// Only forward transactions that touch the privacy-cash program or set up a lookup
 /// table for it, plus the infrastructure programs those need. Without this the
 /// endpoint is an open transaction relay and the operator's IP fronts for anything.
-fn assert_programs_allowed(state: &AppState, tx: &VersionedTransaction) -> RelayerResult<()> {
+fn assert_programs_allowed(state: &RelayerState, tx: &VersionedTransaction) -> RelayerResult<()> {
     let keys = tx.message.static_account_keys();
     let allowed = [
         state.config.program_id,
