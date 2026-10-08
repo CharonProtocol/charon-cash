@@ -1,25 +1,3 @@
-export { PrivacyCashClient } from "./client";
-export type { Signer, DepositResult, WithdrawResult, SwapResult, SyncResult, UnlockOpts, ClientOptions, } from "./client";
-export { EncryptionService, Keypair, Utxo, getExtDataHash, getMintAddressField, getSwapInExtDataHash, getSwapOutExtDataHash, encodePrivacyAddress, parsePrivacyAddress, isPrivacyAddress, PRIVACY_ADDRESS_PREFIX, } from "./crypto";
-export { prove, parseToBytesArray, preloadProver, configureProver, terminateProver, proverThreads, } from "./prover";
-export type { Groth16Proof, ProverOptions } from "./prover";
-export { CIRCUIT_ARTIFACTS, CIRCUIT_CACHE_NAME, DEFAULT_CIRCUIT_BASE_URL, loadCircuitArtifacts, verifyArtifact, } from "./circuit-artifacts";
-export type { CircuitArtifacts } from "./circuit-artifacts";
-export { buildTransactTransaction, buildTransactIxData, buildTransactSplTransaction, buildTransactSplInstruction, buildSwapInstruction, buildSwapIxData, buildSwapTransaction, buildWrapSolInstruction, deriveAccounts, deriveSplTreeAccount, deriveSwapAccounts, } from "./program";
-export type { ProofBytes, TransactAccounts, SwapAccounts, SwapIxParams } from "./program";
-export { compileV1Transaction, signWireTransaction, v1SignedSize, V1_MAX_SIZE, V1_PREFIX, } from "./tx-v1";
-export { ensureAlt, fetchAlt, splAltAddresses, envAltAddress, cachedAltAddress, cacheAltAddress, } from "./alt";
-export type { AltSigner } from "./alt";
-export { LocalMirror, readSolTreeState, readTreeState, readGlobalFees } from "./local-provider";
-export { canRelay, minEconomicWithdrawal, transferFee, transferRecipient, withdrawalFee, } from "./relay-policy";
-export type { RelayCapability } from "./relay-policy";
-export { loadCachedLeaves, saveCachedLeaves, clearCachedLeaves, mirrorCacheAvailable, } from "./mirror-cache";
-export { fetchRelayerInfo, fetchBlockhash, fetchAltAccount, fetchTreeState, fetchUtxoRange, fetchTreeLeaves, fetchTreeLeavesFrom, waitForLeafIndex, isNullifierSpent, submitTransaction, relaySwap, relayTransact, fetchJupiterRoute, fieldToHex32, setBackendUrl, getBackendUrl, setRelayerUrl, getRelayerUrl, solTreeKey, splTreeKey, registerPrivacyKeys, lookupPrivacyKeys, commitmentToDecimal, } from "./merkle";
-export type { RelayerInfo, BlockhashInfo, TreeState, IndexedUtxo, UtxoRangePage, JupiterRoute, RelayProofPayload, RelayTransactRequest, RelayTransactResult, } from "./merkle";
-export { loadNotes, unspentNotes, saveNote, upsertNote, markNoteSpent, totalBalance, exportNotes, importNotes, clearNotes, newNoteId, getSyncOffset, setSyncOffset, resetSyncOffset, } from "./notes";
-export type { Note } from "./notes";
-export { encryptNotesBlob, decryptNotesBlob, pushEncryptedNotes, pullEncryptedNotes, } from "./notestore";
-export { setOperatorPassword, getOperatorPassword, verifyOperator, operatorInitialize, operatorInitializeSpl, operatorUpdateConfig, operatorUpdateDepositLimit, operatorUpdateDepositLimitSpl, OperatorError, type OperatorResponse, } from "./admin";
-export { FIELD_SIZE, MERKLE_TREE_DEPTH, buildUnlockMessage, defaultSiwsDomain, defaultSiwsUri, inferSiwsChainId, normalizeSiwsDomain, requireStableSiws, SIWS_STATEMENT, SIWS_VERSION, SOL_TREE_KEY, WRAPPED_SOL_MINT, JUPITER_PROGRAM_ID, NATIVE_MINT, DISC_SWAP, DISC_WRAP_SOL, } from "./constants";
-export type { SiwsUnlockInput, SiwsSignInInput, SiwsSignInOutput } from "./constants";
+export { CharonProtocol } from "./client";
+export { CharonProtocolError, CharonProtocolErrorCode } from "./error";
 //# sourceMappingURL=index.d.ts.map

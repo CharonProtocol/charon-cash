@@ -25,7 +25,6 @@ export declare class CharonProtocol {
     private storageService;
     private isRuning?;
     private lightwasm;
-    private circuit;
     utxoByMint: Map<string, UtxoSummary>;
     lastLoadedNote: number;
     worker: Worker;
@@ -36,19 +35,19 @@ export declare class CharonProtocol {
         owner: Signer;
     }): Promise<CharonProtocol>;
     sendSol(amountInLamports: number, recipientKey: string): Promise<{
-        signature: void;
+        signature: string;
     }>;
     withdrawSol(amountInLamports: number): Promise<{
-        signature: void;
+        signature: string;
     }>;
     shieldedTransferSol(amountInLamports: number, recipientKey: string): Promise<{
         signature: string;
     }>;
     sendSpl(amount: number, recipientKey: string, mintAddress: string): Promise<{
-        signature: void;
+        signature: string;
     }>;
     withdrawSpl(amount: number, mintAddress: string): Promise<{
-        signature: void;
+        signature: string;
     }>;
     shieldedTransferSpl(amount: number, recipientKey: string): Promise<{
         signature: string;

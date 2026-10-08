@@ -1,5 +1,32 @@
 import { type CircuitArtifacts } from "./circuit-artifacts";
 import { type ProverWasmSource } from "./prover-core";
+import BN from "bn.js";
+export type CircuitParams = {
+    root: string;
+    inputNullifier: string[];
+    outputCommitment: string[];
+    publicAmount: string;
+    extDataHash: Uint8Array<ArrayBufferLike>;
+    inAmount: string[];
+    inPrivateKey: BN[];
+    inBlinding: string[];
+    inPathIndices: number[];
+    inPathElements: string[][];
+    outAmount: string[];
+    outBlinding: string[];
+    outPubkey: BN[];
+    mintAddress: string;
+};
+export interface ProofBytes {
+    proofA: number[];
+    proofB: number[];
+    proofC: number[];
+    root: number[];
+    publicAmount: number[];
+    extDataHash: number[];
+    inputNullifiers: number[][];
+    outputCommitments: number[][];
+}
 export interface Groth16Proof {
     proofA: number[];
     proofB: number[];

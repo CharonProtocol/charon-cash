@@ -5,7 +5,7 @@ import {
   generateSharedSecret,
   aes_decrypt,
 } from "../../src/encrypt";
-import { brotliDecompressSync } from "node:zlib";
+import { gunzipSync } from "node:zlib";
 import { randomBytes } from "@noble/ciphers/utils.js";
 
 describe("Encryption Service Tests", () => {
@@ -52,8 +52,8 @@ describe("Encryption Service Tests", () => {
     expect(receivedMessage).toBe(sentMessage);
   });
 
-  test("encrypted notes contain standard Brotli data", async () => {
-    const recipient = await generateX25519CipherKeypair("BROTLI_RECIPIENT");
+  test("encrypted notes contain standard gzip data", async () => {
+    const recipient = await generateX25519CipherKeypair("GZIP_RECIPIENT");
     const note = randomBytes(108);
     const encrypted = await alice.encrypt(note, recipient.publicKey);
     const sharedSecret = await generateSharedSecret(
@@ -63,7 +63,7 @@ describe("Encryption Service Tests", () => {
     const key = await alice.generateEncryptionDecryptionKey(sharedSecret);
     const compressed = await aes_decrypt(encrypted.slice(40), key);
 
-    expect(new Uint8Array(brotliDecompressSync(compressed))).toEqual(note);
+    expect(new Uint8Array(gunzipSync(compressed))).toEqual(note);
   });
 
   test("Alice encrypt message to self ", async () => {

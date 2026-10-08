@@ -178,7 +178,7 @@ export class CharonProtocol {
       );
 
       utxoByMint.forEach((UtxoSummary) => {
-        UtxoSummary.utxos.sort((a, b) => a.amount.sub(b.amount).toNumber());
+        UtxoSummary.utxos.sort((a, b) => a.amount.cmp(b.amount));
 
         let n = UtxoSummary.utxos.length;
 
@@ -525,7 +525,7 @@ export class CharonProtocol {
 
     if (UtxoSummary.maxSingleTxAmount.lt(new BN(amount))) {
       throw new CharonProtocolError(
-        `You can currently only withdraw equal or less than ${UtxoSummary.maxSingleTxAmount.toNumber()}`,
+        `You can currently only withdraw equal or less than ${UtxoSummary.maxSingleTxAmount.toString()}`,
         CharonProtocolErrorCode.WITHDRAWAL_LIMIT,
       );
     }

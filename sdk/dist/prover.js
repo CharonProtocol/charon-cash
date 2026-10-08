@@ -1,6 +1,6 @@
 import { utils } from "ffjavascript";
 import { DEFAULT_CIRCUIT_BASE_URL, loadCircuitArtifacts, } from "./circuit-artifacts";
-import { createWasmProver } from "./prover-core";
+import { createWasmProver, } from "./prover-core";
 let options = {};
 let worker = null;
 let workerReady = null;
@@ -32,12 +32,16 @@ function useWorker() {
 function circuitBaseUrl() {
     const base = options.circuitBaseUrl ?? DEFAULT_CIRCUIT_BASE_URL;
     // Resolve on the page so a relative base does not resolve against the worker script.
-    return typeof location === "undefined" ? base : new URL(base, location.href).toString();
+    return typeof location === "undefined"
+        ? base
+        : new URL(base, location.href).toString();
 }
 function getWorker() {
     if (worker)
         return worker;
-    const w = new Worker(new URL("./prover-worker.js", import.meta.url), { type: "module" });
+    const w = new Worker(new URL("./prover-worker.js", import.meta.url), {
+        type: "module",
+    });
     w.onmessage = (ev) => {
         const msg = ev.data;
         const p = pending.get(msg.id);
@@ -75,7 +79,10 @@ function call(req) {
 }
 function getInThreadProver() {
     inThreadProver ??= (options.loadArtifacts ?? (() => loadCircuitArtifacts(circuitBaseUrl())))()
-        .then((artifacts) => createWasmProver(artifacts, { wasm: options.wasm, threads: options.threads }))
+        .then((artifacts) => createWasmProver(artifacts, {
+        wasm: options.wasm,
+        threads: options.threads,
+    }))
         .then((loaded) => {
         threadsInUse = loaded.threads;
         if (loaded.threadError)
@@ -137,7 +144,9 @@ function jsonSafeCircuitInput(input) {
         if (Array.isArray(v))
             return v.map(replaceBytes);
         // BN.js instances have `.eq`; leave them for stringifyBigInts.
-        if (v && typeof v === "object" && typeof v.eq !== "function") {
+        if (v &&
+            typeof v === "object" &&
+            typeof v.eq !== "function") {
             const o = {};
             for (const [k, val] of Object.entries(v)) {
                 o[k] = replaceBytes(val);

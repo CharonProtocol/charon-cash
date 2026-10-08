@@ -16,10 +16,10 @@ export const DISC_TRANSACT = 2;
 export const DISC_TRANSACT_SPL = 3;
 
 export const PROGRAM_ID = new PublicKey(
-  "A6jNiYjV9g7omJ4zHAyiDQtcRewobsko7gs9UjZ2pWRa",
+  "7nzEvHS6iyWApy1UMT8ewTiJjENP53o3gubhkcmSMfMp",
 );
 export const ALT_ADDRESS = new PublicKey(
-  "7foo2AGTFZeQaTnmzQ9gqomZ4m4Xv2sreVKNFFu6ZX2o",
+  "AzWpFvcXRGPm9bZiqaQipq5GRVgKLN7vJ2rSCCY21Ent",
 );
 export const FEE_RECIPIENT = new PublicKey(
   "5kHwyJA15XjiHYxUTGif8NoH25h1dTxjqhscTnf4V1Ua",

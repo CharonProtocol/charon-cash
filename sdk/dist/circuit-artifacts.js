@@ -37,7 +37,9 @@ export async function verifyArtifact(kind, bytes) {
 }
 async function openCache() {
     try {
-        return typeof caches === "undefined" ? null : await caches.open(CIRCUIT_CACHE_NAME);
+        return typeof caches === "undefined"
+            ? null
+            : await caches.open(CIRCUIT_CACHE_NAME);
     }
     catch {
         // Opaque origins and some private modes throw on Cache Storage.
@@ -62,7 +64,9 @@ async function loadOne(kind, baseUrl, cache) {
     const bytes = new Uint8Array(await res.arrayBuffer());
     await verifyArtifact(kind, bytes);
     await cache
-        ?.put(key, new Response(bytes, { headers: { "content-type": "application/octet-stream" } }))
+        ?.put(key, new Response(bytes, {
+        headers: { "content-type": "application/octet-stream" },
+    }))
         .catch(() => { });
     return bytes;
 }

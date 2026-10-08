@@ -17,7 +17,7 @@ import {
 } from "@solana/spl-token";
 
 const PROGRAM_ID = new PublicKey(
-  process.env.PROGRAM_ID || "A6jNiYjV9g7omJ4zHAyiDQtcRewobsko7gs9UjZ2pWRa",
+  process.env.PROGRAM_ID || "7nzEvHS6iyWApy1UMT8ewTiJjENP53o3gubhkcmSMfMp",
 );
 const RPC_URL = process.env.RPC_URL || "http://127.0.0.1:8899";
 

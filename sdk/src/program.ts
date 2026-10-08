@@ -150,7 +150,7 @@ export async function transactSol({
       new BN(0),
     );
 
-    let amountInLamports = extAmount.abs().add(fee).toNumber();
+    let amountInLamports = extAmount.abs().add(fee);
     change = totalInputs.sub(new BN(amountInLamports));
   } else {
     // send
@@ -321,37 +321,37 @@ export async function transactSol({
   let versionedTransaction = new VersionedTransaction(messageV0);
 
   console.log("Size", versionedTransaction.serialize().length);
-  // let signedTx = await signTransaction(versionedTransaction);
+  let signedTx = await signTransaction(versionedTransaction);
 
-  // try {
-  //   let txid = await sendAndConfirmRawTransaction(
-  //     connection,
-  //     Buffer.from(signedTx.serialize()),
-  //     {
-  //       commitment: "finalized",
-  //     },
-  //   );
-  //   return txid;
-  // } catch (error) {
-  //   if (error instanceof SendTransactionError) {
-  //     let logs = error.logs;
+  try {
+    let txid = await sendAndConfirmRawTransaction(
+      connection,
+      Buffer.from(signedTx.serialize()),
+      {
+        commitment: "finalized",
+      },
+    );
+    return txid;
+  } catch (error) {
+    if (error instanceof SendTransactionError) {
+      let logs = error.logs;
 
-  //     let programErrorCode = undefined;
+      let programErrorCode = undefined;
 
-  //     for (let code of Object.values(ProgramErrorCode)) {
-  //       let found = logs?.some((line) => line.includes(code));
+      for (let code of Object.values(ProgramErrorCode)) {
+        let found = logs?.some((line) => line.includes(code));
 
-  //       if (found) {
-  //         programErrorCode = code;
-  //         break;
-  //       }
-  //     }
+        if (found) {
+          programErrorCode = code;
+          break;
+        }
+      }
 
-  //     throw new ProgramError(error.message, programErrorCode, { cause: error });
-  //   }
+      throw new ProgramError(error.message, programErrorCode, { cause: error });
+    }
 
-  //   throw new ProgramError("Transaction Failed", undefined, { cause: error });
-  // }
+    throw new ProgramError("Transaction Failed", undefined, { cause: error });
+  }
 }
 
 /// This is done for convenience , could be implemented in transactSol itself but making in comprehensible
@@ -387,7 +387,7 @@ export async function shieldedTransferSol({
     new BN(0),
   );
 
-  let netAmount = transferAmount.abs().sub(fee).toNumber();
+  let netAmount = transferAmount.abs().sub(fee);
   // change has to be encrypted for signer
   change = totalInputs.sub(new BN(netAmount));
 
@@ -643,8 +643,8 @@ export async function transactSpl({
       new BN(0),
     );
 
-    let amountInLamports = extAmount.abs().add(fee).toNumber();
-    change = totalInputs.sub(new BN(amountInLamports));
+    let netAmount = extAmount.abs().add(fee);
+    change = totalInputs.sub(new BN(netAmount));
   } else {
     // send
     change = publicAmount;
@@ -680,15 +680,19 @@ export async function transactSpl({
     recipientViewingKey,
   );
 
-  let recipient = extAmount.isNeg() ? signer : FEE_RECIPIENT;
+  const feeRecipientAta = await getAssociatedTokenAddress(
+    new PublicKey(mintAddress),
+    FEE_RECIPIENT,
+  );
+
+  let recipientAta = extAmount.isNeg() ? signerAta : feeRecipientAta;
   const extData: ExtData = {
-    // recipient - just a placeholder, not actually used for deposits.
-    recipient: recipient.toString(), // Using fee recipient as dummy recipient for deposit,
+    recipient: recipientAta,
     extAmount: extAmount,
     encryptedOutput1: encryptedOutput1,
     encryptedOutput2: encryptedOutput2,
     fee,
-    feeRecipient: FEE_RECIPIENT,
+    feeRecipient: feeRecipientAta,
     mintAddress: mintAddress,
   };
 
@@ -750,10 +754,6 @@ export async function transactSpl({
     new PublicKey(mintAddress),
     programAccounts.globalConfig,
     true,
-  );
-  const feeRecipientAta = await getAssociatedTokenAddress(
-    new PublicKey(mintAddress),
-    FEE_RECIPIENT,
   );
 
   const ix = new TransactionInstruction({
@@ -848,42 +848,37 @@ export async function transactSpl({
 
   let versionedTransaction = new VersionedTransaction(messageV0);
 
-  console.log("Size ...", versionedTransaction.serialize().length);
-  console.log("Adress ...", versionedTransaction.message.addressTableLookups);
-  console.log("Adress ...", versionedTransaction.message.staticAccountKeys);
-  return;
+  let signedTx = await signTransaction(versionedTransaction);
 
-  // let signedTx = await signTransaction(versionedTransaction);
+  try {
+    let txid = await sendAndConfirmRawTransaction(
+      connection,
+      Buffer.from(signedTx.serialize()),
+      {
+        commitment: "finalized",
+      },
+    );
+    return txid;
+  } catch (error) {
+    if (error instanceof SendTransactionError) {
+      let logs = error.logs;
 
-  // try {
-  //   let txid = await sendAndConfirmRawTransaction(
-  //     connection,
-  //     Buffer.from(signedTx.serialize()),
-  //     {
-  //       commitment: "finalized",
-  //     },
-  //   );
-  //   return txid;
-  // } catch (error) {
-  //   if (error instanceof SendTransactionError) {
-  //     let logs = error.logs;
+      let programErrorCode = undefined;
 
-  //     let programErrorCode = undefined;
+      for (let code of Object.values(ProgramErrorCode)) {
+        let found = logs?.some((line) => line.includes(code));
 
-  //     for (let code of Object.values(ProgramErrorCode)) {
-  //       let found = logs?.some((line) => line.includes(code));
+        if (found) {
+          programErrorCode = code;
+          break;
+        }
+      }
 
-  //       if (found) {
-  //         programErrorCode = code;
-  //         break;
-  //       }
-  //     }
+      throw new ProgramError(error.message, programErrorCode, { cause: error });
+    }
 
-  //     throw new ProgramError(error.message, programErrorCode, { cause: error });
-  //   }
-
-  //   throw new ProgramError("Transaction Failed", undefined, { cause: error });
-  // }
+    throw new ProgramError("Transaction Failed", undefined, { cause: error });
+  }
 }
 
 /**
@@ -930,7 +925,7 @@ export async function shieldedTransferSpl({
     new BN(0),
   );
 
-  let netAmount = transferAmount.abs().sub(fee).toNumber();
+  let netAmount = transferAmount.abs().sub(fee);
   change = totalInputs.sub(new BN(netAmount));
 
   // Get the Merkle Proof for the notes needed to be sent
@@ -967,16 +962,18 @@ export async function shieldedTransferSpl({
     encryptionService.getViewingKey(),
   );
 
-  // Dummy for the shielded transfer
-  let recipient = FEE_RECIPIENT;
+  const feeRecipientAta = await getAssociatedTokenAddress(
+    new PublicKey(mintAddress),
+    FEE_RECIPIENT,
+  );
+
   const extData: ExtData = {
-    // recipient - just a placeholder, not actually used for deposits.
-    recipient: FEE_RECIPIENT, // Using fee recipient as dummy recipient for deposit,
+    recipient: feeRecipientAta,
     extAmount: new BN(0),
     encryptedOutput1: encryptedOutput1,
     encryptedOutput2: encryptedOutput2,
     fee,
-    feeRecipient: FEE_RECIPIENT,
+    feeRecipient: feeRecipientAta,
     mintAddress: mintAddress,
   };
 
@@ -1038,10 +1035,6 @@ export async function shieldedTransferSpl({
     new PublicKey(mintAddress),
     programAccounts.globalConfig,
     true,
-  );
-  const feeRecipientAta = await getAssociatedTokenAddress(
-    new PublicKey(mintAddress),
-    FEE_RECIPIENT,
   );
 
   const ix = new TransactionInstruction({
