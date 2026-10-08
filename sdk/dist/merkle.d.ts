@@ -90,6 +90,26 @@ export declare function fetchBlockhash(): Promise<BlockhashInfo>;
 export declare function fetchAltAccount(address: string): Promise<string | null>;
 export declare function fetchTreeState(treeKey: string): Promise<TreeState>;
 export declare function fetchMerkleProof(treeKey: string, leafIndex: number): Promise<MerkleProof>;
+/** Ask the relayer to sync the mirror now (throttled server-side). */
+export declare function kickIndexer(): Promise<void>;
+export interface MerkleSnapshot {
+    /** Every served proof folds to this root (decimal field string). */
+    root: string;
+    nextLeafIndex: number;
+    /** Circuit-ready proofs, in the same order as the sorted+deduped request indexes. */
+    proofs: MerkleProof[];
+    /** Requested indexes the mirror hasn't indexed yet — kick the indexer and retry. */
+    missing: number[];
+}
+/**
+ * Root + N input paths from ONE backend read. The old convergence loop fetched
+ * each input's proof separately; two requests straddling a mirror sync commit
+ * disagreed on the root and burned the whole retry budget (the 15:05Z run lost
+ * 28 rows × 3 attempts to exactly that). One snapshot makes the disagreement
+ * structurally impossible. Returns null on 404 — the caller falls back to the
+ * per-leaf loop against backends that predate this endpoint.
+ */
+export declare function fetchMerkleSnapshot(treeKey: string, indexes: number[]): Promise<MerkleSnapshot | null>;
 export declare function isNullifierSpent(hashHex: string): Promise<boolean>;
 /**
  * Spent flags for many nullifiers in as few calls as possible: one batch

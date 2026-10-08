@@ -68,18 +68,21 @@ export const PlanReviewCard = forwardRef<
   // Same list the picker renders — the recommendation must land on a real
   // button or the "rec" badge (and the preselection) silently disappears
   // (a 10-core M4 computed 5, which isn't offered). Options grow with the
-  // machine: 12/16 on 8+ cores, 24/32 on 24+ — no manual config anywhere.
+  // machine: 12 needs 12 cores, 16 needs 16, 24/32 need 24/32 — a 10-core
+  // Mac tops out at 8 and never sees the high stops. No manual config.
   const laneOptions = [
     1, 2, 3, 4, 6, 8,
-    ...(cores >= 8 ? [12, 16] : []),
-    ...(cores >= 24 ? [24, 32] : []),
+    ...(cores >= 12 ? [12] : []),
+    ...(cores >= 16 ? [16] : []),
+    ...(cores >= 24 ? [24] : []),
+    ...(cores >= 32 ? [32] : []),
   ]
   const rawRec =
     rowCount === 0 || rowCount < 10
       ? 2
       : rowCount < 50
         ? 4
-        : Math.min(16, Math.max(4, Math.floor(cores / 2)))
+        : Math.min(8, Math.max(4, Math.floor(cores / 2)))
   const recommendedLanes = laneOptions.reduce((a, b) =>
     Math.abs(b - rawRec) < Math.abs(a - rawRec) ? b : a,
   )
@@ -220,10 +223,11 @@ export const PlanReviewCard = forwardRef<
           </div>
           {/* Lanes are payout chains, not CPU threads — each spends most of its
               life waiting on chain landings while proofs queue through the
-              shared prover pool. Stops grow with the machine (12/16 on 8+
-              cores, 24/32 on 24+); the rec caps at 16 because past that
-              landing + indexing, not proving, is the wall. The slider walks
-              the INDEX into laneOptions (uneven stops). */}
+              shared prover pool. Stops only appear when the cores back them
+              (12 on 12+ cores, 16 on 16+, 24/32 on 24/32+); the rec caps at
+              8 because past that landing + indexing, not proving, is the
+              wall. The slider walks the INDEX into laneOptions (uneven
+              stops). */}
           <RangeSlider
             aria-label="Parallel execution lanes"
             min={0}

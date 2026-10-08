@@ -149,6 +149,14 @@ export declare class PrivacyCashClient {
         mintAddress?: string;
     }>): Promise<string[]>;
     /**
+     * Spent flags through one path: the batch endpoint (which retries
+     * in-place). The per-hex fallback is capped — it used to fan out per
+     * leaf, so one saturated window produced hundreds of singular calls that
+     * deepened the saturation; past the cap this throws and the caller skips
+     * the pass instead.
+     */
+    private spentFlags;
+    /**
      * Adjudication for a transfer that threw after the relay accepted it: look
      * up the named notes (by blinding, across spent AND unspent storage) and
      * return the spending tx signature if any of their nullifiers is already
@@ -159,6 +167,14 @@ export declare class PrivacyCashClient {
      */
     signatureIfSpent(blindings: string[]): Promise<string | null>;
     /**
+     * Chain-truth restore for notes burned at relay-accept whose tx later
+     * failed execution: a nullifier absent from the chain means the note was
+     * never consumed, so it re-enters the spendable set. Notes whose stored
+     * index is a guess (pending) hash to a nullifier that can never match —
+     * they are skipped rather than restored on a false negative.
+     */
+    markNotesUnspent(blindings: string[]): Promise<number>;
+    /**
      * Scan encrypted outputs from the backend, decrypt ours, upsert notes,
      * and mark spent via nullifier checks. Single-flight: a scan mutates the
      * note store, and a second scan running mid-transfer made pinned notes
@@ -168,6 +184,7 @@ export declare class PrivacyCashClient {
     private syncQueue;
     private lastSyncDoneAt;
     private lastSpentRecheckAt;
+    private lastRestoreRecheckAt;
     private syncForSpend;
     syncNotes(treeKey: string, fromScratch?: boolean): Promise<SyncResult>;
     private syncNotesLocked;
@@ -281,7 +298,7 @@ export declare class PrivacyCashClient {
     }, opts?: {
         timeoutMs?: number;
         intervalMs?: number;
-    }): Promise<void>;
+    }): Promise<boolean>;
     /**
      * Shared shielded-transfer flow (ext=0): output 0 is a note encrypted to the
      * recipient's registered x25519 key and committed to their note pubkey;

@@ -93,12 +93,12 @@ function mockClient(ctl: Ctl) {
 
 function deps(client: EngineClient, extra?: {
   waitUntilIndexed?: () => Promise<void>
-  confirm?: (sig: string) => Promise<boolean>
+  confirm?: (sig: string) => Promise<"confirmed" | "failed" | "unknown">
 }) {
   return {
     client,
     waitUntilIndexed: extra?.waitUntilIndexed ?? (async () => {}),
-    confirmSignature: extra?.confirm ?? (async () => true),
+    confirmSignature: extra?.confirm ?? (async (): Promise<"confirmed" | "failed" | "unknown"> => "confirmed"),
     now: () => 1,
     newId: () => "run1",
     sleep: async () => {},
@@ -162,9 +162,69 @@ describe("PayrollEngine", () => {
 
   it("marks unconfirmed payouts as confirming, not failed", async () => {
     const { client } = mockClient({ fails: new Map() })
-    const engine = new PayrollEngine(deps(client, { confirm: async () => false }))
+    const engine = new PayrollEngine(deps(client, { confirm: async () => "unknown" }))
     const receipt = await engine.run(req({ vaultRaw: 10n ** 18n }))
     expect(receipt.entries.every((e) => e.status === "confirming")).toBe(true)
+  })
+
+  it("marks a definitively chain-failed payout as failed, never confirming", async () => {
+    // A tx that lands but fails execution (e.g. the program rejected a
+    // double-spend) moves no money: the row must count as failed with the
+    // real reason — run 5 counted such rows as "confirming" (≈ sent) while
+    // their pinned change notes 404'd forever as phantoms.
+    const { client } = mockClient({ fails: new Map() })
+    const engine = new PayrollEngine(deps(client, { confirm: async () => "failed" }))
+    const receipt = await engine.run(req({ vaultRaw: 10n ** 18n }))
+    expect(receipt.entries.every((e) => e.status === "failed")).toBe(true)
+    expect(receipt.summary.sent).toBe(0)
+    expect(receipt.entries[0].error).toMatch(/failed on-chain/)
+  })
+
+  it("restores burned inputs when a shielded payout definitively fails on-chain", async () => {
+    // commitSpent burns the pinned inputs at relay-accept; when the program
+    // then rejects the execution, those nullifiers never landed and the
+    // notes must go back to the spendable set — or the balance silently
+    // loses their value and the next run's top-up re-inflates the treasury.
+    const { client: base } = mockClient({ fails: new Map() })
+    const unspentCalls: string[][] = []
+    let transferCount = 0
+    const client: EngineClient = {
+      ...base,
+      transferNoteSOL: async (recipient, _net) => {
+        transferCount++
+        return {
+          signature: `NOTE-${recipient[0]}`,
+          leafIndex: 50 + transferCount,
+          commitment: `0xcommit${transferCount}`,
+        }
+      },
+      markNotesUnspent: async (blindings) => {
+        unspentCalls.push([...blindings])
+        return blindings.length
+      },
+    }
+    const notes = [1, 2, 3].map((i) => ({
+      id: `n${i}`,
+      amount: (2n * 10n ** 9n).toString(),
+      blinding: `blind-${i}`,
+    }))
+    const engine = new PayrollEngine({
+      client,
+      listNotes: () => notes,
+      waitUntilIndexed: async () => {},
+      confirmSignature: async (): Promise<"confirmed" | "failed" | "unknown"> => "failed",
+      now: () => 1,
+      newId: () => "run1",
+      sleep: async () => {},
+    })
+    const receipt = await engine.run(req({ vaultRaw: 10n ** 18n, mode: "shielded" }))
+    expect(receipt.entries.every((e) => e.status === "failed")).toBe(true)
+    // one restore per failed payout, each carrying the row's pinned inputs
+    expect(unspentCalls.length).toBe(receipt.entries.length)
+    expect(unspentCalls.every((b) => b.length > 0)).toBe(true)
+    const restoredBlindings = new Set(unspentCalls.flat())
+    expect(restoredBlindings.size).toBeGreaterThan(0)
+    expect([...restoredBlindings].every((b) => b.startsWith("blind-"))).toBe(true)
   })
 
   it("adjudicates a thrown-after-broadcast shielded payout by its nullifier and confirms it", async () => {
@@ -192,7 +252,7 @@ describe("PayrollEngine", () => {
       client,
       listNotes: () => notes,
       waitUntilIndexed: async () => {},
-      confirmSignature: async () => true,
+      confirmSignature: async (): Promise<"confirmed" | "failed" | "unknown"> => "confirmed",
       now: () => 1,
       newId: () => "run1",
       sleep: async () => {},
@@ -230,7 +290,7 @@ describe("PayrollEngine", () => {
       client,
       listNotes: () => notes,
       waitUntilIndexed: async () => {},
-      confirmSignature: async () => true,
+      confirmSignature: async (): Promise<"confirmed" | "failed" | "unknown"> => "confirmed",
       now: () => 1,
       newId: () => "run1",
       sleep: async () => {},
@@ -278,7 +338,7 @@ describe("PayrollEngine", () => {
       client,
       listNotes: () => notes,
       waitUntilIndexed: async () => {},
-      confirmSignature: async () => true,
+      confirmSignature: async (): Promise<"confirmed" | "failed" | "unknown"> => "confirmed",
       kickIndexer: async () => {
         kicks++
       },
@@ -567,7 +627,7 @@ function laneDeps(client: EngineClient, listNotes: () => ReturnType<ReturnType<t
     client,
     listNotes: () => listNotes(),
     waitUntilIndexed: async () => {},
-    confirmSignature: async () => true,
+    confirmSignature: async (): Promise<"confirmed" | "failed" | "unknown"> => "confirmed",
     now: () => Date.now(),
     newId: () => "run1",
     // compress the 800ms reservation poll so handoffs stay fast in tests
@@ -807,10 +867,10 @@ describe("PayrollEngine lanes", () => {
       listNotes: () =>
         notes.map((n) => ({ id: n.id, amount: n.amount.toString(), blinding: n.blinding })),
       waitUntilIndexed: async () => {},
-      confirmSignature: async () => {
+      confirmSignature: async (): Promise<"confirmed" | "failed" | "unknown"> => {
         confirmsSeen++
         await confirmGate
-        return true
+        return "confirmed"
       },
       now: () => Date.now(),
       newId: () => "run1",
@@ -1087,7 +1147,7 @@ describe("PayrollEngine lanes", () => {
       client,
       listNotes: () => notesArr,
       waitUntilIndexed: async () => {},
-      confirmSignature: async () => true,
+      confirmSignature: async (): Promise<"confirmed" | "failed" | "unknown"> => "confirmed",
       now: () => 1,
       newId: () => "run1",
       sleep: async () => {},

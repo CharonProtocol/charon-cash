@@ -43,6 +43,7 @@ pub fn zero_bytes() -> &'static Vec<[u8; 32]> {
     })
 }
 
+#[derive(Clone)]
 pub struct TreeData {
     pub tree_key: String,
     pub next_index: u32,
@@ -217,48 +218,142 @@ fn fold_path_root(data: &TreeData, leaf_index: u32) -> Result<[u8; 32], String> 
     Ok(cur)
 }
 
+/// Classify why a leaf's path can't be served from this TreeData read.
+#[derive(Debug)]
+enum PathError {
+    /// Mirror hasn't indexed this leaf yet (sync cursor behind the chain).
+    OutOfRange,
+    /// Leaf is in range but the fold disagrees with the current root — the
+    /// read straddled a concurrent sync write (torn).
+    Torn,
+}
+
+fn path_from_data(data: &TreeData, leaf_index: u32) -> Result<MerklePath, PathError> {
+    if leaf_index >= data.next_index {
+        return Err(PathError::OutOfRange);
+    }
+    let current_root = data.root_history[data.root_index];
+    if fold_path_root(data, leaf_index) != Ok(current_root) {
+        return Err(PathError::Torn);
+    }
+    let zb = zero_bytes();
+    let mut path = [[0u8; 32]; MERKLE_TREE_HEIGHT];
+    for i in 0..MERKLE_TREE_HEIGHT {
+        let sibling = ((leaf_index >> i) ^ 1) as usize;
+        path[i] = data.levels[i].get(sibling).copied().unwrap_or(zb[i]);
+    }
+    let mut indices = [0u8; MERKLE_TREE_HEIGHT];
+    for i in 0..MERKLE_TREE_HEIGHT {
+        indices[i] = ((leaf_index >> i) & 1) as u8;
+    }
+    Ok(MerklePath {
+        root: hex::encode_upper(current_root),
+        next_leaf_index: data.next_index,
+        path_elements: path,
+        path_indices: indices,
+    })
+}
+
 pub async fn proof(store: &Store, tree_key: &str, leaf_index: u32) -> AppResult<MerklePath> {
     // Serve only self-consistent snapshots: verify the path folds to the
-    // current root before returning it, retrying briefly while a concurrent
-    // sync write leaves the mirror torn.
-    for round in 0..8 {
+    // current root before returning it, retrying while a concurrent sync write
+    // leaves the mirror torn. A full backfill pass takes ~2-3s (6 getTransactions
+    // + write waves), so the patience window must outlast one — 8 rounds of
+    // 150ms exhausted mid-walk and failed real rows (10:22Z run, "mirror
+    // stayed inconsistent"). 20 rounds ≈ 3s covers it.
+    for round in 0..20 {
         let data = load_tree(store, tree_key)
             .await
             .map_err(|e| AppError::internal(format!("load tree {tree_key}: {e}")))?;
-        if leaf_index >= data.next_index {
-            if round + 1 == 8 {
-                return Err(AppError::not_found(
-                    "LEAF_NOT_FOUND",
-                    format!("leaf_index {leaf_index} out of range (next={})", data.next_index),
-                ));
+        match path_from_data(&data, leaf_index) {
+            Ok(p) => return Ok(p),
+            Err(PathError::OutOfRange) => {
+                if round + 1 == 20 {
+                    return Err(AppError::not_found(
+                        "LEAF_NOT_FOUND",
+                        format!(
+                            "leaf_index {leaf_index} out of range (next={})",
+                            data.next_index
+                        ),
+                    ));
+                }
             }
-            crate::rpc::sleep_ms(150).await;
-            continue;
-        }
-        let current_root = data.root_history[data.root_index];
-        if fold_path_root(&data, leaf_index) == Ok(current_root) {
-            let zb = zero_bytes();
-            let mut path = [[0u8; 32]; MERKLE_TREE_HEIGHT];
-            for i in 0..MERKLE_TREE_HEIGHT {
-                let sibling = ((leaf_index >> i) ^ 1) as usize;
-                path[i] = data.levels[i].get(sibling).copied().unwrap_or(zb[i]);
-            }
-            let mut indices = [0u8; MERKLE_TREE_HEIGHT];
-            for i in 0..MERKLE_TREE_HEIGHT {
-                indices[i] = ((leaf_index >> i) & 1) as u8;
-            }
-            return Ok(MerklePath {
-                root: hex::encode_upper(current_root),
-                next_leaf_index: data.next_index,
-                path_elements: path,
-                path_indices: indices,
-            });
+            Err(PathError::Torn) => {}
         }
         crate::rpc::sleep_ms(150).await;
     }
     Err(AppError::internal(format!(
         "proof {leaf_index}: mirror stayed inconsistent after retries"
     )))
+}
+
+#[derive(Serialize)]
+pub struct MerkleSnapshot {
+    pub tree_key: String,
+    /// Current root (hex upper). Every served proof folds to this root.
+    pub current_root: String,
+    pub next_leaf_index: u32,
+    /// Paths for the requested indexes that this read could serve.
+    pub proofs: Vec<MerklePath>,
+    /// Requested indexes the mirror hasn't indexed yet — the client kicks the
+    /// indexer instead of treating them as proof-of-churn.
+    pub missing: Vec<u32>,
+}
+
+/// Root + N input paths from ONE mirror read. The engine's convergence loop
+/// used to fetch each input's proof separately; two requests straddling a
+/// sync commit disagreed on the root and burned the whole 6s retry budget —
+/// the 15:05Z run lost 28 rows × 3 attempts to exactly that ("merkle proofs
+/// did not converge on one root") while sync wave trains rolled. One read
+/// makes the disagreement structurally impossible.
+pub async fn snapshot(
+    store: &Store,
+    tree_key: &str,
+    indexes: &[u32],
+) -> AppResult<MerkleSnapshot> {
+    let mut missing: Vec<u32> = Vec::new();
+    let mut proofs: Vec<MerklePath> = Vec::new();
+    let mut last: Option<TreeData> = None;
+    for round in 0..20 {
+        let data = load_tree(store, tree_key)
+            .await
+            .map_err(|e| AppError::internal(format!("load tree {tree_key}: {e}")))?;
+        let mut torn = false;
+        let mut miss = Vec::new();
+        let mut paths = Vec::with_capacity(indexes.len());
+        for &idx in indexes {
+            match path_from_data(&data, idx) {
+                Ok(p) => paths.push(p),
+                Err(PathError::OutOfRange) => miss.push(idx),
+                Err(PathError::Torn) => torn = true,
+            }
+        }
+        if torn {
+            crate::rpc::sleep_ms(150).await;
+            continue;
+        }
+        // In-range + consistent. Give a lagging cursor ~1.5s to catch an
+        // in-flight sync before answering with `missing`; the client kicks
+        // the indexer from there.
+        if !miss.is_empty() && round < 6 {
+            crate::rpc::sleep_ms(150).await;
+            continue;
+        }
+        missing = miss;
+        proofs = paths;
+        last = Some(data);
+        break;
+    }
+    let data = last.ok_or_else(|| {
+        AppError::internal(format!("snapshot {tree_key}: mirror stayed inconsistent after retries"))
+    })?;
+    Ok(MerkleSnapshot {
+        tree_key: tree_key.to_string(),
+        current_root: hex::encode_upper(data.root_history[data.root_index]),
+        next_leaf_index: data.next_index,
+        proofs,
+        missing,
+    })
 }
 
 #[cfg(test)]
@@ -335,5 +430,27 @@ mod tests {
         assert_eq!(t.next_index, 0);
         assert_eq!(t.root_index, 0);
         assert_eq!(t.root_history[0], zero_bytes()[MERKLE_TREE_HEIGHT]);
+    }
+
+    #[test]
+    fn path_from_data_classifies_range_and_folds_clean() {
+        let mut t = fresh_tree();
+        for s in 1..=5 {
+            append_leaves(&mut t, &[leaf(s)]).unwrap();
+        }
+        // In-range leaves pass the torn-read guard (the fold inside
+        // path_from_data must equal the current root before it returns Ok).
+        for idx in 0..5u32 {
+            let p = path_from_data(&t, idx).unwrap();
+            assert_eq!(p.root, hex::encode_upper(t.root_history[t.root_index]));
+            assert_eq!(p.next_leaf_index, 5);
+        }
+        // Past the cursor → OutOfRange, the snapshot's "missing" signal.
+        assert!(matches!(path_from_data(&t, 5), Err(PathError::OutOfRange)));
+        // A half-written tree (leaf present, parents stale) is Torn: drop
+        // level 1's nodes so the fold diverges from the ring root.
+        let mut torn = t.clone();
+        torn.levels[1] = Vec::new();
+        assert!(matches!(path_from_data(&torn, 2), Err(PathError::Torn)));
     }
 }

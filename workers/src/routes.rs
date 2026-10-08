@@ -314,6 +314,29 @@ pub fn router(state: Arc<AppState>) -> Router<'static, Arc<AppState>> {
                 Err(e) => err_json(AppError::internal(format!("sync: {e}"))),
             }
         }))
+        // Rebuild mirror rows a torn write wave dropped. The tree state (and
+        // the leaf values inside it) is authoritative; only the utxo/nullifier
+        // rows are rewritten. Admin-gated: it writes to the mirror.
+        .post_async("/api/admin/heal", |mut req, ctx| {
+            Box::pin(async move {
+                let state = state_of(&ctx);
+                if let Err(e) = require_admin(&req, &state) {
+                    return err_json(e);
+                }
+                #[derive(serde::Deserialize)]
+                struct HealBody {
+                    limit: Option<usize>,
+                }
+                let limit = match req.json::<HealBody>().await {
+                    Ok(b) => b.limit.unwrap_or(200).min(400),
+                    Err(_) => 200,
+                };
+                match sync::heal_holes(&state, limit).await {
+                    Ok(report) => ok_json(&report),
+                    Err(e) => err_json(AppError::internal(format!("heal: {e}"))),
+                }
+            })
+        })
         .get_async("/api/relayer/info", |_req, ctx| Box::pin(async move {
             let state = state_of(&ctx);
             ok_json(&relayer::info(&state))
@@ -394,6 +417,49 @@ pub fn router(state: Arc<AppState>) -> Router<'static, Arc<AppState>> {
                 };
                 // Mirror-only read (see the merkle state route note).
                 match merkle::proof(&state.store, &tree_key, leaf_index).await {
+                    Ok(resp) => ok_json(&resp),
+                    Err(e) => err_json(e),
+                }
+            })
+        })
+        .get_async("/api/merkle/:tree_key/snapshot", |req, ctx| {
+            Box::pin(async move {
+                let state = state_of(&ctx);
+                let tree_key = ctx.param("tree_key").cloned().unwrap_or_default();
+                let url = req.url()?;
+                // Repeatable ?idx=N — one read serves root + every input
+                // path, so the engine can't straddle a sync between inputs.
+                let mut indexes: Vec<u32> = Vec::new();
+                for pair in url.query_pairs() {
+                    if pair.0 == "idx" {
+                        match pair.1.parse::<u32>() {
+                            Ok(v) => indexes.push(v),
+                            Err(_) => {
+                                return err_json(AppError::bad_request(
+                                    "INVALID_LEAF_INDEX",
+                                    format!("idx '{}' is not a u32", pair.1),
+                                ))
+                            }
+                        }
+                    }
+                }
+                if indexes.is_empty() {
+                    return err_json(AppError::bad_request(
+                        "NO_INDEXES",
+                        "pass repeatable ?idx=N leaf indexes",
+                    ));
+                }
+                indexes.sort_unstable();
+                indexes.dedup();
+                // A batch lane spends ≤2 inputs (v2 note + change); cap keeps
+                // the fold-cost (27 hash rounds × 8) well inside CPU budget.
+                if indexes.len() > 8 {
+                    return err_json(AppError::bad_request(
+                        "TOO_MANY_INDEXES",
+                        "snapshot is capped at 8 indexes",
+                    ));
+                }
+                match merkle::snapshot(&state.store, &tree_key, &indexes).await {
                     Ok(resp) => ok_json(&resp),
                     Err(e) => err_json(e),
                 }

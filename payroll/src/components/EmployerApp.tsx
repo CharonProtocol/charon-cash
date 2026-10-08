@@ -130,7 +130,10 @@ export function EmployerApp({ page }: { page: Page }) {
       .then((info) => {
         if (alive)
           toast.success(
-            `Browser prover ready — ${info.workers} ${info.mode === "mt" ? "MT" : "ST"} worker${info.workers === 1 ? "" : "s"}${info.mode === "mt" ? ` × ${info.threads} threads` : ""}`,
+            // This is only the idle pool's warm-up shape — each run re-plans
+            // its own workers when lanes are known (MT for ≤2 lanes, ST for
+            // 3+), so don't read this as the run's config.
+            `Browser prover warmed up (idle pool: ${info.workers} ${info.mode === "mt" ? "MT" : "ST"} worker${info.workers === 1 ? "" : "s"}${info.mode === "mt" ? ` × ${info.threads} threads` : ""}) — runs auto-pick their layout`,
             { duration: 6000 },
           )
       })

@@ -307,6 +307,77 @@ export async function fetchMerkleProof(
   }
 }
 
+/** Ask the relayer to sync the mirror now (throttled server-side). */
+export async function kickIndexer(): Promise<void> {
+  await postJson("/api/indexer/kick", {}).catch(() => {})
+}
+
+export interface MerkleSnapshot {
+  /** Every served proof folds to this root (decimal field string). */
+  root: string
+  nextLeafIndex: number
+  /** Circuit-ready proofs, in the same order as the sorted+deduped request indexes. */
+  proofs: MerkleProof[]
+  /** Requested indexes the mirror hasn't indexed yet — kick the indexer and retry. */
+  missing: number[]
+}
+
+/**
+ * Root + N input paths from ONE backend read. The old convergence loop fetched
+ * each input's proof separately; two requests straddling a mirror sync commit
+ * disagreed on the root and burned the whole retry budget (the 15:05Z run lost
+ * 28 rows × 3 attempts to exactly that). One snapshot makes the disagreement
+ * structurally impossible. Returns null on 404 — the caller falls back to the
+ * per-leaf loop against backends that predate this endpoint.
+ */
+export async function fetchMerkleSnapshot(
+  treeKey: string,
+  indexes: number[],
+): Promise<MerkleSnapshot | null> {
+  if (indexes.length === 0) {
+    return { root: "", nextLeafIndex: 0, proofs: [], missing: [] }
+  }
+  const q = indexes.map((i) => `idx=${i}`).join("&")
+  const res = await fetch(
+    getBackendUrl() + `/api/merkle/${encodeURIComponent(treeKey)}/snapshot?${q}`,
+  )
+  // Older backend without the route → caller uses the legacy per-leaf loop.
+  if (res.status === 404) return null
+  const text = await res.text()
+  let data: unknown = null
+  if (text) {
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = text
+    }
+  }
+  if (!res.ok) {
+    const err = (data as { error?: { message?: string } } | null)?.error
+    throw new Error(err?.message ?? `HTTP ${res.status}`)
+  }
+  const r = data as any
+  const proofs = ((r.proofs ?? []) as any[]).map((p) => {
+    const raw = p.path_elements
+    const isNested = Array.isArray(raw) && raw.length > 0 && Array.isArray(raw[0])
+    const asHex = isNested
+      ? (raw as ArrayLike<number>[]).map((b) => bytesToHex(b))
+      : (raw as string[])
+    return {
+      root: hexToDecimal("0x" + p.root),
+      nextLeafIndex: Number(p.next_leaf_index),
+      pathElements: asHex.map(hexToDecimal),
+      pathIndices: p.path_indices,
+    }
+  })
+  return {
+    root: hexToDecimal("0x" + r.current_root),
+    nextLeafIndex: Number(r.next_leaf_index),
+    proofs,
+    missing: ((r.missing ?? []) as unknown[]).map(Number),
+  }
+}
+
 export async function isNullifierSpent(hashHex: string): Promise<boolean> {
   try {
     const r = await getJson(`/api/nullifier/${encodeURIComponent(hashHex)}`)
@@ -324,11 +395,27 @@ export async function isNullifierSpent(hashHex: string): Promise<boolean> {
 export async function nullifiersSpent(hashHexes: string[]): Promise<boolean[]> {
   const out: boolean[] = []
   for (let i = 0; i < hashHexes.length; i += 90) {
-    const r = await postJson("/api/nullifiers/batch", {
-      hashes: hashHexes.slice(i, i + 90),
-    })
+    const chunk = hashHexes.slice(i, i + 90)
+    // The batch endpoint 500s without CORS headers when the worker is
+    // saturated (platform-level kills), and every failure used to fan out
+    // into per-hex singular calls — hundreds of extra requests that made
+    // the saturation worse. Retry the chunk in place instead.
+    let r: { results?: Array<{ spent?: boolean }> }
+    let lastErr: unknown
+    for (let attempt = 0; ; attempt++) {
+      try {
+        r = await postJson("/api/nullifiers/batch", { hashes: chunk })
+        lastErr = undefined
+        break
+      } catch (e) {
+        lastErr = e
+        if (attempt >= 2) throw e
+        await new Promise((res) => setTimeout(res, 250 * (attempt + 1)))
+      }
+    }
+    void lastErr
     const results = r.results as Array<{ spent?: boolean }> | undefined
-    if (!Array.isArray(results) || results.length !== hashHexes.slice(i, i + 90).length) {
+    if (!Array.isArray(results) || results.length !== chunk.length) {
       throw new Error("nullifier batch returned a mismatched result set")
     }
     for (const item of results) out.push(!!item.spent)

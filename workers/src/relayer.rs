@@ -402,6 +402,7 @@ pub async fn relay_withdraw(state: &AppState, req: WithdrawRequest) -> AppResult
             ),
         ));
     }
+    chain_nullifiers_unspent(state, &t.input_nullifiers[0], &t.input_nullifiers[1]).await?;
 
     // Authoritative root check before any fee/ATA work: a doomed request
     // fails here instead of burning a simulate and a 60s in-flight slot.
@@ -460,8 +461,13 @@ pub async fn relay_withdraw(state: &AppState, req: WithdrawRequest) -> AppResult
 
     match sent {
         Ok(sig) => {
-            // Hand the tx to background indexing instead of syncing inline —
-            // the response returns now; main() pumps the queue via wait_until.
+            // Answer the moment the tx is broadcast; the mirror absorb runs
+            // post-response in main()'s wait_until pump (confirm poll +
+            // verified forced syncs). The inline ~7s absorb this used to do
+            // put Oct-4's 6s prove+relay at 12-15s — the client's next
+            // lane step proves for ~4s while the pump catches up, and its
+            // 300ms commitment polls land the change note off the critical
+            // path. The queue + cron stay the durability fallbacks.
             index_queue().lock().unwrap().push(sig.clone());
             Ok(RelayResponse {
                 signature: sig,
@@ -488,6 +494,45 @@ fn index_queue() -> &'static Mutex<Vec<String>> {
 
 pub fn drain_index_queue() -> Vec<String> {
     index_queue().lock().unwrap().drain(..).collect()
+}
+
+/// Authoritative double-spend check: the program's real guard lives on-chain
+/// — the nullifier PDAs (two init targets requiring an uninitialized
+/// account, two cross-seed guards) must all be empty. The mirror check above
+/// trails the chain under load: during the 11:13Z run a spent note got
+/// re-pinned from lag and five relays died on-chain with
+/// AccountAlreadyInitialized AFTER burning a broadcast. These four reads
+/// carry the same truth the program itself enforces in the same slot, so a
+/// stale-mirror double-spend is now a fast, correct 409 instead of a failed
+/// row.
+async fn chain_nullifiers_unspent(
+    state: &AppState,
+    n0: &[u8; 32],
+    n1: &[u8; 32],
+) -> AppResult<()> {
+    let checks = [
+        (acc::nullifier0(&state.program_id, n0).0, "nullifier0"),
+        (acc::nullifier1(&state.program_id, n1).0, "nullifier1"),
+        (acc::nullifier0(&state.program_id, n1).0, "cross0"),
+        (acc::nullifier1(&state.program_id, n0).0, "cross1"),
+    ];
+    for (pda, label) in checks {
+        match state.rpc.get_account(&pda).await {
+            Ok(Some(_)) => {
+                return Err(AppError::conflict(
+                    "NULLIFIER_SPENT",
+                    format!("nullifier already spent on-chain ({label} PDA {pda} exists)"),
+                ));
+            }
+            Ok(None) => {}
+            Err(e) => {
+                // An upstream hiccup must not block relays — the mirror check
+                // already ran, and the program still enforces this on-chain.
+                worker::console_warn!("nullifier pda check {label}: {e}");
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Authoritative root check: read the tree PDA's root ring straight from the

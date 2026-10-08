@@ -35,6 +35,14 @@ export interface Note {
    * Cleared by locateNoteLeaf / the next syncNotes scan.
    */
   pending?: boolean
+  /**
+   * Resolve windows that timed out while this note stayed pending. A note
+   * that keeps failing is a phantom change note (its tx landed but failed
+   * execution, so no leaf was ever minted) or a mirror hole; past a cap it
+   * is dropped instead of polled forever. A hole that later heals is
+   * re-added by any scan.
+   */
+  pendingAttempts?: number
 }
 
 /** Page-wide note cache, keyed by wallet base58. Wiped on reload by design. */
@@ -100,6 +108,20 @@ export function markNoteSpent(
 }
 
 /**
+ * Reverse a premature spend-mark: the transfer path burns notes at
+ * relay-accept, but a tx that later fails execution never consumed the
+ * nullifier, so the note is still spendable and must re-enter the balance.
+ */
+export function markNoteUnspent(wallet: PublicKey, noteId: string): void {
+  const notes = loadNotes(wallet).map((n) => {
+    if (n.id !== noteId) return n
+    const { spendTx: _drop, ...rest } = n
+    return { ...rest, spent: false }
+  })
+  persist(wallet, notes)
+}
+
+/**
  * Pin a pending note's authoritative leaf index (matched by blinding — the
  * pre-send index is a guess, so it cannot key the lookup) and un-pend it.
  * A note whose blinding is absent (already healed by a sync scan, or spent)
@@ -111,10 +133,46 @@ export function resolvePendingNote(
 ): void {
   const notes = loadNotes(wallet).map((n) =>
     n.mintAddress === match.mintAddress && n.blinding === match.blinding
-      ? { ...n, index: match.index, pending: false }
+      ? { ...n, index: match.index, pending: false, pendingAttempts: 0 }
       : n,
   )
   persist(wallet, notes)
+}
+
+/**
+ * Count a timed-out resolve window for this pending note. Past
+ * `maxAttempts` the note is dropped (it is either a phantom that will never
+ * exist or a hole a later scan re-adds) and true is returned so callers
+ * stop polling. Notes that resolve successfully reset to zero instead.
+ */
+export function recordResolveFailure(
+  wallet: PublicKey,
+  mintAddress: string,
+  blinding: string,
+  maxAttempts: number,
+): boolean {
+  const notes = loadNotes(wallet)
+  let exceeded = false
+  let touched = false
+  let next = notes.map((n) => {
+    if (n.mintAddress !== mintAddress || n.blinding !== blinding || !n.pending) return n
+    touched = true
+    const attempts = (n.pendingAttempts ?? 0) + 1
+    if (attempts >= maxAttempts) exceeded = true
+    return { ...n, pendingAttempts: attempts }
+  })
+  if (exceeded) {
+    next = next.filter(
+      (n) =>
+        !(
+          n.pending &&
+          n.mintAddress === mintAddress &&
+          n.blinding === blinding
+        ),
+    )
+  }
+  if (touched) persist(wallet, next)
+  return exceeded
 }
 
 export function markNoteSpentByIndex(

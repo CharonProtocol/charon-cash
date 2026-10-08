@@ -107,7 +107,7 @@ pub fn stmt(sql: &str, params: Vec<V>) -> Stmt {
     Stmt { sql: sql.to_string(), params }
 }
 
-fn str_at(r: &Value, k: &str) -> String {
+pub(crate) fn str_at(r: &Value, k: &str) -> String {
     match r.get(k) {
         Some(v) => match v {
             Value::String(s) => s.clone(),
@@ -117,7 +117,7 @@ fn str_at(r: &Value, k: &str) -> String {
     }
 }
 
-fn i64_at(r: &Value, k: &str) -> i64 {
+pub(crate) fn i64_at(r: &Value, k: &str) -> i64 {
     match r.get(k) {
         Some(Value::Number(n)) => n.as_i64().unwrap_or(0),
         Some(Value::String(s)) => s.parse().unwrap_or(0),

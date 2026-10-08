@@ -7,20 +7,30 @@ import { PublicKey } from "@solana/web3.js"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { shortHash } from "@/lib/format"
+import { rawToHuman, shortHash } from "@/lib/format"
+import { toRaw } from "@/lib/parse"
 import { listRuns, listManualTeam, addManualTeam, removeManualTeam, TEAM_EVENT } from "@/lib/store"
 import type { PayrollEntry } from "@/lib/types"
+
+const SOL_DECIMALS = 9
 
 interface Member {
   address: string
   name?: string
   registered: boolean | null // null = not checked yet
   added?: boolean // manually added (persisted, not from a CSV/receipt)
+  /** Cumulative chain-confirmed payouts from this browser's run receipts. */
+  paidRaw: bigint
+  payouts: number
+  lastPaidAt?: number
+  /** Most recent receipt row for this address: paid / pending / failed. */
+  lastStatus?: "paid" | "pending" | "failed"
 }
 
 
 /** The employer's team: every address seen in receipts, the current upload, or
- *  added by hand — checked against the recipient registry. */
+ *  added by hand — checked against the recipient registry, with the real
+ *  cumulative paid value summed from confirmed receipt rows. */
 export function TeamPage({ extraEntries }: { extraEntries?: PayrollEntry[] }) {
   const [members, setMembers] = useState<Member[]>([])
   const [checking, setChecking] = useState(false)
@@ -39,16 +49,44 @@ export function TeamPage({ extraEntries }: { extraEntries?: PayrollEntry[] }) {
 
   const roster = useCallback((): Member[] => {
     const byAddress = new Map<string, Member>()
-    for (const r of listRuns()) {
+    // Oldest run first so the newest receipt row wins `lastStatus`; every
+    // "sent" row (chain-confirmed) adds to the member's cumulative paid total.
+    const runs = [...listRuns()].sort((a, b) => a.createdAt - b.createdAt)
+    for (const r of runs) {
       for (const e of r.entries) {
-        if (!byAddress.has(e.address)) byAddress.set(e.address, { address: e.address, name: e.memo, registered: null })
+        const m = byAddress.get(e.address) ?? {
+          address: e.address,
+          name: e.memo,
+          registered: null,
+          paidRaw: 0n,
+          payouts: 0,
+        }
+        m.name = m.name ?? e.memo
+        if (e.status === "sent") {
+          try {
+            m.paidRaw += toRaw(e.amountHuman, SOL_DECIMALS)
+          } catch {
+            /* malformed amount — skip the sum, still count the payout */
+          }
+          m.payouts += 1
+          m.lastPaidAt = Math.max(
+            m.lastPaidAt ?? 0,
+            e.confirmedAt ?? e.relayedAt ?? r.finishedAt ?? r.createdAt,
+          )
+          m.lastStatus = "paid"
+        } else {
+          m.lastStatus = e.status === "confirming" ? "pending" : "failed"
+        }
+        byAddress.set(e.address, m)
       }
     }
     for (const e of extraEntries ?? []) {
-      if (!byAddress.has(e.address)) byAddress.set(e.address, { address: e.address, name: e.memo, registered: null })
+      if (!byAddress.has(e.address))
+        byAddress.set(e.address, { address: e.address, name: e.memo, registered: null, paidRaw: 0n, payouts: 0 })
     }
     for (const e of manual) {
-      if (!byAddress.has(e.address)) byAddress.set(e.address, { address: e.address, name: e.memo, registered: null, added: true })
+      if (!byAddress.has(e.address))
+        byAddress.set(e.address, { address: e.address, name: e.memo, registered: null, added: true, paidRaw: 0n, payouts: 0 })
     }
     return [...byAddress.values()]
   }, [extraEntries, manual])
@@ -142,7 +180,8 @@ export function TeamPage({ extraEntries }: { extraEntries?: PayrollEntry[] }) {
             <Users className="size-4" /> Team
           </CardTitle>
           <CardDescription>
-            Everyone you've paid (or are about to). "Private receiving" means they enrolled
+            Everyone you've paid (or are about to) with their real cumulative payouts, summed
+            from chain-confirmed receipt rows. "Private receiving" means they enrolled
             their encryption key — the registry stores public keys only.
           </CardDescription>
         </div>
@@ -207,11 +246,12 @@ export function TeamPage({ extraEntries }: { extraEntries?: PayrollEntry[] }) {
           </p>
         ) : (
           <div className="overflow-x-auto rounded-xl border">
-            <table className="w-full min-w-[480px] text-left text-xs">
+            <table className="w-full min-w-[640px] text-left text-xs">
               <thead className="bg-secondary/60 text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 font-medium">Name</th>
                   <th className="px-3 py-2 font-medium">Wallet</th>
+                  <th className="px-3 py-2 text-right font-medium">Total paid</th>
                   <th className="px-3 py-2 font-medium">Private receiving</th>
                   <th className="px-3 py-2 text-right font-medium"> </th>
                 </tr>
@@ -219,8 +259,44 @@ export function TeamPage({ extraEntries }: { extraEntries?: PayrollEntry[] }) {
               <tbody className="divide-y">
                 {members.map((m) => (
                   <tr key={m.address} className="bg-card transition-colors hover:bg-secondary/40">
-                    <td className="px-3 py-2 font-medium">{m.name ?? "—"}</td>
+                    <td className="px-3 py-2 font-medium">
+                      <span className="inline-flex items-center gap-1.5">
+                        {m.name ?? "—"}
+                        {m.lastStatus === "paid" && (
+                          <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                            <Check className="size-2.5" /> paid
+                          </span>
+                        )}
+                        {m.lastStatus === "pending" && (
+                          <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                            pending
+                          </span>
+                        )}
+                        {m.lastStatus === "failed" && (
+                          <span className="inline-flex items-center gap-0.5 rounded-full bg-rose-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-rose-600 dark:text-rose-400">
+                            <X className="size-2.5" /> failed
+                          </span>
+                        )}
+                      </span>
+                    </td>
                     <td className="px-3 py-2 font-mono text-muted-foreground">{shortHash(m.address, 6, 4)}</td>
+                    <td className="px-3 py-2 text-right">
+                      {m.payouts > 0 ? (
+                        <>
+                          <span className="font-mono font-medium">
+                            {rawToHuman(m.paidRaw, SOL_DECIMALS)} SOL
+                          </span>
+                          <span className="block text-[10px] text-muted-foreground">
+                            {m.payouts} payout{m.payouts === 1 ? "" : "s"}
+                            {m.lastPaidAt
+                              ? ` · ${new Date(m.lastPaidAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
+                              : ""}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2">
                       {m.registered === null ? (
                         <span className="text-muted-foreground">…</span>

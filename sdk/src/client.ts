@@ -32,12 +32,14 @@ import {
   bytesToHex,
   fetchCommitmentLeaf,
   fetchMerkleProof,
+  fetchMerkleSnapshot,
   fetchRelayerInfo,
   fetchBlockhash,
   fetchTreeState,
   fetchUtxoRange,
   fieldToHex32,
   isNullifierSpent,
+  kickIndexer,
   nullifiersSpent,
   nullifierInfo,
   submitTransaction,
@@ -45,6 +47,7 @@ import {
   waitForLeafIndex,
   getBackendUrl,
   type MerkleProof,
+  type MerkleSnapshot,
   type RelayerInfo,
 } from "./merkle"
 import {
@@ -54,6 +57,8 @@ import {
   importNotes,
   loadNotes,
   markNoteSpent,
+  markNoteUnspent,
+  recordResolveFailure,
   newNoteId,
   purgeLegacyStorage,
   removeStaleNote,
@@ -186,6 +191,9 @@ export interface PendingTransfer {
 export type OnSubmitted = (pending: PendingTransfer) => void | Promise<void>
 
 const DEPOSIT_FEE = 0
+// Resolve windows that may fail before a pending change note stops being
+// polled and is dropped as a phantom (see resolveChangeNote).
+const RESOLVE_MAX_FAILURES = 6
 // D1 bills rows READ per page request: a 2000-wide page made every routine
 // sync burn thousands of billed rows for a handful of leaves (the free tier
 // died mid-day after ten 100-row runs). 128 keeps fromScratch scans at the
@@ -195,6 +203,87 @@ const RANGE_PAGE = 128
 
 function toPubkey(value: PublicKey | string): PublicKey {
   return value instanceof PublicKey ? value : new PublicKey(value)
+}
+
+/**
+ * Root + sibling paths for every spendable input, guaranteed same-snapshot.
+ * Fast path: the /merkle snapshot endpoint serves the root and ALL input paths
+ * from ONE mirror read — fetching each input's proof separately is what let a
+ * mirror sync commit land between requests and hand back paths that disagreed
+ * on the root (the 15:05Z run lost 28 rows × 3 attempts to exactly that:
+ * "merkle proofs did not converge on one root" while sync wave trains rolled).
+ * A missing leaf (sync cursor behind) is labeled as such and kicks the indexer
+ * instead of being misread as churn. The per-leaf loop stays as the fallback
+ * for backends that predate the snapshot route (404).
+ */
+async function convergedMerkleInputs(
+  treeKey: string,
+  inputs: Utxo[],
+): Promise<{ root: string; nextLeafIndex: number; inputPathElements: string[][] }> {
+  const spendable = inputs.filter((u) => u.amount.gt(new BN(0)))
+  const zeroes = new Array(MERKLE_TREE_DEPTH).fill("0")
+
+  // One request carries every input; the backend answers proofs sorted+deduped
+  // by leaf index, so zip them back positionally.
+  const idxs = [...new Set(spendable.map((u) => u.index))].sort((a, b) => a - b)
+  const deadline = Date.now() + 24 * 250
+  let missingList: number[] = []
+  for (let round = 0; ; round++) {
+    try {
+      const snap = await fetchMerkleSnapshot(treeKey, idxs)
+      if (snap === null) break // legacy backend — use the per-leaf loop
+      if (snap.missing.length === 0 && snap.proofs.length === idxs.length) {
+        const byIndex = new Map<number, MerkleProof>()
+        idxs.forEach((idx, i) => byIndex.set(idx, snap.proofs[i]))
+        return {
+          root: snap.root,
+          nextLeafIndex: snap.nextLeafIndex,
+          inputPathElements: inputs.map((u) =>
+            u.amount.gt(new BN(0)) ? byIndex.get(u.index)!.pathElements : zeroes,
+          ),
+        }
+      }
+      missingList = snap.missing
+    } catch {
+      // transient 5xx / server torn-read guard — retry inside the window
+    }
+    if (Date.now() >= deadline) break
+    if (missingList.length > 0) await kickIndexer()
+    await new Promise((r) => setTimeout(r, 250))
+  }
+  if (missingList.length > 0) {
+    throw new Error(
+      `merkle mirror has not indexed input leaf(s) ${missingList.join(", ")} yet — indexer kicked`,
+    )
+  }
+
+  // Per-leaf fallback (older backends): all served roots must agree, else
+  // retry, else give up — the old failure mode this helper exists to avoid.
+  for (let round = 0; ; round++) {
+    let fetched: MerkleProof[] | null = null
+    try {
+      fetched = await Promise.all(
+        spendable.map((u) => fetchMerkleProof(treeKey, u.index)),
+      )
+    } catch {
+      fetched = null
+    }
+    const real = fetched
+    if (real && real.length > 0 && new Set(real.map((p) => p.root)).size === 1) {
+      let k = 0
+      return {
+        root: real[0].root,
+        nextLeafIndex: real[0].nextLeafIndex,
+        inputPathElements: inputs.map((u) =>
+          u.amount.gt(new BN(0)) ? real[k++].pathElements : zeroes,
+        ),
+      }
+    }
+    if (round >= 23) {
+      throw new Error("merkle proofs did not converge on one root")
+    }
+    await new Promise((r) => setTimeout(r, 250))
+  }
 }
 
 export class PrivacyCashClient {
@@ -369,12 +458,7 @@ export class PrivacyCashClient {
               mintAddress: n.mintAddress,
             })),
           )
-          let flags: boolean[]
-          try {
-            flags = await nullifiersSpent(hashes)
-          } catch {
-            flags = await Promise.all(hashes.map((h) => isNullifierSpent(h)))
-          }
+          const flags = await this.spentFlags(hashes)
           for (let i = 0; i < mine.length; i++) {
             if (flags[i]) {
               markNoteSpentByIndex(this.publicKey, mine[i].mintAddress, mine[i].index)
@@ -383,6 +467,42 @@ export class PrivacyCashClient {
           }
         } catch {
           // spent-status re-check is best-effort; the scan result stands
+        }
+      }
+      // Mirror-image reconciliation: the transfer path burns notes at
+      // relay-accept, but a tx that lands and FAILS execution never
+      // consumed its nullifiers — those notes stay hidden from every
+      // cursor-forward scan (it only visits new leaves), the balance
+      // silently loses their value, and the next run's top-up re-inflates
+      // the treasury. Restore the provably-unspent ones, most recent burns
+      // first. A genuinely spent note's nullifier is on the chain, so this
+      // can never resurrect a real spend.
+      const restoreDue =
+        Boolean(opts?.recheckSpent) ||
+        Date.now() - this.lastRestoreRecheckAt > 600_000
+      if (restoreDue) {
+        this.lastRestoreRecheckAt = Date.now()
+        const burned = loadNotes(this.publicKey)
+          .filter((n) => n.spent && n.index >= 0 && !n.pending)
+          .sort((a, b) => b.index - a.index)
+          .slice(0, 128)
+        if (burned.length > 0) {
+          try {
+            const hashes = await this.nullifiersForNotes(
+              burned.map((n) => ({
+                amount: n.amount,
+                blinding: n.blinding,
+                index: n.index,
+                mintAddress: n.mintAddress,
+              })),
+            )
+            const flags = await this.spentFlags(hashes)
+            for (let i = 0; i < burned.length; i++) {
+              if (!flags[i]) markNoteUnspent(this.publicKey, burned[i].id)
+            }
+          } catch {
+            // restore is best-effort; the scan result stands
+          }
         }
       }
     }
@@ -423,6 +543,22 @@ export class PrivacyCashClient {
   }
 
   /**
+   * Spent flags through one path: the batch endpoint (which retries
+   * in-place). The per-hex fallback is capped — it used to fan out per
+   * leaf, so one saturated window produced hundreds of singular calls that
+   * deepened the saturation; past the cap this throws and the caller skips
+   * the pass instead.
+   */
+  private async spentFlags(hashes: string[]): Promise<boolean[]> {
+    try {
+      return await nullifiersSpent(hashes)
+    } catch (e) {
+      if (hashes.length > 16) throw e
+      return Promise.all(hashes.map((h) => isNullifierSpent(h)))
+    }
+  }
+
+  /**
    * Adjudication for a transfer that threw after the relay accepted it: look
    * up the named notes (by blinding, across spent AND unspent storage) and
    * return the spending tx signature if any of their nullifiers is already
@@ -445,18 +581,50 @@ export class PrivacyCashClient {
         mintAddress: n.mintAddress,
       })),
     )
-    let flags: boolean[]
-    try {
-      flags = await nullifiersSpent(hashes)
-    } catch {
-      flags = await Promise.all(hashes.map((h) => isNullifierSpent(h)))
-    }
+    const flags = await this.spentFlags(hashes)
     for (let i = 0; i < hashes.length; i++) {
       if (!flags[i]) continue
       const info = await nullifierInfo(hashes[i]).catch(() => null)
       return info?.signature ?? null
     }
     return null
+  }
+
+  /**
+   * Chain-truth restore for notes burned at relay-accept whose tx later
+   * failed execution: a nullifier absent from the chain means the note was
+   * never consumed, so it re-enters the spendable set. Notes whose stored
+   * index is a guess (pending) hash to a nullifier that can never match —
+   * they are skipped rather than restored on a false negative.
+   */
+  async markNotesUnspent(blindings: string[]): Promise<number> {
+    if (!this.publicKey || blindings.length === 0) return 0
+    await this.unlock()
+    const picked = loadNotes(this.publicKey).filter(
+      (n) =>
+        blindings.includes(n.blinding) &&
+        n.spent &&
+        n.index >= 0 &&
+        !n.pending,
+    )
+    if (picked.length === 0) return 0
+    const hashes = await this.nullifiersForNotes(
+      picked.map((n) => ({
+        amount: n.amount,
+        blinding: n.blinding,
+        index: n.index,
+        mintAddress: n.mintAddress,
+      })),
+    )
+    const flags = await this.spentFlags(hashes)
+    let restored = 0
+    picked.forEach((n, i) => {
+      if (!flags[i]) {
+        markNoteUnspent(this.publicKey!, n.id)
+        restored++
+      }
+    })
+    return restored
   }
 
   /**
@@ -478,6 +646,11 @@ export class PrivacyCashClient {
 
   // The 15s gate for refreshNotes' spent-status re-check (see refreshNotes).
   private lastSpentRecheckAt = 0
+
+  // Throttle for refreshNotes' reverse reconciliation (wrongly-burned note
+  // restore). Forced at every run start (`recheckSpent`); ambient refreshes
+  // pay it at most once per 10 minutes.
+  private lastRestoreRecheckAt = 0
 
   private async syncForSpend(treeKey: string): Promise<void> {
     if (Date.now() - (this.lastSyncDoneAt.get(treeKey) ?? 0) > 1_500) {
@@ -551,15 +724,10 @@ export class PrivacyCashClient {
           }),
         )
       }
-      let spentFlags: boolean[]
-      try {
-        spentFlags = await nullifiersSpent(found.map((f) => f.nullifierHex))
-      } catch {
-        // older backend without the batch endpoint: per-note lookups
-        spentFlags = await Promise.all(
-          found.map((f) => isNullifierSpent(f.nullifierHex)),
-        )
-      }
+      // Batch endpoint with in-place retries; the per-hex fallback is
+      // capped at 16 by spentFlags so a saturated window can't storm the
+      // singular route with hundreds of calls.
+      const spentFlags = await this.spentFlags(found.map((f) => f.nullifierHex))
       for (let i = 0; i < found.length; i++) {
         const { row, utxo } = found[i]
         if (spentFlags[i]) {
@@ -1303,33 +1471,10 @@ export class PrivacyCashClient {
     // The root and every sibling path must come from the same tree snapshot:
     // concurrent txs append leaves between separate fetches and the circuit
     // asserts the path hashes up to the root.
-    let root = ""
-    let nextLeafIndex = 0
-    let inputPathElements: string[][] = []
-    for (let round = 0; ; round++) {
-      // both paths in one round trip: serial fetches added a full extra
-      // proof latency to every pair-row's prep
-      const real: MerkleProof[] = await Promise.all(
-        inputs
-          .filter((u) => u.amount.gt(new BN(0)))
-          .map((u) => fetchMerkleProof(args.treeKey, u.index)),
-      )
-      if (real.length > 0 && new Set(real.map((p) => p.root)).size === 1) {
-        root = real[0].root
-        nextLeafIndex = real[0].nextLeafIndex
-        let k = 0
-        inputPathElements = inputs.map((u) =>
-          u.amount.gt(new BN(0))
-            ? real[k++].pathElements
-            : new Array(MERKLE_TREE_DEPTH).fill("0"),
-        )
-        break
-      }
-      if (round >= 7) {
-        throw new Error("merkle proofs did not converge on one root")
-      }
-      await new Promise((r) => setTimeout(r, 50))
-    }
+    const { root, nextLeafIndex, inputPathElements } = await convergedMerkleInputs(
+      args.treeKey,
+      inputs,
+    )
 
     const outputs = [
       new Utxo({
@@ -1491,7 +1636,7 @@ export class PrivacyCashClient {
     mintAddress: string | undefined,
     change: { amount: string; blinding: string },
     opts: { timeoutMs?: number; intervalMs?: number } = {},
-  ): Promise<void> {
+  ): Promise<boolean> {
     const mint = mintAddress ?? (treeKey === SOL_TREE_KEY ? WRAPPED_SOL_MINT : undefined)
     if (!mint) throw new Error("resolveChangeNote: mintAddress required for non-SOL trees")
     // Field-measured floor: under an 8-lane run the mirror indexes a relay
@@ -1519,12 +1664,22 @@ export class PrivacyCashClient {
           index: hit.leafIndex,
         })
         await this.persistNotes().catch(() => {})
-        return
+        return true
       } catch {
         // 404 until the sync indexes the leaf — keep polling
       }
       await new Promise((r) => setTimeout(r, intervalMs))
     }
+    // A blinding that outlives several windows is a phantom (its tx landed
+    // but failed execution — no leaf was ever minted) or a mirror hole.
+    // Count the failure and drop the note past the cap instead of polling
+    // it forever; a hole that later heals is re-added by any scan.
+    return !recordResolveFailure(
+      this.publicKey,
+      mint,
+      change.blinding,
+      RESOLVE_MAX_FAILURES,
+    )
   }
 
   /**
@@ -1653,33 +1808,10 @@ export class PrivacyCashClient {
     // The root and every sibling path must come from the same tree snapshot:
     // concurrent txs append leaves between separate fetches and the circuit
     // asserts the path hashes up to the root.
-    let root = ""
-    let nextLeafIndex = 0
-    let inputPathElements: string[][] = []
-    for (let round = 0; ; round++) {
-      // both paths in one round trip: serial fetches added a full extra
-      // proof latency to every pair-row's prep
-      const real: MerkleProof[] = await Promise.all(
-        inputs
-          .filter((u) => u.amount.gt(new BN(0)))
-          .map((u) => fetchMerkleProof(args.treeKey, u.index)),
-      )
-      if (real.length > 0 && new Set(real.map((p) => p.root)).size === 1) {
-        root = real[0].root
-        nextLeafIndex = real[0].nextLeafIndex
-        let k = 0
-        inputPathElements = inputs.map((u) =>
-          u.amount.gt(new BN(0))
-            ? real[k++].pathElements
-            : new Array(MERKLE_TREE_DEPTH).fill("0"),
-        )
-        break
-      }
-      if (round >= 7) {
-        throw new Error("merkle proofs did not converge on one root")
-      }
-      await new Promise((r) => setTimeout(r, 50))
-    }
+    const { root, nextLeafIndex, inputPathElements } = await convergedMerkleInputs(
+      args.treeKey,
+      inputs,
+    )
 
     const outputs = [
       new Utxo({

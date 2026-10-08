@@ -32,12 +32,26 @@ export interface Note {
      * Cleared by locateNoteLeaf / the next syncNotes scan.
      */
     pending?: boolean;
+    /**
+     * Resolve windows that timed out while this note stayed pending. A note
+     * that keeps failing is a phantom change note (its tx landed but failed
+     * execution, so no leaf was ever minted) or a mirror hole; past a cap it
+     * is dropped instead of polled forever. A hole that later heals is
+     * re-added by any scan.
+     */
+    pendingAttempts?: number;
 }
 export declare function loadNotes(wallet: PublicKey): Note[];
 export declare function saveNote(wallet: PublicKey, note: Note): void;
 /** Insert or replace by (mintAddress, index). Preserves existing id/createdAt. */
 export declare function upsertNote(wallet: PublicKey, note: Note): void;
 export declare function markNoteSpent(wallet: PublicKey, noteId: string, spendTx: string): void;
+/**
+ * Reverse a premature spend-mark: the transfer path burns notes at
+ * relay-accept, but a tx that later fails execution never consumed the
+ * nullifier, so the note is still spendable and must re-enter the balance.
+ */
+export declare function markNoteUnspent(wallet: PublicKey, noteId: string): void;
 /**
  * Pin a pending note's authoritative leaf index (matched by blinding — the
  * pre-send index is a guess, so it cannot key the lookup) and un-pend it.
@@ -49,6 +63,13 @@ export declare function resolvePendingNote(wallet: PublicKey, match: {
     blinding: string;
     index: number;
 }): void;
+/**
+ * Count a timed-out resolve window for this pending note. Past
+ * `maxAttempts` the note is dropped (it is either a phantom that will never
+ * exist or a hole a later scan re-adds) and true is returned so callers
+ * stop polling. Notes that resolve successfully reset to zero instead.
+ */
+export declare function recordResolveFailure(wallet: PublicKey, mintAddress: string, blinding: string, maxAttempts: number): boolean;
 export declare function markNoteSpentByIndex(wallet: PublicKey, mintAddress: string, index: number, spendTx?: string): void;
 export declare function unspentNotes(wallet: PublicKey): Note[];
 export declare function totalBalance(wallet: PublicKey, mintAddress?: string): bigint;

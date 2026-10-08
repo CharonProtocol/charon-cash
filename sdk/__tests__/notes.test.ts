@@ -7,6 +7,7 @@ import {
   upsertNote,
   markNoteSpent,
   markNoteSpentByIndex,
+  markNoteUnspent,
   unspentNotes,
   totalBalance,
   exportNotes,
@@ -86,6 +87,28 @@ describe("in-memory note store", () => {
     markNoteSpentByIndex(w, SOL, 5, "sig456")
     expect(unspentNotes(w)).toHaveLength(0)
     expect(loadNotes(w)[0].spendTx).toBe("sig456")
+  })
+
+  it("un-marks a wrongly spent note by id (failed-on-chain restore)", () => {
+    // The transfer path marks notes spent at relay-accept; when the program
+    // then rejects the execution the notes are still good and must return
+    // to the spendable set with their id and createdAt preserved.
+    const n = note({ index: 7, amount: "500" })
+    saveNote(w, n)
+    markNoteSpent(w, n.id, "sig789")
+    expect(unspentNotes(w)).toHaveLength(0)
+    markNoteUnspent(w, n.id)
+    expect(unspentNotes(w)).toHaveLength(1)
+    expect(loadNotes(w)[0].id).toBe(n.id)
+    expect(loadNotes(w)[0].spent).toBe(false)
+    expect(loadNotes(w)[0].spendTx).toBeUndefined()
+  })
+
+  it("un-marking an unknown id is a no-op", () => {
+    saveNote(w, note({ index: 1 }))
+    markNoteUnspent(w, "no-such-id")
+    expect(loadNotes(w)).toHaveLength(1)
+    expect(unspentNotes(w)).toHaveLength(1)
   })
 
   it("totals unspent balance per mint", () => {

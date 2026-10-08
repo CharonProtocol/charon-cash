@@ -15,11 +15,12 @@
 //! impossible: `indexed_txs` dedups signatures and leaf assignment is
 //! serialized by the `sync_lock` CAS row.
 
+use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
 use crate::decode::decode_transact_ix;
 use crate::merkle::{self};
-use crate::rpc::{Rpc, SigInfo, TxJson};
+use crate::rpc::{SigInfo, TxJson};
 use crate::solana::b58;
 use crate::solana::pubkey::Pubkey;
 use crate::state::AppState;
@@ -94,6 +95,33 @@ pub async fn index_after_send(state: &AppState, signature: &str) {
     worker::console_warn!("index_after_send: {signature}: not indexed after retries");
 }
 
+/// Inline post-send indexing on the relay response path, bounded by wall
+/// clock. The withdrawal's change note stays unspendable until the mirror
+/// absorbs this tx — every downstream correctness read (commitment lookup,
+/// nullifier adjudication, next lane's proof) consults the mirror — so the
+/// relay waits instead of answering with a trailing mirror. The walks here
+/// are the same chain-ordered passes as the background pump, so leaf order
+/// stays authoritative; concurrent relays coalesce on the sync CAS lock and a
+/// coalesced (no-op) walk just costs one retry round. Returns whether the tx
+/// actually landed; the caller queues it as fallback either way.
+pub async fn index_now(state: &AppState, signature: &str) -> bool {
+    let deadline = now_ms() + 7_000;
+    let mut round = 0;
+    while now_ms() < deadline && round < 10 {
+        if let Err(e) = sync_tree_forced(state).await {
+            worker::console_warn!("index_now sync: {signature}: {e}");
+        }
+        match state.store.has_tx(signature).await {
+            Ok(true) => return true,
+            Ok(false) => {}
+            Err(e) => worker::console_warn!("index_now check: {signature}: {e}"),
+        }
+        round += 1;
+        crate::rpc::sleep_ms(350).await;
+    }
+    false
+}
+
 async fn sync_locked(state: &AppState) -> Result<SyncReport, String> {
     let (cursor, _) = state.store.get_cursor().await?;
     let mut until: Option<String> = cursor.clone();
@@ -152,15 +180,12 @@ async fn sync_locked(state: &AppState) -> Result<SyncReport, String> {
     // invocation dies at the cap (~50 on the free plan) mid-write-wave,
     // leaving `trees` committed while `tree_levels` lagged (a permanently
     // torn mirror: every proof then folds to the wrong root). Cap each pass
-    // to a few txs so the whole pass — backfill included — fits the budget;
-    // repeated syncs chew through history in bounded, resumable steps.
-    // 6 is the throughput floor, not just a safety cap: an 8-lane payroll
-    // run relays ~1 tx/s and each lane's next input note stays unspendable
-    // until its tx is indexed — a 3-tx pass can't hold that pace, the mirror
-    // lag balloons, and lanes starve in bursts (field-measured: 406s wall
-    // with 2.2 effective lanes out of 8). 1 sigs fetch + 6×(1 getTransaction
-    // + 5 stmts) ≈ 37 subrequests, inside the cap with headroom.
-    const BACKFILL_CHUNK: usize = 6;
+    // to a bounded, resumable step. 12 is sized by the pass budget: 1 sigs
+    // fetch + 12 getTransactions + ~5 write statements (the whole pass's
+    // tree state, utxos, nullifiers and markers pack into batched
+    // statements — see flush_pass) ≈ 18 subrequests, and ~4 tx/s of
+    // sustained supply, ~4x what 16-lane runs demand.
+    const BACKFILL_CHUNK: usize = 12;
     let chunk_complete = pending.len() <= BACKFILL_CHUNK;
     if !chunk_complete {
         pending.truncate(BACKFILL_CHUNK);
@@ -185,6 +210,11 @@ async fn sync_locked(state: &AppState) -> Result<SyncReport, String> {
     let mut new_txs = 0usize;
     let mut last_processed: Option<SigInfo> = None;
     let mut stop = false;
+    // Phase 1 — fetch, decode, reserve leaf positions in memory. Nothing is
+    // written until planning completes: a deferred getTransaction stops the
+    // pass BEFORE any write, so the mirror is never left mid-wave.
+    let mut trees: HashMap<String, merkle::TreeData> = HashMap::new();
+    let mut plans: Vec<PlannedTx> = Vec::new();
     for sig in &pending {
         if state.store.has_tx(&sig.signature).await? {
             last_processed = Some(sig.clone());
@@ -212,15 +242,40 @@ async fn sync_locked(state: &AppState) -> Result<SyncReport, String> {
             stop = true;
             break;
         };
-        if tx.meta.as_ref().map(|m| m.err.is_none()).unwrap_or(false) {
-            if let Err(e) = process_tx(state, &sig.signature, &tx).await {
+        match plan_tx(state, &mut trees, &sig.signature, &tx).await {
+            Ok(Some(plan)) => {
+                plans.push(plan);
+                last_processed = Some(sig.clone());
+            }
+            Ok(None) => last_processed = Some(sig.clone()),
+            Err(e) => {
                 worker::console_warn!("sync: {}: {}", sig.signature, e);
                 stop = true;
                 break;
             }
-            new_txs += 1;
         }
-        last_processed = Some(sig.clone());
+    }
+
+    // Phase 2 — one batched write for the whole pass. Plans already carry
+    // their leaf positions; the flush packs every row into ~5 statements.
+    if !plans.is_empty() {
+        match flush_pass(state, &trees, &plans).await {
+            Ok(()) => new_txs = plans.len(),
+            Err(e) => {
+                worker::console_warn!("sync flush: {e}");
+                stop = true;
+                // The failed pass wrote nothing (run_batch is the first and
+                // only write point) — hold the cursor before the pass so the
+                // whole chunk re-plans next time.
+                last_processed = None;
+                for sig in pending.iter() {
+                    if sig.signature == plans[0].signature {
+                        break;
+                    }
+                    last_processed = Some(sig.clone());
+                }
+            }
+        }
     }
 
     // Advance the cursor only through what this pass actually covered. A
@@ -240,7 +295,74 @@ async fn sync_locked(state: &AppState) -> Result<SyncReport, String> {
     Ok(SyncReport { new_txs, walked: all.len() })
 }
 
-async fn process_tx(state: &AppState, signature: &str, tx: &TxJson) -> Result<(), String> {
+struct PlannedTx {
+    signature: String,
+    slot: u64,
+    tree_key: String,
+    decoded: crate::types::DecodedTransact,
+    start_index: u32,
+}
+
+/// Decode a program transact out of a fetched tx and reserve its leaf
+/// positions in the pass's in-memory tree. Idempotent under partial passes:
+/// if this tx's first leaf is already in the tree (a previous pass wrote the
+/// tree but died before its rows), the existing position is adopted instead
+/// of appending a duplicate.
+async fn plan_tx(
+    state: &AppState,
+    trees: &mut HashMap<String, merkle::TreeData>,
+    signature: &str,
+    tx: &TxJson,
+) -> Result<Option<PlannedTx>, String> {
+    if !tx.meta.as_ref().map(|m| m.err.is_none()).unwrap_or(false) {
+        return Ok(None);
+    }
+    let Some((tree_key, decoded, slot)) = extract_decoded(state, tx) else {
+        return Ok(None);
+    };
+    if !trees.contains_key(&tree_key) {
+        let loaded = merkle::load_tree(&state.store, &tree_key).await?;
+        trees.insert(tree_key.clone(), loaded);
+    }
+    let data = trees.get_mut(&tree_key).expect("tree just inserted");
+    let leaves: Vec<[u8; 32]> = decoded.output_commitments.to_vec();
+    let start_index = match find_leaf_index(data, &leaves[0]) {
+        Some(p) => p,
+        None => {
+            let next = data.next_index;
+            merkle::append_leaves(data, &leaves)?;
+            next
+        }
+    };
+    Ok(Some(PlannedTx {
+        signature: signature.to_string(),
+        slot,
+        tree_key,
+        decoded,
+        start_index,
+    }))
+}
+
+/// Where does this commitment already sit in the tree's leaf level, scanning
+/// newest-first over the trailing window a partial pass could have written?
+/// Commitments include per-note randomness, so equality is exact.
+fn find_leaf_index(data: &merkle::TreeData, leaf: &[u8; 32]) -> Option<u32> {
+    let level = data.levels.first()?;
+    let start = (data.next_index as usize).min(level.len());
+    let lo = start.saturating_sub(256);
+    (lo..start)
+        .rev()
+        .find(|&i| &level[i] == leaf)
+        .map(|i| i as u32)
+}
+
+/// Pull the (single) program transact out of a fetched tx: decode the ix,
+/// resolve the pool's tree_key from its accounts. Shared by the indexer and
+/// the admin heal route.
+pub(crate) fn extract_decoded(
+    state: &AppState,
+    tx: &TxJson,
+) -> Option<(String, crate::types::DecodedTransact, u64)> {
     let mut keys: Vec<Pubkey> = tx
         .transaction
         .message
@@ -257,13 +379,12 @@ async fn process_tx(state: &AppState, signature: &str, tx: &TxJson) -> Result<()
             }
         }
     }
-
     for ix in &tx.transaction.message.instructions {
-        let Some(program) = keys.get(ix.program_id_index as usize) else { continue };
+        let program = keys.get(ix.program_id_index as usize)?;
         if *program != state.program_id {
             continue;
         }
-        let Some(data) = b58::decode(&ix.data) else { continue };
+        let data = b58::decode(&ix.data)?;
         let Ok(decoded) = decode_transact_ix(&data) else { continue };
         let accounts: Vec<Pubkey> = ix
             .accounts
@@ -277,115 +398,33 @@ async fn process_tx(state: &AppState, signature: &str, tx: &TxJson) -> Result<()
                 .map(|p| p.to_string())
                 .unwrap_or_else(|| "unknown_mint".to_string()),
         };
-        insert_transact(state, signature, tx.slot, &tree_key, decoded).await?;
-        return Ok(());
+        return Some((tree_key, decoded, tx.slot));
     }
-    Ok(())
+    None
 }
 
-/// Insert a decoded transact: 2 utxo rows, nullifiers, the tx row, and the
-/// merkle append — five packed statements (D1 used to do this as ONE atomic
-/// batch; the Neon HTTP driver has no multi-statement transaction, so the
-/// wave is ordered + reprocessable instead: utxos/nullifiers first, then
-/// tree_levels, then the `trees` row every proof folds against, and
-/// `indexed_txs` ABSOLUTELY LAST as the "fully applied" marker. A wave cut
-/// by the subrequest budget before that marker is safely re-run: re-appending
-/// the same leaves at the same positions is deterministic, and every row
-/// write is ON CONFLICT-idempotent).
-pub async fn insert_transact(
+/// Write a planned pass. Order carries the recovery invariant: tree state
+/// FIRST (levels + meta per pool — the authoritative leaf positions every
+/// proof folds against), then utxo rows, then nullifiers, then indexed_txs
+/// ABSOLUTELY LAST as the completion marker. A pass cut anywhere re-runs
+/// wholly and safely: plan_tx adopts the already-written tree positions and
+/// every row upsert is conflict-idempotent.
+///
+/// Statement budget for a 12-tx single-pool pass: 2 (tree) + 3 (rows) = 5 —
+/// plus the fetch phase's 1 signatures + 12 getTransaction, ~18 total,
+/// comfortably inside the ~50-subrequest invocation cap. The old per-tx
+/// wave burned 5 statements PER tx, which both capped supply near
+/// 1 tx/s and left the mirror torn for most of each pass (the torn-read
+/// guard then failed real rows).
+async fn flush_pass(
     state: &AppState,
-    signature: &str,
-    slot: u64,
-    tree_key: &str,
-    decoded: crate::types::DecodedTransact,
+    trees: &HashMap<String, merkle::TreeData>,
+    plans: &[PlannedTx],
 ) -> Result<(), String> {
     let store = &state.store;
-    let mut data = merkle::load_tree(store, tree_key).await?;
-
-    let mut leaves: Vec<[u8; 32]> = Vec::with_capacity(2);
-    let mut encs: Vec<Vec<u8>> = Vec::with_capacity(2);
-    for (commitment, encrypted) in decoded
-        .output_commitments
-        .iter()
-        .zip([&decoded.encrypted_output1, &decoded.encrypted_output2])
-    {
-        leaves.push(*commitment);
-        encs.push(encrypted.clone());
-    }
-
-    // If a previous pass applied this tx's leaves (next_index already moved
-    // past them) but died before indexed_txs, re-appending would corrupt the
-    // mirror — skip the append and just complete the remaining rows.
-    let first_leaf_hex = hex::encode(leaves[0]);
-    let applied_at = store
-        .commitment_leaf_index(tree_key, &first_leaf_hex)
-        .await?;
-    let mut start_index = data.next_index;
-    if matches!(applied_at, Some(i) if (i as u32) < data.next_index) {
-        start_index = applied_at.unwrap() as u32;
-    } else {
-        merkle::append_leaves(&mut data, &leaves)?;
-    }
-
     let mut stmts = Vec::new();
-    {
-        let mut sql = String::from(
-            "INSERT INTO utxos (tree_key, leaf_index, commitment_hex, encrypted_output_hex, \
-             signature, slot, ext_amount, fee) VALUES ",
-        );
-        let mut params: Vec<crate::store::V> = Vec::with_capacity(leaves.len() * 8);
-        for (i, (leaf, enc)) in leaves.iter().zip(&encs).enumerate() {
-            if i > 0 {
-                sql.push_str(", ");
-            }
-            let b = i * 8 + 1;
-            let places: Vec<String> = (0..8).map(|k| format!("${}", b + k)).collect();
-            sql.push_str(&format!("({})", places.join(", ")));
-            params.extend_from_slice(&[
-                s(tree_key),
-                n(start_index as i64 + i as i64),
-                s(hex::encode(leaf)),
-                s(hex::encode(enc)),
-                s(signature),
-                n(slot as i64),
-                n(decoded.ext_amount),
-                n(decoded.fee as i64),
-            ]);
-        }
-        sql.push_str(" ON CONFLICT (tree_key, leaf_index) DO NOTHING");
-        stmts.push(crate::store::stmt(&sql, params));
-    }
-    {
-        let spent: Vec<&[u8; 32]> = decoded
-            .input_nullifiers
-            .iter()
-            .filter(|nf| **nf != [0u8; 32])
-            .collect();
-        if !spent.is_empty() {
-            let mut sql =
-                String::from("INSERT INTO nullifiers (nullifier_hex, tree_key, signature, slot) VALUES ");
-            let mut params: Vec<crate::store::V> = Vec::with_capacity(spent.len() * 4);
-            for (i, nullifier) in spent.iter().enumerate() {
-                if i > 0 {
-                    sql.push_str(", ");
-                }
-                let b = i * 4 + 1;
-                let places: Vec<String> = (0..4).map(|k| format!("${}", b + k)).collect();
-                sql.push_str(&format!("({})", places.join(", ")));
-                params.extend_from_slice(&[
-                    s(hex::encode(nullifier)),
-                    s(tree_key),
-                    s(signature),
-                    n(slot as i64),
-                ]);
-            }
-            sql.push_str(" ON CONFLICT (nullifier_hex) DO NOTHING");
-            stmts.push(crate::store::stmt(&sql, params));
-        }
-    }
-    {
-        // All level blobs in ONE statement — a per-level loop is 27
-        // subrequests and that alone blew the invocation cap mid-wave.
+
+    for (tree_key, data) in trees {
         let mut sql =
             String::from("INSERT INTO tree_levels (tree_key, level, nodes_hex) VALUES ");
         let mut params: Vec<crate::store::V> = vec![s(tree_key)];
@@ -399,7 +438,7 @@ pub async fn insert_transact(
             let b = params.len() + 1;
             sql.push_str(&format!("($1, ${b}, ${})", b + 1));
             params.push(n(level as i64));
-            params.push(s(merkle::level_row(&data, level)));
+            params.push(s(merkle::level_row(data, level)));
         }
         if params.len() > 1 {
             sql.push_str(
@@ -407,24 +446,251 @@ pub async fn insert_transact(
             );
             stmts.push(crate::store::stmt(&sql, params));
         }
+        let (next_index, root_index, history_hex) = merkle::trees_upsert_values(data);
+        stmts.push(crate::store::stmt(
+            "INSERT INTO trees (tree_key, next_index, root_index, root_history_hex) \
+             VALUES ($1, $2, $3, $4) ON CONFLICT (tree_key) DO UPDATE SET \
+             next_index = excluded.next_index, root_index = excluded.root_index, \
+             root_history_hex = excluded.root_history_hex",
+            vec![s(tree_key), n(next_index), n(root_index), s(history_hex)],
+        ));
     }
-    let (next_index, root_index, history_hex) = merkle::trees_upsert_values(&data);
-    stmts.push(crate::store::stmt(
-        "INSERT INTO trees (tree_key, next_index, root_index, root_history_hex) \
-         VALUES ($1, $2, $3, $4) ON CONFLICT (tree_key) DO UPDATE SET \
-         next_index = excluded.next_index, root_index = excluded.root_index, \
-         root_history_hex = excluded.root_history_hex",
-        vec![s(tree_key), n(next_index), n(root_index), s(history_hex)],
-    ));
-    let kind_str = match decoded.kind {
-        TransactKind::Sol => "sol",
-        TransactKind::Spl => "spl",
-    };
-    stmts.push(crate::store::stmt(
-        "INSERT INTO indexed_txs (signature, slot, tree_key, kind) VALUES ($1, $2, $3, $4) \
-         ON CONFLICT (signature) DO NOTHING",
-        vec![s(signature), n(slot as i64), s(tree_key), s(kind_str)],
-    ));
+
+    {
+        let mut sql = String::from(
+            "INSERT INTO utxos (tree_key, leaf_index, commitment_hex, encrypted_output_hex, \
+             signature, slot, ext_amount, fee) VALUES ",
+        );
+        let mut params: Vec<crate::store::V> = Vec::new();
+        for plan in plans {
+            let encs = [&plan.decoded.encrypted_output1, &plan.decoded.encrypted_output2];
+            for (i, (leaf, enc)) in plan.decoded.output_commitments.iter().zip(encs).enumerate() {
+                if !params.is_empty() {
+                    sql.push_str(", ");
+                }
+                let b = params.len() + 1;
+                let places: Vec<String> = (0..8).map(|k| format!("${}", b + k)).collect();
+                sql.push_str(&format!("({})", places.join(", ")));
+                params.extend_from_slice(&[
+                    s(&plan.tree_key),
+                    n(plan.start_index as i64 + i as i64),
+                    s(hex::encode(leaf)),
+                    s(hex::encode(enc)),
+                    s(&plan.signature),
+                    n(plan.slot as i64),
+                    n(plan.decoded.ext_amount),
+                    n(plan.decoded.fee as i64),
+                ]);
+            }
+        }
+        sql.push_str(" ON CONFLICT (tree_key, leaf_index) DO NOTHING");
+        stmts.push(crate::store::stmt(&sql, params));
+    }
+    {
+        let mut sql =
+            String::from("INSERT INTO nullifiers (nullifier_hex, tree_key, signature, slot) VALUES ");
+        let mut params: Vec<crate::store::V> = Vec::new();
+        for plan in plans {
+            for nf in plan.decoded.input_nullifiers.iter().filter(|nf| **nf != [0u8; 32]) {
+                if !params.is_empty() {
+                    sql.push_str(", ");
+                }
+                let b = params.len() + 1;
+                let places: Vec<String> = (0..4).map(|k| format!("${}", b + k)).collect();
+                sql.push_str(&format!("({})", places.join(", ")));
+                params.extend_from_slice(&[
+                    s(hex::encode(nf)),
+                    s(&plan.tree_key),
+                    s(&plan.signature),
+                    n(plan.slot as i64),
+                ]);
+            }
+        }
+        sql.push_str(" ON CONFLICT (nullifier_hex) DO NOTHING");
+        stmts.push(crate::store::stmt(&sql, params));
+    }
+    {
+        let mut sql = String::from(
+            "INSERT INTO indexed_txs (signature, slot, tree_key, kind) VALUES ",
+        );
+        let mut params: Vec<crate::store::V> = Vec::new();
+        for plan in plans {
+            if !params.is_empty() {
+                sql.push_str(", ");
+            }
+            let kind_str = match plan.decoded.kind {
+                TransactKind::Sol => "sol",
+                TransactKind::Spl => "spl",
+            };
+            let b = params.len() + 1;
+            let places: Vec<String> = (0..4).map(|k| format!("${}", b + k)).collect();
+            sql.push_str(&format!("({})", places.join(", ")));
+            params.extend_from_slice(&[
+                s(&plan.signature),
+                n(plan.slot as i64),
+                s(&plan.tree_key),
+                s(kind_str),
+            ]);
+        }
+        sql.push_str(" ON CONFLICT (signature) DO NOTHING");
+        stmts.push(crate::store::stmt(&sql, params));
+    }
 
     store.run_batch(stmts).await
+}
+
+/// Repair a mirror with holes. A torn write wave can commit tree state while
+/// dropping a tx's utxo rows; the leaf VALUES survive in tree_levels level 0,
+/// so the rows are rebuildable from the chain without touching the tree.
+/// Scans the newest `limit` indexed txs, finds signatures whose utxo rows are
+/// missing or partial, refetches and rewrites them. Bounded per invocation by
+/// the subrequest cap (~1 + 1 + 12×(1 getTransaction + 1 insert) ≈ 26);
+/// `pending` reports holes left for the next call.
+pub async fn heal_holes(
+    state: &AppState,
+    limit: usize,
+) -> Result<serde_json::Value, String> {
+    let store = &state.store;
+    let scanned = store
+        .db
+        .query(
+            "SELECT signature, slot, tree_key FROM indexed_txs ORDER BY slot DESC LIMIT $1",
+            &[n(limit as i64)],
+        )
+        .await?;
+    let mut sigs: Vec<String> = Vec::new();
+    for row in &scanned {
+        let sig = crate::store::str_at(row, "signature");
+        if !sig.is_empty() {
+            sigs.push(sig);
+        }
+    }
+    // One grouped count per signature batch keeps this to a single statement.
+    let mut counts: HashMap<String, i64> = HashMap::new();
+    if !sigs.is_empty() {
+        let placeholders: Vec<String> = (1..=sigs.len()).map(|i| format!("${i}")).collect();
+        let sql = format!(
+            "SELECT signature, COUNT(*)::int AS c FROM utxos WHERE signature IN ({}) GROUP BY signature",
+            placeholders.join(", ")
+        );
+        let params: Vec<crate::store::V> = sigs.iter().map(|sig| s(sig)).collect();
+        for row in store.db.query(&sql, &params).await? {
+            let sig = crate::store::str_at(&row, "signature");
+            if !sig.is_empty() {
+                counts.insert(sig, crate::store::i64_at(&row, "c"));
+            }
+        }
+    }
+
+    let mut repaired: Vec<serde_json::Value> = Vec::new();
+    let mut pending = 0usize;
+    for sig in &sigs {
+        let have = counts.get(sig).copied().unwrap_or(0);
+        if have >= 2 {
+            continue;
+        }
+        if repaired.len() >= 12 {
+            pending += 1;
+            continue;
+        }
+        let Some(tx) = state
+            .rpc
+            .get_transaction(sig)
+            .await
+            .map_err(|e| format!("heal get_transaction {sig}: {e}"))?
+        else {
+            repaired.push(serde_json::json!({
+                "signature": sig, "repaired": false, "reason": "tx not on rpc yet",
+            }));
+            continue;
+        };
+        let Some((tree_key, decoded, slot)) = extract_decoded(state, &tx) else {
+            repaired.push(serde_json::json!({
+                "signature": sig, "repaired": false, "reason": "no program transact decoded",
+            }));
+            continue;
+        };
+        let data = merkle::load_tree(store, &tree_key).await?;
+        let encs = [&decoded.encrypted_output1, &decoded.encrypted_output2];
+        let mut leaves_sql = String::from(
+            "INSERT INTO utxos (tree_key, leaf_index, commitment_hex, encrypted_output_hex, \
+             signature, slot, ext_amount, fee) VALUES ",
+        );
+        let mut params: Vec<crate::store::V> = Vec::new();
+        let mut leaf_indexes: Vec<u32> = Vec::new();
+        let mut missing_leaf = false;
+        for (i, leaf) in decoded.output_commitments.iter().enumerate() {
+            let idx = find_leaf_index_full(&data, leaf);
+            let Some(idx) = idx else {
+                missing_leaf = true;
+                break;
+            };
+            let b = params.len() + 1;
+            if b > 1 {
+                leaves_sql.push_str(", ");
+            }
+            let places: Vec<String> = (0..8).map(|k| format!("${}", b + k)).collect();
+            leaves_sql.push_str(&format!("({})", places.join(", ")));
+            params.extend_from_slice(&[
+                s(&tree_key),
+                n(idx as i64),
+                s(hex::encode(leaf)),
+                s(hex::encode(encs[i])),
+                s(sig),
+                n(slot as i64),
+                n(decoded.ext_amount),
+                n(decoded.fee as i64),
+            ]);
+            leaf_indexes.push(idx);
+        }
+        if missing_leaf {
+            repaired.push(serde_json::json!({
+                "signature": sig, "repaired": false,
+                "reason": "commitment absent from mirror leaf level (tree state torn, not just rows)",
+            }));
+            continue;
+        }
+        let mut stmts = vec![crate::store::stmt(&leaves_sql, params)];
+        let mut nf_sql =
+            String::from("INSERT INTO nullifiers (nullifier_hex, tree_key, signature, slot) VALUES ");
+        let mut nf_params: Vec<crate::store::V> = Vec::new();
+        for nf in decoded.input_nullifiers.iter().filter(|nf| **nf != [0u8; 32]) {
+            if !nf_params.is_empty() {
+                nf_sql.push_str(", ");
+            }
+            let b = nf_params.len() + 1;
+            let places: Vec<String> = (0..4).map(|k| format!("${}", b + k)).collect();
+            nf_sql.push_str(&format!("({})", places.join(", ")));
+            nf_params.extend_from_slice(&[
+                s(hex::encode(nf)),
+                s(&tree_key),
+                s(sig),
+                n(slot as i64),
+            ]);
+        }
+        nf_sql.push_str(" ON CONFLICT (nullifier_hex) DO NOTHING");
+        stmts.push(crate::store::stmt(&nf_sql, nf_params));
+        store.run_batch(stmts).await.map_err(|e| format!("heal write {sig}: {e}"))?;
+        repaired.push(serde_json::json!({
+            "signature": sig, "repaired": true, "tree_key": tree_key,
+            "leaf_indexes": leaf_indexes,
+        }));
+    }
+
+    Ok(serde_json::json!({
+        "scanned": sigs.len(),
+        "repaired": repaired,
+        "pending": pending,
+    }))
+}
+
+/// Full newest-first scan of the leaf level — a hole can sit anywhere in the
+/// tree, not just the trailing window the indexer's redo path scans.
+fn find_leaf_index_full(data: &merkle::TreeData, leaf: &[u8; 32]) -> Option<u32> {
+    let level = data.levels.first()?;
+    let start = (data.next_index as usize).min(level.len());
+    (0..start)
+        .rev()
+        .find(|&i| &level[i] == leaf)
+        .map(|i| i as u32)
 }

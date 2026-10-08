@@ -124,13 +124,24 @@ export interface EngineClient {
    * waiting for a sync-scan heal. Optional: mocks and older clients omit it
    * and the note heals on the next refresh as before.
    */
+  /**
+   * Pin a pending change note's authoritative leaf index. Resolves true
+   * when the leaf was found; false when the window timed out (the note is
+   * a phantom or a hole — the caller should stop re-polling this blinding).
+   */
   resolveChangeNote?(
     treeKey: string,
     mintAddress: string | undefined,
     change: ChangeNoteRef,
-  ): Promise<void>
+  ): Promise<boolean | void>
   /** SDK adjudication: spending signature if any of these notes is already spent. */
   signatureIfSpent?(blindings: string[]): Promise<string | null>
+  /**
+   * Chain-truth restore: un-mark notes burned at relay-accept whose tx
+   * failed execution (nullifier absent from the chain). Returns how many
+   * notes were restored.
+   */
+  markNotesUnspent?(blindings: string[]): Promise<number>
   /** Exposed by the SDK client; lets the engine reserve/pin inputs for parallel lanes. */
   readonly publicKey?: PublicKey
 }
@@ -149,10 +160,14 @@ export interface ChangeNoteRef {
   index: number
 }
 
+/** Tri-state confirm: only "failed" is definitive (the tx landed and the
+ * program rejected it) — "unknown" keeps the row "confirming". */
+export type ConfirmOutcome = "confirmed" | "failed" | "unknown"
+
 export interface EngineDeps {
   client: EngineClient
   waitUntilIndexed(treeKey: string, minLeafIndex: number): Promise<void>
-  confirmSignature(sig: string): Promise<boolean>
+  confirmSignature(sig: string): Promise<ConfirmOutcome>
   now(): number
   newId(): string
   sleep(ms: number): Promise<void>
@@ -244,6 +259,13 @@ export class NoteLedger {
 
   setLaneClaim(lane: number, blinding: string, now: number = Date.now()): void {
     this.laneClaims.set(lane, { blinding, seenFree: false, at: now })
+  }
+
+  /** The claimed note's tx definitively failed on-chain (nothing was minted):
+   * drop the claim now instead of holding the lane on a phantom through the
+   * evidence-expiry window. */
+  clearLaneClaim(lane: number, blinding: string): void {
+    if (this.laneClaims.get(lane)?.blinding === blinding) this.laneClaims.delete(lane)
   }
 
   /** Largest note covering gross (preferring the lane's claimed change note),
@@ -757,6 +779,12 @@ export class PayrollEngine {
     // Confirms detached from the payout lanes (A6); drained before settle.
     const confirms: Array<Promise<void>> = []
 
+    // Change-note blindings whose resolve windows timed out (phantoms from
+    // landed-but-failed attempts, or mirror holes). Claiming them again
+    // would poll /api/commitment for the rest of the run — the 404 loops
+    // in the field console.
+    const deadChanges = new Set<string>()
+
     /**
      * A row's change note is the next row's input on this lane. Claim it by
      * blinding so tryReserve prefers it without a refresh detour, and let
@@ -769,13 +797,19 @@ export class PayrollEngine {
       change: ChangeNoteRef,
     ): void => {
       if (!ledger) return
+      if (deadChanges.has(change.blinding)) return
       ledger.setLaneClaim(lane, change.blinding, this.deps.now())
       const resolving = this.deps.client.resolveChangeNote?.(
         treeKeyOf(req.asset),
         req.asset.kind === "sol" ? undefined : req.asset.mint,
         change,
       )
-      void resolving?.then(() => reloadLedger()).catch(() => {})
+      void resolving
+        ?.then((ok) => {
+          if (ok === false) deadChanges.add(change.blinding)
+          return reloadLedger()
+        })
+        .catch(() => {})
     }
 
     const payOne = async (
@@ -883,6 +917,9 @@ export class PayrollEngine {
           // relay-OK-but-chain-fail leaves the ledger short one note,
           // matching the SDK's markNoteSpent semantics (the next refresh
           // resurrects the truth).
+          // Capture before commitSpent drops the pin: if the confirm comes
+          // back definitively failed, these are the blindings to restore.
+          const pinBlindings = pinned ? [...pinned.blindings] : []
           if (pinned && ledger) {
             ledger.commitSpent(pinned)
             ledger.busy--
@@ -893,12 +930,41 @@ export class PayrollEngine {
           const confirmStart = this.deps.now()
           confirms.push(
             this.deps.confirmSignature(sig)
-              .then((ok) => {
+              .then((outcome) => {
                 timing.confirmMs = this.deps.now() - confirmStart
-                row.status = ok ? "confirmed" : "confirming"
-                row.confirmedAt = this.deps.now()
+                if (outcome === "confirmed") {
+                  row.status = "confirmed"
+                  row.confirmedAt = this.deps.now()
+                } else if (outcome === "failed") {
+                  // Definitive on-chain execution failure (the program
+                  // rejected the spend): no money moved, so the row must
+                  // count as failed — never "confirming" (the run-5 receipt
+                  // counted dead txs as sent while their pinned change
+                  // notes 404'd forever as phantoms). Drop the claim so the
+                  // lane's next row re-reserves instead of polling a note
+                  // that will never exist, and refresh so the inputs —
+                  // committed spent above — resurrect immediately.
+                  row.status = "failed"
+                  row.error = `payout tx failed on-chain: ${sig}`
+                  if (changeNote) ledger?.clearLaneClaim(lane, changeNote.blinding)
+                  // Restore the inputs this relay-accept burned: the
+                  // program rejected the spend, so their nullifiers are
+                  // absent from the chain and the notes are still good.
+                  // Restore BEFORE the refresh so the scan sees them back
+                  // in the spendable set.
+                  if (pinBlindings.length) {
+                    void this.deps.client
+                      .markNotesUnspent?.(pinBlindings)
+                      .catch(() => {})
+                      .then(() => scheduleRefresh())
+                  } else {
+                    void scheduleRefresh()
+                  }
+                } else {
+                  // ambiguous (timeout, lost signal) — keep "confirming"
+                  row.status = "confirming"
+                }
                 this.emit("paying", funding?.txSignature)
-                void scheduleRefresh()
               })
               .catch(() => {
                 // a dead websocket is not a failed payout — settle keeps
@@ -975,9 +1041,10 @@ export class PayrollEngine {
               row.status = "relayed"
               this.emit("paying", funding?.txSignature)
               const confirmStart = this.deps.now()
-              row.status = (await this.deps.confirmSignature(row.txSignature)) ? "confirmed" : "confirming"
+              const outcome = await this.deps.confirmSignature(row.txSignature)
+              row.status = outcome === "confirmed" ? "confirmed" : "confirming"
+              if (outcome === "confirmed") row.confirmedAt = this.deps.now()
               timing.confirmMs = (timing.confirmMs ?? 0) + this.deps.now() - confirmStart
-              row.confirmedAt = this.deps.now()
               row.timing = timing
               this.emit("paying", funding?.txSignature)
               void scheduleRefresh()
@@ -1214,15 +1281,16 @@ async function defaultWaitUntilIndexed(treeKey: string, minLeafIndex: number, ti
   throw new Error(`merkle tree did not index leaf ${minLeafIndex} within ${timeoutMs}ms`)
 }
 
-async function defaultConfirm(sig: string): Promise<boolean> {
+async function defaultConfirm(sig: string): Promise<ConfirmOutcome> {
   const conn = new Connection(config.confirmRpcUrl(), "confirmed")
   // The relay may broadcast faster than we subscribe; catch already-landed
   // signatures before waiting on the websocket.
   try {
     const { value } = await conn.getSignatureStatuses([sig])
     const st = value?.[0]
-    if (st?.confirmationStatus === "confirmed" || st?.confirmationStatus === "finalized") return !st.err
-    if (st?.err) return false
+    if (st?.confirmationStatus === "confirmed" || st?.confirmationStatus === "finalized")
+      return st.err ? "failed" : "confirmed"
+    if (st?.err) return "failed"
   } catch {
     /* fall through to the websocket */
   }
@@ -1231,13 +1299,13 @@ async function defaultConfirm(sig: string): Promise<boolean> {
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       conn.removeSignatureListener(subId)
-      resolve(false)
+      resolve("unknown")
     }, 45_000)
     const subId = conn.onSignature(
       sig,
       (result) => {
         clearTimeout(timer)
-        resolve(!result.err)
+        resolve(result.err ? "failed" : "confirmed")
       },
       "confirmed",
     )

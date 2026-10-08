@@ -203,6 +203,62 @@ export async function fetchMerkleProof(treeKey, leafIndex) {
         pathIndices: p.path_indices,
     };
 }
+/** Ask the relayer to sync the mirror now (throttled server-side). */
+export async function kickIndexer() {
+    await postJson("/api/indexer/kick", {}).catch(() => { });
+}
+/**
+ * Root + N input paths from ONE backend read. The old convergence loop fetched
+ * each input's proof separately; two requests straddling a mirror sync commit
+ * disagreed on the root and burned the whole retry budget (the 15:05Z run lost
+ * 28 rows × 3 attempts to exactly that). One snapshot makes the disagreement
+ * structurally impossible. Returns null on 404 — the caller falls back to the
+ * per-leaf loop against backends that predate this endpoint.
+ */
+export async function fetchMerkleSnapshot(treeKey, indexes) {
+    if (indexes.length === 0) {
+        return { root: "", nextLeafIndex: 0, proofs: [], missing: [] };
+    }
+    const q = indexes.map((i) => `idx=${i}`).join("&");
+    const res = await fetch(getBackendUrl() + `/api/merkle/${encodeURIComponent(treeKey)}/snapshot?${q}`);
+    // Older backend without the route → caller uses the legacy per-leaf loop.
+    if (res.status === 404)
+        return null;
+    const text = await res.text();
+    let data = null;
+    if (text) {
+        try {
+            data = JSON.parse(text);
+        }
+        catch {
+            data = text;
+        }
+    }
+    if (!res.ok) {
+        const err = data?.error;
+        throw new Error(err?.message ?? `HTTP ${res.status}`);
+    }
+    const r = data;
+    const proofs = (r.proofs ?? []).map((p) => {
+        const raw = p.path_elements;
+        const isNested = Array.isArray(raw) && raw.length > 0 && Array.isArray(raw[0]);
+        const asHex = isNested
+            ? raw.map((b) => bytesToHex(b))
+            : raw;
+        return {
+            root: hexToDecimal("0x" + p.root),
+            nextLeafIndex: Number(p.next_leaf_index),
+            pathElements: asHex.map(hexToDecimal),
+            pathIndices: p.path_indices,
+        };
+    });
+    return {
+        root: hexToDecimal("0x" + r.current_root),
+        nextLeafIndex: Number(r.next_leaf_index),
+        proofs,
+        missing: (r.missing ?? []).map(Number),
+    };
+}
 export async function isNullifierSpent(hashHex) {
     try {
         const r = await getJson(`/api/nullifier/${encodeURIComponent(hashHex)}`);
@@ -220,11 +276,29 @@ export async function isNullifierSpent(hashHex) {
 export async function nullifiersSpent(hashHexes) {
     const out = [];
     for (let i = 0; i < hashHexes.length; i += 90) {
-        const r = await postJson("/api/nullifiers/batch", {
-            hashes: hashHexes.slice(i, i + 90),
-        });
+        const chunk = hashHexes.slice(i, i + 90);
+        // The batch endpoint 500s without CORS headers when the worker is
+        // saturated (platform-level kills), and every failure used to fan out
+        // into per-hex singular calls — hundreds of extra requests that made
+        // the saturation worse. Retry the chunk in place instead.
+        let r;
+        let lastErr;
+        for (let attempt = 0;; attempt++) {
+            try {
+                r = await postJson("/api/nullifiers/batch", { hashes: chunk });
+                lastErr = undefined;
+                break;
+            }
+            catch (e) {
+                lastErr = e;
+                if (attempt >= 2)
+                    throw e;
+                await new Promise((res) => setTimeout(res, 250 * (attempt + 1)));
+            }
+        }
+        void lastErr;
         const results = r.results;
-        if (!Array.isArray(results) || results.length !== hashHexes.slice(i, i + 90).length) {
+        if (!Array.isArray(results) || results.length !== chunk.length) {
             throw new Error("nullifier batch returned a mismatched result set");
         }
         for (const item of results)
