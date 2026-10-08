@@ -5,7 +5,10 @@ import { vertex, backgroundFragment, cardFragment } from "./shaders.js";
 
 const LANTERN = { x: -680, y: -950 };
 const clamp = (value, min = 0, max = 1) => Math.max(min, Math.min(max, value));
-const smooth = (value) => { const t = clamp(value); return t * t * (3 - 2 * t); };
+const smooth = (value) => {
+  const t = clamp(value);
+  return t * t * (3 - 2 * t);
+};
 const PEOPLE = [
   "Alex Morgan",
   "Maya Chen",
@@ -55,9 +58,13 @@ function loadImage(src) {
 function loadFont(base) {
   if (!fontLoads.has(base)) {
     const promise = (async () => {
-      const face = new FontFace("Charon Inter", `url("${base}/fonts/Inter.ttf")`, {
-        weight: "100 900",
-      });
+      const face = new FontFace(
+        "Charon Inter",
+        `url("${base}/fonts/Inter.ttf")`,
+        {
+          weight: "100 900",
+        },
+      );
       await face.load();
       document.fonts.add(face);
     })();
@@ -141,20 +148,12 @@ function makeInk(index, dark, solana) {
   if (dark) {
     dots(g, 605, 60, 12, ink);
     dots(g, 605, 86, 14, ink);
+    dots(g, 605, 123, 8, ink);
   } else {
     label(g, PEOPLE[(index + 1) % 12], 605, 66, 18, ink, 500, "right");
     label(g, ADDRESSES[(index + 1) % 6], 605, 91, 14, muted, 400, "right");
+    label(g, `+${AMOUNTS[index]} SOL`, 605, 128, 20, "#54b890", 500, "right");
   }
-  label(
-    g,
-    `+${AMOUNTS[index]} SOL`,
-    605,
-    128,
-    20,
-    dark ? "#8bcfa9" : "#54b890",
-    500,
-    "right",
-  );
   g.drawImage(solana, 333, 54, 54, 47);
   const texture = new THREE.CanvasTexture(c);
   texture.anisotropy = 4;
@@ -162,11 +161,12 @@ function makeInk(index, dark, solana) {
   return texture;
 }
 
-
 export async function createCharonScene(host, options = {}) {
   const base = (options.assetBase ?? "").replace(/\/$/, "");
   const [solana, lanternOn, lanternOff] = await Promise.all([
-    ...["solana.svg", "LanternOn.png", "LanternOff.png"].map((name) => loadImage(`${base}/${name}`)),
+    ...["solana.svg", "LanternOn.png", "LanternOff.png"].map((name) =>
+      loadImage(`${base}/${name}`),
+    ),
     loadFont(base),
   ]);
   // Asset loading may finish after a React route change or Strict Mode cleanup.
@@ -178,11 +178,7 @@ export async function createCharonScene(host, options = {}) {
   });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   const scene = new THREE.Scene();
-  const camera = new THREE.OrthographicCamera(
-    -960, 960, 540, -540,
-    0.1,
-    4000,
-  );
+  const camera = new THREE.OrthographicCamera(-960, 960, 540, -540, 0.1, 4000);
   camera.position.z = 2000;
   const common = {
     resolution: { value: new THREE.Vector2(1, 1) },
@@ -281,7 +277,8 @@ export async function createCharonScene(host, options = {}) {
   glow.position.set(LANTERN.x, LANTERN.y, -4);
 
   const canvas = renderer.domElement;
-  canvas.style.cssText = "display:block;width:100%;height:100%;touch-action:none;cursor:grab;";
+  canvas.style.cssText =
+    "display:block;width:100%;height:100%;touch-action:none;cursor:grab;";
   canvas.setAttribute("aria-hidden", "true");
   host.appendChild(canvas);
 
@@ -291,7 +288,7 @@ export async function createCharonScene(host, options = {}) {
   let visible = true;
   let paused = false;
   let elapsed = 7;
-  let introTime = 0;
+  let introTime = 0.45;
   let introComplete = false;
   let previous = 0;
   let raf = 0;
@@ -304,9 +301,9 @@ export async function createCharonScene(host, options = {}) {
   let height = 1;
   let viewScale = 1;
   let panX = 0;
-  let panY = 0;
+  let panY = -475;
   let cameraX = 0;
-  let cameraY = 0;
+  let cameraY = -475;
   const cursorWorld = new THREE.Vector3();
 
   function draw(delta = 0) {
@@ -320,50 +317,83 @@ export async function createCharonScene(host, options = {}) {
       options.onIntroComplete?.();
     }
     waveTime += delta;
-    const targetX = panX + (!still && pointer && !drag ? (pointer.x / width - 0.5) * 65 : 0);
-    const targetY = panY + (!still && pointer && !drag ? (0.5 - pointer.y / height) * 40 : 0);
+    const targetX =
+      panX + (!still && pointer && !drag ? (pointer.x / width - 0.5) * 65 : 0);
+    const targetY =
+      panY + (!still && pointer && !drag ? (0.5 - pointer.y / height) * 40 : 0);
     const follow = still ? 1 : 1 - Math.exp(-delta * 7);
     cameraX += (targetX - cameraX) * follow;
     cameraY += (targetY - cameraY) * follow;
-    const endZoom = width < 640 ? 0.6 : 0.81;
-    const startZoom = Math.max(endZoom * 1.3, Math.min(2.04, width / viewScale / 800 * 0.95));
-    camera.position.set(cameraX * intro, 236 * (1 - intro) + cameraY * intro, 2000);
+    const endZoom = width < 640 ? 0.35 : 0.5;
+    const startZoom = Math.max(
+      endZoom * 1.3,
+      Math.min(2.04, (width / viewScale / 800) * 0.95),
+    );
+    camera.position.set(
+      cameraX * intro,
+      236 * (1 - intro) + cameraY * intro,
+      2000,
+    );
     camera.zoom = startZoom + (endZoom - startZoom) * intro;
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();
     background.position.set(cameraX, cameraY, -100);
     if (pointer) {
-      cursorWorld.set(pointer.x / width * 2 - 1, 1 - pointer.y / height * 2, 0).unproject(camera);
+      cursorWorld
+        .set((pointer.x / width) * 2 - 1, 1 - (pointer.y / height) * 2, 0)
+        .unproject(camera);
     }
     const targetPrivacy = privateMode ? 1 : 0;
-    privacy = still ? targetPrivacy : privacy + clamp(targetPrivacy - privacy, -delta / 1.8, delta / 1.8);
+    privacy = still
+      ? targetPrivacy
+      : privacy + clamp(targetPrivacy - privacy, -delta / 0.4, delta / 1.8);
     common.radius.value = privacy === 0 ? -100 : 6100 * Math.pow(privacy, 1.15);
 
     for (const c of cards) {
-      const px = c.x + (still ? 0 : Math.sin(elapsed * 0.64 + c.seed * 1.71) * 4);
-      const py = c.y + (still ? 0 : Math.sin(elapsed * 0.78 + c.seed * 0.63) * 5);
+      const px =
+        c.x + (still ? 0 : Math.sin(elapsed * 0.64 + c.seed * 1.71) * 4);
+      const py =
+        c.y + (still ? 0 : Math.sin(elapsed * 0.78 + c.seed * 0.63) * 5);
       const hx = pointer ? (cursorWorld.x - px) / 360 : 10;
       const hy = pointer ? (cursorWorld.y - py) / 79 : 10;
-      const hover = 1 - smooth((Math.max(Math.abs(hx), Math.abs(hy)) - 0.4) / 0.8);
+      const hover =
+        1 - smooth((Math.max(Math.abs(hx), Math.abs(hy)) - 0.4) / 0.8);
       const distance = Math.hypot(c.x - LANTERN.x, c.y - LANTERN.y);
       const arrival = 1.8 * Math.pow(distance / 6100, 1 / 1.15);
       const dt = waveTime - arrival;
-      const jump = !still && privateMode && dt > 0 && dt < 1.5 ? Math.sin(dt * 7) * Math.exp(-dt * 3.5) : 0;
+      const jump =
+        !still && privateMode && dt > 0 && dt < 1.5
+          ? Math.sin(dt * 7) * Math.exp(-dt * 3.5)
+          : 0;
       const tapAge = elapsed - c.tappedAt;
-      const tap = !still && tapAge >= 0 && tapAge < 1.2 ? Math.sin(tapAge * 12) * Math.exp(-tapAge * 4) : 0;
+      const tap =
+        !still && tapAge >= 0 && tapAge < 1.2
+          ? Math.sin(tapAge * 12) * Math.exp(-tapAge * 4)
+          : 0;
       const dirX = (c.x - LANTERN.x) / (distance + 0.1);
       const dirY = (c.y - LANTERN.y) / (distance + 0.1);
-      c.mesh.position.set(px + dirX * jump * 200, py + hover * 4 + dirY * jump * 200 + tap * 22, hover * 14 + jump * 40);
+      c.mesh.position.set(
+        px + dirX * jump * 200,
+        py + hover * 4 + dirY * jump * 200 + tap * 22,
+        hover * 14 + jump * 40,
+      );
       c.mesh.rotation.set(
-        (still ? 0 : Math.sin(elapsed * 0.6 + c.seed) * 0.006) - dirY * jump * 0.18,
-        (still ? 0 : Math.sin(elapsed * 0.4 + c.seed) * 0.007) + dirX * jump * 0.18,
+        (still ? 0 : Math.sin(elapsed * 0.6 + c.seed) * 0.006) -
+          dirY * jump * 0.18,
+        (still ? 0 : Math.sin(elapsed * 0.4 + c.seed) * 0.007) +
+          dirX * jump * 0.18,
         still ? 0 : Math.sin(elapsed * 0.6 + c.seed) * 0.0025 + tap * 0.025,
       );
       c.mesh.scale.setScalar(1 + hover * 0.012 + jump * 0.05 + tap * 0.025);
       c.mesh.material.uniforms.hover.value = hover;
-      c.mesh.material.uniforms.opacity.value = c.primary ? 1 : smooth((introTime - 0.5) / 1.4);
-      c.mesh.visible = Math.abs(px - camera.position.x) < width / viewScale / camera.zoom / 2 + 420 &&
-        Math.abs(py - camera.position.y) < height / viewScale / camera.zoom / 2 + 150;
+      c.mesh.material.uniforms.opacity.value = c.primary
+        ? 1
+        : smooth((introTime - 0.5) / 1.4);
+      c.mesh.visible =
+        Math.abs(px - camera.position.x) <
+          width / viewScale / camera.zoom / 2 + 420 &&
+        Math.abs(py - camera.position.y) <
+          height / viewScale / camera.zoom / 2 + 150;
     }
     const lx = LANTERN.x + (still ? 0 : Math.sin(elapsed * 0.9) * 6);
     const ly = LANTERN.y + (still ? 0 : Math.sin(elapsed * 1.25) * 8);
@@ -375,7 +405,9 @@ export async function createCharonScene(host, options = {}) {
     lampOff.material.opacity = privateMode ? 1 : 0;
     glow.position.set(lx, ly, -4);
     common.lantern.value.set(lx, ly);
-    glow.material.opacity = privateMode ? 0 : 0.82 + (still ? 0 : 0.08 * Math.sin(elapsed * 3));
+    glow.material.opacity = privateMode
+      ? 0
+      : 0.82 + (still ? 0 : 0.08 * Math.sin(elapsed * 3));
     centerMark.material.opacity = smooth((introTime - 1) / 1.5);
     renderer.render(scene, camera);
   }
@@ -425,8 +457,8 @@ export async function createCharonScene(host, options = {}) {
   }
   function onMove(event) {
     updatePointer(event);
-    options.onActivity?.(Boolean(drag));
     if (drag) {
+      options.onActivity?.(true);
       const dx = event.clientX - drag.x;
       const dy = event.clientY - drag.y;
       drag.moved ||= Math.hypot(dx, dy) > 5;
@@ -439,7 +471,14 @@ export async function createCharonScene(host, options = {}) {
     if (event.button !== 0) return;
     updatePointer(event);
     options.onActivity?.(true);
-    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, panX, panY, moved: false };
+    drag = {
+      id: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      panX,
+      panY,
+      moved: false,
+    };
     canvas.setPointerCapture(event.pointerId);
     canvas.style.cursor = "grabbing";
   }
@@ -448,14 +487,21 @@ export async function createCharonScene(host, options = {}) {
     updatePointer(event);
     if (!drag.moved && event.type === "pointerup") {
       draw();
-      if (Math.hypot(cursorWorld.x - LANTERN.x, cursorWorld.y - LANTERN.y) < 125) {
+      if (
+        Math.hypot(cursorWorld.x - LANTERN.x, cursorWorld.y - LANTERN.y) < 125
+      ) {
         togglePrivacy();
       } else {
-        const card = cards.find((c) => Math.abs(cursorWorld.x - c.x) < 360 && Math.abs(cursorWorld.y - c.y) < 79);
+        const card = cards.find(
+          (c) =>
+            Math.abs(cursorWorld.x - c.x) < 360 &&
+            Math.abs(cursorWorld.y - c.y) < 79,
+        );
         if (card) card.tappedAt = elapsed;
       }
     }
-    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    if (canvas.hasPointerCapture(event.pointerId))
+      canvas.releasePointerCapture(event.pointerId);
     drag = null;
     options.onActivity?.(false);
     canvas.style.cursor = "grab";
@@ -525,7 +571,11 @@ export async function createCharonScene(host, options = {}) {
   schedule();
   return {
     togglePrivacy,
-    setPaused(value) { paused = value; draw(); schedule(); },
+    setPaused(value) {
+      paused = value;
+      draw();
+      schedule();
+    },
     destroy,
   };
 }
