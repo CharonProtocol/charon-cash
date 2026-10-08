@@ -191,16 +191,6 @@ footer a:hover {
   backdrop-filter: blur(24px);
 }
 
-.landing-hero {
-  max-width: 1320px;
-  margin: auto;
-  padding: 90px 56px 96px;
-  display: grid;
-  grid-template-columns: 1.1fr 1fr;
-  align-items: center;
-  min-height: 680px;
-}
-
 .eyebrow {
   font-size: 10px;
   letter-spacing: 2px;
@@ -220,226 +210,11 @@ footer a:hover {
   flex-shrink: 0;
 }
 
-.hero-copy h1 {
-  font-family: "Space Grotesk", sans-serif;
-  font-size: clamp(45px, 5.3vw, 72px);
-  line-height: 1.07;
-  font-weight: 500;
-  letter-spacing: -4px;
-  margin: 30px 0 25px;
-}
-
-.hero-copy h1 > span {
-  color: #b3c9b4;
-}
-
-.hero-copy > p {
-  max-width: 355px;
-  color: var(--muted);
-  line-height: 1.8;
-  font-size: 15px;
-}
-
-.hero-actions {
-  display: flex;
-  align-items: center;
-  gap: 26px;
-  margin-top: 35px;
-}
-
 .text-link {
   font-size: 13px;
   display: flex;
   align-items: center;
   gap: 9px;
-}
-
-.hero-footnote {
-  font-size: 11px;
-  color: #82998d;
-  margin-top: 30px;
-  display: flex;
-  gap: 9px;
-  align-items: center;
-}
-
-.hero-art {
-  position: relative;
-  min-height: 430px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.glass-sphere {
-  width: 310px;
-  height: 310px;
-  display: grid;
-  place-items: center;
-  position: relative;
-  border-radius: 50%;
-  color: #d9f7bb99;
-  background:
-    radial-gradient(circle at 32% 22%, #f4ffe655, transparent 34%),
-    radial-gradient(circle at 67% 75%, #80a79744, transparent 45%),
-    linear-gradient(130deg, #c6eaca22, #c6eaca04 60%, #c6eaca33);
-  box-shadow:
-    inset 8px 8px 25px #e8ffd92b,
-    inset -15px -20px 50px #00000055,
-    0 35px 70px #00000033,
-    0 0 100px #d9f7bb10;
-  border: 1px solid #e5ffdd50;
-  backdrop-filter: blur(10px);
-  transform: rotate(-15deg);
-}
-
-.glass-sphere:after {
-  content: "";
-  position: absolute;
-  inset: 12px;
-  border-radius: 50%;
-  border: 1px solid #e5ffdd14;
-  border-top-color: #e5ffdd66;
-  transform: rotate(-25deg);
-}
-
-.orbit {
-  position: absolute;
-  width: 450px;
-  height: 180px;
-  border: 1px solid #bfd4bd22;
-  border-radius: 50%;
-  transform: rotate(-35deg);
-}
-
-.orbit-two {
-  transform: rotate(45deg);
-  width: 430px;
-  height: 230px;
-}
-
-.art-label {
-  position: absolute;
-  bottom: 45px;
-  left: 10%;
-  padding: 18px 22px;
-  border-radius: 15px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  font-size: 13px;
-  background: #bacfb412;
-}
-
-.art-label > svg {
-  color: var(--accent);
-}
-
-.art-label small {
-  display: block;
-  font-size: 10px;
-  color: var(--muted);
-  margin-top: 4px;
-}
-
-.art-label > .status-dot {
-  margin-left: 35px;
-}
-
-.art-coordinate {
-  position: absolute;
-  right: 0;
-  top: 35px;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 9px;
-  letter-spacing: 2px;
-  color: #81968a;
-}
-
-.feature-strip {
-  max-width: 1208px;
-  margin: 0 auto;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  border-top: 1px solid #ffffff18;
-  border-bottom: 1px solid #ffffff18;
-  padding: 38px 0;
-  gap: 50px;
-}
-
-.feature-strip > div {
-  padding: 0 12px;
-}
-
-.feature-strip svg {
-  width: 22px;
-  height: 22px;
-  color: var(--accent);
-  stroke-width: 1.3;
-}
-
-.feature-strip h3 {
-  font-size: 16px;
-  font-weight: 500;
-  margin: 16px 0 9px;
-}
-
-.feature-strip p {
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.8;
-  max-width: 285px;
-}
-
-.how-section {
-  max-width: 1208px;
-  margin: auto;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 70px;
-  padding: 90px 12px;
-}
-
-.how-section h2 {
-  font-family: "Space Grotesk", sans-serif;
-  font-size: 38px;
-  line-height: 1.2;
-  letter-spacing: -1.7px;
-  font-weight: 500;
-}
-
-.how-section ol {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.how-section li {
-  display: flex;
-  gap: 25px;
-  padding: 0 0 24px;
-  margin-bottom: 24px;
-  border-bottom: 1px solid #ffffff12;
-}
-
-.how-section li > span {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11px;
-  color: var(--accent);
-  margin-top: 4px;
-}
-
-.how-section h3 {
-  font-size: 15px;
-  margin: 0 0 8px;
-  font-weight: 500;
-}
-
-.how-section p {
-  font-size: 13px;
-  line-height: 1.7;
-  color: var(--muted);
-  margin: 0;
 }
 
 footer {
@@ -1004,36 +779,9 @@ footer .brand-mark {
   z-index: 50;
 }
 
-@media (min-width: 1600px) {
-  .landing-hero {
-    padding-top: 120px;
-    padding-bottom: 120px;
-  }
-  .hero-art {
-    transform: scale(1.1);
-  }
-}
-
 @media (max-width: 1000px) {
   .topbar {
     padding: 0 30px;
-  }
-  .landing-hero {
-    padding: 70px 30px;
-  }
-  .hero-copy h1 {
-    letter-spacing: -2.5px;
-  }
-  .hero-art {
-    transform: scale(0.85);
-  }
-  .feature-strip {
-    margin: 0 30px;
-    gap: 20px;
-  }
-  .how-section {
-    padding: 65px 40px;
-    gap: 35px;
   }
   footer {
     margin: 0 30px;
@@ -1051,12 +799,6 @@ footer .brand-mark {
   .tab-button {
     padding: 12px 17px;
   }
-  .hero-actions {
-    gap: 18px;
-  }
-  .hero-actions .text-link {
-    font-size: 11px;
-  }
 }
 
 @media (max-width: 760px) {
@@ -1073,50 +815,6 @@ footer .brand-mark {
   }
   .topbar > .button {
     margin-left: auto;
-  }
-  .landing-hero {
-    grid-template-columns: 1fr;
-    padding: 50px 25px 20px;
-    min-height: auto;
-  }
-  .hero-copy h1 {
-    font-size: 54px;
-    letter-spacing: -3px;
-  }
-  .hero-copy > p {
-    font-size: 14px;
-  }
-  .hero-art {
-    min-height: 360px;
-    transform: scale(0.85);
-    margin: -5px -20px 0;
-  }
-  .feature-strip {
-    grid-template-columns: 1fr;
-    margin: 0 25px;
-    padding: 27px 0;
-    gap: 20px;
-  }
-  .feature-strip > div {
-    padding: 0;
-  }
-  .feature-strip h3 {
-    margin: 10px 0 5px;
-  }
-  .feature-strip p {
-    max-width: none;
-    margin: 0;
-  }
-  .how-section {
-    grid-template-columns: 1fr;
-    padding: 50px 25px;
-    gap: 25px;
-  }
-  .how-section h2 {
-    font-size: 32px;
-  }
-  .how-section li:last-child {
-    margin-bottom: 0;
   }
   footer {
     margin: 0 25px;
@@ -1232,15 +930,6 @@ footer .brand-mark {
   .topbar .button {
     font-size: 11px;
     padding: 11px;
-  }
-  .hero-copy h1 {
-    font-size: 46px;
-  }
-  .hero-actions {
-    flex-wrap: wrap;
-  }
-  .hero-art {
-    transform: scale(0.75);
   }
   .dashboard-heading {
     flex-wrap: wrap;
