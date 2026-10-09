@@ -1,9 +1,9 @@
 // One wasm-arkworks prover per web worker. Receives the zkey and witness
 // graph once from the pool (fetched a single time on the main thread), then
-// proves on demand. Proofs come back decompressed into the snarkjs shape the
-// SDK's parseProofToBytesArray consumes.
+// proves on demand. Proofs come back as the wasm prover's compressed hex
+// (32/64/32) and pass through untouched — the SDK feeds them straight to
+// the program, no snarkjs-shape detour.
 import { default as init, WasmProver } from "./prover-wasm/privacy_cash_prover.js"
-import { compressedToSnarkjs } from "./groth16-decompress"
 
 interface InitMessage {
   type: "init"
@@ -40,9 +40,18 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
       return
     }
     try {
-      const out = JSON.parse(prover.prove(msg.inputJson))
-      const { proof, publicSignals } = compressedToSnarkjs(out)
-      self.postMessage({ type: "proof", id: msg.id, proof, publicSignals })
+      const out = JSON.parse(prover.prove(msg.inputJson)) as {
+        proof_a: string
+        proof_b: string
+        proof_c: string
+        public_signals: string[]
+      }
+      self.postMessage({
+        type: "proof",
+        id: msg.id,
+        proof: { proof_a: out.proof_a, proof_b: out.proof_b, proof_c: out.proof_c },
+        publicSignals: out.public_signals ?? [],
+      })
     } catch (err) {
       // Local telemetry: ship the exact failing circuit input to the shim so
       // multi-lane proof failures can be diagnosed offline.

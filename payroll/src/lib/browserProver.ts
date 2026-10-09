@@ -4,10 +4,10 @@
 // snarkjs. The wasm prove() is synchronous and blocks its worker, so
 // parallelism comes from the pool; size it to the machine's cores.
 import { getBackendUrl, setProver, type ProverOverride } from "privacy-cash-sdk"
-import { compressedToSnarkjs } from "./groth16-decompress"
 
 // Mirrors the snarkjs Proof shape from privacy-cash-sdk/src/prover (the SDK
-// exports ProverOverride but not the Proof type itself).
+// exports ProverOverride but not the Proof type itself). The wasm prover
+// returns the compressed hex shape, which passes through to the SDK as-is.
 interface SnarkjsProof {
   pi_a: string[]
   pi_b: string[][]
@@ -16,6 +16,14 @@ interface SnarkjsProof {
   curve: string
 }
 
+interface CompressedProofWire {
+  proof_a: string
+  proof_b: string
+  proof_c: string
+}
+
+type ProverProof = SnarkjsProof | CompressedProofWire
+
 interface PendingEntry {
   id: number
   inputJson: string
@@ -23,7 +31,7 @@ interface PendingEntry {
   /** Set when a slot actually dispatches the job — startedAt→dispatch is the
    *  in-pool queue wait, dispatch→reply the real service time. */
   dispatchedAt?: number
-  resolve: (p: { proof: SnarkjsProof; publicSignals: string[] }) => void
+  resolve: (p: { proof: ProverProof; publicSignals: string[] }) => void
   reject: (e: Error) => void
 }
 
@@ -121,7 +129,7 @@ class BrowserProverPool {
 
   // ProverOverride shape: input already passed through utils.stringifyBigInts
   // by the SDK; resolves {proof, publicSignals}.
-  prove(input: Record<string, unknown>): Promise<{ proof: SnarkjsProof; publicSignals: string[] }> {
+  prove(input: Record<string, unknown>): Promise<{ proof: ProverProof; publicSignals: string[] }> {
     const patched = input.extDataHash !== undefined
       ? { ...input, extDataHash: swapBytes32(input.extDataHash) }
       : input
@@ -133,7 +141,7 @@ class BrowserProverPool {
       resolve: () => {},
       reject: () => {},
     }
-    const promise = new Promise<{ proof: SnarkjsProof; publicSignals: string[] }>((resolve, reject) => {
+    const promise = new Promise<{ proof: ProverProof; publicSignals: string[] }>((resolve, reject) => {
       entry.resolve = resolve
       entry.reject = reject
     })
@@ -157,11 +165,19 @@ class BrowserProverPool {
         this.serviceTotalMs += performance.now() - e.dispatchedAt
       }
       if (d.type === "proof") {
-        // The raw MT worker returns the wasm's compressed-hex output; the
-        // bundled ST worker already applies the snarkjs conversion itself.
+        // Both worker flavors return the wasm's compressed-hex output; it
+        // passes through untouched and the SDK feeds it straight to the
+        // program's decompress syscalls.
         const shaped = d.raw
-          ? compressedToSnarkjs(d.raw)
-          : { proof: d.proof as SnarkjsProof, publicSignals: d.publicSignals ?? [] }
+          ? {
+              proof: {
+                proof_a: d.raw.proof_a,
+                proof_b: d.raw.proof_b,
+                proof_c: d.raw.proof_c,
+              },
+              publicSignals: d.raw.public_signals ?? [],
+            }
+          : { proof: d.proof as ProverProof, publicSignals: d.publicSignals ?? [] }
         e.resolve(shaped)
       }
       else {

@@ -3,6 +3,7 @@
 // We don't need checked math on public inputs, because the passed in public
 // input length is fixed at 7.
 use crate::field;
+use solana_bn254::compression::prelude::{alt_bn128_g1_decompress_be, alt_bn128_g2_decompress_be};
 use solana_bn254::prelude::{
     alt_bn128_g1_addition_be, alt_bn128_g1_multiplication_be, alt_bn128_pairing_be,
 };
@@ -16,6 +17,8 @@ pub enum Groth16Error {
     PreparingInputsG1MulFailed,
     PreparingInputsG1AdditionFailed,
     ProofVerificationFailed,
+    G1DecompressionFailed,
+    G2DecompressionFailed,
 }
 
 #[derive(PartialEq, Eq, Debug)]
@@ -143,4 +146,20 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
 
 pub fn is_less_than_bn254_field_size_be(bytes: &[u8; 32]) -> bool {
     field::lt_be(bytes, &field::FR_BE)
+}
+
+/// Snarkjs/ark compressed G1 (32 BE) → uncompressed 64 BE via the bn254
+/// compression syscall. Never a software Fq sqrt — root-finding in SBF blows
+/// transact past the CU budget. Wire form is ark compressed with a per-32-byte
+/// limb swap, so the y-sign flag rides in the top bits of byte 0.
+#[inline(never)]
+pub fn decompress_g1(compressed: &[u8; 32]) -> Result<[u8; 64], Groth16Error> {
+    alt_bn128_g1_decompress_be(compressed).map_err(|_| Groth16Error::G1DecompressionFailed)
+}
+
+/// Snarkjs/ark compressed G2 (64 BE) → uncompressed 128 BE via the bn254
+/// compression syscall (ark LE compressed with a full 64-byte reverse).
+#[inline(never)]
+pub fn decompress_g2(compressed: &[u8; 64]) -> Result<[u8; 128], Groth16Error> {
+    alt_bn128_g2_decompress_be(compressed).map_err(|_| Groth16Error::G2DecompressionFailed)
 }

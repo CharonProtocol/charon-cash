@@ -204,14 +204,14 @@ async function rescan() {
         // legacy: may not have programIdIndex resolution — check data disc only
       }
       const raw = typeof ix.data === "string" ? Buffer.from(ix.data, "base64") : Buffer.from(ix.data)
-      if (raw.length < 497) continue
+      if (raw.length < 369) continue
       const disc = raw[0]
       if (disc !== 2 && disc !== 3) continue
-      // args after 1-byte disc
+      // args after 1-byte disc; compressed proof (128B) + 7 pubinputs (224B) = 352
       const args = raw.subarray(1)
-      const c0 = be(args.subarray(416, 448)).toString()
-      const c1 = be(args.subarray(448, 480)).toString()
-      let offset = 480 + 16 // proof + ExtDataMinified
+      const c0 = be(args.subarray(288, 320)).toString()
+      const c1 = be(args.subarray(320, 352)).toString()
+      let offset = 352 + 16 // compressed proof + ExtDataMinified
       const readLenPref = () => {
         const len = args.readUInt32LE(offset); offset += 4
         const slice = args.subarray(offset, offset + len); offset += len
@@ -238,7 +238,7 @@ async function rescan() {
       newUtxos.push({
         treeKey,
         leafIndex: base,
-        commitment: Buffer.from(args.subarray(416, 448)).toString("hex"),
+        commitment: Buffer.from(args.subarray(288, 320)).toString("hex"),
         encryptedHex: Buffer.from(enc1).toString("hex"),
         signature: s.signature,
         slot: s.slot,
@@ -246,13 +246,13 @@ async function rescan() {
       newUtxos.push({
         treeKey,
         leafIndex: base + 1,
-        commitment: Buffer.from(args.subarray(448, 480)).toString("hex"),
+        commitment: Buffer.from(args.subarray(320, 352)).toString("hex"),
         encryptedHex: Buffer.from(enc2).toString("hex"),
         signature: s.signature,
         slot: s.slot,
       })
-      newNulls.set(Buffer.from(args.subarray(352, 384)).toString("hex"), s.signature)
-      newNulls.set(Buffer.from(args.subarray(384, 416)).toString("hex"), s.signature)
+      newNulls.set(Buffer.from(args.subarray(224, 256)).toString("hex"), s.signature)
+      newNulls.set(Buffer.from(args.subarray(256, 288)).toString("hex"), s.signature)
     }
   }
 

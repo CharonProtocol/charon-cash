@@ -19,7 +19,7 @@ pub mod merkle_tree;
 pub mod state;
 pub mod utils;
 
-declare_id!("721TvnSURopg7FCsP5ZL9WzWMWXxUutehPGJ81bhwQbr");
+declare_id!("CHvKW5fCPNfikvfHA1cxQL8guoyFGqRvwdr1B3NdNVss");
 
 entrypoint!(process_instructions, 16);
 

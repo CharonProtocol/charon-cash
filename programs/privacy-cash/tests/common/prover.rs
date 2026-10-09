@@ -5,6 +5,7 @@ use ark_circom::circom::CircomReduction;
 use ark_circom::{read_zkey, WitnessCalculator};
 use ark_ff::{BigInteger, PrimeField};
 use ark_groth16::{prepare_verifying_key, Groth16, Proof};
+use ark_serialize::CanonicalSerialize;
 use ark_std::{rand::thread_rng, UniformRand};
 use num_bigint::{BigInt, BigUint, Sign};
 use once_cell::sync::Lazy;
@@ -172,12 +173,14 @@ pub fn deposit_artifacts_to_submit(
     })
 }
 
-/// Mirrors your TS `parseProofToBytesArray()` behavior.
+/// Mirrors the TS `parseProofToBytesArray()` behavior: compressed form is
+/// arkworks compressed BE (G1 per-limb swap, G2 full 64-byte reverse), exactly
+/// what the program's bn254 decompress syscalls expect.
 pub fn proof_to_bytes(proof: &Proof<Bn254>, compressed: bool) -> ProofBytes {
     ProofBytes {
-        proof_a: serialize_g1(&proof.a, compressed, true), // TS proofA uses inverted sign handling
+        proof_a: serialize_g1(&proof.a, compressed),
         proof_b: serialize_g2(&proof.b, compressed),
-        proof_c: serialize_g1(&proof.c, compressed, false), // TS proofC uses natural sign handling
+        proof_c: serialize_g1(&proof.c, compressed),
     }
 }
 
@@ -342,75 +345,35 @@ fn fq_to_biguint(x: &Fq) -> BigUint {
     BigUint::from_bytes_le(&x.into_bigint().to_bytes_le())
 }
 
-fn y_is_positive_g1(y: &Fq) -> bool {
-    let midpoint = &*FIELD_SIZE / 2u32;
-    fq_to_biguint(y) <= midpoint
-}
-
-fn y_is_positive_g2(y: &Fq2) -> bool {
-    // This matches the TS logic for proofB:
-    // first compare the first 32-byte limb, then the second.
-    let midpoint = &*FIELD_SIZE / 2u32;
-
-    let y0 = fq_to_biguint(&y.c0);
-    let y1 = fq_to_biguint(&y.c1);
-
-    if y0 < midpoint {
-        true
-    } else if y0 > midpoint {
-        false
-    } else {
-        y1 < midpoint
-    }
-}
-
-fn add_bitmask_to_first_byte(bytes: &mut [u8], y_is_positive: bool) {
-    if !y_is_positive {
-        bytes[0] |= 1 << 7;
-    }
-}
-
-/// G1 serialization matching TS:
-/// - uncompressed: x_be || y_be
-/// - compressed: x_be with sign bit, where `invert_sign` controls the proofA special case
-fn serialize_g1(p: &G1Affine, compressed: bool, invert_sign: bool) -> Vec<u8> {
-    let mut x = fq_to_be_bytes_32(&p.x);
-
+/// arkworks compressed G1, per-32-byte limb swap → 32 BE (flag in byte 0).
+fn serialize_g1(p: &G1Affine, compressed: bool) -> Vec<u8> {
+    let x = fq_to_be_bytes_32(&p.x);
     if compressed {
-        let y_is_positive = y_is_positive_g1(&p.y);
-        let effective_positive = if invert_sign {
-            !y_is_positive
-        } else {
-            y_is_positive
-        };
-
-        add_bitmask_to_first_byte(&mut x, effective_positive);
-        return x.to_vec();
+        let mut le = Vec::with_capacity(32);
+        p.serialize_compressed(&mut le).expect("g1 compressed");
+        return swap_limbs_32(&le);
     }
-
     let y = fq_to_be_bytes_32(&p.y);
     [x.as_slice(), y.as_slice()].concat()
 }
 
-/// G2 serialization matching TS:
-/// - uncompressed: x.c0_be || x.c1_be || y.c0_be || y.c1_be
-/// - compressed: x.c0_be || x.c1_be with sign bit on the first byte
+/// arkworks compressed G2, full 64-byte reverse → 64 BE (flag in byte 0).
 fn serialize_g2(p: &G2Affine, compressed: bool) -> Vec<u8> {
+    if compressed {
+        let mut le = Vec::with_capacity(64);
+        p.serialize_compressed(&mut le).expect("g2 compressed");
+        return le.into_iter().rev().collect();
+    }
     let x0 = fq_to_be_bytes_32(&p.x.c0);
     let x1 = fq_to_be_bytes_32(&p.x.c1);
     let y0 = fq_to_be_bytes_32(&p.y.c0);
     let y1 = fq_to_be_bytes_32(&p.y.c1);
+    [x1.as_slice(), x0.as_slice(), y1.as_slice(), y0.as_slice()].concat()
+}
 
-    let mut out = Vec::with_capacity(if compressed { 64 } else { 128 });
-    out.extend_from_slice(&x1);
-    out.extend_from_slice(&x0);
-
-    if compressed {
-        add_bitmask_to_first_byte(&mut out, y_is_positive_g2(&p.y));
-        return out;
-    }
-
-    out.extend_from_slice(&y1);
-    out.extend_from_slice(&y0);
-    out
+fn swap_limbs_32(bytes: &[u8]) -> Vec<u8> {
+    bytes
+        .chunks_exact(32)
+        .flat_map(|chunk| chunk.iter().rev().copied())
+        .collect()
 }

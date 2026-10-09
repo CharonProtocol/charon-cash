@@ -73,8 +73,9 @@ describe.skipIf(!haveArtifacts)("createRapidsnarkProver", () => {
     const { proof, publicSignals } = await prove(input as unknown as Record<string, unknown>)
     const ms = Date.now() - t0
 
-    expect(proof.protocol).toBe("groth16")
-    expect(proof.curve).toBe("bn128")
+    const sp = proof as { protocol: string; curve: string }
+    expect(sp.protocol).toBe("groth16")
+    expect(sp.curve).toBe("bn128")
     expect(publicSignals.length).toBe(7)
 
     const vkey = await zKey.exportVerificationKey(zkeyPath)

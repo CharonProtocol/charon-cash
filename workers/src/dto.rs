@@ -50,9 +50,9 @@ pub struct WithdrawRequest {
 #[derive(Clone, Debug)]
 pub struct TransactInput {
     pub kind: TransactKind,
-    pub proof_a: [u8; 64],
-    pub proof_b: [u8; 128],
-    pub proof_c: [u8; 64],
+    pub proof_a: [u8; 32],
+    pub proof_b: [u8; 64],
+    pub proof_c: [u8; 32],
     pub root: [u8; 32],
     pub public_amount: [u8; 32],
     pub ext_data_hash: [u8; 32],
@@ -188,9 +188,9 @@ impl WithdrawRequest {
         };
         Ok(TransactInput {
             kind,
-            proof_a: hex_fixed::<64>(&self.proof_a, "proof_a")?,
-            proof_b: hex_fixed::<128>(&self.proof_b, "proof_b")?,
-            proof_c: hex_fixed::<64>(&self.proof_c, "proof_c")?,
+            proof_a: hex_fixed::<32>(&self.proof_a, "proof_a")?,
+            proof_b: hex_fixed::<64>(&self.proof_b, "proof_b")?,
+            proof_c: hex_fixed::<32>(&self.proof_c, "proof_c")?,
             root: hex_fixed::<32>(&self.root, "root")?,
             public_amount: hex_fixed::<32>(&self.public_amount, "public_amount")?,
             ext_data_hash: hex_fixed::<32>(&self.ext_data_hash, "ext_data_hash")?,

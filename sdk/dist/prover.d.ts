@@ -5,6 +5,13 @@ export interface Proof {
     protocol: string;
     curve: string;
 }
+/** Compressed wire proof (arkworks BE hex, 32/64/32 bytes) as the wasm prover emits. */
+export interface CompressedProofWire {
+    proof_a: string;
+    proof_b: string;
+    proof_c: string;
+}
+export type ProverProof = Proof | CompressedProofWire;
 /** Inject pre-loaded circuit buffers (used by tests / non-browser runners). */
 export declare function setCircuitBuffers(wasm: Uint8Array, zkey: Uint8Array): void;
 /**
@@ -14,7 +21,7 @@ export declare function setCircuitBuffers(wasm: Uint8Array, zkey: Uint8Array): v
  * native prover (e.g. rapidsnark) is injected by the payroll engine only.
  */
 export type ProverOverride = (input: Record<string, unknown>) => Promise<{
-    proof: Proof;
+    proof: ProverProof;
     publicSignals: string[];
 }>;
 export declare function setProver(fn: ProverOverride | null): void;
@@ -23,11 +30,16 @@ export declare function setProver(fn: ProverOverride | null): void;
  * ArrayBuffers and reused. Mirrors privacy-cash-sdk prove() (single-thread).
  */
 export declare function prove(input: Record<string, unknown>): Promise<{
-    proof: Proof;
+    proof: ProverProof;
     publicSignals: string[];
 }>;
-/** Parse a groth16 proof into the byte layout the Pinocchio Proof struct expects. */
-export declare function parseProofToBytesArray(proof: Proof): {
+/**
+ * Parse a groth16 proof into the byte layout the Pinocchio Proof struct
+ * expects — 32/64/32 compressed bytes on the wire. Accepts the snarkjs
+ * decimal shape (compressed here with arkworks' SWFlags convention) or the
+ * wasm prover's already-compressed hex, which passes through untouched.
+ */
+export declare function parseProofToBytesArray(proof: ProverProof): {
     proofA: number[];
     proofB: number[];
     proofC: number[];

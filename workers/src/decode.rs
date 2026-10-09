@@ -1,6 +1,6 @@
 // 1-byte disc | proof | ExtDataMinified | enc1 | enc2 | bump0 | bump1
 
-pub const PROOF_SIZE: usize = 480;
+pub const PROOF_SIZE: usize = 352;
 pub const EXT_DATA_MINIFIED_SIZE: usize = 16;
 pub const FIXED_TRANSACT_ARGS_SIZE: usize = PROOF_SIZE + EXT_DATA_MINIFIED_SIZE;
 
@@ -29,9 +29,9 @@ fn parse_transact_body(kind: TransactKind, data: &[u8]) -> Result<DecodedTransac
     }
 
     let mut offset = 0usize;
-    let _proof_a = read_bytes(data, &mut offset, 64)?;
-    let _proof_b = read_bytes(data, &mut offset, 128)?;
-    let _proof_c = read_bytes(data, &mut offset, 64)?;
+    let _proof_a = read_bytes(data, &mut offset, 32)?;
+    let _proof_b = read_bytes(data, &mut offset, 64)?;
+    let _proof_c = read_bytes(data, &mut offset, 32)?;
     let root = read_array_32(data, &mut offset)?;
     let public_amount = read_array_32(data, &mut offset)?;
     let ext_data_hash = read_array_32(data, &mut offset)?;

@@ -11,6 +11,15 @@ export interface Proof {
   curve: string
 }
 
+/** Compressed wire proof (arkworks BE hex, 32/64/32 bytes) as the wasm prover emits. */
+export interface CompressedProofWire {
+  proof_a: string
+  proof_b: string
+  proof_c: string
+}
+
+export type ProverProof = Proof | CompressedProofWire
+
 let wasmBuf: Uint8Array | null = null
 let zkeyBuf: Uint8Array | null = null
 
@@ -27,7 +36,7 @@ export function setCircuitBuffers(wasm: Uint8Array, zkey: Uint8Array): void {
  * native prover (e.g. rapidsnark) is injected by the payroll engine only.
  */
 export type ProverOverride = (input: Record<string, unknown>) => Promise<{
-  proof: Proof
+  proof: ProverProof
   publicSignals: string[]
 }>
 
@@ -48,7 +57,7 @@ async function loadCircuit(): Promise<{ wasm: Uint8Array; zkey: Uint8Array }> {
  * ArrayBuffers and reused. Mirrors privacy-cash-sdk prove() (single-thread).
  */
 export async function prove(input: Record<string, unknown>): Promise<{
-  proof: Proof
+  proof: ProverProof
   publicSignals: string[]
 }> {
   const stringified = utils.stringifyBigInts(input) as Record<string, unknown>
@@ -64,34 +73,73 @@ export async function prove(input: Record<string, unknown>): Promise<{
   )
 }
 
-/** Parse a groth16 proof into the byte layout the Pinocchio Proof struct expects. */
-export function parseProofToBytesArray(proof: Proof): {
+/** BN254 base field p — the sign flag compares y against p − y. */
+const FQ = 0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd47n
+
+function be32(v: bigint): number[] {
+  const out = new Array<number>(32).fill(0)
+  for (let i = 31; i >= 0 && v > 0n; i--) {
+    out[i] = Number(v & 0xffn)
+    v >>= 8n
+  }
+  return out
+}
+
+/** arkworks compressed G1: x BE, byte 0 sets 0x80 when y is the lex-larger root. */
+function compressG1(x: bigint, y: bigint): number[] {
+  const out = be32(x)
+  if (y * 2n > FQ) out[0] |= 0x80
+  return out
+}
+
+/**
+ * arkworks compressed G2: [x.c1, x.c0] BE, flag in byte 0. Fq2 lex order
+ * compares c1 first, c0 on tie — ark's YIsNegative rule.
+ */
+function compressG2(x0: bigint, x1: bigint, y0: bigint, y1: bigint): number[] {
+  const out = [...be32(x1), ...be32(x0)]
+  const n1 = (FQ - y1) % FQ
+  const largest = y1 !== n1 ? y1 > n1 : y0 * 2n > FQ
+  if (largest) out[0] |= 0x80
+  return out
+}
+
+function hexToBytes(hex: string): number[] {
+  const h = hex.replace(/^0x/i, "")
+  if (h.length % 2 !== 0) throw new Error("odd hex length")
+  const out = new Array<number>(h.length / 2)
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(h.slice(i * 2, i * 2 + 2), 16)
+  return out
+}
+
+/**
+ * Parse a groth16 proof into the byte layout the Pinocchio Proof struct
+ * expects — 32/64/32 compressed bytes on the wire. Accepts the snarkjs
+ * decimal shape (compressed here with arkworks' SWFlags convention) or the
+ * wasm prover's already-compressed hex, which passes through untouched.
+ */
+export function parseProofToBytesArray(proof: ProverProof): {
   proofA: number[]
   proofB: number[]
   proofC: number[]
 } {
-  const d = JSON.parse(JSON.stringify(proof))
-  for (const i in d) {
-    if (i === "pi_a" || i === "pi_c") {
-      for (const j in d[i]) {
-        d[i][j] = Array.from(
-          utils.leInt2Buff(utils.unstringifyBigInts(d[i][j]), 32),
-        ).reverse()
-      }
-    } else if (i === "pi_b") {
-      for (const j in d[i]) {
-        for (const z in d[i][j]) {
-          d[i][j][z] = Array.from(
-            utils.leInt2Buff(utils.unstringifyBigInts(d[i][j][z]), 32),
-          )
-        }
-      }
+  if ("proof_a" in proof) {
+    return {
+      proofA: hexToBytes(proof.proof_a),
+      proofB: hexToBytes(proof.proof_b),
+      proofC: hexToBytes(proof.proof_c),
     }
   }
+  const toBig = (v: unknown): bigint => BigInt(String(v))
   return {
-    proofA: [d.pi_a[0], d.pi_a[1]].flat(),
-    proofB: [d.pi_b[0].flat().reverse(), d.pi_b[1].flat().reverse()].flat(),
-    proofC: [d.pi_c[0], d.pi_c[1]].flat(),
+    proofA: compressG1(toBig(proof.pi_a[0]), toBig(proof.pi_a[1])),
+    proofB: compressG2(
+      toBig(proof.pi_b[0][0]),
+      toBig(proof.pi_b[0][1]),
+      toBig(proof.pi_b[1][0]),
+      toBig(proof.pi_b[1][1]),
+    ),
+    proofC: compressG1(toBig(proof.pi_c[0]), toBig(proof.pi_c[1])),
   }
 }
 

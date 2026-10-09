@@ -120,9 +120,9 @@ pub fn bn_to_bytes(value: u128) -> [u8; 32] {
 // Helper to turn the DepositProofToSubmit struct into the Proof struct we use in next 2 functions
 pub fn format_proof(proof: DepositProofToSubmit) -> Proof {
     Proof {
-        proof_a: proof.proof_a.try_into().expect("proof_a must be 64 bytes"),
-        proof_b: proof.proof_b.try_into().expect("proof_b must be 128 bytes"),
-        proof_c: proof.proof_c.try_into().expect("proof_c must be 64 bytes"),
+        proof_a: proof.proof_a.try_into().expect("proof_a must be 32 bytes"),
+        proof_b: proof.proof_b.try_into().expect("proof_b must be 64 bytes"),
+        proof_c: proof.proof_c.try_into().expect("proof_c must be 32 bytes"),
 
         root: proof.root,
         public_amount: proof.public_amount,
@@ -761,7 +761,7 @@ fn transact_spl_deposit_running_correctly() {
 
     let deposit_proof_result = prove(&deposit_input, &key_base_path).unwrap();
 
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
 
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
@@ -957,7 +957,7 @@ fn deposit_sol_withdraw_usdc() {
 
     let deposit_proof_result = prove(&deposit_input, &key_base_path).unwrap();
 
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
 
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
@@ -1189,7 +1189,7 @@ fn deposit_sol_withdraw_usdc() {
 
     let withdraw_proof_result = prove(&withdraw_input, &key_base_path).unwrap();
 
-    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, true).unwrap();
 
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
@@ -1384,7 +1384,7 @@ fn spl_double_spend_fails() {
 
     let deposit_proof_result = prove(&deposit_input, &key_base_path).unwrap();
 
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
 
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
@@ -1615,7 +1615,7 @@ fn spl_double_spend_fails() {
     let first_withdraw_proof_result = prove(&first_withdraw_input, &key_base_path).unwrap();
 
     let first_withdraw_artifacts =
-        deposit_artifacts_to_submit(&first_withdraw_proof_result, false).unwrap();
+        deposit_artifacts_to_submit(&first_withdraw_proof_result, true).unwrap();
 
     let first_withdraw_proof_to_submit = format_proof(first_withdraw_artifacts);
 
@@ -1829,7 +1829,7 @@ fn spl_double_spend_fails() {
     let second_withdraw_proof_result = prove(&second_withdraw_input, &key_base_path).unwrap();
 
     let second_withdraw_artifacts =
-        deposit_artifacts_to_submit(&second_withdraw_proof_result, false).unwrap();
+        deposit_artifacts_to_submit(&second_withdraw_proof_result, true).unwrap();
 
     let second_withdraw_proof_to_submit = format_proof(second_withdraw_artifacts);
 
@@ -2022,7 +2022,7 @@ fn deposit_and_withdraw_tx_execute_for_correct_inputs() {
 
     let deposit_proof_result = prove(&deposit_input, &key_base_path).unwrap();
 
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
 
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
@@ -2246,7 +2246,7 @@ fn deposit_and_withdraw_tx_execute_for_correct_inputs() {
 
     let withdraw_proof_result = prove(&withdraw_input, &key_base_path).unwrap();
 
-    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, true).unwrap();
 
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
@@ -2487,7 +2487,7 @@ fn deposit_and_withdraw_tx_execute_for_pda_recipient() {
 
     let deposit_proof_result = prove(&deposit_input, &key_base_path).unwrap();
 
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
 
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
@@ -2712,7 +2712,7 @@ fn deposit_and_withdraw_tx_execute_for_pda_recipient() {
 
     let withdraw_proof_result = prove(&withdraw_input, &key_base_path).unwrap();
 
-    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, true).unwrap();
 
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
@@ -2953,7 +2953,7 @@ fn spl_tx_deposit_and_withdraw_execute_for_pda_fee_recipient() {
 
     let deposit_proof_result = prove(&deposit_input, &key_base_path).unwrap();
 
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
 
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
@@ -3177,7 +3177,7 @@ fn spl_tx_deposit_and_withdraw_execute_for_pda_fee_recipient() {
 
     let withdraw_proof_result = prove(&withdraw_input, &key_base_path).unwrap();
 
-    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, true).unwrap();
 
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
@@ -3418,7 +3418,7 @@ fn spl_attacker_cannot_frontrun_withdraw_tx() {
 
     let deposit_proof_result = prove(&deposit_input, &key_base_path).unwrap();
 
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
 
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
@@ -3643,7 +3643,7 @@ fn spl_attacker_cannot_frontrun_withdraw_tx() {
 
     let withdraw_proof_result = prove(&withdraw_input, &key_base_path).unwrap();
 
-    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, true).unwrap();
 
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
@@ -3954,7 +3954,7 @@ fn spl_tree_ata_has_zero_amount_after_withdraw_full_amount_when_withdraw_fee_is_
 
     let deposit_proof_result = prove(&deposit_input, &key_base_path).unwrap();
 
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
 
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
@@ -4178,7 +4178,7 @@ fn spl_tree_ata_has_zero_amount_after_withdraw_full_amount_when_withdraw_fee_is_
 
     let withdraw_proof_result = prove(&withdraw_input, &key_base_path).unwrap();
 
-    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, true).unwrap();
 
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
@@ -4410,7 +4410,7 @@ fn spl_tree_ata_has_zero_amount_after_withdraw_full_amount_when_withdraw_fee_sam
 
     let deposit_proof_result = prove(&deposit_input, &key_base_path).unwrap();
 
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
 
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
@@ -4634,7 +4634,7 @@ fn spl_tree_ata_has_zero_amount_after_withdraw_full_amount_when_withdraw_fee_sam
 
     let withdraw_proof_result = prove(&withdraw_input, &key_base_path).unwrap();
 
-    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, true).unwrap();
 
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
@@ -4832,9 +4832,9 @@ fn spl_transaction_fails_for_wrong_data_hash() {
         panic!("BigInt value is too large to fit in 32 bytes");
     }
     let deposit_proof_to_submit = Proof {
-        proof_a: [1u8; 64],
-        proof_b: [1u8; 128],
-        proof_c: [1u8; 64],
+        proof_a: [1u8; 32],
+        proof_b: [1u8; 64],
+        proof_c: [1u8; 32],
         root: deposit_root,
         public_amount: public_amount,
         ext_data_hash: deposit_ext_data_hash,
@@ -4993,9 +4993,9 @@ fn spl_transaction_fails_for_invalid_root() {
     let invalid_root = [123u8; 32];
 
     let deposit_proof_to_submit = Proof {
-        proof_a: [1u8; 64],
-        proof_b: [1u8; 128],
-        proof_c: [1u8; 64],
+        proof_a: [1u8; 32],
+        proof_b: [1u8; 64],
+        proof_c: [1u8; 32],
         root: invalid_root,
         public_amount: public_amount,
         ext_data_hash: deposit_ext_data_hash,
@@ -5156,9 +5156,9 @@ fn spl_transaction_fails_for_zero_root() {
     let invalid_root = [0u8; 32];
 
     let deposit_proof_to_submit = Proof {
-        proof_a: [1u8; 64],
-        proof_b: [1u8; 128],
-        proof_c: [1u8; 64],
+        proof_a: [1u8; 32],
+        proof_b: [1u8; 64],
+        proof_c: [1u8; 32],
         root: invalid_root,
         public_amount: public_amount,
         ext_data_hash: deposit_ext_data_hash,
@@ -5324,9 +5324,9 @@ fn spl_transaction_fails_for_modified_mint() {
         .expect("Different Mint Could Not Be Created");
 
     let deposit_proof_to_submit = Proof {
-        proof_a: [1u8; 64],
-        proof_b: [1u8; 128],
-        proof_c: [1u8; 64],
+        proof_a: [1u8; 32],
+        proof_b: [1u8; 64],
+        proof_c: [1u8; 32],
         root: invalid_root,
         public_amount: public_amount,
         ext_data_hash: deposit_ext_data_hash,
@@ -5527,7 +5527,7 @@ fn transact_spl_can_execute_for_deposit_larger_the_sol_tree_max_limit() {
 
     let deposit_proof_result = prove(&deposit_input, &key_base_path).unwrap();
 
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
 
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
@@ -5727,7 +5727,7 @@ fn spl_fails_when_transact_instruction_signer_ata_owner_does_not_match_signer() 
 
     let deposit_proof_result = prove(&deposit_input, &key_base_path).unwrap();
 
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
 
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
@@ -6027,7 +6027,7 @@ fn spl_fails_to_deposit_when_exceeding_the_default_deposit_limit() {
 
     let deposit_proof_result = prove(&deposit_input, &key_base_path).unwrap();
 
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
 
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
@@ -6366,7 +6366,7 @@ fn spl_can_deposit_after_increasing_limit() {
 
     let deposit_proof_result = prove(&deposit_input, &key_base_path).unwrap();
 
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
 
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
@@ -6612,7 +6612,7 @@ fn spl_withdrawal_has_no_limits() {
 
     let deposit_proof_result = prove(&deposit_input, &key_base_path).unwrap();
 
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
 
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
@@ -6887,7 +6887,7 @@ fn spl_withdrawal_has_no_limits() {
 
     let withdraw_proof_result = prove(&withdraw_input, &key_base_path).unwrap();
 
-    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, true).unwrap();
 
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
