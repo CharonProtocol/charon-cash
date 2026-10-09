@@ -112,9 +112,9 @@ pub fn bn_to_bytes(value: u128) -> [u8; 32] {
 // Helper to turn the DepositProofToSubmit struct into the Proof struct we use in next 2 functions
 pub fn format_proof(proof: DepositProofToSubmit) -> Proof {
     Proof {
-        proof_a: proof.proof_a.try_into().expect("proof_a must be 32 bytes"),
-        proof_b: proof.proof_b.try_into().expect("proof_b must be 64 bytes"),
-        proof_c: proof.proof_c.try_into().expect("proof_c must be 32 bytes"),
+        proof_a: proof.proof_a.try_into().expect("proof_a must be 64 bytes"),
+        proof_b: proof.proof_b.try_into().expect("proof_b must be 128 bytes"),
+        proof_c: proof.proof_c.try_into().expect("proof_c must be 64 bytes"),
 
         root: proof.root,
         public_amount: proof.public_amount,
@@ -524,7 +524,7 @@ fn double_spend_attack_fails() {
 
     let deposit_proof_result = prove(&deposit_input, &key_base_path).unwrap();
 
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
 
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
@@ -691,7 +691,7 @@ fn double_spend_attack_fails() {
 
     let first_proof_result = prove(&first_proof_input, &key_base_path).unwrap();
     let first_proof_to_submit =
-        format_proof(deposit_artifacts_to_submit(&first_proof_result, true).unwrap());
+        format_proof(deposit_artifacts_to_submit(&first_proof_result, false).unwrap());
 
     let first_nullifiers =
         find_nullifier_pdas(&Pubkey::from_str_const(PROGRAM_ID), &first_proof_to_submit);
@@ -859,7 +859,7 @@ fn double_spend_attack_fails() {
 
     let second_proof_result = prove(&second_proof_input, &key_base_path).unwrap();
     let second_proof_to_submit =
-        format_proof(deposit_artifacts_to_submit(&second_proof_result, true).unwrap());
+        format_proof(deposit_artifacts_to_submit(&second_proof_result, false).unwrap());
 
     let second_nullifiers =
         find_nullifier_pdas(&Pubkey::from_str_const(PROGRAM_ID), &second_proof_to_submit);
@@ -1023,7 +1023,7 @@ fn can_execute_both_deposit_and_withdraw_for_correct_input_with_positive_fee() {
         .join("transaction2");
 
     let deposit_proof_result = prove(&deposit_proof_input, &key_base_path).unwrap();
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(
@@ -1204,7 +1204,7 @@ fn can_execute_both_deposit_and_withdraw_for_correct_input_with_positive_fee() {
     };
 
     let withdraw_proof_result = prove(&withdraw_proof_input, &key_base_path).unwrap();
-    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, true).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
     let withdraw_nullifiers = find_nullifier_pdas(
@@ -1405,7 +1405,7 @@ fn can_execute_both_deposit_and_withdraw_to_pda_recipient_with_positive_fees() {
         .join("transaction2");
 
     let deposit_proof_result = prove(&deposit_proof_input, &key_base_path).unwrap();
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
@@ -1582,7 +1582,7 @@ fn can_execute_both_deposit_and_withdraw_to_pda_recipient_with_positive_fees() {
     };
 
     let withdraw_proof_result = prove(&withdraw_proof_input, &key_base_path).unwrap();
-    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, true).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
     let withdraw_nullifiers = find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
@@ -1794,7 +1794,7 @@ fn can_execute_both_deposit_and_withdraw_with_pda_fee_recipient_with_positive_fe
         .join("transaction2");
 
     let deposit_proof_result = prove(&deposit_proof_input, &key_base_path).unwrap();
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
@@ -1970,7 +1970,7 @@ fn can_execute_both_deposit_and_withdraw_with_pda_fee_recipient_with_positive_fe
     };
 
     let withdraw_proof_result = prove(&withdraw_proof_input, &key_base_path).unwrap();
-    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, true).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
     let withdraw_nullifiers = find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
@@ -2165,7 +2165,7 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_with_zero
         .join("transaction2");
 
     let deposit_proof_result = prove(&deposit_proof_input, &key_base_path).unwrap();
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
@@ -2345,7 +2345,7 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_with_zero
     };
 
     let withdraw_proof_result = prove(&withdraw_proof_input, &key_base_path).unwrap();
-    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, true).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
     let withdraw_nullifiers = find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
@@ -2527,7 +2527,7 @@ fn attacker_cant_frontrun_withdraw_transaction() {
         .join("transaction2");
 
     let deposit_proof_result = prove(&deposit_proof_input, &key_base_path).unwrap();
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
@@ -2704,7 +2704,7 @@ fn attacker_cant_frontrun_withdraw_transaction() {
     };
 
     let withdraw_proof_result = prove(&withdraw_proof_input, &key_base_path).unwrap();
-    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, true).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
     let withdraw_nullifiers = find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
@@ -2864,7 +2864,7 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_after_wit
         .join("transaction2");
 
     let deposit_proof_result = prove(&deposit_proof_input, &key_base_path).unwrap();
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
@@ -3038,7 +3038,7 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_after_wit
     };
 
     let withdraw_proof_result = prove(&withdraw_proof_input, &key_base_path).unwrap();
-    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, true).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
     let withdraw_nullifiers = find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
@@ -3242,7 +3242,7 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
         .join("transaction2");
 
     let deposit_proof_result = prove(&deposit_proof_input, &key_base_path).unwrap();
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
@@ -3417,7 +3417,7 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
     };
 
     let withdraw_proof_result = prove(&withdraw_proof_input, &key_base_path).unwrap();
-    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, true).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
     let withdraw_nullifiers = find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
@@ -3620,7 +3620,7 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
         .join("transaction2");
 
     let deposit_proof_result = prove(&deposit_proof_input, &key_base_path).unwrap();
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
@@ -3796,7 +3796,7 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
     };
 
     let withdraw_proof_result = prove(&withdraw_proof_input, &key_base_path).unwrap();
-    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, true).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
     let withdraw_nullifiers = find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
@@ -3995,7 +3995,7 @@ fn can_execute_both_deposit_and_withdraw_instruction_with_zero_deposit_fee_and_p
         .join("transaction2");
 
     let deposit_proof_result = prove(&deposit_proof_input, &key_base_path).unwrap();
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
@@ -4170,7 +4170,7 @@ fn can_execute_both_deposit_and_withdraw_instruction_with_zero_deposit_fee_and_p
     };
 
     let withdraw_proof_result = prove(&withdraw_proof_input, &key_base_path).unwrap();
-    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, true).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
     let withdraw_nullifiers = find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
@@ -4361,7 +4361,7 @@ fn build_failure_fixture(
         .join("transaction2");
 
     let deposit_proof_result = prove(&deposit_proof_input, &key_base_path).unwrap();
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let proof = format_proof(deposit_artifacts);
 
     let nullifiers = find_nullifier_pdas(program_id, &proof);
@@ -4871,7 +4871,7 @@ fn can_deposit_after_increasing_limit() {
         .join("transaction2");
 
     let proof_result = prove(&proof_input, &key_base_path).unwrap();
-    let artifacts = deposit_artifacts_to_submit(&proof_result, true).unwrap();
+    let artifacts = deposit_artifacts_to_submit(&proof_result, false).unwrap();
     let proof = format_proof(artifacts);
 
     let nullifiers = find_nullifier_pdas(&program_id, &proof);
@@ -5058,7 +5058,7 @@ fn withdrawal_has_no_limit_can_withdraw_any_amount() {
     };
 
     let deposit_proof_result = prove(&deposit_input, &key_base_path).unwrap();
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
@@ -5211,7 +5211,7 @@ fn withdrawal_has_no_limit_can_withdraw_any_amount() {
     };
 
     let withdraw_proof_result = prove(&withdraw_input, &key_base_path).unwrap();
-    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, true).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
     let withdraw_nullifiers = find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
@@ -5371,7 +5371,7 @@ fn tests_arithmetic_overflow_protection_in_transact_with_edge_case_balances() {
         .join("transaction2");
 
     let deposit_proof_result = prove(&deposit_input, &key_base_path).unwrap();
-    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, true).unwrap();
+    let deposit_artifacts = deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap();
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(&program_id, &deposit_proof_to_submit);
@@ -5527,7 +5527,7 @@ fn tests_arithmetic_overflow_protection_in_transact_with_edge_case_balances() {
     };
 
     let withdraw_proof_result = prove(&withdraw_input, &key_base_path).unwrap();
-    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, true).unwrap();
+    let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
     let withdraw_nullifiers = find_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
@@ -5603,9 +5603,9 @@ fn fails_transact_instruction_for_invalid_mint_address() {
     };
 
     let proof = Proof {
-        proof_a: [1u8; 32],
-        proof_b: [2u8; 64],
-        proof_c: [3u8; 32],
+        proof_a: [1u8; 64],
+        proof_b: [2u8; 128],
+        proof_c: [3u8; 64],
         root: ZERO_BYTES[DEFAULT_HEIGHT],
         input_nullifiers: [generate_random_nullifier(), generate_random_nullifier()],
         output_commitments: [[3u8; 32], [4u8; 32]],
@@ -6164,7 +6164,7 @@ fn succeeds_with_valid_sol_mint_address() {
         .join("transaction2");
 
     let proof_result = prove(&proof_input, &key_base_path).unwrap();
-    let artifacts = deposit_artifacts_to_submit(&proof_result, true).unwrap();
+    let artifacts = deposit_artifacts_to_submit(&proof_result, false).unwrap();
     let proof = format_proof(artifacts);
 
     let nullifiers = find_nullifier_pdas(&program_id, &proof);

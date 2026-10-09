@@ -101,9 +101,9 @@ pub fn bn_to_bytes(value: u128) -> [u8; 32] {
 // Helper to turn the DepositProofToSubmit struct into the Proof struct we use in next 2 functions
 pub fn format_proof(proof: DepositProofToSubmit) -> Proof {
     Proof {
-        proof_a: proof.proof_a.try_into().expect("proof_a must be 32 bytes"),
-        proof_b: proof.proof_b.try_into().expect("proof_b must be 64 bytes"),
-        proof_c: proof.proof_c.try_into().expect("proof_c must be 32 bytes"),
+        proof_a: proof.proof_a.try_into().expect("proof_a must be 64 bytes"),
+        proof_b: proof.proof_b.try_into().expect("proof_b must be 128 bytes"),
+        proof_c: proof.proof_c.try_into().expect("proof_c must be 64 bytes"),
 
         root: proof.root,
         public_amount: proof.public_amount,
@@ -665,7 +665,7 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
         .join("transaction2");
 
     let proof_result = prove(&proof_input, &key_base_path).unwrap();
-    let proof_to_submit = format_proof(deposit_artifacts_to_submit(&proof_result, true).unwrap());
+    let proof_to_submit = format_proof(deposit_artifacts_to_submit(&proof_result, false).unwrap());
 
     let nullifiers = find_nullifier_pdas(&Pubkey::from_str_const(PROGRAM_ID), &proof_to_submit);
     let cross_check_nullifiers =

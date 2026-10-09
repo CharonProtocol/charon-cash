@@ -1,6 +1,6 @@
 use crate::error::PrivacyCashError;
 use crate::field;
-use crate::groth16::{decompress_g1, decompress_g2, Groth16Verifier, Groth16Verifyingkey};
+use crate::groth16::{Groth16Verifier, Groth16Verifyingkey};
 use crate::state::{Proof, ProofBatch3, ProofBatch5};
 use light_hasher::{Hasher, Sha256};
 use pinocchio::error::ProgramError;
@@ -240,28 +240,15 @@ pub fn verify_proof(proof: &Proof, verifying_key: &Groth16Verifyingkey) -> bool 
     public_inputs_vec[5] = proof.output_commitments[0];
     public_inputs_vec[6] = proof.output_commitments[1];
 
-    let proof_a_uncomp = match decompress_g1(&proof.proof_a) {
-        Ok(p) => p,
-        Err(_) => return false,
-    };
-    let proof_b_uncomp = match decompress_g2(&proof.proof_b) {
-        Ok(p) => p,
-        Err(_) => return false,
-    };
-    let proof_c_uncomp = match decompress_g1(&proof.proof_c) {
-        Ok(p) => p,
-        Err(_) => return false,
-    };
-
-    let proof_a: [u8; 64] = match negate_g1(&proof_a_uncomp) {
+    let proof_a: [u8; 64] = match negate_g1(&proof.proof_a) {
         Some(bytes) => bytes,
         None => return false,
     };
 
     let mut verifier = match Groth16Verifier::new(
         &proof_a,
-        &proof_b_uncomp,
-        &proof_c_uncomp,
+        &proof.proof_b,
+        &proof.proof_c,
         &public_inputs_vec,
         verifying_key,
     ) {
@@ -620,7 +607,7 @@ mod tests {
         // proof_a of all zeros is not a valid on-curve G1 point, so
         // verification must fail before reaching the pairing.
         let mut proof = Proof::zeroed();
-        proof.proof_a = [7u8; 32];
+        proof.proof_a = [7u8; 64];
         assert!(!verify_proof(&proof, &VERIFYING_KEY));
     }
 
