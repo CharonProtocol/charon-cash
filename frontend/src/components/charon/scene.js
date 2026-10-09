@@ -305,6 +305,7 @@ export async function createCharonScene(host, options = {}) {
   let cameraX = 0;
   let cameraY = -475;
   const cursorWorld = new THREE.Vector3();
+  let scrollProgress = 0;
 
   function draw(delta = 0) {
     if (destroyed) return;
@@ -334,7 +335,8 @@ export async function createCharonScene(host, options = {}) {
       236 * (1 - intro) + cameraY * intro,
       2000,
     );
-    camera.zoom = startZoom + (endZoom - startZoom) * intro;
+    const baseZoom = startZoom + (endZoom - startZoom) * intro;
+    camera.zoom = baseZoom * (1 - scrollProgress * 0.4);
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();
     background.position.set(cameraX, cameraY, -100);
@@ -575,6 +577,10 @@ export async function createCharonScene(host, options = {}) {
       paused = value;
       draw();
       schedule();
+    },
+    setScrollProgress(value) {
+      scrollProgress = Math.max(0, Math.min(1, value));
+      draw();
     },
     destroy,
   };

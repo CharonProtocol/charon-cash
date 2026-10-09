@@ -19,6 +19,7 @@ import type {
   PaymentContext,
 } from "../components/dashboard/types";
 import { useCharon } from "@/hooks/useCharon";
+import "./Dashboard.css";
 
 export function Dashboard() {
   const [operation, setOperation] = useState<DashboardOperation>("send");
@@ -36,22 +37,22 @@ export function Dashboard() {
         features={domMax}
         strict
       >
-        <section className="bg-none relative h-dvh flex flex-col px-4">
-          <header className="shrink-0 flex justify-between px-0 sm:px-20 py-1 text-black items-center">
+        <section className="dashboard-page">
+          <header className="dashboard-navbar">
             <a
               href="#"
               aria-label="Charon home"
               onClick={(event) => {
                 if (busy) event.preventDefault();
               }}
-              className="text-black p-0 text-xl flex items-center"
+              className="dashboard-brand"
             >
               <img
                 src="./LogoOn.png"
                 alt=""
-                className="size-14"
+                className="dashboard-brand-mark"
               />
-              <p className="">CHARON</p>
+              <span>CHARON</span>
             </a>
             <div
               className={busy ? "opacity-50" : ""}
@@ -60,8 +61,8 @@ export function Dashboard() {
               <WalletMultiButton />
             </div>
           </header>
-          <main className="grow flex relative min-h-0  justify-center pt-10 pb-20">
-            <div className="flex min-h-0 w-full max-w-3xl flex-col">
+          <main className="dashboard-stage">
+            <div className="dashboard-panel">
               <AnimatePresence
                 mode="wait"
                 initial={false}
@@ -69,7 +70,7 @@ export function Dashboard() {
                 <m.section
                   key={`${operation}-${charon.address ?? "disconnected"}`}
                   id="pay-panel"
-                  className="flex min-h-0 flex-1 flex-col"
+                  className="dashboard-operation"
                   role="tabpanel"
                   aria-labelledby={`pay-tab-${operation}`}
                   initial={{ opacity: 0 }}
@@ -86,15 +87,16 @@ export function Dashboard() {
                   )}
                 </m.section>
               </AnimatePresence>
-            </div>
-            <div className="absolute inset-x-0 bottom-10 flex justify-center">
-              <OperationDock
-                value={operation}
-                busy={busy}
-                onChange={(next) => {
-                  if (!busy && next !== "payroll") setOperation(next);
-                }}
-              />
+              <div className="dashboard-dock-wrap">
+                <OperationDock
+                  value={operation}
+                  busy={busy}
+                  onChange={(next) => {
+                    if (!busy && next !== "payroll" && next !== "swap")
+                      setOperation(next);
+                  }}
+                />
+              </div>
             </div>
           </main>
         </section>

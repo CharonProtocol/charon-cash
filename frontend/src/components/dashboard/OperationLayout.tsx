@@ -10,16 +10,19 @@ export function OperationLayout({
   children: ReactNode;
 }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex justify-start">
-        <h1 className="relative text-3xl font-normal text-black">
+    <div className="operation-layout">
+      <header className="operation-header">
+        <h1 className="operation-title">
           {title}{" "}
-          <p className="absolute top-full left-3/4 text-xs whitespace-nowrap text-black">
+          <span className="operation-direction">
             {direction}
-          </p>
+          </span>
         </h1>
       </header>
-      <div className="flex min-h-0 flex-1 flex-col justify-between py-8 [@media(max-height:560px)]:py-4">
+      <div className="operation-lantern" aria-hidden="true">
+        <img src="/LanternOn.png" alt="" />
+      </div>
+      <div className="operation-content">
         {children}
       </div>
     </div>

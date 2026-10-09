@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Landing } from "./pages/Landing";
+import { Waitlist } from "./pages/Waitlist";
 import "./App.css";
 
 const Dashboard = lazy(() =>
@@ -7,27 +8,33 @@ const Dashboard = lazy(() =>
 );
 
 export default function App() {
-  const [dashboard, setDashboard] = useState(
-    window.location.hash === "#dashboard",
-  );
+  const [route, setRoute] = useState(window.location.hash);
+
   useEffect(() => {
-    const navigate = () => setDashboard(window.location.hash === "#dashboard");
+    const navigate = () => setRoute(window.location.hash);
     window.addEventListener("hashchange", navigate);
     return () => window.removeEventListener("hashchange", navigate);
   }, []);
-  return dashboard ? (
-    <Suspense
-      fallback={
-        <div
-          style={{ minHeight: "100svh", background: "white" }}
-          role="status"
-          aria-label="Loading dashboard"
-        />
-      }
-    >
-      <Dashboard />
-    </Suspense>
-  ) : (
-    <Landing />
-  );
+
+  if (route === "#dashboard") {
+    return (
+      <Suspense
+        fallback={
+          <div
+            style={{ minHeight: "100svh", background: "white" }}
+            role="status"
+            aria-label="Loading dashboard"
+          />
+        }
+      >
+        <Dashboard />
+      </Suspense>
+    );
+  }
+
+  if (route === "#waitlist") {
+    return <Waitlist />;
+  }
+
+  return <Landing />;
 }

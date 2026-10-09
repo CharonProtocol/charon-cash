@@ -52,9 +52,11 @@ export function Swap({ context }: { context: PaymentContext }) {
   return (
     <OperationLayout title="Swap" direction="private asset exchange">
       {step === 0 ? (
-        <form className="flex min-h-0 flex-1 flex-col justify-between pb-24" onSubmit={confirm}>
-          <div className="flex flex-col items-center gap-4">
-            <div className="relative flex items-center justify-center pr-14">
+        <form className="swap-form flex min-h-0 flex-1 flex-col justify-between" onSubmit={confirm}>
+          <div className="swap-content flex flex-col items-center gap-4">
+            <h2 className="swap-amount-label">Enter the Amount of {fromToken}</h2>
+            <TokenSelector value={fromToken} onChange={setFromToken} />
+            <div className="swap-amount-row relative flex items-center justify-center pr-14">
               <label className="flex items-baseline justify-center gap-2">
                 <input
                   value={amount}
@@ -75,7 +77,6 @@ export function Swap({ context }: { context: PaymentContext }) {
                 <ArrowRight className="size-9" />
               </button>
             </div>
-            <TokenSelector value={fromToken} onChange={setFromToken} />
             <p className="text-xs text-neutral-500">to</p>
             <div className="flex items-center gap-2 text-lg">
               <TokenIcon token={toToken} className="size-6" />

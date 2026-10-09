@@ -6,8 +6,57 @@
   font-display: swap;
 }
 
-.charon-landing {
+:root {
   --charon-header-height: clamp(62px, 12dvh, 150px);
+}
+
+.landing-page {
+  --charon-header-height: 64px;
+}
+
+.landing-page .landing-dashboard-navbar {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--charon-header-height);
+  background: rgba(251, 250, 247, 0.5);
+  transition: background-color 1.8s ease, border-color 1.8s ease;
+}
+
+.landing-page .landing-dashboard-navbar[data-private="true"] {
+  border-color: #ffffff1f;
+  background: rgba(12, 13, 15, 0.5);
+}
+
+.landing-page .landing-dashboard-navbar[data-private="true"] .dashboard-brand {
+  color: #fff;
+}
+
+.landing-launch-button {
+  display: inline-flex;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 18px;
+  border-radius: 10px;
+  background: #303030;
+  color: #fff;
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+.landing-page .landing-dashboard-navbar[data-private="true"] .landing-launch-button {
+  background: #f8f4eb;
+  color: #111;
+}
+
+.charon-landing {
+
   height: 100svh;
   height: 100dvh;
   overflow: hidden;
@@ -33,13 +82,13 @@
   place-items: center;
   background: rgba(251, 250, 247, 0.5);
   transition: background-color 1.8s ease;
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  z-index: 10;
+  z-index: 50;
 }
-.charon-landing[data-private="true"] .charon-header {
+.charon-landing[data-private="true"] .charon-header, .charon-header[data-private="true"] {
   background: rgba(12, 13, 15, 0.5);
 }
 @keyframes floaty {
@@ -215,6 +264,50 @@
 }
 .charon-waitlist:active {
   transform: translateY(1px) scale(0.98);
+}
+.charon-hero-actions {
+  display: flex;
+  width: max-content;
+  max-width: 100%;
+  gap: clamp(8px, 1.5cqw, 16px);
+  margin-top: 2.5cqw;
+}
+.charon-action-button {
+  display: grid;
+  min-width: 0;
+  height: clamp(44px, 5.8cqw, 58px);
+  place-items: center;
+  padding-inline: clamp(14px, 2.5cqw, 28px);
+  border: 0;
+  border-radius: clamp(7px, 0.8cqw, 10px);
+  background: #000;
+  color: #fff;
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+  font-size: clamp(13px, 2.1cqw, 21px);
+  font-weight: 400;
+  line-height: 1;
+  opacity: 0.8;
+  white-space: nowrap;
+  transition: transform 180ms ease, background-color 1.8s ease, color 1.8s ease;
+}
+.charon-action-button:hover {
+  transform: translateY(-2px);
+}
+.charon-action-button:active {
+  transform: translateY(1px);
+}
+.charon-landing[data-private="true"] .charon-action-button {
+  background: #f8f4eb;
+  color: #111;
+}
+@media (max-width: 400px) {
+  .charon-hero-actions {
+    gap: 6px;
+  }
+  .charon-action-button {
+    padding-inline: 10px;
+    font-size: 11px;
+  }
 }
 .charon-ferryman {
   display: block;
@@ -422,7 +515,7 @@
   }
 }
 @media (max-height: 500px) {
-  .charon-landing {
+  :root {
     --charon-header-height: 50px;
   }
   .charon-header img {
@@ -452,6 +545,8 @@
   }
   .charon-waitlist:hover,
   .charon-waitlist:active,
+  .charon-action-button:hover,
+  .charon-action-button:active,
   .charon-ferryman:hover img,
   .charon-ferryman:active img {
     transform: none;

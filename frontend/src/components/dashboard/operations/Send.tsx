@@ -107,7 +107,7 @@ export function Send({ context }: { context: PaymentContext }) {
         >
           <m.div
             key={step}
-            className="flex min-h-0 w-full flex-1 flex-col gap-3  items-stretch [@media(max-height:560px)]:gap-2"
+            className="operation-flow flex min-h-0 w-full flex-1 flex-col gap-3 items-stretch [@media(max-height:560px)]:gap-2"
             initial={{ opacity: 0, y: reduced ? 0 : 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: reduced ? 0 : -6 }}

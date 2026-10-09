@@ -1,0 +1,49 @@
+@keyframes flow {
+  from {
+    stroke-dashoffset: 1200;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes heading-stream {
+  from {
+    stroke-dashoffset: 1000;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.animate-flow {
+  animation: flow 9s linear infinite;
+}
+
+.animate-heading-stream {
+  animation: heading-stream 9s linear infinite;
+}
+
+.beam-soft {
+  stroke-width: 9;
+  opacity: 0.11;
+  filter: url(#blur);
+}
+
+.network-perspective {
+  transform: perspective(1200px) rotateX(32deg) rotateZ(-14deg);
+}
+
+@media (max-width: 850px) {
+  .network-perspective {
+    transform: perspective(1200px) rotateX(29deg) rotateZ(-16deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-flow,
+  .animate-heading-stream {
+    animation: none;
+  }
+}
+

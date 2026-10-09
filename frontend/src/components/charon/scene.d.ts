@@ -1,6 +1,7 @@
 export interface CharonSceneController {
   togglePrivacy(): void;
   setPaused(paused: boolean): void;
+  setScrollProgress(value: number): void;
   destroy(): void;
 }
 

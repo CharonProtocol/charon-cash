@@ -1,8 +1,15 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import type { CharonSceneController } from "./scene.js";
 
 export interface CharonSceneHandle {
   togglePrivacy(): void;
+  setScrollProgress(value: number): void;
 }
 
 interface CharonSceneProps {
@@ -13,18 +20,50 @@ interface CharonSceneProps {
   onActivity: (holding: boolean) => void;
 }
 
-const fallbackNames = ["Alex Morgan", "Maya Chen", "Kai Nakamura", "Olivia Brooks", "Dev Patel", "Ava Thompson"];
+const fallbackNames = [
+  "Alex Morgan",
+  "Maya Chen",
+  "Kai Nakamura",
+  "Olivia Brooks",
+  "Dev Patel",
+  "Ava Thompson",
+];
 
 /** The still grid remains visible while loading, or if WebGL is unavailable. */
 function StillGrid() {
   return (
-    <div className="charon-still-grid" aria-hidden="true">
+    <div
+      className="charon-still-grid"
+      aria-hidden="true"
+    >
       {Array.from({ length: 35 }, (_, index) => (
-        <div className="charon-still-card" key={index}>
+        <div
+          className="charon-still-card"
+          key={index}
+        >
           <span className="charon-still-hash">5F{index + 3}w9X…3kLm</span>
-          <div><i /><span>{fallbackNames[index % 6]}<small>8zB4…pQ7x</small><b>−16.40 SOL</b></span></div>
-          <img src="/solana.svg" alt="" width="44" height="38" />
-          <div><span>{fallbackNames[(index + 1) % 6]}<small>4RX4…9sVp</small><b>+16.40 SOL</b></span><i /></div>
+          <div>
+            <i />
+            <span>
+              {fallbackNames[index % 6]}
+              <small>8zB4…pQ7x</small>
+              <b>−16.40 SOL</b>
+            </span>
+          </div>
+          <img
+            src="/solana.svg"
+            alt=""
+            width="44"
+            height="38"
+          />
+          <div>
+            <span>
+              {fallbackNames[(index + 1) % 6]}
+              <small>4RX4…9sVp</small>
+              <b>+16.40 SOL</b>
+            </span>
+            <i />
+          </div>
         </div>
       ))}
     </div>
@@ -32,22 +71,43 @@ function StillGrid() {
 }
 
 export const CharonScene = forwardRef<CharonSceneHandle, CharonSceneProps>(
-  function CharonScene({ paused, onPrivacyChange, onReadyChange, onIntroComplete, onActivity }, ref) {
+  function CharonScene(
+    { paused, onPrivacyChange, onReadyChange, onIntroComplete, onActivity },
+    ref,
+  ) {
     const host = useRef<HTMLDivElement>(null);
     const controller = useRef<CharonSceneController | null>(null);
-    const callbacks = useRef({ onPrivacyChange, onReadyChange, onIntroComplete, onActivity, paused });
+    const callbacks = useRef({
+      onPrivacyChange,
+      onReadyChange,
+      onIntroComplete,
+      onActivity,
+      paused,
+    });
     const [ready, setReady] = useState(false);
 
     useEffect(() => {
-      callbacks.current = { onPrivacyChange, onReadyChange, onIntroComplete, onActivity, paused };
+      callbacks.current = {
+        onPrivacyChange,
+        onReadyChange,
+        onIntroComplete,
+        onActivity,
+        paused,
+      };
     }, [onPrivacyChange, onReadyChange, onIntroComplete, onActivity, paused]);
     useEffect(() => {
       controller.current?.setPaused(paused);
     }, [paused]);
 
-    useImperativeHandle(ref, () => ({
-      togglePrivacy: () => controller.current?.togglePrivacy(),
-    }), []);
+    useImperativeHandle(
+      ref,
+      () => ({
+        togglePrivacy: () => controller.current?.togglePrivacy(),
+        setScrollProgress: (value: number) =>
+          controller.current?.setScrollProgress?.(value),
+      }),
+      [],
+    );
 
     useEffect(() => {
       const abort = new AbortController();
@@ -64,7 +124,8 @@ export const CharonScene = forwardRef<CharonSceneHandle, CharonSceneProps>(
           if (abort.signal.aborted || !host.current) return;
           const instance = await createCharonScene(host.current, {
             signal: abort.signal,
-            onPrivacyChange: (value) => callbacks.current.onPrivacyChange(value),
+            onPrivacyChange: (value) =>
+              callbacks.current.onPrivacyChange(value),
             onIntroComplete: () => callbacks.current.onIntroComplete(),
             onActivity: (holding) => callbacks.current.onActivity(holding),
             onError: fallback,
@@ -89,9 +150,15 @@ export const CharonScene = forwardRef<CharonSceneHandle, CharonSceneProps>(
     }, []);
 
     return (
-      <div className="charon-scene" aria-hidden="true">
+      <div
+        className="charon-scene"
+        aria-hidden="true"
+      >
         {!ready && <StillGrid />}
-        <div className="charon-scene-canvas" ref={host} />
+        <div
+          className="charon-scene-canvas"
+          ref={host}
+        />
       </div>
     );
   },

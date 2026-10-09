@@ -1,0 +1,380 @@
+.dashboard-page {
+  --dashboard-nav-height: 64px;
+  --dashboard-panel-x: clamp(28px, 6.8vw, 138px);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: #faf7f1;
+  color: #111;
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+}
+
+.dashboard-navbar {
+  display: flex;
+  flex: 0 0 var(--dashboard-nav-height);
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 clamp(22px, 2.7vw, 52px);
+  border: 1px solid #e9e4df;
+}
+
+.dashboard-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: clamp(9px, 1.1vw, 20px);
+  color: #252525;
+  font-family: "Charon Inter", Inter, sans-serif;
+  font-size: 20px;
+  font-weight: 300;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+.dashboard-brand-mark {
+  display: block;
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+}
+
+.dashboard-page .wallet-adapter-button {
+  height: 42px !important;
+  padding: 0 18px !important;
+  border-radius: 10px !important;
+  background: #303030 !important;
+  color: #fff !important;
+  font-family: "IBM Plex Mono", "Courier New", monospace !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.dashboard-navbar .wallet-adapter-button {
+  opacity: 0.8;
+}
+
+.dashboard-stage {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  place-items: center;
+  padding: 0 18px;
+}
+
+.dashboard-panel {
+  display: flex;
+  flex-direction: column;
+  width: 60vw;
+  height: 95%;
+  min-height: 0;
+  padding: clamp(22px, 3.4dvh, 45px) var(--dashboard-panel-x)
+    clamp(22px, 4.7dvh, 62px);
+  border-radius: clamp(18px, 1.35vw, 26px);
+  background: #fff;
+}
+
+.dashboard-operation {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.operation-layout {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.operation-header {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 1;
+}
+
+.operation-title {
+  position: relative;
+  width: fit-content;
+  margin: 0;
+  color: #090909;
+  font-family: "Charon Inter", Inter, sans-serif;
+  font-size: clamp(35px, 4.7dvh, 64px);
+  font-weight: 400;
+  letter-spacing: -0.045em;
+  line-height: 1.06;
+}
+
+.operation-direction {
+  position: absolute;
+  top: 100%;
+  left: 33%;
+  color: #252525;
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+  font-size: clamp(10px, 1.3dvh, 16px);
+  font-weight: 400;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.operation-lantern {
+  position: absolute;
+  z-index: 0;
+  top: clamp(64px, 7.7dvh, 101px);
+  left: -34px;
+  display: flex;
+  width: 68px;
+  height: 42%;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+
+.operation-lantern::before {
+  width: 1px;
+  min-height: 0;
+  flex: 1;
+  background: #313131;
+  content: "";
+}
+
+.operation-lantern img {
+  display: block;
+  width: 68px;
+  height: 92px;
+  object-fit: contain;
+}
+
+.operation-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding-top: clamp(28px, 4.3dvh, 56px);
+}
+
+.operation-flow > h2 {
+  order: -1;
+  margin: 0 0 clamp(5px, 1dvh, 14px);
+  color: #868686;
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+  font-size: clamp(17px, 2.55dvh, 34px) !important;
+  font-weight: 400;
+  line-height: 1.25;
+}
+
+.dashboard-token-selector {
+  gap: clamp(2px, 0.7vw, 14px) !important;
+  padding: clamp(4px, 0.5dvh, 7px) !important;
+  border-radius: 20px !important;
+}
+
+.dashboard-token-selector > span {
+  border-radius: 16px !important;
+}
+
+.dashboard-token-button {
+  gap: clamp(5px, 0.5vw, 10px) !important;
+  padding: clamp(8px, 1.1dvh, 15px) clamp(10px, 1.1vw, 22px) !important;
+  border-radius: 16px !important;
+  font-size: clamp(13px, 1.65dvh, 23px) !important;
+}
+
+.dashboard-token-button svg {
+  width: clamp(22px, 2.6dvh, 35px) !important;
+  height: clamp(22px, 2.6dvh, 35px) !important;
+}
+
+.operation-flow form input#pay-amount {
+  font-size: clamp(41.6px, 7.2dvh, 96px) !important;
+  font-weight: 400;
+  letter-spacing: -0.06em;
+  line-height: 1.1;
+}
+
+.operation-flow form input#pay-recipient {
+  font-size: clamp(15px, 2dvh, 26px) !important;
+}
+
+.operation-flow form .mx-auto:has(> svg) > svg {
+  width: clamp(25px, 3.3dvh, 42px) !important;
+  height: clamp(25px, 3.3dvh, 42px) !important;
+}
+
+.operation-flow form p,
+.operation-flow form span,
+.operation-flow form button:not([type="submit"]) {
+  font-size: clamp(10px, 1.2dvh, 16px);
+}
+
+.operation-flow form button[type="submit"] {
+  width: clamp(38px, 4.5dvh, 60px);
+  height: clamp(38px, 4.5dvh, 60px);
+}
+
+.operation-flow form button[type="submit"] svg {
+  width: 100%;
+  height: 100%;
+}
+
+.operation-content ol[aria-label^="Step"] {
+  margin-bottom: clamp(10px, 1.7dvh, 22px);
+}
+
+.operation-content ol[aria-label^="Step"] li > span:first-child {
+  height: clamp(10px, 2.3dvh, 31px);
+}
+
+.operation-content ol[aria-label^="Step"] li[aria-current="step"] > span:first-child {
+  width: clamp(66px, 7vw, 138px) !important;
+}
+
+.operation-content ol[aria-label^="Step"] li:not([aria-current="step"]) > span:first-child {
+  width: clamp(20px, 2.15vw, 41px) !important;
+}
+
+.dashboard-dock-wrap {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: center;
+  padding-top: clamp(12px, 2dvh, 26px);
+}
+
+.dashboard-operation-dock {
+  width: min(100%, 1180px) !important;
+  padding: clamp(5px, 0.55dvh, 8px) !important;
+  box-shadow: 0 1px 4px #00000016 !important;
+}
+
+.dashboard-operation-dock [role="tablist"] {
+  display: flex;
+  justify-content: space-between;
+  gap: 0;
+}
+
+.dashboard-operation-tab {
+  min-width: 0;
+  min-height: clamp(44px, 5.7dvh, 76px) !important;
+  gap: clamp(4px, 0.5vw, 10px) !important;
+  padding: 0 clamp(6px, 0.7vw, 14px) !important;
+  font-size: clamp(12px, 1.1vw, 22px) !important;
+  font-weight: 400;
+}
+
+.dashboard-operation-tab svg {
+  width: clamp(19px, 2.3dvh, 31px);
+  height: clamp(19px, 2.3dvh, 31px);
+}
+
+.swap-form {
+  padding-bottom: 0;
+}
+
+.swap-content {
+  width: 100%;
+  flex: 1;
+  justify-content: center;
+  gap: clamp(8px, 1.5dvh, 20px);
+}
+
+.swap-amount-label {
+  align-self: stretch;
+  margin: 0;
+  color: #868686;
+  font-size: clamp(17px, 2.55dvh, 34px);
+  font-weight: 400;
+  line-height: 1.25;
+}
+
+.swap-amount-row input {
+  width: clamp(140px, 20vw, 340px);
+  font-size: clamp(35.2px, 5.6dvh, 76.8px);
+}
+
+.swap-amount-row label > span {
+  font-size: clamp(14px, 1.8dvh, 25px);
+}
+
+@media (max-width: 1450px) {
+  .dashboard-operation-tab > span:last-child {
+    display: none;
+  }
+
+  .dashboard-operation-dock {
+    max-width: 480px !important;
+  }
+
+  .dashboard-operation-tab {
+    flex: 1;
+  }
+}
+
+@media (max-width: 650px) {
+  .dashboard-page {
+    --dashboard-panel-x: clamp(20px, 6vw, 35px);
+  }
+
+  .dashboard-navbar {
+    padding: 0 16px;
+  }
+
+  .dashboard-brand {
+    font-size: 20px;
+  }
+
+  .dashboard-brand-mark {
+    width: 47px;
+    height: 47px;
+  }
+
+  .dashboard-page .wallet-adapter-button {
+    max-width: 165px;
+    min-height: 42px;
+    padding: 0 10px !important;
+    font-size: 11px !important;
+  }
+
+  .dashboard-panel {
+    width: calc(100vw - 24px);
+    height: 95%;
+    padding-top: 25px;
+    padding-bottom: 23px;
+  }
+
+  .operation-lantern {
+    left: -23px;
+    width: 46px;
+    height: 32%;
+  }
+
+  .operation-lantern img {
+    width: 46px;
+    height: 63px;
+  }
+
+  .operation-flow > h2 {
+    font-size: clamp(14px, 3vw, 19px) !important;
+  }
+
+  .operation-flow form input#pay-amount {
+    font-size: clamp(35.2px, 8vw, 52px) !important;
+  }
+}
+
+@media (max-height: 650px) {
+  .dashboard-panel {
+    overflow-y: auto;
+  }
+
+  .operation-lantern {
+    height: 32%;
+  }
+
+  .operation-content {
+    padding-top: 23px;
+  }
+}

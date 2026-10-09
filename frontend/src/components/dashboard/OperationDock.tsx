@@ -11,7 +11,7 @@ import type { DashboardOperation } from "./types";
 const ITEMS = [
   { id: "send", label: "Send", icon: ArrowUpRight },
   { id: "transfer", label: "Shielded Transfer", icon: ShieldIcon },
-  { id: "swap", label: "Swap", icon: ArrowLeftRight },
+  { id: "swap", label: "Swap", icon: ArrowLeftRight, disabled: true },
   { id: "payroll", label: "Payroll", icon: DollarSign, disabled: true },
   { id: "withdraw", label: "Withdraw", icon: BanknoteArrowDown },
 ] as const;
@@ -42,7 +42,7 @@ export function OperationDock({
   };
   return (
     <nav
-      className="relative mx-auto w-full max-w-full rounded-full border border-[#dfdcda] bg-linear-to-b from-[#faf9f9] to-white p-1.5 shadow-sm sm:w-fit"
+      className="dashboard-operation-dock relative mx-auto w-full max-w-full rounded-full border border-[#dfdcda] bg-linear-to-b from-[#faf9f9] to-white p-1.5 shadow-sm sm:w-fit"
       aria-label="Payment operations"
     >
       <AnimatePresence>
@@ -108,7 +108,7 @@ export function OperationDock({
                 document.getElementById(`pay-tab-${enabled[next].id}`)?.focus();
               }}
               tabIndex={value === item.id ? 0 : -1}
-              className={`relative isolate flex min-h-10 items-center justify-center gap-2 rounded-full bg-transparent px-3 py-2 text-xs! whitespace-nowrap focus-visible:outline-offset-[-3px] disabled:opacity-30 sm:px-3.5 sm:text-sm! ${value === item.id ? "text-white" : "text-[#111]"}`}
+              className={`dashboard-operation-tab relative isolate flex min-h-10 items-center justify-center gap-2 rounded-full bg-transparent px-3 py-2 text-xs! whitespace-nowrap focus-visible:outline-offset-[-3px] disabled:opacity-30 sm:px-3.5 sm:text-sm! ${value === item.id ? "text-white" : "text-[#111]"}`}
             >
               {value === item.id && (
                 <m.span
