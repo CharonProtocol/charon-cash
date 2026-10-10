@@ -114,7 +114,7 @@ export function EmployeeApp() {
               </span>
               <p className="mt-2 text-sm font-semibold">Enable private receiving</p>
               <p className="mx-auto mt-1 max-w-sm text-xs text-body-ink">
-                One-time setup publishes your stealth receiving keys — approve the signature
+                One-time setup publishes your stealth receiving keys - approve the signature
                 requests. Until then, payouts arrive as normal public SOL transfers.
               </p>
               <Button className="btn-glow mt-3" onClick={enable} disabled={enabling}>
@@ -142,7 +142,7 @@ export function EmployeeApp() {
                 Employee Shielded Note Claims
               </h1>
               <p className="mt-1 max-w-2xl text-sm text-body-ink">
-                ECDH-encrypted salary notes waiting in the shielded pool — scan, select, and redeem
+                ECDH-encrypted salary notes waiting in the shielded pool - scan, select, and redeem
                 gaslessly. Amounts are invisible to everyone but you.
               </p>
             </div>
@@ -173,14 +173,14 @@ export function EmployeeApp() {
           <div data-stagger className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
               label="Claimable private notes"
-              value={noteSolRaw === null ? <span className="text-mute">—</span> : <CountUp to={Number(lamportsToSol(noteSolRaw.toString()))} decimals={4} suffix=" SOL" />}
+              value={noteSolRaw === null ? <span className="text-mute">-</span> : <CountUp to={Number(lamportsToSol(noteSolRaw.toString()))} decimals={4} suffix=" SOL" />}
               dot="ok"
               dotLabel={noteRows.length > 0 ? `${noteRows.length} note${noteRows.length === 1 ? "" : "s"}` : "none yet"}
               sub="shielded state · unspent leaves"
             />
             <StatCard
               label="Wallet balance"
-              value={walletSolRaw === null ? <span className="text-mute">—</span> : <CountUp to={Number(walletSolRaw) / 1e9} decimals={4} suffix=" SOL" />}
+              value={walletSolRaw === null ? <span className="text-mute">-</span> : <CountUp to={Number(walletSolRaw) / 1e9} decimals={4} suffix=" SOL" />}
               dot="idle"
               dotLabel="public"
               sub="spendable now · visible on-chain"
@@ -194,7 +194,7 @@ export function EmployeeApp() {
             />
             <StatCard
               label="ECDH key sync"
-              value={registered ? "100%" : "—"}
+              value={registered ? "100%" : "-"}
               dot={registered ? "ok" : "wait"}
               dotLabel={registered ? "synced" : "pending"}
               sub="recipient keys published · Poseidon depth 32"
@@ -239,7 +239,7 @@ export function EmployeeApp() {
                   <div className="px-5 py-10 text-center">
                     <p className="text-sm font-medium">No private notes yet</p>
                     <p className="mx-auto mt-1 max-w-sm text-xs text-body-ink">
-                      When your employer runs a shielded payroll, your notes appear here — hit
+                      When your employer runs a shielded payroll, your notes appear here - hit
                       “Scan tree” after they confirm the run.
                     </p>
                   </div>
@@ -341,9 +341,9 @@ export function EmployeeApp() {
                     <span className="text-xs text-body-ink">
                       Destination:{" "}
                       <span className="font-mono text-ink">
-                        {publicKey ? shortHash(publicKey.toBase58(), 8, 6) : "—"}
+                        {publicKey ? shortHash(publicKey.toBase58(), 8, 6) : "-"}
                       </span>{" "}
-                      <span className="text-mute">(your connected wallet — a fresh keypair is maximally private)</span>
+                      <span className="text-mute">(your connected wallet - a fresh keypair is maximally private)</span>
                     </span>
                     <span className="flex items-center gap-2 text-xs">
                       <span className={`size-1.5 rounded-full ${bps !== null ? "bg-ok" : "bg-critical"}`} />
@@ -357,7 +357,7 @@ export function EmployeeApp() {
                     </label>
                     <label className="flex items-center gap-2">
                       <input type="checkbox" checked readOnly className="size-3 accent-[var(--gold)]" />
-                      Withdrawal proof is generated inside this browser — zero secrets leave your device
+                      Withdrawal proof is generated inside this browser - zero secrets leave your device
                     </label>
                   </div>
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -366,7 +366,7 @@ export function EmployeeApp() {
                         Redeem selected
                       </div>
                       <div className="stat-number font-mono text-lg font-semibold tabular-nums">
-                        {selectedRaw > 0n ? `${Number(lamportsToSol(selectedNet.toString())).toFixed(6)} SOL` : "—"}
+                        {selectedRaw > 0n ? `${Number(lamportsToSol(selectedNet.toString())).toFixed(6)} SOL` : "-"}
                         {selectedRaw > 0n && (
                           <span className="ml-2 text-[11px] font-normal text-body-ink">
                             net of {Number(lamportsToSol(selectedFee.toString())).toFixed(6)} fee
@@ -436,7 +436,7 @@ export function EmployeeApp() {
                   <div className="flex items-center justify-between gap-2 rounded-xl border border-line bg-panel px-3 py-2">
                     <span className="font-mono text-[10px] uppercase tracking-wider text-mute">Master pubkey</span>
                     <span className="flex items-center gap-1.5 font-mono text-xs">
-                      {publicKey ? shortHash(publicKey.toBase58(), 6, 4) : "—"}
+                      {publicKey ? shortHash(publicKey.toBase58(), 6, 4) : "-"}
                       {publicKey && (
                         <button
                           type="button"
@@ -458,7 +458,7 @@ export function EmployeeApp() {
                     </span>
                   </div>
                   <p className="text-[11px] leading-relaxed text-body-ink">
-                    Receiving keys are derived deterministically from your wallet seed — same
+                    Receiving keys are derived deterministically from your wallet seed - same
                     wallet, same stealth identity, no rotation ceremony needed.
                   </p>
                 </div>
@@ -487,7 +487,7 @@ export function EmployeeApp() {
                   <div className="rounded-xl border border-line bg-panel p-3">
                     <p className="text-[11px] leading-relaxed text-body-ink">
                       <span className="font-medium text-ink">Zero L1 trace:</span> your claim is
-                      authorized through the relay signature pool — the chain sees a relayer
+                      authorized through the relay signature pool - the chain sees a relayer
                       broadcast, never you.
                     </p>
                   </div>
@@ -505,7 +505,7 @@ export function EmployeeApp() {
                 <div className="px-5 py-3">
                   {history.length === 0 ? (
                     <p className="py-4 text-center text-xs text-body-ink">
-                      No claims yet this session — receipts land here as you redeem.
+                      No claims yet this session - receipts land here as you redeem.
                     </p>
                   ) : (
                     <div className="space-y-1.5">

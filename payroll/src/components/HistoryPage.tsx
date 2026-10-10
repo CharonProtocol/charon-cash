@@ -113,7 +113,7 @@ export function HistoryPage({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
           <div>
             <p className="h-display text-lg">No payments yet</p>
             <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
-              Completed payroll runs land here — who got paid, when, and the on-chain proof.
+              Completed payroll runs land here - who got paid, when, and the on-chain proof.
             </p>
           </div>
           <SyncLine />
@@ -143,7 +143,7 @@ export function HistoryPage({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
             <div className="flex items-center gap-1.5 pt-1 text-sm font-medium">
               <span className="size-2 rounded-full bg-emerald-500" /> shielded pool
             </div>
-            {/* ledger sync state — relayer DB is the cloud copy, localStorage the cache */}
+            {/* ledger sync state - relayer DB is the cloud copy, localStorage the cache */}
             <SyncLine />
           </div>
           <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={clearLedger}>
@@ -230,7 +230,7 @@ export function HistoryPage({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
                       return (
                         <tr key={`${e.address}-${e.txSignature ?? "pending"}`} className="bg-card transition-colors hover:bg-secondary/40">
                           <td className="px-3 py-2 font-medium">
-                            {e.memo ?? "—"}
+                            {e.memo ?? "-"}
                             {st === "failed" && e.error && (
                               <span className="mt-0.5 block max-w-[220px] truncate font-mono text-[10px] text-destructive" title={e.error}>
                                 {e.error}
@@ -239,7 +239,7 @@ export function HistoryPage({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
                           </td>
                           <td className="px-3 py-2 font-mono text-muted-foreground">{shortHash(e.address, 5, 4)}</td>
                           <td className="px-3 py-2 font-mono">{e.amountHuman}</td>
-                          <td className="hidden px-3 py-2 font-mono text-muted-foreground sm:table-cell">{took ?? "—"}</td>
+                          <td className="hidden px-3 py-2 font-mono text-muted-foreground sm:table-cell">{took ?? "-"}</td>
                           <td className="px-3 py-2"><StatusChip status={st} /></td>
                           <td className="px-3 py-2">
                             {e.txSignature ? (
@@ -261,7 +261,7 @@ export function HistoryPage({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
                               </div>
                             ) : (
                               <span className={st === "failed" ? "text-destructive" : "text-muted-foreground"}>
-                                {st === "failed" ? "no tx — see error" : "…"}
+                                {st === "failed" ? "no tx - see error" : "…"}
                               </span>
                             )}
                           </td>
@@ -274,7 +274,7 @@ export function HistoryPage({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
               {selected.mode === "shielded" && (
                 <p className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
                   <Loader2 className="size-3" />
-                  Amounts here are from your receipts — the chain only ever saw commitments.
+                  Amounts here are from your receipts - the chain only ever saw commitments.
                 </p>
               )}
             </CardContent>

@@ -11,7 +11,7 @@ import {
 function friendly(e: unknown): string {
   const msg = (e as Error)?.message ?? String(e)
   if (msg === "Failed to fetch" || msg.includes("NetworkError") || msg.includes("network")) {
-    return "Couldn't reach the relayer or RPC — check the backend URL in Settings and your connection."
+    return "Couldn't reach the relayer or RPC - check the backend URL in Settings and your connection."
   }
   return msg
 }

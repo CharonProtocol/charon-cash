@@ -67,7 +67,7 @@ export function UploadCard({
             </CardTitle>
             <CardDescription className="mt-0.5 text-xs">
               CSV with header <code>address,amount,memo</code> or JSON{" "}
-              <code>{"{ payments: [...] }"}</code> — amounts are what each employee receives.
+              <code>{"{ payments: [...] }"}</code> - amounts are what each employee receives.
             </CardDescription>
           </div>
         </div>
@@ -151,7 +151,7 @@ export function UploadCard({
         )}
         {errors.length > 0 && (
           <Alert variant="destructive">
-            <AlertTitle>Batch rejected — fix and re-upload</AlertTitle>
+            <AlertTitle>Batch rejected - fix and re-upload</AlertTitle>
             <AlertDescription>
               <ul className="list-disc pl-4">
                 {errors.slice(0, 12).map((err, i) => (

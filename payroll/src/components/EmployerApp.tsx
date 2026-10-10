@@ -101,10 +101,6 @@ export function EmployerApp({ page }: { page: Page }) {
     setCanDispatch(p.canRun)
   }, [])
 
-  // Display-only run counter: increments with locally stored receipts so the
-  // console header keeps telling runs apart.
-  const [runNo] = useState(() => 1042 + listRuns().length + 1)
-
   // Long quiet phases (lane fan-out, indexer catch-up, post-error
   // adjudication) must never look like a hang: surface the engine's own
   // status sentence as a toast whenever it changes, and warn when a live run
@@ -133,7 +129,7 @@ export function EmployerApp({ page }: { page: Page }) {
             // This is only the idle pool's warm-up shape — each run re-plans
             // its own workers when lanes are known (MT for ≤2 lanes, ST for
             // 3+), so don't read this as the run's config.
-            `Browser prover warmed up (idle pool: ${info.workers} ${info.mode === "mt" ? "MT" : "ST"} worker${info.workers === 1 ? "" : "s"}${info.mode === "mt" ? ` × ${info.threads} threads` : ""}) — runs auto-pick their layout`,
+            `Browser prover warmed up (idle pool: ${info.workers} ${info.mode === "mt" ? "MT" : "ST"} worker${info.workers === 1 ? "" : "s"}${info.mode === "mt" ? ` × ${info.threads} threads` : ""}) - runs auto-pick their layout`,
             { duration: 6000 },
           )
       })
@@ -147,7 +143,7 @@ export function EmployerApp({ page }: { page: Page }) {
     const t = setInterval(() => {
       if (Date.now() - lastActivity.current <= 60_000) return
       toast.warning(
-        `Still working — nothing new for over a minute.${status ? ` Last step: ${status}` : ""}`,
+        `Still working - nothing new for over a minute.${status ? ` Last step: ${status}` : ""}`,
         { duration: 10000 },
       )
       lastActivity.current = Date.now()
@@ -167,7 +163,7 @@ export function EmployerApp({ page }: { page: Page }) {
       lastRun.current = { asset, mode, fileHash, lanes }
       setReceipt(null)
       setSnapshot({ phase: "funding", rows: entries.map((e) => ({ ...e, status: "queued" as const, attempts: 0 })), startedAt: Date.now() })
-      toast.info(`Run started — ${lanes} lane${lanes === 1 ? "" : "s"}, ${entries.length} payout${entries.length === 1 ? "" : "s"}`)
+      toast.info(`Run started - ${lanes} lane${lanes === 1 ? "" : "s"}, ${entries.length} payout${entries.length === 1 ? "" : "s"}`)
       const engine = createEngine(client)
       engineRef.current = engine
       try {
@@ -236,7 +232,7 @@ export function EmployerApp({ page }: { page: Page }) {
         }).catch(() => {})
         await refreshVault()
         setReceipt(r)
-        if (r.summary.failed > 0) toast.warning(`${r.summary.failed} payout(s) failed — resume available`)
+        if (r.summary.failed > 0) toast.warning(`${r.summary.failed} payout(s) failed - resume available`)
         else toast.success("Payroll run complete")
       } catch (e) {
         const err = e as Error
@@ -317,7 +313,7 @@ export function EmployerApp({ page }: { page: Page }) {
       {error && <p className="mb-3 text-sm text-destructive">{error}</p>}
       {storageWarn && (
         <p className="mb-3 text-sm text-muted-foreground">
-          Browser storage is unavailable — runs will work but receipts won't persist.
+          Browser storage is unavailable - runs will work but receipts won't persist.
         </p>
       )}
 
@@ -325,7 +321,6 @@ export function EmployerApp({ page }: { page: Page }) {
         <OverviewPage
           vaultSolRaw={vaultSolRaw}
           bps={bps}
-          runNo={runNo}
           liveProgress={liveProgress}
           parsedCount={rows}
           unlocked={unlocked}
@@ -339,11 +334,10 @@ export function EmployerApp({ page }: { page: Page }) {
           <PageHeader
             kicker="Ledger & Receipts"
             title="Past payments"
-            sub="Every stored run with its receipt — durations, deposits, merges, and failed rows you can retry."
+            sub="Every stored run with its receipt - durations, deposits, merges, and failed rows you can retry."
             right={
               <WalletBar
                 vaultSolRaw={vaultSolRaw}
-                relayerOk={bps !== null}
                 unlocked={unlocked}
                 unlockBusy={unlockBusy}
                 onUnlock={unlockNow}
@@ -366,7 +360,6 @@ export function EmployerApp({ page }: { page: Page }) {
             right={
               <WalletBar
                 vaultSolRaw={vaultSolRaw}
-                relayerOk={bps !== null}
                 unlocked={unlocked}
                 unlockBusy={unlockBusy}
                 onUnlock={unlockNow}
@@ -387,16 +380,14 @@ export function EmployerApp({ page }: { page: Page }) {
           {/* ── console header ─────────────────────────────────────────── */}
           <div>
             <h1 className="h-display text-3xl tracking-[-0.02em] sm:text-4xl">
-              Run #{runNo} — <Scramble text="Batch Dispatch" />
+              <Scramble text="Batch Dispatch" />
             </h1>
             <p className="mt-1 max-w-2xl text-sm text-body-ink">
-              One signature funds the run — every payout leaves with its own Groth16 proof,
-              built in this browser, and lands gasless through the relayer.
+              Drop in a CSV, check the plan and fees, then sign once to dispatch the whole batch.
             </p>
             <div className="mt-4 mb-2 flex flex-wrap items-center justify-end gap-2">
               <WalletBar
                 vaultSolRaw={vaultSolRaw}
-                relayerOk={bps !== null}
                 unlocked={unlocked}
                 unlockBusy={unlockBusy}
                 onUnlock={unlockNow}
@@ -419,7 +410,7 @@ export function EmployerApp({ page }: { page: Page }) {
               label="Relayer Health"
               value={bps === null ? <span className="text-mute">…</span> : bps ? <span>online</span> : <span className="text-critical">down</span>}
               dot={bps === null ? "wait" : bps ? "ok" : "bad"}
-              dotLabel={bps === null ? "checking" : bps ? "18ms latency" : "unreachable"}
+              dotLabel={bps === null ? "checking" : bps ? "reachable" : "unreachable"}
               sub="broadcasts signed txs · holds no keys"
             />
             <TelemetryCard
@@ -481,7 +472,7 @@ export function EmployerApp({ page }: { page: Page }) {
               snapshot={snapshot}
               receipt={receipt}
               onCancel={() => {
-                toast.info("Cancelling — in-flight payouts finish, no new ones start…")
+                toast.info("Cancelling - in-flight payouts finish, no new ones start…")
                 setSnapshot((s) => (s && s.phase !== "settled" ? { ...s, phase: "aborted" } : s))
                 engineRef.current?.cancel()
               }}
@@ -575,7 +566,6 @@ function TelemetryCard({
 function OverviewPage({
   vaultSolRaw,
   bps,
-  runNo,
   liveProgress,
   parsedCount,
   unlocked,
@@ -586,7 +576,6 @@ function OverviewPage({
 }: {
   vaultSolRaw: bigint | null
   bps: number | null
-  runNo: number
   liveProgress: string | null
   parsedCount: number
   unlocked: boolean
@@ -604,11 +593,10 @@ function OverviewPage({
       <PageHeader
         kicker="Employer Console"
         title="Overview"
-        sub={`Next run #${runNo} — vault health, quick actions, and the last batches you dispatched.`}
+        sub="Vault health, quick actions, and the last batches you dispatched."
         right={
           <WalletBar
             vaultSolRaw={vaultSolRaw}
-            relayerOk={bps !== null}
             unlocked={unlocked}
             unlockBusy={unlockBusy}
             onUnlock={onUnlock}
@@ -631,7 +619,7 @@ function OverviewPage({
           label="Relayer Health"
           value={bps === null ? <span className="text-mute">…</span> : bps ? <span>online</span> : <span className="text-critical">down</span>}
           dot={bps === null ? "wait" : bps ? "ok" : "bad"}
-          dotLabel={bps === null ? "checking" : bps ? "18ms latency" : "unreachable"}
+          dotLabel={bps === null ? "checking" : bps ? "reachable" : "unreachable"}
           sub="broadcasts signed txs · holds no keys"
         />
         <TelemetryCard
@@ -711,7 +699,7 @@ function OverviewPage({
           <div className="px-6 py-8 text-center">
             <p className="text-sm font-medium">No runs yet</p>
             <p className="mt-1 text-xs text-body-ink">
-              Dispatch your first batch from Run Payroll — receipts land here automatically.
+              Dispatch your first batch from Run Payroll - receipts land here automatically.
             </p>
           </div>
         ) : (
@@ -777,7 +765,7 @@ function RecipientLedger({
       <div className="card-lift mt-5 rounded-2xl border border-dashed border-line bg-card/50 px-6 py-8 text-center">
         <p className="text-sm font-medium">Parsed recipient ledger</p>
         <p className="mt-1 text-xs text-body-ink">
-          Recipients from your batch appear here — searchable, with per-row amounts and key status.
+          Recipients from your batch appear here - searchable, with per-row amounts and key status.
         </p>
       </div>
     )
@@ -792,7 +780,7 @@ function RecipientLedger({
           </span>
           <div>
             <div className="h-display text-base font-semibold tracking-tight">Parsed Recipient Ledger</div>
-            <div className="text-[11px] text-mute">amounts go out as stealth notes — one per row</div>
+            <div className="text-[11px] text-mute">amounts go out as stealth notes - one per row</div>
           </div>
         </div>
         <div className="relative">
@@ -846,7 +834,7 @@ function RecipientLedger({
                     </span>
                   </td>
                   <td className="max-w-[180px] truncate px-3 py-2.5 text-xs text-body-ink">
-                    {e.memo || "—"}
+                    {e.memo || "-"}
                   </td>
                   <td className="px-3 py-2.5">
                     <span
@@ -976,11 +964,10 @@ function SettlementBar({
         </div>
       </div>
         <div className="flex flex-1 flex-wrap items-center gap-x-6 gap-y-2">
-          <BarStat label="Total distributed" value={totals ? `${lamportsToSol(totals.totalNet.toString()).toFixed(4)} SOL` : "—"} />
-          <BarStat label="Relayer gas" value={totals ? `${lamportsToSol(totals.totalFees.toString()).toFixed(4)} SOL` : "—"} sub="subsidized" />
+          <BarStat label="Total distributed" value={totals ? `${lamportsToSol(totals.totalNet.toString()).toFixed(4)} SOL` : "-"} />
           <BarStat
             label="Total required"
-            value={totals ? `${lamportsToSol(required.toString()).toFixed(4)} SOL` : "—"}
+            value={totals ? `${lamportsToSol(required.toString()).toFixed(4)} SOL` : "-"}
             accent
             sub={
               !totals

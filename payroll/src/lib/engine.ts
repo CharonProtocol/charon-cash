@@ -464,7 +464,7 @@ export class PayrollEngine {
     // only (the same bar as the lane fan-out): for a short run a gasless
     // merge beats another wallet prompt.
     if (this.deps.listNotes && plan.rows.length >= SPLIT_MIN_ROWS) {
-      this.setStatus("Paying this run from one fresh deposit — leftover vault notes stay spendable…")
+      this.setStatus("Paying this run from one fresh deposit - leftover vault notes stay spendable…")
       plan = planRun(req.entries, decimals, req.bps, 0n, planOpts)
     }
 
@@ -534,7 +534,7 @@ export class PayrollEngine {
       } catch (e) {
         for (const r of rows) {
           r.status = "failed"
-          r.error = `aborted: funding failed — ${(e as Error).message}`
+          r.error = `aborted: funding failed - ${(e as Error).message}`
         }
         return this.settle(req, plan.totalNet, rows, funding, "aborted")
       }
@@ -755,7 +755,7 @@ export class PayrollEngine {
           const amount = Number(owed + plan.margin + 120_000n)
           if (amount <= 0 || !Number.isSafeInteger(amount)) return false
           this.setStatus(
-            `Vault ran dry — signing one top-up deposit of ${(amount / 1e9).toFixed(4)} SOL to finish the run…`,
+            `Vault ran dry - signing one top-up deposit of ${(amount / 1e9).toFixed(4)} SOL to finish the run…`,
           )
           const dep =
             req.asset.kind === "sol"

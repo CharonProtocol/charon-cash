@@ -64,7 +64,7 @@ function finalize(entries: PayrollEntry[], errors: string[]): ParseResult {
   entries.forEach((e, i) => {
     const prior = seen.get(e.address)
     if (prior !== undefined)
-      errors.push(`row ${i + 1}: duplicate address (already at row ${prior}) — merge the rows and re-upload`)
+      errors.push(`row ${i + 1}: duplicate address (already at row ${prior}) - merge the rows and re-upload`)
     else seen.set(e.address, i + 1)
   })
   return errors.length ? { ok: false, errors } : { ok: true, entries }

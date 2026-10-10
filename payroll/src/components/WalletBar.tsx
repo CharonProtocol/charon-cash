@@ -32,7 +32,6 @@ function StatusChip({
 
 export function WalletBar({
   vaultSolRaw,
-  relayerOk,
   unlocked,
   unlockBusy,
   onUnlock,
@@ -40,7 +39,6 @@ export function WalletBar({
   onFunded,
 }: {
   vaultSolRaw: bigint | null
-  relayerOk: boolean | null
   unlocked: boolean
   unlockBusy: boolean
   onUnlock: () => void
@@ -69,11 +67,6 @@ export function WalletBar({
   return (
     <div className="flex w-full flex-wrap items-center justify-center gap-1.5 gap-y-2 sm:justify-between sm:gap-2">
       <div className="flex items-center gap-1.5 sm:gap-2">
-        <StatusChip ok={relayerOk === true} pending={relayerOk === null}>
-          <span data-tip="Backend relayer reachable — proofs and submits flow through it">
-            {relayerOk === null ? "relayer…" : relayerOk ? "relayer up" : "relayer down"}
-          </span>
-        </StatusChip>
         {vaultSolRaw !== null && (
           <StatusChip>
             <span data-tip="Shielded vault balance held by the pool">

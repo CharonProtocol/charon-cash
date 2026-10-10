@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Code2, Loader2, ShieldCheck } from "lucide-react"
+import { Check, ChevronDown, Code2, Loader2 } from "lucide-react"
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react"
 
@@ -37,12 +37,7 @@ const bento = [
     unit: "",
     label: "Signatures",
     cls: "text-ok",
-    body: (
-      <>
-        Downstream per payout — <span className="font-semibold text-gold">0 once the vault is funded</span>.
-        Direct shielded leaf insertion into the Merkle tree.
-      </>
-    ),
+    body: <>Direct shielded leaf insertion into the Merkle tree.</>,
   },
   {
     icon: "memory",
@@ -57,8 +52,8 @@ const bento = [
   {
     icon: "speed",
     iconCls: "text-gold",
-    v: 134035,
-    unit: "",
+    v: 135,
+    unit: "k",
     label: "Compute Units",
     cls: "text-foreground",
     body: <>Per packed payout transact. Substantially below Solana's 1.4M ceiling.</>,
@@ -70,7 +65,7 @@ const bento = [
     unit: " B",
     label: "Payload Size",
     cls: "text-foreground",
-    body: <>Compact raw payload per settlement — comfortably under the 1,232 B wire cap.</>,
+    body: <>Compact raw payload per settlement, comfortably under the 1,232 B wire cap.</>,
   },
 ]
 
@@ -85,7 +80,7 @@ const steps = [
     n: "2",
     icon: "account_tree",
     title: "Split",
-    body: "Funds are shielded into pool wallets as merkle-tree commitments — no addresses, no amounts, just hashes.",
+    body: "Funds are shielded into pool wallets as merkle-tree commitments - no addresses, no amounts, just hashes.",
   },
   {
     n: "3",
@@ -97,7 +92,7 @@ const steps = [
     n: "4",
     icon: "task_alt",
     title: "Claim",
-    body: "Employees hold private notes in their wallet and claim to plain SOL whenever they want — gasless.",
+    body: "Employees hold private notes in their wallet and claim to plain SOL whenever they want - gasless.",
   },
 ]
 
@@ -121,7 +116,7 @@ const runtimeBars = [
 
 const pipeline = [
   { n: "zk proof", v: "0.8s", d: "one Groth16 proof, built on the employee's device" },
-  { n: "relayer", v: "18ms", d: "broadcasts the signed transaction - holds no keys, builds no proofs" },
+  { n: "relayer", v: "no keys", d: "broadcasts your signed transaction - builds nothing, holds nothing" },
   { n: "confirm", v: "~400ms", d: "one Solana slot from broadcast to confirmation" },
 ]
 
@@ -236,11 +231,13 @@ const publicRows = [
   { who: "Design Lead (Contractor)", amt: "0.90 SOL" },
 ]
 
+// mock run rows keyed to the animated progress bar: payAt = paid-count tick
+// where the row is mid-proof (proving); past it the row flips to sent
 const runRows = [
-  { who: "Alex R.", dept: "Engineering", init: "AR", amt: "******", status: "sent" },
-  { who: "Mia T.", dept: "Design", init: "MT", amt: "******", status: "sent" },
-  { who: "Dan W.", dept: "Operations", init: "DW", amt: "1.85 SOL", status: "proving" },
-  { who: "Sara K.", dept: "Marketing", init: "SK", amt: "******", status: "queued" },
+  { who: "Alex R.", dept: "Engineering", init: "AR", amt: "0.85 SOL", payAt: 3 },
+  { who: "Mia T.", dept: "Design", init: "MT", amt: "1.10 SOL", payAt: 8 },
+  { who: "Dan W.", dept: "Operations", init: "DW", amt: "1.85 SOL", payAt: 13 },
+  { who: "Sara K.", dept: "Marketing", init: "SK", amt: "0.60 SOL", payAt: 18 },
 ]
 
 const noteRowsMock = [
@@ -311,6 +308,21 @@ function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void 
     return () => clearTimeout(t)
   }, [])
 
+  // the mock payroll run: pays 0 -> 20 people (~8s), holds complete for a
+  // beat, then restarts. Row statuses and amounts ride the same counter.
+  // ?static seeds 13/20 so screenshots catch a mid-run frame.
+  const [runTick, setRunTick] = useState(
+    () =>
+      typeof document === "undefined" || !document.documentElement.classList.contains("static")
+        ? 0
+        : 13,
+  )
+  useEffect(() => {
+    const t = setInterval(() => setRunTick((p) => (p >= 26 ? 0 : p + 1)), 420)
+    return () => clearInterval(t)
+  }, [])
+  const runPaid = Math.min(runTick, 20)
+
   // reveal-on-scroll for every section
   useEffect(() => {
     const els = Array.from(document.querySelectorAll("[data-reveal]"))
@@ -353,19 +365,12 @@ function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void 
             <button onClick={() => scrollTo("overview")} className="flex cursor-pointer items-center gap-2 outline-none">
               <img src="/charon-mark.png" alt="Charon Pay" className="size-7 rounded-full object-cover" />
               <span className="whitespace-nowrap text-[1.05rem] font-semibold tracking-tight">Charon Pay</span>
-              <span className="hidden rounded bg-panel-2 px-1.5 py-0.5 font-mono text-[11px] text-body-ink sm:inline-block">
-                <Scramble text="ZK-V2.4" duration={620} />
-              </span>
             </button>
           </div>
           <div className="flex items-center gap-2">
             <div className="hidden items-center gap-1.5 rounded bg-panel-2 px-2 py-1 md:flex">
               <span className="size-2 animate-pulse rounded-full bg-ok" />
               <span className="font-mono text-[11px] text-body-ink">Solana Devnet</span>
-            </div>
-            <div className="hidden items-center gap-1.5 rounded bg-panel-2 px-2 py-1 lg:flex">
-              <Ms name="bolt" className="text-sm text-ok" />
-              <span className="font-mono text-[11px] text-body-ink">Relayer: 18ms</span>
             </div>
             <ThemeToggle />
             <Button variant="ghost" size="sm" onClick={() => onRole("employee")} className="hidden sm:inline-flex">
@@ -384,20 +389,14 @@ function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void 
 
       <main className="pt-16">
         {/* ================= HERO ================= */}
-        <section id="overview" className="relative flex scroll-mt-20 flex-col items-center px-4 pb-16 pt-10 text-center sm:pt-14 md:pb-24">
+        <section id="overview" className="relative flex scroll-mt-20 flex-col items-center px-4 pb-16 pt-16 text-center sm:pt-24 md:pb-24">
           <h1 className="anim anim-1 mt-6 max-w-4xl text-[2rem] font-semibold leading-[1.15] tracking-[-0.03em] sm:text-[2.5rem] sm:leading-[1.2]">
             <span className="word-rise">{rise("Pay your whole team.", 0.05)}</span>{" "}
-            <span className="word-rise font-normal text-body-ink">{rise("In private.", 0.35)}</span>
+            <span className="word-rise font-normal gold-lit-text">{rise("In private.", 0.35)}</span>
           </h1>
-          <div className="anim anim-2 mt-1">
-            <span className="gold-text text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
-              Move money. Leave no trace.
-            </span>
-          </div>
 
           <p className="anim anim-3 mt-4 max-w-2xl text-pretty text-base leading-relaxed text-body-ink">
-            Charon Pay routes batch payroll through confidential ZK-commitments on Solana — hiding
-            recipient salaries and treasury outlays from public explorers.
+            Private batch payroll on Solana: salaries and treasury hidden from explorers.
           </p>
 
           <div className="anim anim-4 mt-8 flex flex-wrap items-center justify-center gap-3">
@@ -423,9 +422,15 @@ function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void 
 
           {/* hero visual: the ferryman over the live run panel. The lantern
               starts lit (amber glow) on every fresh load, then dims after 3s
-              and stays off until the next refresh — ?static renders it off. */}
+              and stays off until the next refresh - ?static renders it off. */}
           <div id="demo-preview" className="anim anim-5 relative mt-10 flex w-full max-w-4xl flex-col items-center">
-            <div className="relative z-20 -mb-4 size-40 transition-transform duration-700 hover:scale-105 sm:-mb-14 md:size-48">
+            <button
+              type="button"
+              aria-pressed={lanternLit}
+              title={lanternLit ? "Go shielded" : "Relight the lantern"}
+              onClick={() => setLanternLit((l) => !l)}
+              className="relative z-20 -mb-4 size-40 cursor-pointer transition-transform duration-700 hover:scale-105 sm:-mb-14 md:size-48"
+            >
               <div
                 className={`absolute inset-0 rounded-full bg-[var(--gold-2)] blur-2xl transition-opacity duration-1000 ${
                   lanternLit ? "animate-pulse opacity-40" : "opacity-15"
@@ -448,7 +453,7 @@ function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void 
                     : "pointer-events-none opacity-0"
                 }`}
               />
-            </div>
+            </button>
 
             <Tilt className="w-full">
               <div className="relative z-10 w-full rounded-xl border border-line bg-card p-4 text-left shadow-[0_10px_35px_rgba(21,19,15,0.06)] transition-all duration-300 hover:shadow-[0_16px_45px_rgba(21,19,15,0.1)] sm:p-6">
@@ -594,10 +599,6 @@ function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void 
                 Zero-Knowledge at Solana Speed
               </h2>
             </div>
-            <p className="max-w-md text-sm leading-relaxed text-body-ink">
-              Engineered for rapid settlement without exceeding block limits. Every number measured
-              on logged 100-employee runs — never projected.
-            </p>
           </div>
           <div data-stagger className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-5">
             {bento.map((m) => (
@@ -657,10 +658,6 @@ function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void 
             <h2 className="mt-1 text-[1.6rem] font-semibold tracking-[-0.025em] sm:text-[2rem]">
               Transparent Exploitation vs. Cryptographic Shielding
             </h2>
-            <p className="mt-2 text-sm leading-relaxed text-body-ink">
-              See how conventional multi-send transactions expose your company's entire internal
-              compensation chart to competitors and data-brokers.
-            </p>
           </div>
           <div data-stagger className="mt-4 grid grid-cols-1 gap-6 lg:grid-cols-2">
             {/* transparent side */}
@@ -832,8 +829,7 @@ function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void 
               The whole run, from one screen
             </h2>
             <p className="text-sm leading-relaxed text-body-ink">
-              Sign in with your treasury wallet, drop in a CSV, and review the exact plan and fees
-              before anything is signed. Then watch every salary prove, relay, and confirm — live.
+              Connect your wallet, drop in a CSV, review the plan, then sign once.
             </p>
             <ul className="mt-4 space-y-2 text-sm text-body-ink">
               {[
@@ -871,26 +867,33 @@ function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void 
               <div>
                 <div className="mb-1.5 flex items-center justify-between text-xs text-body-ink">
                   <span>paying 20 people</span>
-                  <span className="font-mono">13 / 20</span>
+                  <span className="font-mono">{runPaid} / 20</span>
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-panel-2">
-                  <div className="progress-glow run-fill-live h-full w-[65%]" />
+                  <div
+                    className="progress-glow h-full transition-[width] duration-300 ease-linear"
+                    style={{ width: `${(runPaid / 20) * 100}%` }}
+                  />
                 </div>
               </div>
               <div className="space-y-2">
-                {runRows.map((r) => (
-                  <div key={r.who} className="flex items-center gap-3 rounded-lg border border-line bg-panel px-3 py-2 transition-colors hover:border-[color-mix(in_srgb,var(--gold-2)_35%,transparent)]">
-                    <span className="flex size-7 flex-none items-center justify-center rounded-full bg-panel-2 font-mono text-[11px] font-semibold text-body-ink">
-                      {r.init}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-xs font-medium">{r.who}</span>
-                      <span className="hidden text-[11px] text-body-ink sm:block">{r.dept}</span>
-                    </span>
-                    <span className="font-mono text-xs">{r.amt}</span>
-                    <RunStatusChip status={r.status} />
-                  </div>
-                ))}
+                {runRows.map((r) => {
+                  const status =
+                    runPaid > r.payAt ? "sent" : runPaid === r.payAt ? "proving" : "queued"
+                  return (
+                    <div key={r.who} className="flex items-center gap-3 rounded-lg border border-line bg-panel px-3 py-2 transition-colors hover:border-[color-mix(in_srgb,var(--gold-2)_35%,transparent)]">
+                      <span className="flex size-7 flex-none items-center justify-center rounded-full bg-panel-2 font-mono text-[11px] font-semibold text-body-ink">
+                        {r.init}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs font-medium">{r.who}</span>
+                        <span className="hidden text-[11px] text-body-ink sm:block">{r.dept}</span>
+                      </span>
+                      <span className="font-mono text-xs">{status === "proving" ? r.amt : "******"}</span>
+                      <RunStatusChip status={status} />
+                    </div>
+                  )
+                })}
               </div>
               <div className="flex items-center justify-between border-t pt-3 text-xs text-body-ink">
                 <span>total disbursed</span>
@@ -944,13 +947,12 @@ function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void 
               Get paid without publishing it
             </h2>
             <p className="text-sm leading-relaxed text-body-ink">
-              Your regular wallet is all you need. A one-time toggle publishes your receiving keys,
-              and every payout after that arrives as a private note that only you can read.
+              Your regular wallet is all you need. Payouts arrive as private notes.
             </p>
             <ul className="mt-4 space-y-2 text-sm text-body-ink">
               {[
                 "One-time enable - two signatures, then nothing to do",
-                "See every payment that's yours - amounts hidden from everyone else",
+                "See every payment that's yours, amounts hidden from others",
                 "Claim notes to plain SOL whenever you like, gasless",
               ].map((li) => (
                 <li key={li} className="flex items-start gap-2">
@@ -967,6 +969,8 @@ function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void 
         </section>
 
         {/* ================= DEVELOPERS / SDK ================= */}
+        {/* hidden for now: the SDK is not publicly offered yet */}
+        {false && (
         <section id="developers" data-reveal className="mx-auto grid w-full scroll-mt-20 max-w-[1150px] items-center gap-8 px-4 py-12 sm:px-8 lg:grid-cols-2">
           <div>
             <SectionLabel>For Developers</SectionLabel>
@@ -1002,6 +1006,7 @@ function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void 
             <CodeBlock code={SDK_SNIPPET} />
           </div>
         </section>
+        )}
 
         {/* ================= FAQ ================= */}
         <section id="faq" data-reveal className="mx-auto w-full max-w-3xl scroll-mt-20 px-4 py-12 sm:px-8">
@@ -1025,35 +1030,14 @@ function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void 
           </div>
         </section>
 
-        {/* ================= WHAT THE CHAIN NEVER LEARNS ================= */}
-        <section data-reveal className="mx-auto w-full max-w-[1150px] px-4 py-8 sm:px-8">
-          <div className="specular flex flex-col items-center gap-4 rounded-xl border border-gold-line bg-gold-soft p-6 text-center sm:flex-row sm:text-left">
-            <ShieldCheck className="size-8 flex-none text-gold" />
-            <div>
-              <p className="font-semibold tracking-tight">What the chain never learns</p>
-              <p className="mt-1 text-sm leading-relaxed text-body-ink">
-                Which deposit funded which salary · pool balances · how much any pool wallet has
-                left · who holds unspent notes. Deposits and exits are public by design — the link
-                between them is what cryptography takes away.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* ================= CTA BANNER ================= */}
-        <section data-reveal className="mx-auto w-full max-w-[1150px] px-4 py-12 sm:px-8 md:py-16">
-          <div className="specular relative flex flex-col items-center justify-between gap-6 overflow-hidden rounded-xl border border-line bg-card p-6 shadow-[0_12px_40px_rgba(21,19,15,0.06)] md:flex-row md:p-10">
-            <div className="max-w-xl text-left">
-              <SectionLabel>Streamlined Settlement</SectionLabel>
-              <h2 className="mt-1 text-[1.6rem] font-semibold leading-tight tracking-[-0.025em] sm:text-[2rem]">
-                From deposit to confirmed, a 100-person payroll takes about 80 seconds.
-              </h2>
-              <p className="mt-2 text-sm leading-relaxed text-body-ink">
-                Experience mathematical certainty and absolute confidentiality. Built for
-                decentralized funds, DAOs, and crypto engineering teams.
-              </p>
-            </div>
-            <div className="flex w-full max-w-md flex-col gap-2 sm:flex-row md:w-auto">
+        {/* ================= CTA: GIANT WORDMARK ================= */}
+        <section data-reveal className="mx-auto w-full max-w-[1150px] px-4 py-16 sm:px-8 md:py-24">
+          <div className="flex flex-col items-center gap-6 text-center">
+            <SectionLabel>Streamlined Settlement</SectionLabel>
+            <h2 className="mark-gradient text-[clamp(3.2rem,10vw,8rem)] font-bold leading-[0.95] tracking-[-0.045em]">
+              Leave no trace.
+            </h2>
+            <div className="flex w-full max-w-md flex-col gap-2 sm:flex-row">
               <Button size="lg" className="btn-glow flex-1 rounded-lg" onClick={() => onRole("employer")}>
                 Run payroll
                 <Ms name="arrow_forward" className="text-base" />
@@ -1074,8 +1058,6 @@ function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void 
               </span>
               <span className="text-band-line">·</span>
               <span>Proof Time: 0.8s</span>
-              <span className="text-band-line">·</span>
-              <span>Slot: 400ms</span>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
               <span>Groth16 Finality Verified</span>

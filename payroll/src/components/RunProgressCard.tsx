@@ -144,8 +144,8 @@ function LiveStats({ sent, total, failed }: { sent: number; total: number; faile
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
       <Stat label="elapsed" value={fmtTime(elapsed)} />
-      <Stat label="rate" value={rate > 0 ? `${(rate * 60).toFixed(1)}/min` : "—"} />
-      <Stat label="eta" value={eta !== null ? fmtTime(eta) : "—"} />
+      <Stat label="rate" value={rate > 0 ? `${(rate * 60).toFixed(1)}/min` : "-"} />
+      <Stat label="eta" value={eta !== null ? fmtTime(eta) : "-"} />
       <Stat
         label="prover"
         value={prover ? `${prover.workers}w · ${prover.avgMs ? (prover.avgMs / 1000).toFixed(1) + "s" : "warming"}` : "snarkjs"}
@@ -153,7 +153,7 @@ function LiveStats({ sent, total, failed }: { sent: number; total: number; faile
       />
       {failed > 0 && (
         <div className="col-span-2 rounded-lg bg-rose-500/10 px-3 py-1.5 text-[11px] font-medium text-rose-600 dark:text-rose-400 sm:col-span-4">
-          {failed} failed so far — the run keeps going; retry just those at the end
+          {failed} failed so far - the run keeps going; retry just those at the end
         </div>
       )}
     </div>
@@ -278,10 +278,10 @@ function RunTimeline({
           (splits !== undefined && splits > 0 ? ` · ${splits} lane split${splits === 1 ? "" : "s"}` : "") +
           (lanes !== undefined ? ` · ${lanes} lane${lanes === 1 ? "" : "s"} used` : "") +
           (timing
-            ? ` · avg/tx: queue ${timing.queueMs !== undefined ? fmtTime(timing.queueMs / 1000) : "—"} · pool ${timing.reserveMs !== undefined ? fmtTime(timing.reserveMs / 1000) : "—"} · prep ${timing.prepMs !== undefined ? fmtTime(timing.prepMs / 1000) : "—"} · prove+relay ${timing.proveRelayMs !== undefined ? fmtTime(timing.proveRelayMs / 1000) : "—"}${browserProverInfo()?.avgMs ? ` (prove ≈ ${(browserProverInfo()!.avgMs! / 1000).toFixed(1)}s${browserProverInfo()?.serviceMs ? ` · pure ${(browserProverInfo()!.serviceMs! / 1000).toFixed(1)}s · relay ≈ ${Math.max(0, ((timing.proveRelayMs ?? 0) - browserProverInfo()!.serviceMs!) / 1000).toFixed(1)}s` : ""})` : ""} · confirm ${timing.confirmMs !== undefined ? fmtTime(timing.confirmMs / 1000) : "—"}`
+            ? ` · avg/tx: queue ${timing.queueMs !== undefined ? fmtTime(timing.queueMs / 1000) : "-"} · pool ${timing.reserveMs !== undefined ? fmtTime(timing.reserveMs / 1000) : "-"} · prep ${timing.prepMs !== undefined ? fmtTime(timing.prepMs / 1000) : "-"} · prove+relay ${timing.proveRelayMs !== undefined ? fmtTime(timing.proveRelayMs / 1000) : "-"}${browserProverInfo()?.avgMs ? ` (prove ≈ ${(browserProverInfo()!.avgMs! / 1000).toFixed(1)}s${browserProverInfo()?.serviceMs ? ` · pure ${(browserProverInfo()!.serviceMs! / 1000).toFixed(1)}s · relay ≈ ${Math.max(0, ((timing.proveRelayMs ?? 0) - browserProverInfo()!.serviceMs!) / 1000).toFixed(1)}s` : ""})` : ""} · confirm ${timing.confirmMs !== undefined ? fmtTime(timing.confirmMs / 1000) : "-"}`
             : "")
         }
-        right={payoutsSpanMs !== undefined ? fmtTime(payoutsSpanMs / 1000) : "—"}
+        right={payoutsSpanMs !== undefined ? fmtTime(payoutsSpanMs / 1000) : "-"}
       />
       {totalMs !== undefined && (
         <TimelineStep
@@ -423,13 +423,13 @@ export function RunProgressCard({
         {aborted && (
           <div className="flex items-start gap-2 rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-600 dark:text-rose-400">
             <Square className="mt-0.5 size-3 flex-none" />
-            Run stopped — everything already sent stays sent. Retry only the rows that didn't make it.
+            Run stopped - everything already sent stays sent. Retry only the rows that didn't make it.
           </div>
         )}
         {done && receipt!.summary.failed > 0 && (
           <div className="flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
             <OctagonAlert className="mt-0.5 size-3 flex-none" />
-            {receipt!.summary.failed} payout(s) failed — Resume retries just those, nothing double-pays.
+            {receipt!.summary.failed} payout(s) failed - Resume retries just those, nothing double-pays.
           </div>
         )}
         <div data-lenis-prevent className="max-h-72 space-y-2 overflow-y-auto pr-1">

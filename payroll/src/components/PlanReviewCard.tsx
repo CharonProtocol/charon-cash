@@ -131,13 +131,13 @@ export const PlanReviewCard = forwardRef<
 
   const dispatch = () => {
     if (!canRun) {
-      if (!parsed) toast.warning("Upload a batch ledger first — the matrix is empty.")
+      if (!parsed) toast.warning("Upload a batch ledger first - the matrix is empty.")
       else if (recipientCheck && recipientCheck.unregistered.length > 0)
         toast.warning(`${recipientCheck.unregistered.length} recipient(s) haven't enabled private receiving yet.`)
       else if (recipientCheck === null)
         toast.info("Verify recipients once before a shielded dispatch.")
       else if (decimalErrors.length > 0) toast.warning("Some amounts exceed this asset's decimals.")
-      else if (disabled) toast.info("Still syncing with the relayer — one moment.")
+      else if (disabled) toast.info("Still syncing with the relayer - one moment.")
       return
     }
     toast.info("Private dispatch: each employee receives a note only they can spend.")
@@ -168,8 +168,8 @@ export const PlanReviewCard = forwardRef<
             <CardDescription className="mt-0.5 text-xs">
               {kind === "sol" && totals
                 ? shortfall > 0n
-                  ? `Vault covers ${rawToHuman(vaultBig, SOL_DECIMALS)} SOL — dispatching signs one top-up of ${rawToHuman(shortfall, SOL_DECIMALS)} SOL.`
-                  : `Vault covers the full ${rawToHuman(totals.totalNet + totals.totalFees, SOL_DECIMALS)} SOL — no deposit to sign.`
+                  ? `Vault covers ${rawToHuman(vaultBig, SOL_DECIMALS)} SOL - dispatching signs one top-up of ${rawToHuman(shortfall, SOL_DECIMALS)} SOL.`
+                  : `Vault covers the full ${rawToHuman(totals.totalNet + totals.totalFees, SOL_DECIMALS)} SOL - no deposit to sign.`
                 : "Vault funds are spent first."}
             </CardDescription>
           </div>
@@ -221,7 +221,7 @@ export const PlanReviewCard = forwardRef<
             <span>Parallel execution lanes</span>
             <span className="normal-case tracking-normal text-gold">{lanes} concurrent</span>
           </div>
-          {/* Lanes are payout chains, not CPU threads — each spends most of its
+          {/* Lanes are payout chains, not CPU threads - each spends most of its
               life waiting on chain landings while proofs queue through the
               shared prover pool. Stops only appear when the cores back them
               (12 on 12+ cores, 16 on 16+, 24/32 on 24/32+); the rec caps at
@@ -253,7 +253,7 @@ export const PlanReviewCard = forwardRef<
           </p>
         </div>
 
-        {/* unregistered recipients — verify itself lives in the settlement bar */}
+        {/* unregistered recipients - verify itself lives in the settlement bar */}
         {recipientCheck && recipientCheck.unregistered.length > 0 && (
           <div className="rounded-xl border border-warn-line bg-warn-soft/60 p-3">
             <p className="text-xs font-medium text-warn">

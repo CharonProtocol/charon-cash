@@ -182,7 +182,7 @@ export function TeamPage({ extraEntries }: { extraEntries?: PayrollEntry[] }) {
           <CardDescription>
             Everyone you've paid (or are about to) with their real cumulative payouts, summed
             from chain-confirmed receipt rows. "Private receiving" means they enrolled
-            their encryption key — the registry stores public keys only.
+            their encryption key - the registry stores public keys only.
           </CardDescription>
         </div>
         <Button size="sm" variant="outline" onClick={checkAll} disabled={checking}>
@@ -242,7 +242,7 @@ export function TeamPage({ extraEntries }: { extraEntries?: PayrollEntry[] }) {
 
         {members.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
-            No team yet — upload a payroll CSV, complete a run, or add teammates above.
+            No team yet - upload a payroll CSV, complete a run, or add teammates above.
           </p>
         ) : (
           <div className="overflow-x-auto rounded-xl border">
@@ -261,7 +261,7 @@ export function TeamPage({ extraEntries }: { extraEntries?: PayrollEntry[] }) {
                   <tr key={m.address} className="bg-card transition-colors hover:bg-secondary/40">
                     <td className="px-3 py-2 font-medium">
                       <span className="inline-flex items-center gap-1.5">
-                        {m.name ?? "—"}
+                        {m.name ?? "-"}
                         {m.lastStatus === "paid" && (
                           <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                             <Check className="size-2.5" /> paid
@@ -294,7 +294,7 @@ export function TeamPage({ extraEntries }: { extraEntries?: PayrollEntry[] }) {
                           </span>
                         </>
                       ) : (
-                        <span className="text-muted-foreground">—</span>
+                        <span className="text-muted-foreground">-</span>
                       )}
                     </td>
                     <td className="px-3 py-2">

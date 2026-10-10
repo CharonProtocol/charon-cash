@@ -163,7 +163,7 @@ export function useUiSync(): void {
         setSyncState("synced")
       } else {
         setSyncState("syncing")
-        try {
+        const pull = async () => {
           const remote = (await pullUiDoc("ui", wallet, sign)) as
             | { history?: unknown; team?: unknown }
             | null
@@ -178,8 +178,26 @@ export function useUiSync(): void {
             /* ignore */
           }
           setSyncState("synced")
+        }
+        try {
+          // Let the wallet's connect popup fully close before asking for the
+          // sync signature; requests fired mid-close get dropped and the user
+          // would only see the popup later on some other page.
+          await new Promise((r) => setTimeout(r, 800))
+          if (cancelled) return
+          await pull()
         } catch {
-          if (!cancelled) setSyncState("offline")
+          if (cancelled) return
+          // Right after connect the wallet can swallow the sign request while
+          // its own popup is still closing; ask once more so the signature
+          // lands here on /employer/ instead of surfacing later on other pages.
+          setTimeout(() => {
+            if (cancelled) return
+            setSyncState("syncing")
+            pull().catch(() => {
+              if (!cancelled) setSyncState("offline")
+            })
+          }, 2500)
         }
       }
       // Attached after the pull so adoption writes don't schedule a push —

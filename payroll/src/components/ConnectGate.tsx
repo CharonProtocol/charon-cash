@@ -1,14 +1,12 @@
 import { useWallet } from "@solana/wallet-adapter-react"
 import { WalletReadyState, type WalletName } from "@solana/wallet-adapter-base"
 import { useEffect, useRef } from "react"
-import { ArrowRight, Fingerprint, KeyRound, ShieldCheck } from "lucide-react"
+import { ArrowRight } from "lucide-react"
 
 import { GliderGroup } from "@/components/motion/Glider"
-import { Ms } from "@/components/motion/ms"
 import { Scramble } from "@/components/motion/Scramble"
 import { Button } from "@/components/ui/button"
 import { useConnectWallet } from "@/components/WalletProvider"
-import { isLocalRpc } from "@/lib/explorer"
 import { navigate } from "@/lib/router"
 
 const SUBTITLES: Record<string, string> = {
@@ -20,24 +18,6 @@ const SUBTITLES: Record<string, string> = {
   Glow: "Mobile-first · Wallet Standard",
   "Demo Wallet": "Burner keypair · no extension needed (dev only)",
 }
-
-const invariants = [
-  {
-    icon: <ShieldCheck className="size-4 text-gold" />,
-    title: "Non-custodial",
-    body: "The program's PDA holds assets — no third party, including the relayer, can move them.",
-  },
-  {
-    icon: <Fingerprint className="size-4 text-gold" />,
-    title: "Zero metadata",
-    body: "Recipient addresses are blinded before Groth16 witness generation ever runs.",
-  },
-  {
-    icon: <KeyRound className="size-4 text-gold" />,
-    title: "Hardware isolation",
-    body: "Every payload signature resolves strictly on your device — keys never leave it.",
-  },
-]
 
 /**
  * Full-page gate shown on /employer and /employee until a wallet is connected.
@@ -100,16 +80,13 @@ export function ConnectGate({
                 <span className="relative inline-flex size-3 rounded-full border-2 border-card bg-band-gold" />
               </span>
             </div>
-            <span className="mt-4 flex items-center gap-2 rounded-full border border-gold-line bg-gold-soft px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-gold">
-              <span className="size-1.5 rounded-full bg-gold" /> Charon Pay — Confidential Suite
-            </span>
             <h1 className="h-display mt-3 text-2xl sm:text-3xl">
               <Scramble text={role === "employer" ? "Connect Employer Treasury" : "Connect Employee Wallet"} />
             </h1>
             <p className="mt-2 max-w-sm text-sm text-body-ink">
               {role === "employer"
-                ? "Unlock the omnibus vault, run shielded payroll batches, and audit every receipt — one signature at a time."
-                : "Claim ECDH-encrypted salary notes gaslessly — amounts stay invisible to everyone but you."}
+                ? "Run shielded payroll in minutes."
+                : "Claim private salary notes gaslessly."}
             </p>
           </div>
 
@@ -117,7 +94,7 @@ export function ConnectGate({
             <GliderGroup
               pillClassName="bg-panel-2 border border-line shadow-sm"
               className="flex rounded-xl border border-line bg-panel p-1"
-              itemClassName="whitespace-nowrap px-4 text-xs sm:text-sm"
+              itemClassName="whitespace-nowrap px-3 text-xs sm:text-sm"
               value={role}
               onChange={(id) => navigate(id === "employer" ? "/employer" : "/employee")}
               items={[
@@ -205,35 +182,6 @@ export function ConnectGate({
           {footerAction && (
             <div className="mt-4 rounded-xl border border-gold-line bg-gold-soft/60 p-4">{footerAction}</div>
           )}
-        </div>
-
-        <div className="rounded-2xl border border-border bg-card p-5">
-          <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-mute">
-            Zero-knowledge security invariants
-          </div>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            {invariants.map((inv) => (
-              <div key={inv.title} className="rounded-xl border border-line bg-panel p-3">
-                <div className="flex items-center gap-2 text-xs font-semibold">
-                  {inv.icon}
-                  {inv.title}
-                </div>
-                <p className="mt-1.5 text-[11px] leading-relaxed text-body-ink">{inv.body}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-center gap-2 pb-2 font-mono text-[11px] text-body-ink">
-          <span className="flex items-center gap-1.5 rounded-full border border-line bg-card px-3 py-1.5">
-            <span className="size-1.5 rounded-full bg-gold" /> {isLocalRpc() ? "Localnet" : "Devnet"}
-          </span>
-          <span className="flex items-center gap-1.5 rounded-full border border-line bg-card px-3 py-1.5">
-            <Ms name="bolt" className="text-xs text-gold" /> Relayer · gasless submits
-          </span>
-          <span className="flex items-center gap-1.5 rounded-full border border-line bg-card px-3 py-1.5">
-            <Ms name="lock" className="text-xs text-gold" /> Proofs built on-device
-          </span>
         </div>
       </div>
     </div>

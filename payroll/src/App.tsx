@@ -74,9 +74,6 @@ export default function App() {
           >
             <img src="/charon-mark.png" alt="" className="size-7 rounded-full" />
             <span className="hidden font-semibold tracking-tight text-ink sm:inline">Charon Pay</span>
-            <span className="rounded border border-line bg-panel-2 px-1.5 py-0.5 font-mono text-[11px] text-mute">
-              ZK-V2.4
-            </span>
           </button>
           <nav className="min-w-0 flex-1 overflow-x-auto no-scrollbar">
             <GliderGroup
