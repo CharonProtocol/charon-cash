@@ -14,6 +14,18 @@ export const SUPPORTED_SPL_MINTS = {
   usdt: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
 };
 
+const NOTE_SYNC_MS = 1000;
+const NOTE_SYNC_ATTEMPTS = 20;
+
+function pullNotes(context: PaymentContext) {
+  const client = context.client;
+  if (!client) return;
+  client.requestNoteScan();
+  void client.syncUtxos().then(() => {
+    context.refresh();
+  });
+}
+
 export function usePaymentTransaction(
   kind: PaymentKind,
   context: PaymentContext,
@@ -23,10 +35,18 @@ export function usePaymentTransaction(
   const [signature, setSignature] = useState("");
   const running = useRef(false);
   const mounted = useRef(true);
+  const noteSync = useRef<number | null>(null);
+  const stopNoteSync = () => {
+    if (noteSync.current !== null) {
+      window.clearInterval(noteSync.current);
+      noteSync.current = null;
+    }
+  };
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      stopNoteSync();
     };
   }, []);
   const submit = async (
@@ -105,6 +125,14 @@ export function usePaymentTransaction(
         setStatus("success");
       }
       context.refresh();
+      pullNotes(context);
+      stopNoteSync();
+      let ticks = 0;
+      noteSync.current = window.setInterval(() => {
+        ticks += 1;
+        pullNotes(context);
+        if (ticks >= NOTE_SYNC_ATTEMPTS) stopNoteSync();
+      }, NOTE_SYNC_MS);
     } catch (cause) {
       if (mounted.current) {
         console.log("Error is ,", cause);

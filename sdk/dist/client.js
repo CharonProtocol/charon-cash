@@ -109,6 +109,13 @@ export class CharonProtocol {
             worker,
         });
     }
+    requestNoteScan() {
+        this.worker.postMessage({ type: "poll" });
+    }
+    completeTx(signature) {
+        this.requestNoteScan();
+        return { signature };
+    }
     async sendSol(amountInLamports, recipientKey) {
         let mintAddress = WRAPPED_SOL_MINT;
         let inputUtxos = [
@@ -129,7 +136,7 @@ export class CharonProtocol {
             lightwasm: this.lightwasm,
             signTransaction: this.signer.signTransaction,
         });
-        return { signature: txid };
+        return this.completeTx(txid);
     }
     async withdrawSol(amountInLamports) {
         await this.syncUtxos();
@@ -157,7 +164,7 @@ export class CharonProtocol {
             noteSummary.utxos = noteSummary.utxos.filter((note) => note.utxoId !== u.utxoId);
         }
         this.recalculateBalances();
-        return { signature: txid };
+        return this.completeTx(txid);
     }
     async shieldedTransferSol(amountInLamports, recipientKey) {
         await this.syncUtxos();
@@ -184,7 +191,7 @@ export class CharonProtocol {
             noteSummary.utxos = noteSummary.utxos.filter((note) => note.utxoId !== u.utxoId);
         }
         this.recalculateBalances();
-        return { signature: txid };
+        return this.completeTx(txid);
     }
     /**
      * Private SOL↔SPL swap. `amountIn` is lamports for SOL and base units for SPL.
@@ -209,7 +216,7 @@ export class CharonProtocol {
             }
         }
         this.recalculateBalances();
-        return { signature };
+        return this.completeTx(signature);
     }
     async sendSpl(amount, recipientKey, mintAddress) {
         if (!SUPPORTED_SPL_MINTS.includes(mintAddress)) {
@@ -233,7 +240,7 @@ export class CharonProtocol {
             lightwasm: this.lightwasm,
             signTransaction: this.signer.signTransaction,
         });
-        return { signature: txid };
+        return this.completeTx(txid);
     }
     async withdrawSpl(amount, mintAddress) {
         await this.syncUtxos();
@@ -260,7 +267,7 @@ export class CharonProtocol {
             noteSummary.utxos = noteSummary.utxos.filter((note) => note.utxoId !== u.utxoId);
         }
         this.recalculateBalances();
-        return { signature: txid };
+        return this.completeTx(txid);
     }
     async shieldedTransferSpl(amount, mintAddress, recipientKey) {
         await this.syncUtxos();
@@ -286,7 +293,7 @@ export class CharonProtocol {
             noteSummary.utxos = noteSummary.utxos.filter((note) => note.utxoId !== u.utxoId);
         }
         this.recalculateBalances();
-        return { signature: txid };
+        return this.completeTx(txid);
     }
     async syncUtxos() {
         let newutxos = await this.storageService.loadUtxosFrom(this.signer.publicKey.toString(), this.lastLoadedNote);

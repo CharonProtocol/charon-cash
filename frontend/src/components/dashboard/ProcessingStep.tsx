@@ -6,24 +6,13 @@ import type { PaymentKind, PaymentStatus } from "./types";
 
 const LABELS: Record<PaymentStatus, [string, string]> = {
   idle: ["Ready", ""],
-  proof: [
-    "Creating your private proof",
-    "Your browser is preparing the transaction.",
-  ],
-  signing: [
-    "Approve in your wallet",
-    "Review and sign the transaction to continue.",
-  ],
-  confirming: [
-    "Confirming your transaction",
-    "Waiting for confirmation on Solana.",
-  ],
-  success: ["Transaction confirmed", "Your payment is complete."],
-  error: [
-    "Transaction didn’t complete",
-    "Your entries are saved. You can review them and try again.",
-  ],
+  proof: ["Creating proof", "Preparing the transaction in your browser."],
+  signing: ["Approve in your wallet", "Sign to continue."],
+  confirming: ["Confirming", "Waiting on Solana."],
+  success: ["Transaction confirmed", "Payment complete."],
+  error: ["Transaction didn’t complete", "You can review and try again."],
 };
+
 export function ProcessingStep({
   status,
   kind,
@@ -50,24 +39,24 @@ export function ProcessingStep({
   const Target = kind === "withdraw" ? Wallet : ShieldIcon;
   return (
     <div
-      className="col-span-full row-span-full flex h-full min-h-0 flex-col items-center justify-center px-4 text-center"
+      className="pay-result"
       role="status"
       aria-live="polite"
       aria-atomic="true"
     >
       <div
-        className="mb-[clamp(8px,3dvh,24px)] flex items-center"
+        className="pay-result-track"
         aria-hidden="true"
       >
-        <span className="grid size-12 place-items-center rounded-xl border border-neutral-300 bg-white [@media(max-height:560px)]:size-9 [&_svg]:size-6">
+        <span className="pay-result-icon">
           <Source
-            size={28}
+            size={22}
             strokeWidth={1.4}
           />
         </span>
-        <div className="relative mx-3 h-px w-[clamp(60px,10vw,120px)] bg-neutral-200">
+        <div className="pay-result-line">
           <m.span
-            className="absolute -top-[4.5px] size-2.5 -translate-x-1/2 rounded-full bg-[#303030]"
+            className="pay-result-dot"
             animate={
               done || failed || reduced
                 ? { left: done ? "100%" : "50%", opacity: 1 }
@@ -80,30 +69,28 @@ export function ProcessingStep({
             }
           />
         </div>
-        <m.span
-          className="grid size-12 place-items-center rounded-xl border border-neutral-300 bg-white [@media(max-height:560px)]:size-9 [&_svg]:size-6"
-          animate={{
-            backgroundColor: done ? "#303030" : "#ffffff",
-            color: done ? "#ffffff" : "#303030",
-          }}
+        <span
+          className={`pay-result-icon${done ? " pay-result-icon--done" : failed ? " pay-result-icon--failed" : ""}`}
         >
           {done ? (
-            <Check size={28} />
+            <Check size={22} />
           ) : failed ? (
-            <AlertCircle size={28} />
+            <AlertCircle size={22} />
           ) : (
             <Target
-              size={28}
+              size={22}
               strokeWidth={1.4}
             />
           )}
-        </m.span>
+        </span>
       </div>
-      <h2 className="mb-2 text-[clamp(18px,3dvh,26px)] font-normal tracking-tight">{LABELS[status][0]}</h2>
-      <p className="m-0 max-w-xl text-xs leading-relaxed wrap-anywhere text-neutral-500">{error || LABELS[status][1]}</p>
-      <span className="mt-3 text-xs">{amount} {token}</span>
+      <h2>{LABELS[status][0]}</h2>
+      <p className="pay-result-copy">{error || LABELS[status][1]}</p>
+      <span className="pay-result-amount">
+        {amount} {token}
+      </span>
       {done ? (
-        <div className="mt-4 flex items-center gap-5 text-[11px] [&_a]:flex [&_a]:items-center [&_a]:gap-1 [&_button]:rounded-md [&_button]:bg-[#303030] [&_button]:px-4 [&_button]:py-2 [&_button]:text-white">
+        <div className="pay-result-links">
           {explorerUrl && (
             <a
               href={explorerUrl}
@@ -115,6 +102,7 @@ export function ProcessingStep({
           )}
           <button
             type="button"
+            className="pay-result-cta"
             onClick={onReset}
           >
             New transaction
@@ -123,16 +111,12 @@ export function ProcessingStep({
       ) : failed ? (
         <button
           type="button"
-          className="mt-3 inline-flex items-center gap-2 bg-transparent py-1 text-[11px]! text-neutral-600"
+          className="pay-result-cta"
           onClick={onBack}
         >
-          Back to review <ArrowUpRight size={16} />
+          Back to review
         </button>
-      ) : (
-        <span className="mt-3 text-[10px] text-neutral-400">
-          Keep this page open while the transaction completes.
-        </span>
-      )}
+      ) : null}
     </div>
   );
 }

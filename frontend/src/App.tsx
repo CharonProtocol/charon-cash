@@ -21,7 +21,7 @@ export default function App() {
       <Suspense
         fallback={
           <div
-            style={{ minHeight: "100svh", background: "white" }}
+            style={{ minHeight: "100svh", background: "#0c0b09" }}
             role="status"
             aria-label="Loading dashboard"
           />

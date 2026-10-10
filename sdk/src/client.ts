@@ -217,6 +217,15 @@ export class CharonProtocol {
     });
   }
 
+  requestNoteScan() {
+    this.worker.postMessage({ type: "poll" });
+  }
+
+  private completeTx(signature: string) {
+    this.requestNoteScan();
+    return { signature };
+  }
+
   async sendSol(amountInLamports: number, recipientKey: string) {
     let mintAddress = WRAPPED_SOL_MINT;
 
@@ -243,7 +252,7 @@ export class CharonProtocol {
       signTransaction: this.signer.signTransaction,
     });
 
-    return { signature: txid };
+    return this.completeTx(txid);
   }
 
   async withdrawSol(amountInLamports: number) {
@@ -284,7 +293,7 @@ export class CharonProtocol {
     }
 
     this.recalculateBalances();
-    return { signature: txid };
+    return this.completeTx(txid);
   }
 
   async shieldedTransferSol(amountInLamports: number, recipientKey: string) {
@@ -322,7 +331,7 @@ export class CharonProtocol {
     }
 
     this.recalculateBalances();
-    return { signature: txid };
+    return this.completeTx(txid);
   }
 
   /**
@@ -354,7 +363,7 @@ export class CharonProtocol {
       }
     }
     this.recalculateBalances();
-    return { signature };
+    return this.completeTx(signature);
   }
 
   async sendSpl(amount: number, recipientKey: string, mintAddress: string) {
@@ -386,7 +395,7 @@ export class CharonProtocol {
       signTransaction: this.signer.signTransaction,
     });
 
-    return { signature: txid };
+    return this.completeTx(txid);
   }
 
   async withdrawSpl(amount: number, mintAddress: string) {
@@ -424,7 +433,7 @@ export class CharonProtocol {
     }
 
     this.recalculateBalances();
-    return { signature: txid };
+    return this.completeTx(txid);
   }
 
   async shieldedTransferSpl(
@@ -465,7 +474,7 @@ export class CharonProtocol {
     }
 
     this.recalculateBalances();
-    return { signature: txid };
+    return this.completeTx(txid);
   }
 
   async syncUtxos() {

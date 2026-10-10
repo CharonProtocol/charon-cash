@@ -18,20 +18,36 @@ rpc_up() {
   curl -s -m2 -X POST http://localhost:8899 -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'
 }
 
+geyser_up() {
+  lsof -nP -iTCP:10000 -sTCP:LISTEN >/dev/null 2>&1
+}
+
 echo "==========================================================="
 echo "▶ 1/10 Starting Surfpool..."
 pkill -f surfpool >/dev/null 2>&1 || true
 pkill -f solana-test-validator >/dev/null 2>&1 || true
 fuser -k 8899/tcp >/dev/null 2>&1 || true
 fuser -k 8900/tcp >/dev/null 2>&1 || true
+fuser -k 10000/tcp >/dev/null 2>&1 || true
 sleep 1
-(cd /tmp && nohup surfpool start -g ~/yellowstone/config.json > "$L-surfpool.log" 2>&1 &)
+# --no-tui is required under nohup; the dashboard cannot run in the background.
+# config.json must use the macOS .dylib (absolute path), not the Linux .so.
+(cd /tmp && nohup surfpool start -g "$HOME/yellowstone/config.json" --no-tui > "$L-surfpool.log" 2>&1 &)
 echo "  Waiting for Surfpool to start..."
 for i in $(seq 1 60); do 
-  rpc_up && break
+  rpc_up && geyser_up && break
   sleep 1
 done
-rpc_up && echo "  Surfpool started successfully." || { echo "  ✗ Surfpool didn't start. Check $L-surfpool.log"; exit 1; }
+if rpc_up && geyser_up; then
+  echo "  Surfpool started successfully (RPC :8899, Yellowstone :10000)."
+else
+  echo "  ✗ Surfpool didn't start. Check $L-surfpool.log"
+  if rpc_up && ! geyser_up; then
+    echo "  RPC is up but Yellowstone gRPC is not listening on :10000 (plugin failed to load)."
+  fi
+  tail -n 40 "$L-surfpool.log" || true
+  exit 1
+fi
 
 echo "==========================================================="
 echo "▶ 2/10 Starting Postgres database..."
@@ -92,7 +108,7 @@ perl -pi -e 's/pub const GLOBAL_CONFIG_BUMP: u8 = \d+;/pub const GLOBAL_CONFIG_B
 # Update backend/.env (perl -i, not sed -i: BSD sed on macOS treats the
 # filename as the script and fails with "undefined label").
 if [ -f backend/.env ]; then
-  perl -ni -e 'print unless /^(PROGRAM_ID|RELAYER_KEYPAIR|DATABASE_URL|RELAYER_FEE_RECIPIENT|RELAYER_FEE_RECIPIENT_KEYPAIR)=/' backend/.env
+  perl -ni -e 'print unless /^(PROGRAM_ID|RELAYER_KEYPAIR|DATABASE_URL|RELAYER_FEE_RECIPIENT|RELAYER_FEE_RECIPIENT_KEYPAIR|YELLOWSTONE_GRPC_URL|SOLANA_RPC_URL)=/' backend/.env
 fi
 {
   echo "PROGRAM_ID=$PROG"
@@ -100,6 +116,8 @@ fi
   echo "DATABASE_URL=postgres://postgres:postgres@localhost:5433/privacy_cash"
   echo "RELAYER_FEE_RECIPIENT=$FEE_RECIPIENT_PUBKEY"
   echo "RELAYER_FEE_RECIPIENT_KEYPAIR=$PROJECT_ROOT/target/deploy/fee-recipient.json"
+  echo "YELLOWSTONE_GRPC_URL=http://127.0.0.1:10000"
+  echo "SOLANA_RPC_URL=http://127.0.0.1:8899"
 } >> backend/.env
 
 # Write to sdk/.env

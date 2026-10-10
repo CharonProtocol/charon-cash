@@ -10,16 +10,16 @@ export function ClientStatus({ connected, supported, initializing, error, onRetr
   if (!connected || (supported && !initializing && !error)) return null;
 
   return (
-    <div role="status" aria-live="polite" className="shrink-0 text-center font-mono text-xs text-neutral-600">
+    <div role="status" aria-live="polite" className="dashboard-status">
       {!supported ? (
         <p>Connect a wallet that supports message and transaction signing.</p>
       ) : error ? (
         <>
           <p>{error}</p>
-          <button type="button" onClick={onRetry} className="mt-2 rounded-md bg-[#303030] px-3 py-2 text-white">Try again</button>
+          <button type="button" onClick={onRetry}>Try again</button>
         </>
       ) : (
-        <p>Preparing your private account. Approve the message in your wallet.</p>
+        <p>Preparing your private account.</p>
       )}
     </div>
   );

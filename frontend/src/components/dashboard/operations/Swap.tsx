@@ -1,6 +1,6 @@
 import { OperationLayout } from "../OperationLayout";
 import { useState, type FormEvent } from "react";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { parseTokenAmount } from "../../../lib/payment";
 import { usePaymentTransaction } from "../../../hooks/usePaymentTransaction";
@@ -8,9 +8,13 @@ import { TokenSelector } from "../TokenSelector";
 import { TokenIcon, type Token } from "../TokenIcon";
 import { ProcessingStep } from "../ProcessingStep";
 import type { PaymentContext } from "../types";
-
-const NOTE =
-  "mx-auto mt-2 max-w-lg text-center text-[10px] leading-relaxed text-neutral-500";
+import {
+  PAY_AMOUNT,
+  PAY_ENTRY,
+  PAY_ERROR,
+  PAY_FORM,
+  PAY_NEXT,
+} from "../payUi";
 
 export function Swap({ context }: { context: PaymentContext }) {
   const [step, setStep] = useState(0);
@@ -50,73 +54,62 @@ export function Swap({ context }: { context: PaymentContext }) {
   };
 
   return (
-    <OperationLayout title="Swap" direction="private asset exchange">
+    <OperationLayout>
       {step === 0 ? (
-        <form className="swap-form flex min-h-0 flex-1 flex-col justify-between" onSubmit={confirm}>
-          <div className="swap-content flex flex-col items-center gap-4">
-            <h2 className="swap-amount-label">Enter the Amount of {fromToken}</h2>
-            <TokenSelector value={fromToken} onChange={setFromToken} />
-            <div className="swap-amount-row relative flex items-center justify-center pr-14">
-              <label className="flex items-baseline justify-center gap-2">
-                <input
-                  value={amount}
-                  onChange={(event) => setAmount(event.target.value)}
-                  inputMode="decimal"
-                  placeholder="0"
-                  aria-label="Amount to swap"
-                  className="w-40 bg-transparent text-center text-4xl outline-none"
-                />
-                <span className="text-sm text-neutral-500">{fromToken}</span>
-              </label>
-              <button
-                type="submit"
-                className="absolute right-0 grid size-11 place-items-center rounded-full enabled:hover:bg-neutral-100 disabled:opacity-30"
-                disabled={!amount}
-                aria-label="Swap"
-              >
-                <ArrowRight className="size-9" />
-              </button>
-            </div>
-            <p className="text-xs text-neutral-500">to</p>
-            <div className="flex items-center gap-2 text-lg">
-              <TokenIcon token={toToken} className="size-6" />
-              {toToken}
-            </div>
-            <TokenSelector value={toToken} onChange={setToToken} />
-            {validation && (
-              <p className="text-center text-xs text-red-600" role="alert">
-                {validation}
-              </p>
-            )}
-            <p className={NOTE}>
-              The swap stays inside the pool. Jupiter fills it, and the relayer submits the transaction.
+        <form className={PAY_FORM} onSubmit={confirm}>
+          <TokenSelector value={fromToken} onChange={setFromToken} />
+          <div className={PAY_ENTRY}>
+            <label className="sr-only" htmlFor="swap-amount">
+              Amount to swap
+            </label>
+            <input
+              id="swap-amount"
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+              inputMode="decimal"
+              placeholder="0.00"
+              aria-label="Amount to swap"
+              className={PAY_AMOUNT}
+            />
+            <button
+              type="submit"
+              className={PAY_NEXT}
+              disabled={!amount}
+              aria-label="Swap"
+            >
+              <ArrowRight strokeWidth={1.4} />
+            </button>
+          </div>
+          <div className="pay-summary">
+            <TokenIcon token={toToken} className="size-5" />
+            {toToken}
+          </div>
+          <TokenSelector value={toToken} onChange={setToToken} />
+          {validation && (
+            <p className={PAY_ERROR} role="alert">
+              {validation}
             </p>
-          </div>
-          <div className="flex justify-center">
-            {!context.connected ? <WalletMultiButton /> : <span />}
-          </div>
+          )}
+          {!context.connected && (
+            <div className="mt-4 flex justify-center">
+              <WalletMultiButton />
+            </div>
+          )}
         </form>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <ProcessingStep
-            status={transaction.status}
-            kind="swap"
-            amount={amount}
-            token={fromToken}
-            error={transaction.error || validation}
-            explorerUrl={transaction.explorerUrl}
-            onReset={reset}
-            onBack={() => {
-              transaction.reset();
-              setStep(0);
-            }}
-          />
-          {transaction.status === "idle" && (
-            <button type="button" onClick={() => setStep(0)} aria-label="Back">
-              <ArrowLeft />
-            </button>
-          )}
-        </div>
+        <ProcessingStep
+          status={transaction.status}
+          kind="swap"
+          amount={amount}
+          token={fromToken}
+          error={transaction.error || validation}
+          explorerUrl={transaction.explorerUrl}
+          onReset={reset}
+          onBack={() => {
+            transaction.reset();
+            setStep(0);
+          }}
+        />
       )}
     </OperationLayout>
   );

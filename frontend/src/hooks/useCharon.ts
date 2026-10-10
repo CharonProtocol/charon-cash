@@ -3,6 +3,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import type { CharonProtocol } from "charonprotocol-sdk";
 import { RPC_URL } from "../lib/config";
 import { SOL_POOL_MINT } from "../lib/payment";
+import { sessionSignMessage } from "../lib/sessionSeed";
 import type { TransactionStage } from "../components/dashboard/types";
 
 export function useCharon(enabled: boolean) {
@@ -78,7 +79,7 @@ export function useCharon(enabled: boolean) {
         rpcUrl: RPC_URL,
         owner: {
           publicKey,
-          signMessage,
+          signMessage: sessionSignMessage(publicKey.toBase58(), signMessage),
           signTransaction: async (tx) => {
             progress.current?.("signing");
             const signed = await signTransaction(tx);

@@ -1,3 +1,4 @@
+import { PublicKey } from "@solana/web3.js";
 import type { Token } from "../components/dashboard/TokenIcon";
 export const TOKEN_DECIMALS: Record<Token, number> = {
   SOL: 9,
@@ -19,3 +20,14 @@ export function parseTokenAmount(value: string, token: Token): number {
     throw new Error("Enter a positive amount within the supported range.");
   return Number(units);
 }
+export function isSolanaAddress(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  try {
+    new PublicKey(trimmed);
+    return true;
+  } catch {
+    return false;
+  }
+}
+

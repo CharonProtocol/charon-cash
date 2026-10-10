@@ -98,7 +98,8 @@ impl Indexer {
         subscribe_tx
             .send(SubscribeRequest {
                 transactions: HashMap::from([("privacy_cash".to_string(), filter)]),
-                commitment: Some(CommitmentLevel::Finalized as i32),
+                // Relayer confirms at this level; finalized adds multi-slot lag on Surfpool.
+                commitment: Some(CommitmentLevel::Confirmed as i32),
                 ..Default::default()
             })
             .await

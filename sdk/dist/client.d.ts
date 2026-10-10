@@ -34,14 +34,16 @@ export declare class CharonProtocol {
         rpcUrl: string;
         owner: Signer;
     }): Promise<CharonProtocol>;
+    requestNoteScan(): void;
+    private completeTx;
     sendSol(amountInLamports: number, recipientKey: string): Promise<{
-        signature: any;
+        signature: string;
     }>;
     withdrawSol(amountInLamports: number): Promise<{
-        signature: any;
+        signature: string;
     }>;
     shieldedTransferSol(amountInLamports: number, recipientKey: string): Promise<{
-        signature: any;
+        signature: string;
     }>;
     /**
      * Private SOL↔SPL swap. `amountIn` is lamports for SOL and base units for SPL.
@@ -51,13 +53,13 @@ export declare class CharonProtocol {
         signature: string;
     }>;
     sendSpl(amount: number, recipientKey: string, mintAddress: string): Promise<{
-        signature: any;
+        signature: string;
     }>;
     withdrawSpl(amount: number, mintAddress: string): Promise<{
-        signature: any;
+        signature: string;
     }>;
     shieldedTransferSpl(amount: number, mintAddress: string, recipientKey: string): Promise<{
-        signature: any;
+        signature: string;
     }>;
     syncUtxos(): Promise<void>;
     private recalculateBalances;

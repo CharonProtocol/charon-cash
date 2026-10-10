@@ -1,18 +1,50 @@
-import { cloneElement } from 'react';
-export type Token = 'SOL' | 'USDC' | 'USDT';
-export function TokenIcon({ token = 'SOL', className = 'size-6 shrink-0' }: { token?: Token; className?: string }) {
-  return cloneElement(TOKENS_SVG[token.toLowerCase() as keyof typeof TOKENS_SVG], { className, 'aria-hidden': true });
+import { useId } from "react";
+
+export type Token = "SOL" | "USDC" | "USDT";
+
+export function TokenIcon({
+  token = "SOL",
+  className = "size-6 shrink-0",
+}: {
+  token?: Token;
+  className?: string;
+}) {
+  const uid = useId().replace(/:/g, "");
+  if (token === "USDC") {
+    return (
+      <UsdcIcon
+        uid={uid}
+        className={className}
+      />
+    );
+  }
+  if (token === "USDT") {
+    return (
+      <UsdtIcon
+        uid={uid}
+        className={className}
+      />
+    );
+  }
+  return (
+    <SolIcon
+      uid={uid}
+      className={className}
+    />
+  );
 }
 
-const TOKENS_SVG = {
-  usdc: (
+function UsdcIcon({ uid, className }: { uid: string; className?: string }) {
+  return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
       fill="none"
       viewBox="0 0 16 16"
-      id="Usdc--Streamline-Cryptocurrency"
+      id={`Usdc--Streamline-Cryptocurrency-${uid}`}
       height="16"
       width="16"
+      className={className}
+      aria-hidden="true"
     >
       <desc>Usdc Streamline Icon: https://streamlinehq.com</desc>
       <path
@@ -31,23 +63,29 @@ const TOKENS_SVG = {
         strokeWidth="0.5"
       ></path>
     </svg>
-  ),
-  usdt: (
+  );
+}
+
+function UsdtIcon({ uid, className }: { uid: string; className?: string }) {
+  const clipId = `usdt-clip-${uid}`;
+  return (
     <svg
       width="48"
       height="48"
       viewBox="0 0 48 48"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-hidden="true"
     >
-      <g clipPath="url(#clip0_171_2)">
+      <g clipPath={`url(#${clipId})`}>
         <path
           d="M35.4375 1.50005C41.2575 5.02005 45.9775 10.49 47.9975 17C48.8075 24.84 49.1275 32.62 43.9975 39C39.1975 44.05 34.8375 47.61 27.7275 48.34C19.2175 48.43 13.3275 48.1201 7.0375 42.1301C0.657502 35.2301 -0.4825 29.8001 -0.3025 20.4501C0.3875 12.5801 4.0475 8.45005 9.8975 3.45005C16.9675 -1.41995 27.5975 -1.97995 35.4375 1.50005ZM13.9975 12C13.9975 12.99 13.9975 13.98 13.9975 15C16.6375 15 19.2775 15 21.9975 15C21.9975 16.98 21.9975 18.96 21.9975 21C23.3175 21 24.6375 21 25.9975 21C25.9975 19.02 25.9975 17.04 25.9975 15C28.6375 15 31.2775 15 33.9975 15C33.9975 14.01 33.9975 13.02 33.9975 12C27.3975 12 20.7975 12 13.9975 12ZM10.9975 21C9.2275 22.92 9.2275 22.92 7.9975 25C10.4775 27.71 12.3275 28.87 16.0975 29.16C18.6875 29.21 21.2775 29.24 23.8775 29.25C25.2275 29.28 25.2275 29.28 26.5975 29.31C33.3175 29.38 33.3175 29.38 38.9975 26C38.9975 25.01 38.9975 24.02 38.9975 23C38.3375 22.34 37.6775 21.68 36.9975 21C35.6775 21 34.3575 21 32.9975 21C32.9975 22.32 32.9975 23.64 32.9975 25C27.0575 25 21.1175 25 14.9975 25C14.9975 23.68 14.9975 22.36 14.9975 21C13.6775 21 12.3575 21 10.9975 21ZM21.9975 33C21.9975 33.99 21.9975 34.98 21.9975 36C23.3175 36 24.6375 36 25.9975 36C25.9975 35.01 25.9975 34.02 25.9975 33C24.6775 33 23.3575 33 21.9975 33Z"
           fill="black"
         />
       </g>
       <defs>
-        <clipPath id="clip0_171_2">
+        <clipPath id={clipId}>
           <rect
             width="48"
             height="48"
@@ -56,24 +94,31 @@ const TOKENS_SVG = {
         </clipPath>
       </defs>
     </svg>
-  ),
-  sol: (
+  );
+}
+
+function SolIcon({ uid, className }: { uid: string; className?: string }) {
+  const clipId = `sol-clip-${uid}`;
+  const paintId = `sol-paint-${uid}`;
+  return (
     <svg
       width="45"
       height="41"
       viewBox="0 0 45 41"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-hidden="true"
     >
-      <g clipPath="url(#clip0_166_108)">
+      <g clipPath={`url(#${clipId})`}>
         <path
           d="M44.7683 32.3256L37.3397 40.4416C37.1782 40.6179 36.9828 40.7585 36.7657 40.8545C36.5485 40.9506 36.3143 41.0001 36.0777 41H0.862409C0.694377 41 0.530006 40.95 0.389496 40.8561C0.248983 40.7622 0.138449 40.6286 0.0714725 40.4716C0.00449657 40.3146 -0.0160031 40.1411 0.0124923 39.9724C0.0409876 39.8037 0.117237 39.6472 0.231871 39.522L7.66608 31.406C7.82715 31.2302 8.0219 31.0899 8.2383 30.9939C8.45474 30.8978 8.68821 30.848 8.9243 30.8476H44.1376C44.3056 30.8476 44.47 30.8976 44.6106 30.9915C44.7509 31.0854 44.8614 31.219 44.9287 31.376C44.9955 31.533 45.016 31.7065 44.9875 31.8752C44.959 32.0439 44.8828 32.2004 44.7683 32.3256ZM37.3397 15.9822C37.1782 15.8059 36.9828 15.6653 36.7657 15.5692C36.5485 15.4732 36.3143 15.4237 36.0777 15.4238H0.862409C0.694377 15.4238 0.530006 15.4738 0.389496 15.5677C0.248983 15.6616 0.138449 15.7952 0.0714725 15.9522C0.00449657 16.1092 -0.0160031 16.2827 0.0124923 16.4514C0.0409876 16.62 0.117237 16.7766 0.231871 16.9018L7.66608 25.0178C7.82715 25.1937 8.0219 25.3339 8.2383 25.43C8.45474 25.526 8.68821 25.5758 8.9243 25.5762H44.1376C44.3056 25.5762 44.47 25.5262 44.6106 25.4323C44.7509 25.3384 44.8614 25.2048 44.9287 25.0478C44.9955 24.8908 45.016 24.7173 44.9875 24.5486C44.959 24.38 44.8828 24.2234 44.7683 24.0982L37.3397 15.9822ZM0.862409 10.1524H36.0777C36.3143 10.1525 36.5485 10.103 36.7657 10.0069C36.9828 9.91086 37.1782 9.7703 37.3397 9.594L44.7683 1.47795C44.8828 1.3528 44.959 1.19626 44.9875 1.02756C45.016 0.858866 44.9955 0.685366 44.9287 0.528378C44.8614 0.37139 44.7509 0.237752 44.6106 0.143883C44.47 0.0500149 44.3056 5.78072e-06 44.1376 0H8.9243C8.68821 0.000409253 8.45474 0.0501779 8.2383 0.146225C8.0219 0.242272 7.82715 0.382552 7.66608 0.558383L0.233787 8.67443C0.119264 8.79944 0.0430484 8.95584 0.0144884 9.12432C-0.0140716 9.29284 0.00626543 9.4662 0.0730051 9.62312C0.139745 9.78004 0.249987 9.91366 0.39021 10.0077C0.530434 10.1017 0.694542 10.152 0.862409 10.1524Z"
-          fill="url(#paint0_linear_166_108)"
+          fill={`url(#${paintId})`}
         />
       </g>
       <defs>
         <linearGradient
-          id="paint0_linear_166_108"
+          id={paintId}
           x1="3.79853"
           y1="41.9771"
           x2="41.4958"
@@ -105,7 +150,7 @@ const TOKENS_SVG = {
             stopColor="#19FB9B"
           />
         </linearGradient>
-        <clipPath id="clip0_166_108">
+        <clipPath id={clipId}>
           <rect
             width="45"
             height="41"
@@ -114,5 +159,5 @@ const TOKENS_SVG = {
         </clipPath>
       </defs>
     </svg>
-  ),
-};
+  );
+}

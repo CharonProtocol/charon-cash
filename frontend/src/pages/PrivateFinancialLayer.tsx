@@ -523,14 +523,14 @@ function FeatureCard({
               // Mobile defaults to fixed bottom panel
               window.innerWidth <= 850
                 ? {
-                    position: "fixed",
-                    left: "6%",
-                    right: "6%",
-                    bottom: "4%",
-                    top: "auto",
-                    width: "auto",
-                    zIndex: 50,
-                  }
+                  position: "fixed",
+                  left: "6%",
+                  right: "6%",
+                  bottom: "4%",
+                  top: "auto",
+                  width: "auto",
+                  zIndex: 50,
+                }
                 : id === "swap"
                   ? { right: 0, bottom: "calc(100% + 12px)" }
                   : { left: 0, top: "calc(100% + 12px)" }
