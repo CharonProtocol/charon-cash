@@ -55,6 +55,7 @@ export class CharonProtocol {
   worker: Worker;
 
   private SYNC_MESSAGE = "SYNC_UTXOS";
+  private balanceListeners = new Set<() => void>();
 
   private constructor({
     connection,
@@ -92,9 +93,17 @@ export class CharonProtocol {
 
     worker.addEventListener("message", (event) => {
       if (event.data.type === this.SYNC_MESSAGE) {
-        this.syncUtxos();
+        void this.syncUtxos();
       }
     });
+  }
+
+  /** Runs after the in-memory note totals change: a spend, or a note synced from IndexedDB. */
+  watchBalances(listener: () => void): () => void {
+    this.balanceListeners.add(listener);
+    return () => {
+      this.balanceListeners.delete(listener);
+    };
   }
 
   static async generateClient({
@@ -193,6 +202,19 @@ export class CharonProtocol {
       });
 
       lastLoadedNote = highestId;
+    } else {
+      // The scan cursor only moves forward. If it is already past this
+      // wallet's notes and none were saved, start again at the first note.
+      const cursor = Number(
+        (await storageService.getNextUtxoToFetchIndex(owner.publicKey.toString()))
+          .index,
+      );
+      if (cursor > 1) {
+        await storageService.updateNextUtxoToFetchIndex(
+          owner.publicKey.toString(),
+          1,
+        );
+      }
     }
 
     let connection = new Connection(rpcUrl);
@@ -478,12 +500,22 @@ export class CharonProtocol {
   }
 
   async syncUtxos() {
+    const wallet = this.signer.publicKey.toString();
     let newutxos = await this.storageService.loadUtxosFrom(
-      this.signer.publicKey.toString(),
+      wallet,
       this.lastLoadedNote,
     );
 
-    console.log("Sync utxos :", newutxos);
+    if (newutxos.length === 0) {
+      const known = new Set<number>();
+      for (const summary of this.utxoByMint.values()) {
+        for (const note of summary.utxos) known.add(note.utxoId);
+      }
+      const stored = await this.storageService.loadUtxoBatch(wallet);
+      newutxos = stored.filter(
+        (note) => note.id != null && !known.has(note.id),
+      );
+    }
 
     if (newutxos.length > 0) {
       await Promise.all(
@@ -545,6 +577,7 @@ export class CharonProtocol {
         .slice(-2)
         .reduce((total, note) => total.add(note.amount), new BN(0));
     });
+    for (const listener of this.balanceListeners) listener();
   }
 
   /**

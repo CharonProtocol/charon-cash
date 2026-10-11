@@ -133,44 +133,93 @@ html[data-dashboard-theme="light"] .dashboard-page,
   color: var(--dash-fg);
 }
 
-.dashboard-wallet.is-busy {
-  opacity: 0.45;
+.dashboard-wallet-stack {
+  position: relative;
+  z-index: 40;
+  display: flex;
+  max-width: min(280px, 62vw);
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
 }
 
-.dashboard-page .wallet-adapter-button,
-.dashboard-page .wallet-adapter-button-trigger {
+.dashboard-wallet-stack .wallet-adapter-dropdown {
+  position: relative;
+}
+
+.dashboard-wallet-stack .wallet-adapter-button {
+  display: inline-flex !important;
   height: 36px !important;
-  padding: 0 12px !important;
-  border: 1px solid transparent !important;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px 0 6px !important;
+  border: 1px solid var(--dash-card-border) !important;
   border-radius: 999px !important;
-  background: transparent !important;
-  color: var(--dash-muted) !important;
+  background: var(--dash-chip) !important;
+  color: var(--dash-fg) !important;
   font-family: "Charon Inter", Inter, sans-serif !important;
-  font-size: 12px !important;
+  font-size: 13px !important;
   font-weight: 500 !important;
-  letter-spacing: 0.02em;
-  line-height: 36px !important;
-  white-space: nowrap;
+  letter-spacing: 0 !important;
+  line-height: 1 !important;
 }
 
-.dashboard-page .wallet-adapter-button:not([disabled]):hover,
-.dashboard-page .wallet-adapter-button-trigger:not([disabled]):hover {
-  border-color: var(--dash-card-border) !important;
+.dashboard-wallet-stack .wallet-adapter-button:not(:has(.wallet-adapter-button-start-icon)) {
+  background: var(--dash-gold) !important;
+  color: var(--dash-on-gold) !important;
+}
+
+.dashboard-wallet-stack .wallet-adapter-button:not(:has(.wallet-adapter-button-start-icon))::before {
+  content: "";
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--dash-on-gold);
+}
+
+.dashboard-wallet-stack .wallet-adapter-button:not([disabled]):hover {
+  border-color: var(--dash-gold) !important;
   background: var(--dash-chip) !important;
   color: var(--dash-fg) !important;
 }
 
-.dashboard-page .wallet-adapter-button-start-icon,
-.dashboard-page .wallet-adapter-button-start-icon img,
-.dashboard-page .wallet-adapter-button-end-icon,
-.dashboard-page .wallet-adapter-button-end-icon img {
-  width: 16px !important;
-  height: 16px !important;
+.dashboard-wallet-stack .wallet-adapter-button:not(:has(.wallet-adapter-button-start-icon)):not([disabled]):hover {
+  background: var(--dash-gold-strong) !important;
+  color: var(--dash-on-gold) !important;
 }
 
-.dashboard-page .wallet-adapter-button-start-icon {
-  margin-right: 8px !important;
+.dashboard-wallet-stack .wallet-adapter-button[disabled] {
+  opacity: 0.45;
 }
+
+.dashboard-wallet-stack .wallet-adapter-button-start-icon,
+.dashboard-wallet-stack .wallet-adapter-button-start-icon img {
+  width: 22px !important;
+  height: 22px !important;
+  margin: 0 !important;
+  border-radius: 999px;
+}
+
+.dashboard-wallet-stack .wallet-adapter-dropdown-list {
+  z-index: 40;
+  right: 0;
+  left: auto;
+}
+
+.dashboard-wallet-note,
+.dashboard-wallet-stack .dashboard-status {
+  max-width: 280px;
+  margin: 0;
+  color: var(--dash-muted);
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.dashboard-wallet-stack .dashboard-status button {
+  margin-top: 4px;
+}
+
 
 .dashboard-stage {
   position: relative;
@@ -179,14 +228,54 @@ html[data-dashboard-theme="light"] .dashboard-page,
   min-height: 0;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
 }
 
-.dashboard-stage::after {
-  flex: 1 1 0;
+.dashboard-column {
+  display: flex;
+  width: min(420px, calc(100% - 24px));
   min-height: 0;
-  pointer-events: none;
-  content: "";
+  flex: 1;
+  flex-direction: column;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+.dashboard-center {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 20px;
+}
+
+.dashboard-balance {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
+  margin: 0;
+  color: var(--dash-fg);
+  line-height: 1.15;
+  text-align: center;
+}
+
+.dashboard-balance > span:first-child,
+.dashboard-balance-unit {
+  display: block;
+  color: var(--dash-muted);
+  font-size: var(--dash-copy);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dashboard-balance-amount {
+  display: block;
+  margin: 4px 0 2px;
+  color: var(--dash-fg);
+  font-size: var(--dash-amount);
+  font-weight: 500;
+  letter-spacing: -0.05em;
+  line-height: 1;
 }
 
 .dashboard-stage::before {
@@ -205,20 +294,17 @@ html[data-dashboard-theme="light"] .dashboard-page,
   position: relative;
   z-index: 2;
   display: flex;
-  width: min(120px, 28vw);
-  min-height: 0;
-  max-height: min(34dvh, 240px);
-  flex: 1 1 0;
+  width: 100%;
+  flex: 0 0 auto;
   flex-direction: column;
-  justify-content: center;
-  margin-bottom: calc(var(--dash-space-sm) * -1);
+  align-items: center;
+  margin: 0;
 }
 
 .dashboard-lantern-hit {
   display: flex;
-  width: 100%;
-  min-height: 0;
-  flex: 1 1 auto;
+  width: auto;
+  flex: 0 0 auto;
   flex-direction: column;
   align-items: center;
   padding: 0;
@@ -229,9 +315,8 @@ html[data-dashboard-theme="light"] .dashboard-page,
 
 .dashboard-lantern-swing {
   display: flex;
-  width: 100%;
-  min-height: 0;
-  flex: 1 1 auto;
+  width: auto;
+  flex: 0 0 auto;
   flex-direction: column;
   align-items: center;
   transform-origin: top center;
@@ -240,9 +325,9 @@ html[data-dashboard-theme="light"] .dashboard-page,
 
 .dashboard-lantern-thread {
   width: 1px;
-  min-height: var(--dash-thread-length);
-  flex: 1 1 auto;
-  background: linear-gradient(to bottom, transparent, var(--dash-thread) 18%);
+  height: 56px;
+  flex: 0 0 auto;
+  background: var(--dash-thread);
 }
 
 .dashboard-lantern img {
@@ -356,7 +441,7 @@ html[data-dashboard-theme="light"] .dashboard-page,
   position: relative;
   z-index: 1;
   display: flex;
-  width: var(--dash-card-width);
+  width: 100%;
   min-height: 0;
   height: auto;
   flex: 0 1 auto;
@@ -366,7 +451,6 @@ html[data-dashboard-theme="light"] .dashboard-page,
   border: 1px solid var(--dash-card-border);
   border-radius: var(--dash-card-radius);
   background: var(--dash-card);
-  box-shadow: 0 18px 50px rgb(0 0 0 / 0.18);
 }
 
 .dashboard-operation,
@@ -382,16 +466,9 @@ html[data-dashboard-theme="light"] .dashboard-page,
   gap: var(--dash-space);
 }
 
-.dashboard-dock-wrap {
-  position: relative;
-  z-index: 2;
-  display: flex;
+.dashboard-column .dashboard-operation-dock {
   flex: 0 0 auto;
-  justify-content: center;
-  width: var(--dash-card-width);
-  margin-top: var(--dash-space);
-  margin-inline: auto;
-  padding: 0;
+  width: 100%;
 }
 
 .dashboard-status-light {
@@ -399,16 +476,11 @@ html[data-dashboard-theme="light"] .dashboard-page,
   z-index: 3;
 }
 
-.dashboard-status-light--nav {
-  display: none;
-}
-
-.dashboard-status-light--dock {
-  position: absolute;
-  z-index: 4;
-  left: -40px;
-  top: 50%;
-  transform: translateY(-50%);
+.dashboard-status-light--corner {
+  position: fixed;
+  z-index: 30;
+  left: max(12px, env(safe-area-inset-left));
+  bottom: max(12px, env(safe-area-inset-bottom));
 }
 
 .dashboard-status-light-hit {
@@ -481,7 +553,7 @@ html[data-dashboard-theme="light"] .dashboard-page,
   white-space: nowrap;
 }
 
-.dashboard-status-light--dock .dashboard-status-light-legend {
+.dashboard-status-light--corner .dashboard-status-light-legend {
   bottom: calc(100% + 8px);
   left: 0;
 }
@@ -550,6 +622,7 @@ html[data-dashboard-theme="light"] .dashboard-page,
   background: var(--dash-dock);
   box-shadow: 0 10px 30px rgb(0 0 0 / 0.2);
 }
+
 
 .dashboard-operation-tabs {
   display: flex;
@@ -683,6 +756,70 @@ html[data-dashboard-theme="light"] .dashboard-page,
   box-shadow: none;
 }
 
+.pay-amount-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pay-amount-row .pay-amount {
+  width: auto;
+  min-width: 0;
+  flex: 1;
+}
+
+.pay-token-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--dash-chip);
+  color: var(--dash-fg);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.pay-token-chip:disabled {
+  opacity: 0.45;
+}
+
+.pay-available {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--dash-muted);
+  font-size: 12px;
+}
+
+.pay-max {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--dash-gold-strong);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.pay-review {
+  width: 100%;
+  height: 40px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--dash-gold);
+  color: var(--dash-on-gold);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.pay-review:disabled {
+  background: var(--dash-chip);
+  color: var(--dash-muted);
+}
+
 .pay-amount {
   grid-column: 2;
   padding: var(--dash-space-xs) 0;
@@ -690,7 +827,7 @@ html[data-dashboard-theme="light"] .dashboard-page,
   font-weight: 400;
   letter-spacing: -0.05em;
   line-height: 1.15;
-  text-align: center;
+  text-align: left;
 }
 
 .pay-amount::placeholder,
@@ -1021,8 +1158,8 @@ html[data-dashboard-theme="light"] .dashboard-page,
 }
 
 @media (max-width: 720px) {
-  .dashboard-operation-tab > span:last-child {
-    display: none;
+  .dashboard-operation-tab {
+    font-size: 11px;
   }
 }
 
@@ -1040,22 +1177,9 @@ html[data-dashboard-theme="light"] .dashboard-page,
     display: none;
   }
 
-  .dashboard-local,
-  .dashboard-theme-toggle {
-    display: none;
-  }
-
-  .dashboard-status-light--nav {
-    display: block;
-  }
-
-  .dashboard-status-light--dock {
-    display: none;
-  }
-
-  .dashboard-page .wallet-adapter-button {
-    max-width: 148px;
-    padding: 0 10px !important;
+  .dashboard-wallet-stack .wallet-adapter-button {
+    max-width: 168px;
+    padding: 0 12px 0 6px !important;
     font-size: 12px !important;
   }
 
@@ -1201,5 +1325,21 @@ html[data-dashboard-theme] .wallet-adapter-dropdown-list-item:not([disabled]):ho
   html[data-dashboard-theme] .wallet-adapter-modal-container {
     margin: 12px;
     min-height: calc(100dvh - 24px);
+  }
+}
+
+@media (max-width: 499px) {
+  .dashboard-page .dashboard-operation-tabs {
+    padding-left: 24px;
+  }
+
+  .dashboard-page .dashboard-operation-tab {
+    gap: 2px;
+    font-size: 10px;
+  }
+
+  .dashboard-operation-icon {
+    width: 14px;
+    height: 14px;
   }
 }

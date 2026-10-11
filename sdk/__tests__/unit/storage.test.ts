@@ -163,6 +163,13 @@ describe("Storage Service ", () => {
     expect(Number(index.index)).toBe(0);
     expect(index.walletPubkey).toBe(alice);
   });
+  test("notes saved for a wallet are visible after the cursor", async () => {
+    const before = await storage.loadUtxoBatch(alice);
+    await storage.saveUtxo(alice, randomBytes(32));
+    const delta = await storage.loadUtxosFrom(alice, before.at(-1)?.id ?? 0);
+    expect(delta.length).toBeGreaterThan(0);
+    expect(delta.every((note) => note.walletPubkey === alice)).toBe(true);
+  });
   test("User can successfully delete note", async () => {
     let utxos = await storage.loadUtxoBatch(alice);
 

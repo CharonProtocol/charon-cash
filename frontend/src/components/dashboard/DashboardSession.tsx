@@ -1,7 +1,10 @@
 import { useState, type ReactNode } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useCharon } from "../../hooks/useCharon";
+import { formatTokenAmount, SOL_POOL_MINT } from "../../lib/payment";
+import { SUPPORTED_SPL_MINTS } from "../../hooks/usePaymentTransaction";
 import { UserAgreement } from "./UserAgreement";
+import type { Token } from "./TokenIcon";
 import type { PaymentContext } from "./types";
 
 type Props = {
@@ -28,6 +31,12 @@ function WalletSession({ children }: Props) {
     }
   });
   const account = useCharon(accepted);
+  const [token, setToken] = useState<Token>("SOL");
+  const mint =
+    token === "SOL"
+      ? SOL_POOL_MINT
+      : SUPPORTED_SPL_MINTS[token.toLowerCase() as "usdc" | "usdt"];
+  const available = formatTokenAmount(account.holdings[mint] ?? "0", token);
   const unsupported = connected && (!signMessage || !signTransaction);
   const pending = accepted && connected && !account.client;
   const agree = () => {
@@ -41,7 +50,14 @@ function WalletSession({ children }: Props) {
   return (
     <>
       <div inert={!accepted || pending || undefined}>
-        {children({ ...account, connected })}
+        {children({
+          ...account,
+          connected,
+          token,
+          onTokenChange: setToken,
+          available,
+          paymentsBlocked: false,
+        })}
       </div>
       {!accepted && (
         <UserAgreement

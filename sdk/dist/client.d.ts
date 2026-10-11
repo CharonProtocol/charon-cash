@@ -29,7 +29,10 @@ export declare class CharonProtocol {
     lastLoadedNote: number;
     worker: Worker;
     private SYNC_MESSAGE;
+    private balanceListeners;
     private constructor();
+    /** Runs after the in-memory note totals change: a spend, or a note synced from IndexedDB. */
+    watchBalances(listener: () => void): () => void;
     static generateClient({ rpcUrl, owner, }: {
         rpcUrl: string;
         owner: Signer;

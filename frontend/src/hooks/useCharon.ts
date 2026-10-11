@@ -1,10 +1,35 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
+import { PublicKey } from "@solana/web3.js";
 import type { CharonProtocol } from "charonprotocol-sdk";
 import { RPC_URL } from "../lib/config";
-import { SOL_POOL_MINT } from "../lib/payment";
+import { describePaymentError, SOL_POOL_MINT } from "../lib/payment";
 import { sessionSignMessage } from "../lib/sessionSeed";
+import { SUPPORTED_SPL_MINTS } from "./usePaymentTransaction";
 import type { TransactionStage } from "../components/dashboard/types";
+
+const NATIVE_SOL_MINT = "11111111111111111111111111111111";
+
+function rawFor(client: CharonProtocol, mint: string): bigint {
+  const direct = client.utxoByMint.get(mint);
+  if (direct) return BigInt(direct.totalAmount.toString(10));
+  let target: PublicKey;
+  try {
+    target = new PublicKey(mint);
+  } catch {
+    return 0n;
+  }
+  for (const [key, summary] of client.utxoByMint) {
+    try {
+      if (new PublicKey(key).equals(target)) {
+        return BigInt(summary.totalAmount.toString(10));
+      }
+    } catch {
+      continue;
+    }
+  }
+  return 0n;
+}
 
 export function useCharon(enabled: boolean) {
   const { publicKey, signMessage, signTransaction, disconnect } = useWallet();
@@ -33,10 +58,25 @@ export function useCharon(enabled: boolean) {
 
   const [limit, setLimit] = useState("0");
 
+  const [holdings, setHoldings] = useState<Record<string, string>>({});
+
   const refresh = useCallback(() => {
-    const summary = current.current?.utxoByMint.get(SOL_POOL_MINT);
-    setBalance(summary?.totalAmount.toString() ?? "0");
-    setLimit(summary?.maxSingleTxAmount.toString() ?? "0");
+    const instance = current.current;
+    if (!instance) {
+      setHoldings({});
+      setBalance("0");
+      setLimit("0");
+      return;
+    }
+    const sol = (rawFor(instance, SOL_POOL_MINT) + rawFor(instance, NATIVE_SOL_MINT)).toString();
+    const next: Record<string, string> = { [SOL_POOL_MINT]: sol };
+    for (const mint of Object.values(SUPPORTED_SPL_MINTS)) {
+      next[mint] = rawFor(instance, mint).toString();
+    }
+    const summary = instance.utxoByMint.get(SOL_POOL_MINT);
+    setHoldings(next);
+    setBalance(sol);
+    setLimit(summary?.maxSingleTxAmount.toString(10) ?? "0");
   }, []);
 
   const close = useCallback(() => {
@@ -53,13 +93,15 @@ export function useCharon(enabled: boolean) {
     setClient(null);
     setBalance("0");
     setLimit("0");
+    setHoldings({});
     return close;
   }, [address, close]);
 
   useEffect(() => {
     if (!client) return;
-    const timer = window.setInterval(refresh, 2000);
-    return () => window.clearInterval(timer);
+    refresh();
+    client.requestNoteScan();
+    return client.watchBalances(refresh);
   }, [client, refresh]);
 
   const initialize = useCallback(async () => {
@@ -97,7 +139,13 @@ export function useCharon(enabled: boolean) {
       refresh();
     } catch (cause) {
       if (version === generation.current) {
-        setError(cause instanceof Error ? cause.message : "Unable to initialize your account.");
+        setError(
+          describePaymentError(
+            cause instanceof Error
+              ? cause.message
+              : "Unable to open your account.",
+          ),
+        );
       }
     } finally {
       if (version === generation.current) {
@@ -118,6 +166,7 @@ export function useCharon(enabled: boolean) {
     error,
     retry: () => setAttempt((value) => value + 1),
     balance,
+    holdings,
     limit,
     refresh,
     address,

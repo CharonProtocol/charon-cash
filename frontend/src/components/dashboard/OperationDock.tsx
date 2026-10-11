@@ -1,11 +1,10 @@
-import { useEffect, useState } from "react";
 import {
   ArrowUpRight,
   ArrowLeftRight,
   DollarSign,
   BanknoteArrowDown,
 } from "lucide-react";
-import { AnimatePresence, m } from "motion/react";
+import { m } from "motion/react";
 import { ShieldIcon } from "./ShieldIcon";
 import type { DashboardOperation } from "./types";
 
@@ -14,7 +13,7 @@ const ITEMS = [
   {
     id: "transfer",
     label: "Shielded Transfer",
-    short: "Transfer",
+    short: "Shield",
     icon: ShieldIcon,
   },
   { id: "swap", label: "Swap", short: "Swap", icon: ArrowLeftRight, disabled: true },
@@ -36,43 +35,14 @@ export function OperationDock({
   busy: boolean;
   onChange: (value: DashboardOperation) => void;
 }) {
-  const [notice, setNotice] = useState<{
-    label: string;
-    sequence: number;
-  } | null>(null);
-  useEffect(() => {
-    if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(null), 1500);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
   const select = (id: DashboardOperation) => {
     onChange(id);
-    setNotice((previous) => ({
-      label: ITEMS.find((item) => item.id === id)!.label,
-      sequence: (previous?.sequence ?? 0) + 1,
-    }));
   };
   return (
     <nav
       className="dashboard-operation-dock"
       aria-label="Payment operations"
     >
-      <AnimatePresence>
-        {notice && (
-          <m.div
-            key={notice.sequence}
-            role="status"
-            aria-live="polite"
-            className="dashboard-dock-notice sm:hidden"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.12 }}
-          >
-            {notice.label}
-          </m.div>
-        )}
-      </AnimatePresence>
       <div
         role="tablist"
         aria-label="Payment operation"

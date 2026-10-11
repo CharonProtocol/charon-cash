@@ -1,30 +1,27 @@
 import { OperationLayout } from "../OperationLayout";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { PublicKey } from "@solana/web3.js";
 import { parseTokenAmount } from "../../../lib/payment";
 import { usePaymentTransaction } from "../../../hooks/usePaymentTransaction";
 import { TokenSelector } from "../TokenSelector";
-import { type Token } from "../TokenIcon";
 import { StepIndicator } from "../StepIndicator";
 import { ProcessingStep } from "../ProcessingStep";
 import type { PaymentContext } from "../types";
 import {
   PAY_AMOUNT,
   PAY_BACK,
-  PAY_ENTRY,
   PAY_FIELD,
   PAY_ERROR,
   PAY_FLOW,
   PAY_FORM,
-  PAY_NEXT,
   PAY_RECIPIENT,
 } from "../payUi";
 
 export function Send({ context }: { context: PaymentContext }) {
   const [step, setStep] = useState(0);
   const [amount, setAmount] = useState("");
-  const [token, setToken] = useState<Token>("SOL");
+  const token = context.token;
   const [recipient, setRecipient] = useState("");
   const [validation, setValidation] = useState("");
   const transaction = usePaymentTransaction("send", context);
@@ -50,7 +47,11 @@ export function Send({ context }: { context: PaymentContext }) {
         throw new Error("Your account is still initializing.");
       setValidation("");
       setStep(processingStep);
-      await transaction.submit(amount, recipient, token);
+      const outcome = await transaction.submit(amount, recipient, token);
+      if (outcome?.formError) {
+        setValidation(outcome.formError);
+        setStep(1);
+      }
     } catch (cause) {
       setValidation(
         cause instanceof Error ? cause.message : "Check the payment details.",
@@ -111,20 +112,12 @@ export function Send({ context }: { context: PaymentContext }) {
             >
               {step === 0 ? `Amount in ${token}` : "Recipient"}
             </h2>
-            <TokenSelector
-              value={token}
-              locked={step !== 0}
-              onChange={(next) => {
-                setToken(next);
-                setValidation("");
-              }}
-            />
             {step === 0 ? (
               <form
                 className={PAY_FORM}
                 onSubmit={advance}
               >
-                <div className={PAY_ENTRY}>
+                <div className="pay-amount-row">
                   <label
                     className="sr-only"
                     htmlFor="pay-amount"
@@ -146,14 +139,39 @@ export function Send({ context }: { context: PaymentContext }) {
                     aria-invalid={Boolean(validation)}
                     aria-describedby={describedBy}
                   />
+                  <TokenSelector
+                    value={token}
+                    locked={false}
+                    onChange={(next) => {
+                      context.onTokenChange(next);
+                      setAmount("");
+                      setValidation("");
+                    }}
+                  />
+                </div>
+                <div className="pay-available">
+                  <span>
+                    Available {context.available} {token}
+                  </span>
                   <button
-                    className={PAY_NEXT}
-                    aria-label="Continue to recipient"
-                    type="submit"
+                    type="button"
+                    className="pay-max"
+                    onClick={() => {
+                      setAmount(context.available);
+                      setValidation("");
+                    }}
                   >
-                    <ArrowRight strokeWidth={1.4} />
+                    Max
                   </button>
                 </div>
+                <button
+                  className="pay-review"
+                  aria-label="Continue to recipient"
+                  type="submit"
+                  disabled={context.paymentsBlocked}
+                >
+                  Continue
+                </button>
                 {errorMessage}
               </form>
             ) : (
@@ -182,14 +200,15 @@ export function Send({ context }: { context: PaymentContext }) {
                     aria-invalid={Boolean(validation)}
                     aria-describedby={describedBy}
                   />
-                  <button
-                    className={PAY_NEXT}
-                    aria-label="Confirm private payment"
-                    type="submit"
-                  >
-                    <ArrowRight strokeWidth={1.4} />
-                  </button>
                 </div>
+                <button
+                  className="pay-review"
+                  aria-label="Confirm private payment"
+                  type="submit"
+                  disabled={context.paymentsBlocked}
+                >
+                  Review send
+                </button>
                 <div className="pay-summary">
                   <strong>
                     {amount} {token}

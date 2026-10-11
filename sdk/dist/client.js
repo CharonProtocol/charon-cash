@@ -22,6 +22,7 @@ export class CharonProtocol {
     lastLoadedNote; // NOTE: this represents last loaded note in memory not from DB => initially it will be zero
     worker;
     SYNC_MESSAGE = "SYNC_UTXOS";
+    balanceListeners = new Set();
     constructor({ connection, publicKey, signer, storageService, encryptionService, isRuning, lightwasm, utxoByMint, lastLoadedNote, worker, }) {
         this.publicKey = publicKey;
         this.signer = signer;
@@ -35,9 +36,16 @@ export class CharonProtocol {
         this.worker = worker;
         worker.addEventListener("message", (event) => {
             if (event.data.type === this.SYNC_MESSAGE) {
-                this.syncUtxos();
+                void this.syncUtxos();
             }
         });
+    }
+    /** Runs after the in-memory note totals change: a spend, or a note synced from IndexedDB. */
+    watchBalances(listener) {
+        this.balanceListeners.add(listener);
+        return () => {
+            this.balanceListeners.delete(listener);
+        };
     }
     static async generateClient({ rpcUrl, owner, }) {
         const isRegistered = await API.checkRegistration(owner.publicKey);
@@ -93,6 +101,15 @@ export class CharonProtocol {
                 }
             });
             lastLoadedNote = highestId;
+        }
+        else {
+            // The scan cursor only moves forward. If it is already past this
+            // wallet's notes and none were saved, start again at the first note.
+            const cursor = Number((await storageService.getNextUtxoToFetchIndex(owner.publicKey.toString()))
+                .index);
+            if (cursor > 1) {
+                await storageService.updateNextUtxoToFetchIndex(owner.publicKey.toString(), 1);
+            }
         }
         let connection = new Connection(rpcUrl);
         let worker = createSharonProtocolWorker(owner.publicKey.toString(), masterSeed, rpcUrl);
@@ -296,8 +313,17 @@ export class CharonProtocol {
         return this.completeTx(txid);
     }
     async syncUtxos() {
-        let newutxos = await this.storageService.loadUtxosFrom(this.signer.publicKey.toString(), this.lastLoadedNote);
-        console.log("Sync utxos :", newutxos);
+        const wallet = this.signer.publicKey.toString();
+        let newutxos = await this.storageService.loadUtxosFrom(wallet, this.lastLoadedNote);
+        if (newutxos.length === 0) {
+            const known = new Set();
+            for (const summary of this.utxoByMint.values()) {
+                for (const note of summary.utxos)
+                    known.add(note.utxoId);
+            }
+            const stored = await this.storageService.loadUtxoBatch(wallet);
+            newutxos = stored.filter((note) => note.id != null && !known.has(note.id));
+        }
         if (newutxos.length > 0) {
             await Promise.all(newutxos.map(async ({ encryptedUtxo, id, walletPubkey, }) => {
                 const utxo = Utxo.deserialize(await this.encryptionService.decrypt(encryptedUtxo), this.lightwasm);
@@ -333,6 +359,8 @@ export class CharonProtocol {
                 .slice(-2)
                 .reduce((total, note) => total.add(note.amount), new BN(0));
         });
+        for (const listener of this.balanceListeners)
+            listener();
     }
     /**
      * @param mintAddress

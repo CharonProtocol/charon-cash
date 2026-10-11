@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { Moon, Sun } from "lucide-react";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { BaseWalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { MotionConfig, LazyMotion, domMax } from "motion/react";
 import { OperationDock } from "../components/dashboard/OperationDock";
 import { ClientStatus } from "../components/dashboard/ClientStatus";
@@ -13,10 +12,13 @@ import { ShieldedTransfer } from "../components/dashboard/operations/ShieldedTra
 import { Withdraw } from "../components/dashboard/operations/Withdraw";
 import { Payroll } from "../components/dashboard/operations/Payroll";
 import { Swap } from "../components/dashboard/operations/Swap";
+import type { Token } from "../components/dashboard/TokenIcon";
 import type {
   DashboardOperation,
   PaymentContext,
 } from "../components/dashboard/types";
+import { formatTokenAmount, SOL_POOL_MINT } from "../lib/payment";
+import { SUPPORTED_SPL_MINTS } from "@/hooks/usePaymentTransaction";
 import {
   persistDashboardTheme,
   readDashboardTheme,
@@ -26,6 +28,16 @@ import {
 import { useCharon } from "@/hooks/useCharon";
 import { useInfrastructureStatus } from "@/hooks/useInfrastructureStatus";
 import "./Dashboard.css";
+
+const WALLET_LABELS = {
+  "change-wallet": "Change wallet",
+  connecting: "Connecting",
+  "copy-address": "Copy address",
+  copied: "Copied",
+  disconnect: "Disconnect",
+  "has-wallet": "Connect wallet",
+  "no-wallet": "Connect wallet",
+};
 
 const TITLES: Record<DashboardOperation, string> = {
   send: "Send",
@@ -37,6 +49,7 @@ const TITLES: Record<DashboardOperation, string> = {
 
 export function Dashboard() {
   const [operation, setOperation] = useState<DashboardOperation>("send");
+  const [token, setToken] = useState<Token>("SOL");
   const [busy, setBusy] = useState(false);
   const [theme, setTheme] = useState<DashboardTheme>(() =>
     typeof document === "undefined" ? "dark" : readDashboardTheme(),
@@ -45,9 +58,20 @@ export function Dashboard() {
   const charon = useCharon(true);
   const infrastructure = useInfrastructureStatus();
   const { connected, signMessage, signTransaction } = useWallet();
+  const mint =
+    token === "SOL"
+      ? SOL_POOL_MINT
+      : SUPPORTED_SPL_MINTS[token.toLowerCase() as "usdc" | "usdt"];
+  const available = formatTokenAmount(charon.holdings[mint] ?? "0", token);
+  const paymentsBlocked =
+    infrastructure.ready && infrastructure.tone === "down";
   const context: PaymentContext = {
     ...charon,
     connected,
+    token,
+    onTokenChange: setToken,
+    available,
+    paymentsBlocked,
     onBusyChange: setBusy,
   };
 
@@ -94,47 +118,11 @@ export function Dashboard() {
               />
               <span>CHARON</span>
             </a>
-            <div className="dashboard-nav-actions">
-              <StatusLight
-                status={infrastructure}
-                placement="nav"
+            <div className="dashboard-wallet-stack">
+              <BaseWalletMultiButton
+                labels={WALLET_LABELS}
+                disabled={busy}
               />
-              <span className="dashboard-local">Local</span>
-              <button
-                type="button"
-                className="dashboard-theme-toggle"
-                onClick={toggleTheme}
-                aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-                title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-              >
-                {theme === "dark" ? (
-                  <Sun
-                    size={18}
-                    strokeWidth={1.6}
-                  />
-                ) : (
-                  <Moon
-                    size={18}
-                    strokeWidth={1.6}
-                  />
-                )}
-              </button>
-              <div
-                className={`dashboard-wallet${busy ? " is-busy" : ""}`}
-                inert={busy || undefined}
-              >
-                <WalletMultiButton />
-              </div>
-            </div>
-          </header>
-          <main className="dashboard-stage">
-            <HangingLantern
-              theme={theme}
-              onToggle={toggleTheme}
-              lanternRef={lanternRef}
-            />
-            <div className="dashboard-card">
-              <h1 className="dashboard-title">{TITLES[operation]}</h1>
               <ClientStatus
                 connected={connected}
                 supported={Boolean(signMessage && signTransaction)}
@@ -142,27 +130,52 @@ export function Dashboard() {
                 error={charon.error}
                 onRetry={charon.retry}
               />
-              <section
-                key={`${operation}-${charon.address ?? "disconnected"}`}
-                id="pay-panel"
-                className="dashboard-operation"
-                role="tabpanel"
-                aria-labelledby={`pay-tab-${operation}`}
-              >
-                {operation === "send" && <Send context={context} />}
-                {operation === "withdraw" && <Withdraw context={context} />}
-                {operation === "swap" && <Swap context={context} />}
-                {operation === "payroll" && <Payroll />}
-                {operation === "transfer" && (
-                  <ShieldedTransfer context={context} />
-                )}
-              </section>
+              {infrastructure.ready && infrastructure.tone === "degraded" && (
+                <p className="dashboard-wallet-note">
+                  Indexer is down. A payment may not show up yet.
+                </p>
+              )}
+              {paymentsBlocked && (
+                <p className="dashboard-wallet-note">
+                  Charon can&apos;t reach the service on this machine.
+                </p>
+              )}
             </div>
-            <div className="dashboard-dock-wrap">
-              <StatusLight
-                status={infrastructure}
-                placement="dock"
-              />
+          </header>
+          <main className="dashboard-stage">
+            <div className="dashboard-column">
+              <div className="dashboard-center">
+                <HangingLantern
+                  theme={theme}
+                  onToggle={toggleTheme}
+                  lanternRef={lanternRef}
+                />
+                <p className="dashboard-balance">
+                  <span>Private {token}</span>
+                  <strong className="dashboard-balance-amount">
+                    {available}
+                  </strong>
+                  <span className="dashboard-balance-unit">{token}</span>
+                </p>
+                <div className="dashboard-card">
+                  <h1 className="dashboard-title">{TITLES[operation]}</h1>
+                  <section
+                    key={`${operation}-${charon.address ?? "disconnected"}`}
+                    id="pay-panel"
+                    className="dashboard-operation"
+                    role="tabpanel"
+                    aria-labelledby={`pay-tab-${operation}`}
+                  >
+                    {operation === "send" && <Send context={context} />}
+                    {operation === "withdraw" && <Withdraw context={context} />}
+                    {operation === "swap" && <Swap context={context} />}
+                    {operation === "payroll" && <Payroll />}
+                    {operation === "transfer" && (
+                      <ShieldedTransfer context={context} />
+                    )}
+                  </section>
+                </div>
+              </div>
               <OperationDock
                 value={operation}
                 busy={busy}
@@ -173,6 +186,10 @@ export function Dashboard() {
               />
             </div>
           </main>
+          <StatusLight
+            status={infrastructure}
+            placement="corner"
+          />
         </section>
       </LazyMotion>
     </MotionConfig>

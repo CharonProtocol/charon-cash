@@ -19,7 +19,7 @@ export function ClientStatus({ connected, supported, initializing, error, onRetr
           <button type="button" onClick={onRetry}>Try again</button>
         </>
       ) : (
-        <p>Preparing your private account.</p>
+        <p>Approve the sign-in in your wallet.</p>
       )}
     </div>
   );

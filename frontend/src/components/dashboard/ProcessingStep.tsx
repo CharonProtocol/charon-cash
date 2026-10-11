@@ -114,7 +114,7 @@ export function ProcessingStep({
           className="pay-result-cta"
           onClick={onBack}
         >
-          Back to review
+          Try again
         </button>
       ) : null}
     </div>

@@ -1,7 +1,5 @@
 import { OperationLayout } from "../OperationLayout";
 import { useState, type FormEvent } from "react";
-import { ArrowRight } from "lucide-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { parseTokenAmount } from "../../../lib/payment";
 import { usePaymentTransaction } from "../../../hooks/usePaymentTransaction";
 import { TokenSelector } from "../TokenSelector";
@@ -10,16 +8,14 @@ import { ProcessingStep } from "../ProcessingStep";
 import type { PaymentContext } from "../types";
 import {
   PAY_AMOUNT,
-  PAY_ENTRY,
   PAY_ERROR,
   PAY_FORM,
-  PAY_NEXT,
 } from "../payUi";
 
 export function Swap({ context }: { context: PaymentContext }) {
   const [step, setStep] = useState(0);
   const [amount, setAmount] = useState("");
-  const [fromToken, setFromToken] = useState<Token>("SOL");
+  const [fromToken, setFromToken] = useState<Token>(context.token);
   const [toToken, setToToken] = useState<Token>("USDC");
   const [validation, setValidation] = useState("");
   const transaction = usePaymentTransaction("swap", context);
@@ -40,7 +36,11 @@ export function Swap({ context }: { context: PaymentContext }) {
       if (!context.client) throw new Error("Your account is still initializing.");
       setValidation("");
       setStep(1);
-      await transaction.submit(amount, "", fromToken, toToken);
+      const outcome = await transaction.submit(amount, "", fromToken, toToken);
+      if (outcome?.formError) {
+        setValidation(outcome.formError);
+        setStep(0);
+      }
     } catch (cause) {
       setValidation(cause instanceof Error ? cause.message : "Check the swap details.");
     }
@@ -57,8 +57,7 @@ export function Swap({ context }: { context: PaymentContext }) {
     <OperationLayout>
       {step === 0 ? (
         <form className={PAY_FORM} onSubmit={confirm}>
-          <TokenSelector value={fromToken} onChange={setFromToken} />
-          <div className={PAY_ENTRY}>
+          <div className="pay-amount-row">
             <label className="sr-only" htmlFor="swap-amount">
               Amount to swap
             </label>
@@ -71,13 +70,25 @@ export function Swap({ context }: { context: PaymentContext }) {
               aria-label="Amount to swap"
               className={PAY_AMOUNT}
             />
+            <TokenSelector
+              value={fromToken}
+              onChange={(next) => {
+                setFromToken(next);
+                context.onTokenChange(next);
+                setAmount("");
+              }}
+            />
+          </div>
+          <div className="pay-available">
+            <span>
+              Available {context.available} {fromToken}
+            </span>
             <button
-              type="submit"
-              className={PAY_NEXT}
-              disabled={!amount}
-              aria-label="Swap"
+              type="button"
+              className="pay-max"
+              onClick={() => setAmount(context.available)}
             >
-              <ArrowRight strokeWidth={1.4} />
+              Max
             </button>
           </div>
           <div className="pay-summary">
@@ -90,11 +101,14 @@ export function Swap({ context }: { context: PaymentContext }) {
               {validation}
             </p>
           )}
-          {!context.connected && (
-            <div className="mt-4 flex justify-center">
-              <WalletMultiButton />
-            </div>
-          )}
+          <button
+            type="submit"
+            className="pay-review"
+            disabled={!amount || context.paymentsBlocked}
+            aria-label="Swap"
+          >
+            Review swap
+          </button>
         </form>
       ) : (
         <ProcessingStep

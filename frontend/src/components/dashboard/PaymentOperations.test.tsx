@@ -6,7 +6,7 @@ import { Withdraw } from './operations/Withdraw';
 import { Send } from './operations/Send';
 import { ShieldedTransfer } from './operations/ShieldedTransfer';
 import type { PaymentContext } from './types';
-const context: PaymentContext = { client: null, connected: true, address: '11111111111111111111111111111111', limit: '0', refresh: () => {}, observeProgress: () => {}, onBusyChange: () => {} };
+const context: PaymentContext = { client: null, connected: true, address: '11111111111111111111111111111111', limit: '0', token: 'SOL', onTokenChange: () => {}, available: '0.00', paymentsBlocked: false, refresh: () => {}, observeProgress: () => {}, onBusyChange: () => {} };
 
 describe('independent payment operations and asset selection', () => {
   it.each([
@@ -19,13 +19,12 @@ describe('independent payment operations and asset selection', () => {
     expect(html).toContain('id="pay-amount"');
     expect(html).not.toContain('To your connected wallet');
   });
-  it('makes every asset selectable and uses the supplied SVG artwork', () => {
+  it('shows the selected asset on one chip', () => {
     const html = renderToStaticMarkup(<TokenSelector value="USDC" onChange={() => {}}/>);
-    expect(html).not.toContain('disabled');
-    expect(html.match(/<svg/g)).toHaveLength(3);
-    expect(html).toMatch(/aria-pressed="true"[^>]*>.*?Usdc--Streamline-Cryptocurrency/);
+    expect(html).toContain('Asset USDC');
+    expect(html).toContain('Choose USDT');
+    expect(html.match(/<svg/g)).toHaveLength(1);
     expect(html).toContain('fill="#3e73c4"');
-    expect(html).toContain('stop-color="#9945FF"');
   });
   it('withdraw has exactly two steps and no recipient input', () => {
     const html = renderToStaticMarkup(<MotionConfig reducedMotion="always"><LazyMotion features={domMax}><Withdraw context={context}/></LazyMotion></MotionConfig>);

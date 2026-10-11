@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { RPC_URL } from "../lib/config";
 import { PublicKey } from "@solana/web3.js";
-import { parseTokenAmount, SOL_POOL_MINT } from "../lib/payment";
+import {
+  describePaymentError,
+  isSoftPaymentError,
+  parseTokenAmount,
+  SOL_POOL_MINT,
+} from "../lib/payment";
 import type { Token } from "../components/dashboard/TokenIcon";
 import type {
   PaymentContext,
@@ -134,13 +139,17 @@ export function usePaymentTransaction(
         if (ticks >= NOTE_SYNC_ATTEMPTS) stopNoteSync();
       }, NOTE_SYNC_MS);
     } catch (cause) {
+      const raw =
+        cause instanceof Error
+          ? cause.message
+          : "Unable to complete the transaction.";
+      if (mounted.current && isSoftPaymentError(raw)) {
+        setStatus("idle");
+        return { formError: describePaymentError(raw) };
+      }
       if (mounted.current) {
         console.log("Error is ,", cause);
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : "Unable to complete the transaction.",
-        );
+        setError(describePaymentError(raw));
         setStatus("error");
       }
     } finally {

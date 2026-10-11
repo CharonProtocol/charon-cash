@@ -21,7 +21,7 @@ export function StatusLight({
   placement,
 }: {
   status: InfrastructureSnapshot;
-  placement: "dock" | "nav";
+  placement: "dock" | "nav" | "corner";
 }) {
   const tone = status.ready ? status.tone : "checking";
   const summary = status.ready

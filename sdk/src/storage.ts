@@ -172,7 +172,7 @@ export class StorageService {
         "walletPubkeyAndID",
         IDBKeyRange.bound(
           [walletPubkey, fromId],
-          [walletPubkey, Infinity],
+          [walletPubkey, Number.MAX_SAFE_INTEGER],
           true,
           false,
         ),
