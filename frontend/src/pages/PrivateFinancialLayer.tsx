@@ -1,4 +1,4 @@
-import { createRef, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createRef, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import "./PrivateFinancialLayer.css";
 
@@ -176,6 +176,15 @@ export function PrivateFinancialLayer() {
 
   const [lanes, setLanes] = useState({ a: "", b: "" });
 
+  useEffect(() => {
+    if (!activeFeature) return;
+    const fine = window.matchMedia("(hover: hover) and (min-width: 851px)").matches;
+    if (fine) return;
+    const close = () => setActiveFeature(null);
+    window.addEventListener("scroll", close, { passive: true });
+    return () => window.removeEventListener("scroll", close);
+  }, [activeFeature]);
+
   useLayoutEffect(() => {
     const layoutLanes = () => {
       if (!sectionRef.current) return;
@@ -278,7 +287,7 @@ export function PrivateFinancialLayer() {
       {/* Intro & Labels */}
       <div className="absolute top-[5%] left-[6.5%] md:left-[8%] flex items-center gap-[12px] text-[8px] md:text-[10px] tracking-[0.17em] uppercase text-[#77796e] max-h-[580px]:hidden">
         <span className="w-[6px] h-[6px] bg-[#987951] rounded-full inline-block" />
-        One private layer. More possibilities.
+        Private Balance on a Public chain.
       </div>
       <div className="absolute bottom-[3%] left-[8%] md:left-[6.5%] text-[#77796e] text-[8px] md:text-[10px] tracking-[0.08em] max-h-[580px]:hidden">
         SOLANA × ZERO-KNOWLEDGE
@@ -343,7 +352,7 @@ export function PrivateFinancialLayer() {
         articleRef={articleRefs[0]}
         titleRef={titleRefs[0]}
         buttonRef={buttonRefs[0]}
-        className="left-[6%] top-[12%] md:left-[8%] md:top-[16%] w-[55%] md:w-[clamp(175px,21vw,300px)] z-3"
+        className="feature-anchor feature-anchor--transfer"
       >
         <PreviewCard
           title="Private transfer"
@@ -351,7 +360,6 @@ export function PrivateFinancialLayer() {
           amount="4.80 SOL"
           receiptLeft="Recipient •••• 9mQa"
           receiptRight="Illustrative preview"
-          placement="bottom"
         />
       </FeatureCard>
 
@@ -367,12 +375,11 @@ export function PrivateFinancialLayer() {
         articleRef={articleRefs[1]}
         titleRef={titleRefs[1]}
         buttonRef={buttonRefs[1]}
-        className="left-[35%] top-[43%] md:left-[45%] md:top-[46%] w-[55%] md:w-[clamp(175px,21vw,300px)] z-3"
+        className="feature-anchor feature-anchor--payroll"
       >
         <PreviewCard
           title="Team payroll"
           status="Private batch"
-          placement="bottom"
           customBody={
             <>
               <div className="flex items-center gap-[10px] my-[12px] text-[11px]">
@@ -412,12 +419,11 @@ export function PrivateFinancialLayer() {
         articleRef={articleRefs[2]}
         titleRef={titleRefs[2]}
         buttonRef={buttonRefs[2]}
-        className="left-[14%] top-[66%] md:left-[76%] md:top-[66%] w-[55%] md:w-[21%] md:max-w-[300px] z-3"
+        className="feature-anchor feature-anchor--swap"
       >
         <PreviewCard
           title="Shielded exchange"
           status="Private"
-          placement="top"
           customBody={
             <div className="flex items-center justify-between py-[12px] text-[14px]">
               <span>SOL</span>
@@ -467,20 +473,31 @@ function FeatureCard({
   children,
 }: FeatureCardProps) {
   const [firstLine, lastLine] = title.split("<br/>");
+  const coarse =
+    typeof window !== "undefined" &&
+    window.matchMedia("(hover: none), (max-width: 850px)").matches;
 
   return (
     <article
       ref={articleRef}
       className={`absolute transition-all duration-300 ${isActive ? "z-10" : "z-3"} ${className}`}
-      onMouseEnter={() => onActivate(id)}
-      onMouseLeave={() => onActivate(null)}
+      onMouseEnter={() => {
+        if (!coarse) onActivate(id);
+      }}
+      onMouseLeave={() => {
+        if (!coarse) onActivate(null);
+      }}
     >
       <button
         ref={buttonRef}
         aria-expanded={isActive}
         aria-controls={`${id}-preview`}
-        onFocus={() => onActivate(id)}
-        onBlur={() => onActivate(null)}
+        onFocus={() => {
+          if (!coarse) onActivate(id);
+        }}
+        onBlur={() => {
+          if (!coarse) onActivate(null);
+        }}
         onClick={() => onActivate(isActive ? null : id)}
         className="border-0 bg-transparent text-left p-0 cursor-pointer outline-offset-[10px] focus-visible:outline-2 focus-visible:outline-[#947551] focus-visible:rounded-[3px] group block w-full"
       >
@@ -517,24 +534,7 @@ function FeatureCard({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 8 }}
             transition={{ duration: 0.25, ease: "easeOut" }}
-            className="absolute z-[8] pointer-events-none"
-            style={
-              // Placement logic based on media queries in original CSS
-              // Mobile defaults to fixed bottom panel
-              window.innerWidth <= 850
-                ? {
-                  position: "fixed",
-                  left: "6%",
-                  right: "6%",
-                  bottom: "4%",
-                  top: "auto",
-                  width: "auto",
-                  zIndex: 50,
-                }
-                : id === "swap"
-                  ? { right: 0, bottom: "calc(100% + 12px)" }
-                  : { left: 0, top: "calc(100% + 12px)" }
-            }
+            className={`feature-preview${id === "swap" ? " feature-preview--up" : ""}`}
           >
             {children}
           </motion.div>
@@ -551,7 +551,6 @@ interface PreviewCardProps {
   customBody?: React.ReactNode;
   receiptLeft: string;
   receiptRight: string;
-  placement: "top" | "bottom";
 }
 
 function PreviewCard({
@@ -563,7 +562,7 @@ function PreviewCard({
   receiptRight,
 }: PreviewCardProps) {
   return (
-    <div className="w-full md:w-[265px] p-[16px] max-h-[580px]:p-[12px] bg-[#fffcf7f2] border border-[#bbb2a635] rounded-[12px] shadow-[0_12px_40px_#39332309] md:shadow-[0_12px_40px_#39332315]">
+    <div className="preview-card">
       <div className="flex justify-between items-center mb-[18px] max-h-[580px]:mb-[10px] text-[11px] text-[#6e7267]">
         {title}
         <span className="text-[9px] tracking-[0.02em] bg-[#e7ecdf] text-[#637057] px-[8px] py-[5px] rounded-[20px]">

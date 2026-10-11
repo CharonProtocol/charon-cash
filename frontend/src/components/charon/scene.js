@@ -325,7 +325,7 @@ export async function createCharonScene(host, options = {}) {
     const follow = still ? 1 : 1 - Math.exp(-delta * 7);
     cameraX += (targetX - cameraX) * follow;
     cameraY += (targetY - cameraY) * follow;
-    const endZoom = width < 640 ? 0.35 : 0.5;
+    const endZoom = width < 640 ? 0.46 : 0.5;
     const startZoom = Math.max(
       endZoom * 1.3,
       Math.min(2.04, (width / viewScale / 800) * 0.95),
@@ -381,9 +381,9 @@ export async function createCharonScene(host, options = {}) {
       );
       c.mesh.rotation.set(
         (still ? 0 : Math.sin(elapsed * 0.6 + c.seed) * 0.006) -
-          dirY * jump * 0.18,
+        dirY * jump * 0.18,
         (still ? 0 : Math.sin(elapsed * 0.4 + c.seed) * 0.007) +
-          dirX * jump * 0.18,
+        dirX * jump * 0.18,
         still ? 0 : Math.sin(elapsed * 0.6 + c.seed) * 0.0025 + tap * 0.025,
       );
       c.mesh.scale.setScalar(1 + hover * 0.012 + jump * 0.05 + tap * 0.025);
@@ -393,9 +393,9 @@ export async function createCharonScene(host, options = {}) {
         : smooth((introTime - 0.5) / 1.4);
       c.mesh.visible =
         Math.abs(px - camera.position.x) <
-          width / viewScale / camera.zoom / 2 + 420 &&
+        width / viewScale / camera.zoom / 2 + 420 &&
         Math.abs(py - camera.position.y) <
-          height / viewScale / camera.zoom / 2 + 150;
+        height / viewScale / camera.zoom / 2 + 150;
     }
     const lx = LANTERN.x + (still ? 0 : Math.sin(elapsed * 0.9) * 6);
     const ly = LANTERN.y + (still ? 0 : Math.sin(elapsed * 1.25) * 8);

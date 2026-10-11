@@ -193,7 +193,22 @@ sleep 1
   cd backend
   nohup cargo run > "$L-backend.log" 2>&1 &
 )
-echo "  Backend started in background. Logs: $L-backend.log"
+echo "  Waiting for the backend and indexer..."
+backend_up=0
+for i in $(seq 1 180); do
+  if curl -sf -m2 http://127.0.0.1:8080/health >/dev/null; then
+    backend_up=1
+    break
+  fi
+  sleep 1
+done
+if [ "$backend_up" -eq 1 ]; then
+  echo "  Backend is up on :8080. The indexer catch-up keeps running with it. Logs: $L-backend.log"
+else
+  echo "  ✗ Backend didn't start. Check $L-backend.log"
+  tail -n 40 "$L-backend.log" || true
+  exit 1
+fi
 
 echo "==========================================================="
 echo "▶ 9/10 Linking SDK to frontend..."
