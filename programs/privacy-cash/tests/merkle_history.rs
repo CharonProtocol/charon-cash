@@ -8,8 +8,10 @@ mod common;
 
 use common::merkle_tree::MerkleTree as OffChainTree;
 use light_hasher::Poseidon;
+use pinocchio::error::ProgramError;
 use privacy_cash::{
     constants::{MERKLE_TREE_HEIGHT, ROOT_HISTORY_SIZE},
+    error::PrivacyCashError,
     merkle_tree::MerkleTree,
     state::MerkleTreeAccount,
 };
@@ -124,4 +126,36 @@ fn hundred_and_first_pair_evicts_the_oldest_complete_root() {
         !MerkleTree::is_known_root(&on, first_complete),
         "the 101st pair evicts the oldest complete root"
     );
+}
+
+#[test]
+fn append_pair_matches_two_append_leaf_calls() {
+    let pairs = [(1u8, 2u8), (3, 4), (9, 10), (40, 41)];
+
+    let mut paired = empty_account();
+    let mut sequential = empty_account();
+
+    for (lo, hi) in pairs {
+        MerkleTree::append_pair::<Poseidon>(&[leaf(lo), leaf(hi)], &mut paired).unwrap();
+        let mid = MerkleTree::append_leaf::<Poseidon>(leaf(lo), &mut sequential).unwrap();
+        let root = MerkleTree::append_leaf::<Poseidon>(leaf(hi), &mut sequential).unwrap();
+        assert_ne!(mid, root);
+        assert_eq!(paired.subtrees, sequential.subtrees);
+        assert_eq!(paired.next_index, sequential.next_index);
+        assert_eq!(current_root(&paired), root);
+    }
+}
+
+#[test]
+fn append_pair_rejects_an_odd_next_index() {
+    let mut on = empty_account();
+    MerkleTree::append_leaf::<Poseidon>(leaf(1), &mut on).unwrap();
+    assert_eq!(on.next_index, 1);
+
+    let err = MerkleTree::append_pair::<Poseidon>(&[leaf(2), leaf(3)], &mut on).unwrap_err();
+    assert_eq!(
+        err,
+        ProgramError::Custom(PrivacyCashError::InvalidMerkleTreeAccount as u32)
+    );
+    assert_eq!(on.next_index, 1);
 }

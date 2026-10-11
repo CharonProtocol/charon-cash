@@ -107,12 +107,14 @@ pub fn process_transact(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
         return Err(PrivacyCashError::InvalidProof.into());
     }
 
+    let rent = Rent::get()?;
     init_nullifier_account(
         signer,
         nullifier0,
         NULLIFIER0_SEED,
         &proof.input_nullifiers[0],
         nullifier_bump0,
+        &rent,
     )?;
     init_nullifier_account(
         signer,
@@ -120,9 +122,9 @@ pub fn process_transact(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
         NULLIFIER1_SEED,
         &proof.input_nullifiers[1],
         nullifier_bump1,
+        &rent,
     )?;
 
-    let rent = Rent::get()?;
     let rent_exempt_minimum = rent.try_minimum_balance(tree_token_account.data_len())?;
 
     if ext_amount > 0 {

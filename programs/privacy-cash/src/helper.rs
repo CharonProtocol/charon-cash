@@ -3,7 +3,7 @@ use pinocchio::{
     account::AccountView,
     cpi::{Seed, Signer},
     error::ProgramError,
-    sysvars::{rent::Rent, Sysvar},
+    sysvars::rent::Rent,
     Address, ProgramResult,
 };
 use pinocchio_system::instructions::CreateAccount;
@@ -91,10 +91,14 @@ pub fn init_nullifier_account(
     seed_prefix: &[u8],
     nullifier_hash: &[u8; 32],
     bump: u8,
+    rent: &Rent,
 ) -> ProgramResult {
     verify_uninitialized(nullifier_account)?;
 
     let bump_seed = [bump];
+    // `CreateAccount` also accepts a transaction signer. Without this
+    // derivation a caller can pass a keypair they control and leave the real
+    // nullifier PDA unclaimed.
     verify_pda(
         nullifier_account,
         &[seed_prefix, nullifier_hash, &bump_seed],
@@ -102,7 +106,7 @@ pub fn init_nullifier_account(
     )?;
 
     let space = core::mem::size_of::<NullifierAccount>();
-    let lamports = Rent::get()?.try_minimum_balance(space)?;
+    let lamports = rent.try_minimum_balance(space)?;
 
     let seeds = [
         Seed::from(seed_prefix),

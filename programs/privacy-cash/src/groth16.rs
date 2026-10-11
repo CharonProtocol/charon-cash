@@ -94,20 +94,27 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
 
     pub fn prepare_inputs<const CHECK: bool>(&mut self) -> Result<(), Groth16Error> {
         let mut prepared_public_inputs = self.verifyingkey.vk_ic[0];
+        let mut mul_input = [0u8; 96];
+        let mut addition_input = [0u8; 128];
 
         for (i, input) in self.public_inputs.iter().enumerate() {
             if CHECK && !is_less_than_bn254_field_size_be(input) {
                 return Err(Groth16Error::PublicInputGreaterThanFieldSize);
             }
-            let mul_res = alt_bn128_g1_multiplication_be(
-                &[&self.verifyingkey.vk_ic[i + 1][..], &input[..]].concat(),
-            )
-            .map_err(|_| Groth16Error::PreparingInputsG1MulFailed)?;
-            prepared_public_inputs =
-                alt_bn128_g1_addition_be(&[&mul_res[..], &prepared_public_inputs[..]].concat())
-                    .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?[..]
-                    .try_into()
-                    .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?;
+
+            mul_input[..64].copy_from_slice(&self.verifyingkey.vk_ic[i + 1]);
+            mul_input[64..].copy_from_slice(input);
+
+            let mul_res = alt_bn128_g1_multiplication_be(&mul_input)
+                .map_err(|_| Groth16Error::PreparingInputsG1MulFailed)?;
+
+            addition_input[..64].copy_from_slice(&mul_res);
+            addition_input[64..].copy_from_slice(&prepared_public_inputs);
+
+            prepared_public_inputs = alt_bn128_g1_addition_be(&addition_input)
+                .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?[..]
+                .try_into()
+                .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?;
         }
 
         self.prepared_public_inputs = prepared_public_inputs;
@@ -130,7 +137,10 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
     fn verify_common<const CHECK: bool>(&mut self) -> Result<bool, Groth16Error> {
         self.prepare_inputs::<CHECK>()?;
 
-        let pairing_input = [
+        // Four (G1, G2) pairs: 4 * (64 + 128) bytes.
+        let mut pairing_input = [0u8; 4 * (64 + 128)];
+        let mut offset = 0;
+        for part in [
             self.proof_a.as_slice(),
             self.proof_b.as_slice(),
             self.prepared_public_inputs.as_slice(),
@@ -139,10 +149,12 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
             self.verifyingkey.vk_delta_g2.as_slice(),
             self.verifyingkey.vk_alpha_g1.as_slice(),
             self.verifyingkey.vk_beta_g2.as_slice(),
-        ]
-        .concat();
+        ] {
+            pairing_input[offset..offset + part.len()].copy_from_slice(part);
+            offset += part.len();
+        }
 
-        let pairing_res = alt_bn128_pairing_be(pairing_input.as_slice())
+        let pairing_res = alt_bn128_pairing_be(&pairing_input)
             .map_err(|_| Groth16Error::ProofVerificationFailed)?;
 
         if pairing_res[31] != 1 {

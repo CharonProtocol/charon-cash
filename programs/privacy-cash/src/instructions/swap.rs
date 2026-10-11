@@ -21,6 +21,7 @@ use pinocchio::{
     cpi::{invoke_signed_with_slice, Seed, Signer},
     error::ProgramError,
     instruction::{InstructionAccount, InstructionView},
+    sysvars::{rent::Rent, Sysvar},
     AccountView, Address, ProgramResult,
 };
 use pinocchio_associated_token_account::instructions::CreateIdempotent;
@@ -205,12 +206,14 @@ pub fn process_swap(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     verify_cross_nullifier(in_nullifier3)?;
     verify_cross_nullifier(out_nullifier2)?;
     verify_cross_nullifier(out_nullifier3)?;
+    let rent = Rent::get()?;
     init_nullifier_account(
         signer,
         in_nullifier0,
         NULLIFIER0_SEED,
         &proof_in.input_nullifiers[0],
         args.nullifier_bump_in0,
+        &rent,
     )?;
     init_nullifier_account(
         signer,
@@ -218,6 +221,7 @@ pub fn process_swap(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
         NULLIFIER1_SEED,
         &proof_in.input_nullifiers[1],
         args.nullifier_bump_in1,
+        &rent,
     )?;
     init_nullifier_account(
         signer,
@@ -225,6 +229,7 @@ pub fn process_swap(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
         NULLIFIER0_SEED,
         &proof_out.input_nullifiers[0],
         args.nullifier_bump_out0,
+        &rent,
     )?;
     init_nullifier_account(
         signer,
@@ -232,6 +237,7 @@ pub fn process_swap(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
         NULLIFIER1_SEED,
         &proof_out.input_nullifiers[1],
         args.nullifier_bump_out1,
+        &rent,
     )?;
 
     CreateIdempotent {

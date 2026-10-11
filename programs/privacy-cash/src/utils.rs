@@ -147,19 +147,20 @@ pub fn calculate_complete_ext_data_hash(
     fee_recipient: &[u8; 32],
     mint_address: &[u8; 32],
 ) -> Result<[u8; 32], ProgramError> {
-    let mut data = Vec::new();
-
-    data.extend_from_slice(recipient);
-    data.extend_from_slice(&ext_amount.to_le_bytes());
-    data.extend_from_slice(&(encrypted_output1.len() as u32).to_le_bytes());
-    data.extend_from_slice(encrypted_output1);
-    data.extend_from_slice(&(encrypted_output2.len() as u32).to_le_bytes());
-    data.extend_from_slice(encrypted_output2);
-    data.extend_from_slice(&fee.to_le_bytes());
-    data.extend_from_slice(fee_recipient);
-    data.extend_from_slice(mint_address);
-
-    Sha256::hash(&data).map_err(|_| ProgramError::InvalidInstructionData)
+    // Same digest as hashing the concatenation. The encrypted outputs are the
+    // large slices, so they are not copied into a buffer first.
+    Sha256::hashv(&[
+        recipient,
+        &ext_amount.to_le_bytes(),
+        &(encrypted_output1.len() as u32).to_le_bytes(),
+        encrypted_output1,
+        &(encrypted_output2.len() as u32).to_le_bytes(),
+        encrypted_output2,
+        &fee.to_le_bytes(),
+        fee_recipient,
+        mint_address,
+    ])
+    .map_err(|_| ProgramError::InvalidInstructionData)
 }
 
 /// In-leg swap hash: dest mint, min-out, and both out-leg commitments.
@@ -172,19 +173,20 @@ pub fn calculate_swap_in_ext_data_hash(
     ext_amount_out: i64,
     out_commitments: &[[u8; 32]; 2],
 ) -> Result<[u8; 32], ProgramError> {
-    let mut data = Vec::new();
-    data.extend_from_slice(crate::constants::SWAP_IN_DOMAIN);
-    data.extend_from_slice(&ext_amount_in.to_le_bytes());
-    data.extend_from_slice(&(encrypted_output1.len() as u32).to_le_bytes());
-    data.extend_from_slice(encrypted_output1);
-    data.extend_from_slice(&(encrypted_output2.len() as u32).to_le_bytes());
-    data.extend_from_slice(encrypted_output2);
-    data.extend_from_slice(in_mint);
-    data.extend_from_slice(out_mint);
-    data.extend_from_slice(&ext_amount_out.to_le_bytes());
-    data.extend_from_slice(&out_commitments[0]);
-    data.extend_from_slice(&out_commitments[1]);
-    Sha256::hash(&data).map_err(|_| ProgramError::InvalidInstructionData)
+    Sha256::hashv(&[
+        crate::constants::SWAP_IN_DOMAIN,
+        &ext_amount_in.to_le_bytes(),
+        &(encrypted_output1.len() as u32).to_le_bytes(),
+        encrypted_output1,
+        &(encrypted_output2.len() as u32).to_le_bytes(),
+        encrypted_output2,
+        in_mint,
+        out_mint,
+        &ext_amount_out.to_le_bytes(),
+        &out_commitments[0],
+        &out_commitments[1],
+    ])
+    .map_err(|_| ProgramError::InvalidInstructionData)
 }
 
 /// Out-leg swap hash. Deliberately does not mention the in-leg (no cycle).
@@ -194,15 +196,16 @@ pub fn calculate_swap_out_ext_data_hash(
     encrypted_output2: &[u8],
     out_mint: &[u8; 32],
 ) -> Result<[u8; 32], ProgramError> {
-    let mut data = Vec::new();
-    data.extend_from_slice(crate::constants::SWAP_OUT_DOMAIN);
-    data.extend_from_slice(&ext_amount_out.to_le_bytes());
-    data.extend_from_slice(&(encrypted_output1.len() as u32).to_le_bytes());
-    data.extend_from_slice(encrypted_output1);
-    data.extend_from_slice(&(encrypted_output2.len() as u32).to_le_bytes());
-    data.extend_from_slice(encrypted_output2);
-    data.extend_from_slice(out_mint);
-    Sha256::hash(&data).map_err(|_| ProgramError::InvalidInstructionData)
+    Sha256::hashv(&[
+        crate::constants::SWAP_OUT_DOMAIN,
+        &ext_amount_out.to_le_bytes(),
+        &(encrypted_output1.len() as u32).to_le_bytes(),
+        encrypted_output1,
+        &(encrypted_output2.len() as u32).to_le_bytes(),
+        encrypted_output2,
+        out_mint,
+    ])
+    .map_err(|_| ProgramError::InvalidInstructionData)
 }
 
 pub fn ext_data_hash_matches(calculated: [u8; 32], proof_hash: [u8; 32]) -> bool {

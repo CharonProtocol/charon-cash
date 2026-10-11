@@ -21,6 +21,7 @@ use pinocchio::{
     account::AccountView,
     cpi::{Seed, Signer},
     error::ProgramError,
+    sysvars::{rent::Rent, Sysvar},
     ProgramResult,
 };
 use pinocchio_associated_token_account::instructions::CreateIdempotent;
@@ -150,12 +151,14 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
         return Err(PrivacyCashError::InvalidProof.into());
     }
 
+    let rent = Rent::get()?;
     init_nullifier_account(
         signer,
         nullifier0,
         NULLIFIER0_SEED,
         &proof.input_nullifiers[0],
         nullifier_bump0,
+        &rent,
     )?;
     init_nullifier_account(
         signer,
@@ -163,6 +166,7 @@ pub fn process_transact_spl(accounts: &[AccountView], data: &[u8]) -> ProgramRes
         NULLIFIER1_SEED,
         &proof.input_nullifiers[1],
         nullifier_bump1,
+        &rent,
     )?;
 
     // PDA signer seeds for the tree's ATA (authority == global_config PDA).
