@@ -373,10 +373,11 @@ export function EmployerApp({ page }: { page: Page }) {
             <TeamPage extraEntries={parsed?.entries} />
           </div>
         </>
-      ) : busy ? (
-        <p className="text-sm text-muted-foreground">Connecting… (fetching relayer config)</p>
       ) : (
         <>
+          {busy && (
+            <p className="mb-3 text-sm text-muted-foreground">Connecting… (fetching relayer config)</p>
+          )}
           {/* ── console header ─────────────────────────────────────────── */}
           <div>
             <h1 className="h-display text-3xl tracking-[-0.02em] sm:text-4xl">
@@ -430,7 +431,6 @@ export function EmployerApp({ page }: { page: Page }) {
               minTransferFee={minTransferFee}
               vaultSolRaw={vaultSolRaw}
               mode={planParams.current?.mode ?? "shielded"}
-              lanes={planParams.current?.lanes ?? 8}
               check={recipientCheck}
               verifying={verifying}
               onVerify={checkRecipients}
@@ -903,7 +903,6 @@ function SettlementBar({
   minTransferFee,
   vaultSolRaw,
   mode,
-  lanes,
   check,
   verifying,
   onVerify,
@@ -915,7 +914,6 @@ function SettlementBar({
   minTransferFee: number
   vaultSolRaw: bigint | null
   mode: RunMode
-  lanes: number
   check: { total: number; registered: number; unregistered: string[] } | null
   verifying: boolean
   onVerify: () => void
@@ -954,15 +952,6 @@ function SettlementBar({
 
   return (
     <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-band-line bg-band/95 px-5 py-4 text-band-ink shadow-[0_12px_40px_rgba(0,0,0,0.18)]">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-band-mute">
-          <span className="size-1.5 rounded-full bg-band-gold" />
-          zero-knowledge attestation
-        </div>
-        <div className="mt-0.5 truncate font-mono text-[11px] text-band-mute">
-          {lanes} parallel multi-lane bundle{lanes === 1 ? "" : "s"}
-        </div>
-      </div>
         <div className="flex flex-1 flex-wrap items-center gap-x-6 gap-y-2">
           <BarStat label="Total distributed" value={totals ? `${lamportsToSol(totals.totalNet.toString()).toFixed(4)} SOL` : "-"} />
           <BarStat

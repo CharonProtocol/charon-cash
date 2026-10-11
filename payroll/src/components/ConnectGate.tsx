@@ -16,7 +16,7 @@ const SUBTITLES: Record<string, string> = {
   Ledger: "Direct USB / WebHID / Air-gapped QR",
   Torus: "Social recovery · embedded keys",
   Glow: "Mobile-first · Wallet Standard",
-  "Demo Wallet": "Burner keypair · no extension needed (dev only)",
+  "Demo Wallet": "Burner keypair · no extension needed",
 }
 
 /**
@@ -93,8 +93,8 @@ export function ConnectGate({
           <div className="mt-6 flex justify-center">
             <GliderGroup
               pillClassName="bg-panel-2 border border-line shadow-sm"
-              className="flex rounded-xl border border-line bg-panel p-1"
-              itemClassName="whitespace-nowrap px-3 text-xs sm:text-sm"
+              className="flex rounded-xl border border-line bg-panel p-0.5"
+              itemClassName="whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm"
               value={role}
               onChange={(id) => navigate(id === "employer" ? "/employer" : "/employee")}
               items={[

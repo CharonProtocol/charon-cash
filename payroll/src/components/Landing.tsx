@@ -117,7 +117,7 @@ const runtimeBars = [
 const pipeline = [
   { n: "zk proof", v: "0.8s", d: "one Groth16 proof, built on the employee's device" },
   { n: "relayer", v: "no keys", d: "broadcasts your signed transaction - builds nothing, holds nothing" },
-  { n: "confirm", v: "~400ms", d: "one Solana slot from broadcast to confirmation" },
+  { n: "confirm", v: "400-500ms", d: "from submit to reflecting on your device" },
 ]
 
 const SDK_SNIPPET = `import { PrivacyCashClient, publishRecipientKeys } from "privacy-cash-sdk"
@@ -770,7 +770,7 @@ function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void 
               Measured, not promised
             </h2>
             <p className="mt-1 text-sm text-body-ink">
-              Same 100 unequal salaries, measured on a local validator. Bars are to scale.
+              Same 100 unequal salaries, measured on devnet. Bars are to scale.
             </p>
           </div>
           <div data-stagger className="grid gap-4 lg:grid-cols-2">
@@ -792,8 +792,7 @@ function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void 
                   </div>
                 ))}
                 <p className="text-xs leading-relaxed text-body-ink">
-                  First signature to last confirmation. Every proof is generated on the employee's
-                  device and streams in parallel; the relayer only broadcasts signed transactions.
+                  First signature to last confirmation - every proof built on-device in parallel, the relayer just broadcasts.
                 </p>
               </CardContent>
             </Card>
@@ -812,10 +811,6 @@ function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void 
                     <span className="stat-number flex-none text-sm font-bold">{st.v}</span>
                   </div>
                 ))}
-                <p className="pt-1 text-xs leading-relaxed text-body-ink">
-                  Proofs are built client-side, so a full run only waits on relayer broadcasts and
-                  confirmations - not proving.
-                </p>
               </CardContent>
             </Card>
           </div>
@@ -1033,7 +1028,6 @@ function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void 
         {/* ================= CTA: GIANT WORDMARK ================= */}
         <section data-reveal className="mx-auto w-full max-w-[1150px] px-4 py-16 sm:px-8 md:py-24">
           <div className="flex flex-col items-center gap-6 text-center">
-            <SectionLabel>Streamlined Settlement</SectionLabel>
             <h2 className="mark-gradient text-[clamp(3.2rem,10vw,8rem)] font-bold leading-[0.95] tracking-[-0.045em]">
               Leave no trace.
             </h2>

@@ -146,7 +146,10 @@ export const PlanReviewCard = forwardRef<
 
   useImperativeHandle(ref, () => ({ dispatch }))
 
-  const estSeconds = rowCount > 0 ? Math.round(rowCount * 0.8) : 0
+  // Proving overlaps across lanes; the relayer submit/confirm pipeline stays
+  // roughly serial (~0.6s per payout floor), so lanes help less as they grow.
+  const estSeconds =
+    rowCount > 0 ? Math.ceil((rowCount * 0.8) / lanes) + Math.round(rowCount * 0.6) : 0
   const estLabel =
     estSeconds === 0
       ? "load a batch for an estimate"

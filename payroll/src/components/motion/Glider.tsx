@@ -64,7 +64,9 @@ export function GliderGroup<T extends string>({
             else itemRefs.current.delete(it.id)
           }}
           onClick={() => onChange?.(it.id)}
-          className={`relative z-10 flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
+          className={`relative z-10 flex items-center gap-2 rounded-md ${
+            /(?:^|\s)px-/.test(itemClassName) ? "" : "px-3"
+          } ${/(?:^|\s)py-/.test(itemClassName) ? "" : "py-2"} text-sm transition-colors ${
             tone === "band"
               ? value === it.id
                 ? "text-band-ink"

@@ -67,7 +67,7 @@ export function UploadCard({
             </CardTitle>
             <CardDescription className="mt-0.5 text-xs">
               CSV with header <code>address,amount,memo</code> or JSON{" "}
-              <code>{"{ payments: [...] }"}</code> - amounts are what each employee receives.
+              <code>{"{ payments: [...] }"}</code>
             </CardDescription>
           </div>
         </div>

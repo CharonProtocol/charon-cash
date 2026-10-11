@@ -9,6 +9,8 @@ import {
   WRAPPED_SOL_MINT,
 } from "privacy-cash-sdk"
 
+import { cacheClient, getCachedClient } from "@/lib/clientCache"
+
 export function useEmployeeClient() {
   const { publicKey, signMessage, signTransaction } = useWallet()
   const { connection } = useConnection()
@@ -21,6 +23,10 @@ export function useEmployeeClient() {
   const [bps, setBps] = useState<number | null>(null)
   const [minFee, setMinFee] = useState(0)
   const clientRef = useRef<PrivacyCashClient | null>(null)
+  // The note list below memoizes on `notes` identity, so every store fill
+  // must bump this counter — otherwise the claimable stat updates while the
+  // ledger keeps showing "No private notes yet" (they read the same store).
+  const [notesVersion, setNotesVersion] = useState(0)
 
   const connected = !!(publicKey && signMessage && signTransaction)
 
@@ -30,6 +36,7 @@ export function useEmployeeClient() {
       if (!cl || !publicKey) return
       await cl.refreshNotes()
       setNoteSolRaw(totalBalance(publicKey, WRAPPED_SOL_MINT))
+      setNotesVersion((v) => v + 1)
       try {
         setWalletSolRaw(await connection.getBalance(publicKey))
       } catch {
@@ -59,9 +66,18 @@ export function useEmployeeClient() {
         const floor = Math.floor(Number(info.minTransferFee))
         setMinFee(Number.isFinite(floor) && floor > 0 ? floor : 0)
         if (keys) {
-          await c.init()
-          await c.unlock()
-          await rescan(c)
+          const cached = getCachedClient(publicKey.toBase58())
+          if (cached) {
+            // Unlocked earlier this session (route switch): reuse, no popup.
+            clientRef.current = cached
+            setClient(cached)
+            await rescan(cached)
+          } else {
+            await c.init()
+            await c.unlock()
+            cacheClient(publicKey.toBase58(), c)
+            await rescan(c)
+          }
         }
       } catch (e) {
         if (!cancelled) setError((e as Error).message)
@@ -77,7 +93,8 @@ export function useEmployeeClient() {
   const notes = useCallback(() => {
     if (!publicKey) return []
     return unspentNotes(publicKey).filter((n) => n.mintAddress === WRAPPED_SOL_MINT)
-  }, [publicKey])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [publicKey, notesVersion])
 
   return {
     connected,

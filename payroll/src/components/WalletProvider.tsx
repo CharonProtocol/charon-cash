@@ -10,12 +10,9 @@ import { config } from "@/lib/config"
 import { DemoWalletAdapter } from "@/lib/demoWallet"
 
 export function SolanaProviders({ children }: { children: ReactNode }) {
-  // Dev-only burner wallet so the console is testable in a browser with no
-  // wallet extension installed. Never ships in the prod bundle.
-  const wallets = useMemo(
-    () => (import.meta.env.DEV ? [new DemoWalletAdapter()] : []),
-    [],
-  )
+  // Burner wallet so the console is testable in a browser with no wallet
+  // extension installed (also what makes the beta site demoable).
+  const wallets = useMemo(() => [new DemoWalletAdapter()], [])
   return (
     <ConnectionProvider endpoint={config.get().rpcUrl} config={{ commitment: "confirmed" }}>
       {/* autoConnect restores an explicitly-made connection across refreshes -

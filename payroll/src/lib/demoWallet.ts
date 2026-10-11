@@ -14,7 +14,7 @@ export const DEMO_WALLET_NAME = "Demo Wallet" as WalletName<"Demo Wallet">
  * gated console is fully testable in a browser without any wallet extension.
  * Signatures are real ed25519 (signMessage via tweetnacl, transactions
  * partial-signed locally) but nothing is persisted — reload = fresh identity.
- * Registered only under import.meta.env.DEV in WalletProvider.
+ * Registered in WalletProvider for every build.
  */
 export class DemoWalletAdapter extends BaseMessageSignerWalletAdapter {
   name = DEMO_WALLET_NAME

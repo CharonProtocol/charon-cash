@@ -8,6 +8,8 @@ import {
   WRAPPED_SOL_MINT,
 } from "privacy-cash-sdk"
 
+import { cacheClient, getCachedClient } from "@/lib/clientCache"
+
 function friendly(e: unknown): string {
   const msg = (e as Error)?.message ?? String(e)
   if (msg === "Failed to fetch" || msg.includes("NetworkError") || msg.includes("network")) {
@@ -54,6 +56,19 @@ export function usePayrollClient() {
     // Stale guard: if the wallet re-keyed while init was in flight, the
     // results below belong to a client nobody holds anymore.
     let cancelled = false
+    const wallet = publicKey.toBase58()
+    const cached = getCachedClient(wallet)
+    if (cached) {
+      // Already init'd + unlocked earlier in this session (route switch):
+      // reuse it, no signature prompt, just refresh the vault quietly.
+      clientRef.current = cached
+      setClient(cached)
+      setUnlocked(true)
+      setUnlockBusy(false)
+      setBusy(false)
+      setVaultSolRaw(totalBalance(cached.publicKey, WRAPPED_SOL_MINT))
+      return
+    }
     setUnlocked(false)
     setUnlockBusy(false)
     const c = new PrivacyCashClient({ publicKey, signMessage, signTransaction })
@@ -96,6 +111,7 @@ export function usePayrollClient() {
       await c.refreshNotes()
       setVaultSolRaw(totalBalance(c.publicKey, WRAPPED_SOL_MINT))
       setUnlocked(true)
+      if (c.publicKey) cacheClient(c.publicKey.toBase58(), c)
     } catch (e) {
       // Without this the rejection is unhandled: the button just silently
       // does nothing on a rejected signature or a failed notes refresh.
