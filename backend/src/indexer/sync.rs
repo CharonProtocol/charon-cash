@@ -51,6 +51,11 @@ impl Indexer {
             "indexer starting (yellowstone gRPC)"
         );
 
+        // The Rocks tree is cleared in `MerkleManager::new`. Replay the leaves
+        // Postgres already has before catch-up, which skips signatures that
+        // are already in `indexed_txs` and would otherwise never insert them.
+        self.restore_merkle_trees().await?;
+
         // Surfpool's geyser stream stays connected but does not deliver local
         // program transactions. Pull the same transactions from RPC so a
         // deposit's notes reach the client.
@@ -70,6 +75,52 @@ impl Indexer {
             }
             tokio::time::sleep(self.config.reconnect_delay()).await;
         }
+    }
+
+    async fn restore_merkle_trees(&self) -> Result<()> {
+        let keys = self
+            .db
+            .tree_keys()
+            .await
+            .context("list merkle trees")?;
+        for key in keys {
+            let have = {
+                let mut trees = self.merkle_manager.write().await;
+                trees.get_or_create_pool(&key).num_leaves() as u64
+            };
+            let mut from = have;
+            let mut restored = 0u64;
+            loop {
+                let batch = self
+                    .db
+                    .fetch_commitments(from, 1000, &key)
+                    .await
+                    .map_err(|err| anyhow::anyhow!("fetch commitments for {key}: {err}"))?;
+                if batch.is_empty() {
+                    break;
+                }
+                let leaves = leaves_in_order(from, &batch)?;
+                let count = leaves.len() as u64;
+                {
+                    let mut trees = self.merkle_manager.write().await;
+                    let pool = trees.get_or_create_pool(&key);
+                    if pool.num_leaves() as u64 != from {
+                        anyhow::bail!("tree {key} changed while restoring");
+                    }
+                    let nodes: Vec<Node> = leaves.into_iter().map(Node::from).collect();
+                    pool.add_leaves(&nodes)?;
+                }
+                restored += count;
+                from += count;
+            }
+            info!(
+                tree = %key,
+                leaves = have + restored,
+                restored,
+                "merkle tree restored from postgres"
+            );
+        }
+        Ok(())
     }
 
     async fn stream_once(&self) -> Result<()> {
@@ -588,10 +639,45 @@ fn program_instructions(
     found
 }
 
+/// `rows` must be the commitments for one tree, ordered by leaf index,
+/// starting at `start`. A gap would append a later leaf at the wrong position.
+fn leaves_in_order(start: u64, rows: &[(u64, Vec<u8>)]) -> Result<Vec<[u8; 32]>> {
+    let mut next = start;
+    let mut leaves = Vec::with_capacity(rows.len());
+    for (index, commitment) in rows {
+        if *index != next {
+            anyhow::bail!("commitment index {index} does not follow leaf {next}");
+        }
+        let bytes: [u8; 32] = commitment.as_slice().try_into().map_err(|_| {
+            anyhow::anyhow!("leaf {index} is {} bytes, expected 32", commitment.len())
+        })?;
+        leaves.push(bytes);
+        next += 1;
+    }
+    Ok(leaves)
+}
+
 /// Background task entrypoint from `main`.
 pub async fn spawn_indexer(config: Config, db: Db, merkle_manager: Arc<RwLock<MerkleManager>>) {
     let indexer = Indexer::new(config, db, merkle_manager);
     if let Err(err) = indexer.run().await {
         warn!(error = %err, "indexer exited");
+    }
+}
+
+#[cfg(test)]
+mod restore_tests {
+    use super::leaves_in_order;
+
+    #[test]
+    fn replay_requires_contiguous_indices() {
+        let rows = vec![(0, vec![1u8; 32]), (1, vec![2u8; 32])];
+        let leaves = leaves_in_order(0, &rows).unwrap();
+        assert_eq!(leaves.len(), 2);
+        assert_eq!(leaves[1][0], 2);
+
+        let gapped = vec![(0, vec![1u8; 32]), (2, vec![3u8; 32])];
+        assert!(leaves_in_order(0, &gapped).is_err());
+        assert!(leaves_in_order(1, &rows).is_err());
     }
 }

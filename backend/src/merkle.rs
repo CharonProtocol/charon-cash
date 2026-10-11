@@ -18,7 +18,11 @@ pub struct MerkleManager {
 
 impl MerkleManager {
     pub async fn new() -> Result<Self> {
-        // WARNING : Wipes all the data on boot , only for development for now
+        // Start empty. `Indexer::restore_merkle_trees` replays `commitments`
+        // from Postgres before live indexing resumes. Keeping a previous
+        // Rocks tree across restarts left it behind the notes in Postgres:
+        // already-indexed deposits were skipped, and spends proved against
+        // a tree that no longer contained those leaves.
         if let Err(e) = tokio::fs::remove_dir_all(MERKLE_STORE_PATH).await {
             if e.kind() != std::io::ErrorKind::NotFound {
                 return Err(e.into());

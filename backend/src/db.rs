@@ -90,6 +90,17 @@ impl Db {
         Ok(row.is_some())
     }
 
+    pub async fn tree_keys(&self) -> Result<Vec<String>, DbError> {
+        let rows = sqlx::query("SELECT tree_key FROM trees ORDER BY tree_key")
+            .fetch_all(&self.pool)
+            .await?;
+        let mut keys = Vec::with_capacity(rows.len());
+        for row in rows {
+            keys.push(row.try_get("tree_key")?);
+        }
+        Ok(keys)
+    }
+
     pub async fn next_index(&self, tree_key: &str) -> Result<u32, DbError> {
         let row: Option<(i64,)> =
             sqlx::query_as("SELECT next_index FROM trees WHERE tree_key = $1")

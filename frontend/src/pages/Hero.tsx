@@ -113,9 +113,6 @@ export function Hero({
             </button>
           ) : (
             <div className="charon-hero-actions">
-              <button className="charon-action-button" type="button">
-                Contact Us
-              </button>
               <a className="charon-action-button" href="#dashboard">
                 Shield Yourself
               </a>

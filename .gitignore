@@ -1,4 +1,5 @@
 /target
+.cursor/
 */node_modules
 */dist
 Cargo.lock

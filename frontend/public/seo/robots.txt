@@ -1,0 +1,5 @@
+User-Agent: *
+Allow: /
+
+Host: https://www.charon.cash
+Sitemap: https://www.charon.cash/sitemap.xml

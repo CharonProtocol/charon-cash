@@ -18,7 +18,11 @@ export function Landing() {
     <div className="landing-page relative">
       <header className="dashboard-navbar landing-dashboard-navbar" data-private={isPrivate}>
         <a href="#" aria-label="Charon home" className="dashboard-brand">
-          <img src="/LogoOn.png" alt="" className="dashboard-brand-mark" />
+          <img
+            src={isPrivate ? "/LogoOn.png" : "/LogoOff.png"}
+            alt=""
+            className="dashboard-brand-mark"
+          />
           <span>CHARON</span>
         </a>
         <a className="landing-launch-button" href="#dashboard">
