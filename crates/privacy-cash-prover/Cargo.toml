@@ -1,0 +1,52 @@
+[package]
+name = "privacy-cash-prover"
+version = "0.2.0"
+edition = "2021"
+description = "Groth16 prover for Privacy Cash: witness graph + snarkjs zkey, native and wasm32"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["native"]
+# Multi-threaded native build (tests, program tests, benches).
+native = ["parallel"]
+# Not ark-ec/ark-groth16 `parallel`: their MSM spawns OS threads per call, which
+# wasm threads cannot do. src/groth16.rs parallelises the MSMs on the rayon pool.
+parallel = [
+    "ark-ff/parallel",
+    "ark-poly/parallel",
+    "ark-std/parallel",
+    "dep:rayon",
+]
+# wasm-bindgen bindings; alone, the single-threaded fallback build.
+wasm = ["dep:wasm-bindgen", "dep:console_error_panic_hook"]
+# Multi-threaded wasm32 build (rayon over Web Workers + SharedArrayBuffer). Needs
+# nightly, atomics and `-Z build-std`; the page must be cross-origin isolated
+# (COOP/COEP). Built by sdk/scripts/build-prover.mjs.
+wasm-threads = ["wasm", "parallel", "dep:wasm-bindgen-rayon"]
+
+[dependencies]
+anyhow = "1"
+ark-bn254 = { version = "0.6.0", default-features = false, features = ["curve", "std"] }
+ark-ec = { version = "0.6.0", default-features = false, features = ["std"] }
+ark-ff = { version = "0.6.0", default-features = false, features = ["std"] }
+ark-groth16 = { version = "0.6.0", default-features = false, features = ["std"] }
+ark-poly = { version = "0.6.0", default-features = false, features = ["std"] }
+ark-relations = { version = "0.6.0", default-features = false }
+ark-serialize = { version = "0.6.0", default-features = false, features = ["std"] }
+ark-std = { version = "0.6.0", default-features = false, features = ["std"] }
+bs58 = "0.5"
+hex = "0.4"
+num-bigint = "0.4"
+rand = { version = "0.8", default-features = false, features = ["std", "getrandom"] }
+rayon = { version = "1", optional = true }
+ruint = { version = "1.13", default-features = false, features = ["std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wasm-bindgen = { version = "0.2", optional = true }
+console_error_panic_hook = { version = "0.1", optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+wasm-bindgen-rayon = { version = "1.3", optional = true }

@@ -1,4 +1,5 @@
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
+import { Utxo } from "./model/utxo";
 import BN from "bn.js";
 export interface Signer {
     publicKey: PublicKey;
@@ -24,24 +25,56 @@ export declare class CharonProtocol {
     private storageService;
     private isRuning?;
     private lightwasm;
-    private circuit;
     utxoByMint: Map<string, UtxoSummary>;
     lastLoadedNote: number;
     worker: Worker;
     private SYNC_MESSAGE;
+    private balanceListeners;
     private constructor();
+    /** Runs after the in-memory note totals change: a spend, or a note synced from IndexedDB. */
+    watchBalances(listener: () => void): () => void;
     static generateClient({ rpcUrl, owner, }: {
         rpcUrl: string;
         owner: Signer;
     }): Promise<CharonProtocol>;
+    requestNoteScan(): void;
+    private completeTx;
     sendSol(amountInLamports: number, recipientKey: string): Promise<{
         signature: string;
     }>;
     withdrawSol(amountInLamports: number): Promise<{
         signature: string;
     }>;
-    syncUtxos(): Promise<void>;
+    shieldedTransferSol(amountInLamports: number, recipientKey: string): Promise<{
+        signature: string;
+    }>;
+    /**
+     * Private SOL↔SPL swap. `amountIn` is lamports for SOL and base units for SPL.
+     * The relayer signs the transaction.
+     */
+    swap(fromMint: string, outMint: string, amountIn: number): Promise<{
+        signature: string;
+    }>;
+    sendSpl(amount: number, recipientKey: string, mintAddress: string): Promise<{
+        signature: string;
+    }>;
+    withdrawSpl(amount: number, mintAddress: string): Promise<{
+        signature: string;
+    }>;
+    shieldedTransferSpl(amount: number, mintAddress: string, recipientKey: string): Promise<{
+        signature: string;
+    }>;
+    /** Sync new notes; opt into a full storage scan only to recover missing notes. */
+    syncUtxos({ recoverMissing }?: {
+        recoverMissing?: boolean | undefined;
+    }): Promise<void>;
     private recalculateBalances;
+    /**
+     * @param mintAddress
+     * @param amount : For Sol , it has to be in Lamports.
+     * @returns
+     */
+    getRequiredUtxosForAmount(mintAddress: string, amount: BN): Promise<[Utxo[], UtxoRef[]]>;
     stopClient(): Promise<void>;
 }
 export {};

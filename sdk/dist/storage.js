@@ -134,7 +134,7 @@ export class StorageService {
      */
     async loadUtxosFrom(walletPubkey, fromId) {
         try {
-            return this.db.getAllFromIndex(UTXO_STORE, "walletPubkeyAndID", IDBKeyRange.bound([walletPubkey, fromId], [walletPubkey, Infinity], true, false));
+            return this.db.getAllFromIndex(UTXO_STORE, "walletPubkeyAndID", IDBKeyRange.bound([walletPubkey, fromId], [walletPubkey, Number.MAX_SAFE_INTEGER], true, false));
         }
         catch (error) {
             throw new StorageError("Unable to Load utxo in batch from store", {

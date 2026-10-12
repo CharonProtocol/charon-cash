@@ -24,6 +24,16 @@ pub const ALLOWED_TOKENS: &[[u8; 32]] = &[
 
 pub const SOL_ADDRESS: [u8; 32] = pubkey!("11111111111111111111111111111112");
 
+/// Jupiter v6 aggregator. Swap remaining accounts are a CPI into this program.
+pub const JUPITER_PROGRAM_ID: [u8; 32] = pubkey!("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4");
+
+/// Native mint used when wrapping/unwrapping SOL for Jupiter.
+pub const WSOL_MINT: [u8; 32] = pubkey!("So11111111111111111111111111111111111111112");
+
+/// Domain-separated SHA-256 prefixes for the two swap Groth16 legs.
+pub const SWAP_IN_DOMAIN: &[u8] = b"privacy_cash:swap_in:v1";
+pub const SWAP_OUT_DOMAIN: &[u8] = b"privacy_cash:swap_out:v1";
+
 // For the Global Config update mask
 pub const UPDATE_DEPOSIT_FEE: u8 = 1 << 0;
 pub const UPDATE_WITHDRAWAL_FEE: u8 = 1 << 1;
@@ -36,27 +46,21 @@ pub const TREE_TOKEN_ACCOUNT_SEED: &[u8] = b"tree_token";
 pub const NULLIFIER0_SEED: &[u8] = b"nullifier0";
 pub const NULLIFIER1_SEED: &[u8] = b"nullifier1";
 
-// Three PDAs of this program are singletons: their seeds are fixed strings
-// with no runtime component, so their canonical addresses are known at compile
-// time. Comparing 32 bytes against these replaces a `sol_sha256` derivation on
-// every instruction that touches them.
-//
-// Only the canonical bump is accepted. A non-canonical bump derives a
-// different, equally valid PDA, which would be a second SOL tree or a second
-// global config -- state this program has no way to reconcile.
+// The SOL merkle tree, its lamport vault, and the global config are singletons:
+// their seeds are fixed strings. Their canonical addresses are known at compile
+// time, so instructions compare 32 bytes instead of re-deriving from a bump
+// stored in the account. A non-canonical bump is a second valid PDA, which
+// would be a second SOL tree or a second global config.
 //
 // `tests::singleton_pdas_are_canonical` pins each bump to
-// `Pubkey::find_program_address`.
+// `Address::find_program_address` for this program id.
 
 pub const TREE_ACCOUNT_BUMP: u8 = 254;
 pub const TREE_TOKEN_ACCOUNT_BUMP: u8 = 255;
-pub const GLOBAL_CONFIG_BUMP: u8 = 255;
+pub const GLOBAL_CONFIG_BUMP: u8 = 253;
 
-pub const TREE_ACCOUNT_ADDRESS: [u8; 32] = derive_address_const(
-    &[TREE_ACCOUNT_SEED],
-    Some(TREE_ACCOUNT_BUMP),
-    &crate::ID,
-);
+pub const TREE_ACCOUNT_ADDRESS: [u8; 32] =
+    derive_address_const(&[TREE_ACCOUNT_SEED], Some(TREE_ACCOUNT_BUMP), &crate::ID);
 
 pub const TREE_TOKEN_ACCOUNT_ADDRESS: [u8; 32] = derive_address_const(
     &[TREE_TOKEN_ACCOUNT_SEED],
@@ -64,11 +68,8 @@ pub const TREE_TOKEN_ACCOUNT_ADDRESS: [u8; 32] = derive_address_const(
     &crate::ID,
 );
 
-pub const GLOBAL_CONFIG_ADDRESS: [u8; 32] = derive_address_const(
-    &[GLOBAL_CONFIG_SEED],
-    Some(GLOBAL_CONFIG_BUMP),
-    &crate::ID,
-);
+pub const GLOBAL_CONFIG_ADDRESS: [u8; 32] =
+    derive_address_const(&[GLOBAL_CONFIG_SEED], Some(GLOBAL_CONFIG_BUMP), &crate::ID);
 
 #[cfg(test)]
 mod tests {

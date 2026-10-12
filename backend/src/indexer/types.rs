@@ -35,3 +35,28 @@ pub struct IndexedTransact {
     pub tree_key: String,
     pub decoded: DecodedTransact,
 }
+
+/// Commitments and ciphertexts from one `Swap` instruction.
+/// The in-leg writes two leaves on the spent tree; the out-leg writes two on the received tree.
+#[derive(Debug, Clone)]
+pub struct DecodedSwap {
+    pub in_commitments: [[u8; 32]; 2],
+    pub out_commitments: [[u8; 32]; 2],
+    pub encrypted_outputs: [Vec<u8>; 4],
+}
+
+#[derive(Debug, Clone)]
+pub struct IndexedSwap {
+    pub signature: String,
+    pub slot: u64,
+    pub in_tree_key: String,
+    pub out_tree_key: String,
+    pub in_index: u32,
+    pub out_index: u32,
+    pub decoded: DecodedSwap,
+}
+
+pub enum IndexedEvent {
+    Transact(IndexedTransact),
+    Swap(IndexedSwap),
+}

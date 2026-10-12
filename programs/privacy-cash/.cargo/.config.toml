@@ -1,0 +1,3 @@
+[alias]
+# Maps "cargo test" to run "cargo nextest run" instead
+test = "nextest run"

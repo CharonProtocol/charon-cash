@@ -3,16 +3,22 @@
 use sqlx::Decode;
 use thiserror::Error;
 
-use super::types::{DecodedTransact, TransactKind};
+use super::types::{DecodedSwap, DecodedTransact, TransactKind};
 
 /// On-chain `Proof` pod size.
-pub const PROOF_SIZE: usize = 480;
+pub const PROOF_SIZE: usize = 352;
 pub const EXT_DATA_MINIFIED_SIZE: usize = 16;
 pub const FIXED_TRANSACT_ARGS_SIZE: usize = PROOF_SIZE + EXT_DATA_MINIFIED_SIZE;
 
 /// Pinocchio instruction discriminators (see `PrivacyCashInstructions`).
 pub const TRANSACT: u8 = 2;
 pub const TRANSACT_SPL: u8 = 3;
+pub const SWAP: u8 = 7;
+
+/// `proof_in | proof_out | ext_amount_in | ext_amount_out | 4 bumps`.
+pub const SWAP_FIXED_PREFIX: usize = PROOF_SIZE * 2 + 16 + 4;
+/// Offset of `output_commitments` inside one compressed `Proof`.
+const COMMITMENT_OFFSET: usize = 32 + 64 + 32 + 32 + 32 + 32 + 32 + 32;
 
 #[derive(Debug, Error)]
 pub enum DecodeError {
@@ -53,9 +59,9 @@ fn parse_transact_body(kind: TransactKind, data: &[u8]) -> Result<DecodedTransac
     // proof_a(64) | proof_b(128) | proof_c(64) | root | public_amount |
     // ext_data_hash | nullifier0 | nullifier1 | commitment0 | commitment1
     let mut offset = 0usize;
-    let _proof_a = read_bytes(data, &mut offset, 64)?;
-    let _proof_b = read_bytes(data, &mut offset, 128)?;
-    let _proof_c = read_bytes(data, &mut offset, 64)?;
+    let _proof_a = read_bytes(data, &mut offset, 32)?;
+    let _proof_b = read_bytes(data, &mut offset, 64)?;
+    let _proof_c = read_bytes(data, &mut offset, 32)?;
     let root = read_array_32(data, &mut offset)?;
     let public_amount = read_array_32(data, &mut offset)?;
     let ext_data_hash = read_array_32(data, &mut offset)?;
@@ -115,6 +121,51 @@ fn read_array_32(data: &[u8], offset: &mut usize) -> Result<[u8; 32], DecodeErro
     Ok(read_bytes(data, offset, 32)?.try_into().unwrap())
 }
 
+/// Decode a `Swap` payload: two proofs, then four length-prefixed ciphertexts.
+/// Trailing Jupiter route bytes are consumed and not stored.
+pub fn decode_swap_ix(data: &[u8]) -> Result<DecodedSwap, DecodeError> {
+    let (disc, body) = data.split_first().ok_or(DecodeError::TooShort)?;
+    if *disc != SWAP {
+        return Err(DecodeError::UnknownDiscriminator);
+    }
+    if body.len() < SWAP_FIXED_PREFIX {
+        return Err(DecodeError::TooShort);
+    }
+
+    let mut in0 = COMMITMENT_OFFSET;
+    let mut in1 = COMMITMENT_OFFSET + 32;
+    let mut out0 = PROOF_SIZE + COMMITMENT_OFFSET;
+    let mut out1 = PROOF_SIZE + COMMITMENT_OFFSET + 32;
+    let in_commitments = [
+        read_array_32(body, &mut in0)?,
+        read_array_32(body, &mut in1)?,
+    ];
+    let out_commitments = [
+        read_array_32(body, &mut out0)?,
+        read_array_32(body, &mut out1)?,
+    ];
+
+    let mut offset = SWAP_FIXED_PREFIX;
+    let encrypted_outputs = [
+        read_length_prefixed(body, &mut offset)?.to_vec(),
+        read_length_prefixed(body, &mut offset)?.to_vec(),
+        read_length_prefixed(body, &mut offset)?.to_vec(),
+        read_length_prefixed(body, &mut offset)?.to_vec(),
+    ];
+    // jupiter_data and jupiter_account_indices. On-chain requires the cursor to land at the end.
+    let _jupiter_data = read_length_prefixed(body, &mut offset)?;
+    let _jupiter_accounts = read_length_prefixed(body, &mut offset)?;
+    if offset != body.len() {
+        return Err(DecodeError::TrailingBytes);
+    }
+
+    Ok(DecodedSwap {
+        in_commitments,
+        out_commitments,
+        encrypted_outputs,
+    })
+}
+
 fn read_length_prefixed<'a>(data: &'a [u8], offset: &mut usize) -> Result<&'a [u8], DecodeError> {
     let len_bytes = data
         .get(*offset..*offset + 4)
@@ -122,4 +173,31 @@ fn read_length_prefixed<'a>(data: &'a [u8], offset: &mut usize) -> Result<&'a [u
     let len = u32::from_le_bytes(len_bytes.try_into().unwrap()) as usize;
     *offset += 4;
     read_bytes(data, offset, len).map_err(|_| DecodeError::InvalidLengthPrefix)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_swap_reads_commitments_from_both_proofs() {
+        let mut body = vec![0u8; SWAP_FIXED_PREFIX];
+        assert_eq!(COMMITMENT_OFFSET, 288);
+        body[288] = 0x11;
+        body[COMMITMENT_OFFSET + 32] = 0x22;
+        body[PROOF_SIZE + COMMITMENT_OFFSET] = 0x33;
+        body[PROOF_SIZE + COMMITMENT_OFFSET + 32] = 0x44;
+        for _ in 0..6 {
+            body.extend_from_slice(&0u32.to_le_bytes());
+        }
+        let mut data = vec![SWAP];
+        data.extend_from_slice(&body);
+
+        let decoded = decode_swap_ix(&data).unwrap();
+        assert_eq!(decoded.in_commitments[0][0], 0x11);
+        assert_eq!(decoded.in_commitments[1][0], 0x22);
+        assert_eq!(decoded.out_commitments[0][0], 0x33);
+        assert_eq!(decoded.out_commitments[1][0], 0x44);
+        assert!(decoded.encrypted_outputs.iter().all(|note| note.is_empty()));
+    }
 }

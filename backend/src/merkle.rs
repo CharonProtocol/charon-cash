@@ -18,7 +18,7 @@ pub struct MerkleManager {
 
 impl MerkleManager {
     pub async fn new() -> Result<Self> {
-        // WARNING : Wipes all the data on boot
+        // WARNING : Wipes all the data on boot , only for development for now
         if let Err(e) = tokio::fs::remove_dir_all(MERKLE_STORE_PATH).await {
             if e.kind() != std::io::ErrorKind::NotFound {
                 return Err(e.into());
@@ -37,7 +37,6 @@ impl MerkleManager {
 
         let mut pool_by_mint: HashMap<String, Pool> = HashMap::new();
 
-        pool_by_mint.insert(sol_address(), sol_merkle_tree);
 
         Ok(Self { pool_by_mint, db })
     }
@@ -89,49 +88,64 @@ pub fn sol_address() -> String {
     "11111111111111111111111111111112".to_owned()
 }
 
+
 #[cfg(test)]
 mod tests {
     use anyhow::Error;
-    use ark_ff::UniformRand;
-    use futures::future::ok;
     use rs_merkle_tree::Node;
 
     use super::*;
 
+    fn test_manager() -> Result<(tempfile::TempDir, MerkleManager), Error> {
+        let dir = tempfile::tempdir()?;
+        let mut opts = Options::default();
+        opts.create_if_missing(true);
+        let db = Arc::new(rocksdb::DB::open(&opts, dir.path())?);
+        Ok((dir, MerkleManager { pool_by_mint: HashMap::new(), db }))
+    }
+
+    fn field_leaves() -> [Node; 100] {
+        std::array::from_fn(|i| {
+            let mut bytes = [0u8; 32];
+            bytes[31] = i as u8 + 1;
+            Node::from(bytes)
+        })
+    }
+
     #[tokio::test]
     async fn successfull_insertion_and_retreival_of_nodes_for_single_pool() -> Result<(), Error> {
-        let mut merkle_manager = MerkleManager::new().await?;
+        let (_dir, mut merkle_manager) = test_manager()?;
 
         let pool = merkle_manager.get_or_create_pool(&sol_address());
 
-        let random_nodes = [Node::random(); 100];
+        let nodes = field_leaves();
 
-        pool.add_leaves(&random_nodes);
+        pool.add_leaves(&nodes)?;
 
         assert_eq!(pool.num_leaves(), 100);
         Ok(())
     }
     #[tokio::test]
     async fn multiple_pools_successfully_initialized_and_working() -> Result<(), Error> {
-        let mut merkle_manager = MerkleManager::new().await?;
+        let (_dir, mut merkle_manager) = test_manager()?;
 
         let pool1 = "POOL1".to_owned();
         let pool2 = "POOL2".to_owned();
         let pool3 = "POOL3".to_owned();
 
-        let random_nodes = [Node::random(); 100];
+        let nodes = field_leaves();
 
         let mut pool1_root = Node::ZERO;
         {
             let pool1_ref = merkle_manager.get_or_create_pool(&pool1);
-            pool1_ref.add_leaves(&random_nodes);
+            pool1_ref.add_leaves(&nodes)?;
             assert_eq!(pool1_ref.num_leaves(), 100);
             pool1_root = pool1_ref.root()?;
         }
 
         {
             let pool2_ref = merkle_manager.get_or_create_pool(&pool2);
-            pool2_ref.add_leaves(&random_nodes);
+            pool2_ref.add_leaves(&nodes)?;
             assert_eq!(pool2_ref.num_leaves(), 100);
             let pool2_root = pool2_ref.root()?;
             assert_eq!(pool1_root, pool2_root);
@@ -139,7 +153,7 @@ mod tests {
 
         {
             let pool3_ref = merkle_manager.get_or_create_pool(&pool3);
-            pool3_ref.add_leaves(&random_nodes);
+            pool3_ref.add_leaves(&nodes)?;
             assert_eq!(pool3_ref.num_leaves(), 100);
             let pool3_root = pool3_ref.root()?;
             assert_eq!(pool1_root, pool3_root);

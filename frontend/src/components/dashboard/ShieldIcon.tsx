@@ -1,15 +1,28 @@
-import type { SVGProps } from 'react';
+import type { SVGProps } from "react";
 
-export function ShieldIcon({ size = 24, ...props }: SVGProps<SVGSVGElement> & { size?: number }) {
+export function ShieldIcon({
+  size = 24,
+  ...props
+}: SVGProps<SVGSVGElement> & { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 40 43" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" {...props}>
-      <path d="M0.0407715 2.77949L0.447449 22.5459C0.618254 30.8477 8.58414 38.1969 20.2094 41.9108C31.6724 37.718 39.3287 30.0448 39.1579 21.7429L38.7513 1.97656L0.0407715 2.77949Z" fill="#7F8C8D"/>
-      <path d="M0.000183105 0.802931L0.406861 20.5693C0.577665 28.8712 8.54355 36.2204 20.1688 39.9342C31.6318 35.7415 39.2881 28.0682 39.1173 19.7664L38.7107 0L0.000183105 0.802931Z" fill="black"/>
-      <path d="M0.000183105 0.802931L0.406861 20.5693C0.577665 28.8712 8.54355 36.2204 20.1688 39.9342L19.3554 0.401466L0.000183105 0.802931Z" fill="black"/>
-      <path d="M4.38235 4.66719L4.7077 20.4803C4.84597 27.2008 11.0436 33.0047 20.0871 35.9811C29.0007 32.6323 34.9541 26.5763 34.8158 19.8558L34.4905 4.04269L4.38235 4.66719Z" fill="#ECF0F1"/>
-      <path d="M4.70767 20.4802C4.84594 27.2007 11.0436 33.0046 20.0871 35.981L19.7617 20.1679L4.70767 20.4802Z" fill="black"/>
-      <path d="M34.4904 4.04244L19.4363 4.35469L19.7617 20.1678L34.8158 19.8555L34.4904 4.04244Z" fill="black"/>
-      <path d="M19.4364 4.35494L4.38235 4.66719L4.7077 20.4803L19.7618 20.168L19.4364 4.35494Z" fill="#BDC3C7"/>
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 40 43"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      {...props}
+    >
+      <path
+        d="M0.04 2.78L0.45 22.55C0.62 30.85 8.58 38.2 20.21 41.91C31.67 37.72 39.33 30.04 39.16 21.74L38.75 1.98L0.04 2.78Z"
+        fill="currentColor"
+        opacity="0.35"
+      />
+      <path
+        d="M4.38 4.67L4.71 20.48C4.85 27.2 11.04 33 20.09 35.98C29 32.63 34.95 26.58 34.82 19.86L34.49 4.04L4.38 4.67Z"
+        fill="currentColor"
+      />
     </svg>
   );
 }

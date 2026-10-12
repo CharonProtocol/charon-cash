@@ -1,17 +1,19 @@
 import type { CharonProtocol } from 'charonprotocol-sdk';
+import type { Token } from './TokenIcon';
 export type TransactionStage = 'proof' | 'signing' | 'confirming';
-export type PaymentKind = 'send' | 'transfer' | 'withdraw';
-export type DashboardOperation = PaymentKind | 'swap' | 'payroll';
+export type PaymentKind = 'send' | 'transfer' | 'withdraw' | 'swap';
+export type DashboardOperation = PaymentKind | 'payroll';
 export type PaymentContext = {
   client: CharonProtocol | null;
   address?: string;
   connected: boolean;
-  unlocking: boolean;
   limit: string;
-  unlock: () => Promise<void>;
+  token: Token;
+  onTokenChange: (token: Token) => void;
+  available: string;
+  paymentsBlocked: boolean;
   refresh: () => void;
   observeProgress: (listener: ((stage: TransactionStage) => void) | null) => void;
   onBusyChange: (busy: boolean) => void;
-  rpcUrl: string;
 };
-export type PaymentStatus = 'idle' | 'unlocking' | TransactionStage | 'success' | 'error';
+export type PaymentStatus = 'idle' | TransactionStage | 'success' | 'error';

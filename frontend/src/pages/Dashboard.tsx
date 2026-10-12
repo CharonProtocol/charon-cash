@@ -1,120 +1,196 @@
-import { useState } from "react";
-import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
-import {
-  MotionConfig,
-  LazyMotion,
-  domMax,
-  AnimatePresence,
-  m,
-} from "motion/react";
-import { useCharon } from "../hooks/useCharon";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { BaseWalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { MotionConfig, LazyMotion, domMax } from "motion/react";
 import { OperationDock } from "../components/dashboard/OperationDock";
+import { ClientStatus } from "../components/dashboard/ClientStatus";
+import { HangingLantern } from "../components/dashboard/HangingLantern";
+import { StatusLight } from "../components/dashboard/StatusLight";
 import { Send } from "../components/dashboard/operations/Send";
 import { ShieldedTransfer } from "../components/dashboard/operations/ShieldedTransfer";
 import { Withdraw } from "../components/dashboard/operations/Withdraw";
 import { Payroll } from "../components/dashboard/operations/Payroll";
 import { Swap } from "../components/dashboard/operations/Swap";
+import type { Token } from "../components/dashboard/TokenIcon";
 import type {
   DashboardOperation,
   PaymentContext,
 } from "../components/dashboard/types";
+import { formatTokenAmount, SOL_POOL_MINT } from "../lib/payment";
+import { SUPPORTED_SPL_MINTS } from "@/hooks/usePaymentTransaction";
+import {
+  persistDashboardTheme,
+  readDashboardTheme,
+  transitionDashboardTheme,
+  type DashboardTheme,
+} from "../components/dashboard/theme";
+import { useCharon } from "@/hooks/useCharon";
+import { useInfrastructureStatus } from "@/hooks/useInfrastructureStatus";
+import "./Dashboard.css";
 
-const OPERATIONS = {
-  send: { title: "Send", direction: "wallet to private", component: Send },
-  transfer: {
-    title: "Shielded Transfer",
-    direction: "private to private",
-    component: ShieldedTransfer,
-  },
-  withdraw: {
-    title: "Withdraw",
-    direction: "private to wallet",
-    component: Withdraw,
-  },
-  payroll: {
-    title: "Payroll",
-    direction: "private payments in batches",
-    component: Payroll,
-  },
-  swap: { title: "Swap", direction: "private asset exchange", component: Swap },
+const WALLET_LABELS = {
+  "change-wallet": "Change wallet",
+  connecting: "Connecting",
+  "copy-address": "Copy address",
+  copied: "Copied",
+  disconnect: "Disconnect",
+  "has-wallet": "Connect wallet",
+  "no-wallet": "Connect wallet",
 };
+
+const TITLES: Record<DashboardOperation, string> = {
+  send: "Send",
+  transfer: "Shielded Transfer",
+  swap: "Swap",
+  payroll: "Payroll",
+  withdraw: "Withdraw",
+};
+
 export function Dashboard() {
   const [operation, setOperation] = useState<DashboardOperation>("send");
+  const [token, setToken] = useState<Token>("SOL");
   const [busy, setBusy] = useState(false);
-  const account = useCharon();
-  const { connected } = useWallet();
-  const { connection } = useConnection();
-  const current = OPERATIONS[operation];
-  const Component = current.component;
+  const [theme, setTheme] = useState<DashboardTheme>(() =>
+    typeof document === "undefined" ? "dark" : readDashboardTheme(),
+  );
+  const lanternRef = useRef<HTMLElement>(null);
+  const charon = useCharon(true);
+  const infrastructure = useInfrastructureStatus();
+  const { connected, signMessage, signTransaction } = useWallet();
+  const mint =
+    token === "SOL"
+      ? SOL_POOL_MINT
+      : SUPPORTED_SPL_MINTS[token.toLowerCase() as "usdc" | "usdt"];
+  const available = formatTokenAmount(charon.holdings[mint] ?? "0", token);
+  const paymentsBlocked =
+    infrastructure.ready && infrastructure.tone === "down";
   const context: PaymentContext = {
-    ...account,
+    ...charon,
     connected,
+    token,
+    onTokenChange: setToken,
+    available,
+    paymentsBlocked,
     onBusyChange: setBusy,
-    rpcUrl: connection.rpcEndpoint,
   };
+
+  useEffect(() => {
+    persistDashboardTheme(theme);
+  }, [theme]);
+
+  const toggleTheme = useCallback(() => {
+    const next: DashboardTheme = theme === "dark" ? "light" : "dark";
+    const node = lanternRef.current;
+    const box = node?.getBoundingClientRect();
+    const origin = box
+      ? { x: box.left + box.width / 2, y: box.top + box.height / 2 }
+      : { x: window.innerWidth / 2, y: window.innerHeight * 0.22 };
+    void transitionDashboardTheme(() => {
+      flushSync(() => setTheme(next));
+      persistDashboardTheme(next);
+    }, origin);
+  }, [theme]);
+
   return (
     <MotionConfig reducedMotion="user">
       <LazyMotion
         features={domMax}
         strict
       >
-        <div className="grid h-dvh grid-rows-[clamp(48px,9dvh,72px)_minmax(0,1fr)] overflow-clip bg-white font-mono text-[#111] scheme-light [&_button]:border-0 [&_.wallet-adapter-button]:h-[38px]! [&_.wallet-adapter-button]:rounded-md! [&_.wallet-adapter-button]:bg-[#303030]! [&_.wallet-adapter-button]:px-4 [&_.wallet-adapter-button]:font-mono! [&_.wallet-adapter-button]:text-xs! [&_.wallet-adapter-button]:font-normal! [&_.wallet-adapter-button]:text-white! [@media(max-height:560px)]:[&_.wallet-adapter-button]:h-[30px]!">
-          <header className="flex min-h-0 items-center justify-between border-b border-neutral-200 px-5 sm:px-[clamp(24px,7vw,100px)] [&>a]:text-[clamp(21px,3dvh,27px)] [&>a]:tracking-tight">
+        <section
+          className="dashboard-page"
+          data-theme={theme}
+        >
+          <header className="dashboard-navbar">
             <a
               href="#"
               aria-label="Charon home"
               onClick={(event) => {
                 if (busy) event.preventDefault();
               }}
+              className="dashboard-brand"
             >
-              CHARON
+              <img
+                src={theme === "dark" ? "./LogoOn.png" : "./LogoOff.png"}
+                alt=""
+                className="dashboard-brand-mark"
+              />
+              <span>CHARON</span>
             </a>
-            <div
-              className={busy ? "opacity-50" : ""}
-              inert={busy || undefined}
-            >
-              <WalletMultiButton />
+            <div className="dashboard-wallet-stack">
+              <BaseWalletMultiButton
+                labels={WALLET_LABELS}
+                disabled={busy}
+              />
+              <ClientStatus
+                connected={connected}
+                supported={Boolean(signMessage && signTransaction)}
+                initializing={charon.initializingClient}
+                error={charon.error}
+                onRetry={charon.retry}
+              />
+              {infrastructure.ready && infrastructure.tone === "degraded" && (
+                <p className="dashboard-wallet-note">
+                  Indexer is down. A payment may not show up yet.
+                </p>
+              )}
+              {paymentsBlocked && (
+                <p className="dashboard-wallet-note">
+                  Charon can&apos;t reach the service on this machine.
+                </p>
+              )}
             </div>
           </header>
-          <main className="mx-auto grid h-full min-h-0 w-full max-w-[980px] grid-rows-[auto_minmax(0,1fr)_auto] gap-[clamp(8px,2dvh,18px)] px-5 pt-[clamp(10px,3dvh,28px)] pb-[clamp(10px,2dvh,20px)] sm:px-7 [@media(max-height:560px)]:gap-2 [@media(max-height:560px)]:py-2">
-            <div className="min-w-0">
-              <h1 className="m-0 text-[clamp(24px,4dvh,36px)] leading-tight font-normal tracking-[-2px]">
-                {current.title}
-              </h1>
-              <p className="mt-1 ml-6 text-[11px]">{current.direction}</p>
-            </div>
-            <AnimatePresence
-              mode="wait"
-              initial={false}
-            >
-              <m.section
-                key={operation}
-                id="pay-panel"
-                className="min-h-0 min-w-0"
-                role="tabpanel"
-                aria-labelledby={`pay-tab-${operation}`}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.14 }}
-              >
-                <Component
-                  key={`${operation}-${account.address ?? "disconnected"}`}
-                  context={context}
+          <main className="dashboard-stage">
+            <div className="dashboard-column">
+              <div className="dashboard-center">
+                <HangingLantern
+                  theme={theme}
+                  onToggle={toggleTheme}
+                  lanternRef={lanternRef}
                 />
-              </m.section>
-            </AnimatePresence>
-            <OperationDock
-              value={operation}
-              busy={busy}
-              onChange={(next) => {
-                if (!busy && next !== "swap" && next !== "payroll")
-                  setOperation(next);
-              }}
-            />
+                <p className="dashboard-balance">
+                  <span>Private {token}</span>
+                  <strong className="dashboard-balance-amount">
+                    {available}
+                  </strong>
+                  <span className="dashboard-balance-unit">{token}</span>
+                </p>
+                <div className="dashboard-card">
+                  <h1 className="dashboard-title">{TITLES[operation]}</h1>
+                  <section
+                    key={`${operation}-${charon.address ?? "disconnected"}`}
+                    id="pay-panel"
+                    className="dashboard-operation"
+                    role="tabpanel"
+                    aria-labelledby={`pay-tab-${operation}`}
+                  >
+                    {operation === "send" && <Send context={context} />}
+                    {operation === "withdraw" && <Withdraw context={context} />}
+                    {operation === "swap" && <Swap context={context} />}
+                    {operation === "payroll" && <Payroll />}
+                    {operation === "transfer" && (
+                      <ShieldedTransfer context={context} />
+                    )}
+                  </section>
+                </div>
+              </div>
+              <OperationDock
+                value={operation}
+                busy={busy}
+                onChange={(next) => {
+                  if (!busy && next !== "payroll" && next !== "swap")
+                    setOperation(next);
+                }}
+              />
+            </div>
           </main>
-        </div>
+          <StatusLight
+            status={infrastructure}
+            placement="corner"
+          />
+        </section>
       </LazyMotion>
     </MotionConfig>
   );

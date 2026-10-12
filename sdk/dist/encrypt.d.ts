@@ -16,7 +16,7 @@ export declare class EncryptionService {
     private CipherKeypair;
     private constructor();
     static startEncryptionService(masterSeed: Uint8Array | string): Promise<EncryptionService>;
-    getViewingKey(): Uint8Array<ArrayBufferLike>;
+    getViewingKey(): Uint8Array<ArrayBuffer>;
     /**
      * Encrypts UTXO bytes for network.
      *
@@ -29,19 +29,15 @@ export declare class EncryptionService {
      * Decrypts the UTXO bytes received from the network.
      *
      * @param data - encrypted output stored on the network
-     * `[version (8B) | ephemeral_pubkey (32B) | iv/nonce (32B) | ciphertext + authTag (16B)]`
+     * `[version (8B) | ephemeral_pubkey (32B) | iv/nonce (12B) | ciphertext + authTag (16B)]`
      * @returns The decrypted output: `raw UTXO bytes`
      */
     decrypt(encryptedOutput: Uint8Array): Promise<Uint8Array<ArrayBuffer>>;
-    generateEncryptionDecryptionKey(sharedSecret: Uint8Array): Promise<Uint8Array<ArrayBufferLike> & Uint8Array<ArrayBuffer>>;
+    generateEncryptionDecryptionKey(sharedSecret: Uint8Array): Promise<Uint8Array<ArrayBuffer>>;
 }
 export declare function generateX25519CipherKeypair(seed?: Uint8Array | string): Promise<CipherKeypair>;
 export declare function generateSharedSecret(client: CipherKeypair, pubKey: Uint8Array): Promise<Uint8Array<ArrayBufferLike> & Uint8Array<ArrayBuffer>>;
 /**
- *
- * @param data
- * @param shared_secret
- *
  * @returns prepends nonce/iv (12 bytes) + ciphertext + authtag (16 bytes)
  */
 export declare function aes_encrypt(data: Uint8Array, encryptionKey: Uint8Array): Promise<Uint8Array<ArrayBuffer>>;

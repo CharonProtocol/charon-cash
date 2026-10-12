@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Charon — Pitch</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Hubballi&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+    rel="stylesheet" />
+  <style>
+    :root {
+      --paper: #f7f3ea;
+      --ink: #1c1b18;
+      --body: #4a4840;
+      --mute: #8a8578;
+      --line: #ddd6c6;
+      --bronze: #8f6b43;
+      --bronze-soft: #e8dcc8;
+      --f-display: "Hubballi", ui-serif, Georgia, serif;
+      --f-body: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+      --f-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    }
+
+    * {
+      box-sizing: border-box
+    }
+
+    html,
+    body {
+      height: 100%
+    }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--f-body);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .deck {
+      position: fixed;
+      inset: 0;
+      overflow: hidden
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: clamp(48px, 8vh, 96px) clamp(36px, 8vw, 120px) clamp(72px, 10vh, 110px);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .slide.is-active {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      z-index: 1
+    }
+
+    .inner {
+      width: 100%;
+      max-width: 1080px
+    }
+
+    .eyebrow {
+      font-family: var(--f-mono);
+      font-size: .72rem;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      color: var(--mute);
+      margin: 0 0 1.15rem;
+    }
+
+    .h1 {
+      font-family: var(--f-display);
+      font-weight: 400;
+      font-size: clamp(2.6rem, 6.4vw, 4.6rem);
+      line-height: .98;
+      letter-spacing: -.02em;
+      margin: 0;
+    }
+
+    .lead {
+      margin: 1.15rem 0 0;
+      max-width: 42ch;
+      font-size: clamp(1.05rem, 1.7vw, 1.28rem);
+      line-height: 1.4;
+      color: var(--body);
+    }
+
+    .h1+.lead {
+      margin-top: 1.4rem
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: clamp(16px, 3vw, 36px);
+      margin-top: 2.4rem
+    }
+
+    .item h3 {
+      font-family: var(--f-mono);
+      font-size: .72rem;
+      font-weight: 500;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--bronze);
+      margin: 0 0 .45rem;
+    }
+
+    .item p {
+      margin: 0;
+      font-size: clamp(.95rem, 1.3vw, 1.12rem);
+      line-height: 1.45;
+      color: var(--body);
+      max-width: 28ch
+    }
+
+    .flow {
+      display: flex;
+      align-items: center;
+      gap: .85rem;
+      flex-wrap: wrap;
+      margin-top: 2.2rem
+    }
+
+    .flow b {
+      font-family: var(--f-display);
+      font-size: clamp(1.5rem, 2.6vw, 2rem);
+      font-weight: 400;
+    }
+
+    .flow .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--bronze);
+      flex-shrink: 0;
+    }
+
+    .nums {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: clamp(20px, 4vw, 48px) clamp(24px, 5vw, 72px);
+      margin-top: 1.6rem
+    }
+
+    .num .v {
+      font-family: var(--f-body);
+      font-weight: 500;
+      font-size: clamp(2.6rem, 6.4vw, 4.8rem);
+      line-height: .9;
+      letter-spacing: -.04em;
+      color: var(--ink);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .num p {
+      margin: .45rem 0 0;
+      font-size: clamp(.9rem, 1.2vw, 1.05rem);
+      color: var(--body);
+      max-width: 22ch
+    }
+
+    .note {
+      margin-top: 2rem;
+      font-family: var(--f-mono);
+      font-size: .72rem;
+      color: var(--mute);
+      letter-spacing: .04em
+    }
+
+    .fees {
+      display: flex;
+      gap: clamp(28px, 6vw, 80px);
+      flex-wrap: wrap;
+      margin-top: 2.2rem
+    }
+
+    .fee .v {
+      font-family: var(--f-body);
+      font-weight: 500;
+      font-size: clamp(2.8rem, 6.6vw, 5rem);
+      line-height: .9;
+      letter-spacing: -.04em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .fee p {
+      margin: .4rem 0 0;
+      color: var(--body);
+      font-size: 1.05rem
+    }
+
+    .brand {
+      position: fixed;
+      top: 22px;
+      left: clamp(22px, 4vw, 40px);
+      z-index: 15;
+      display: flex;
+      align-items: center;
+      gap: .55rem;
+      font-family: var(--f-display);
+      font-size: 1.15rem;
+      letter-spacing: .12em;
+      color: var(--ink);
+    }
+
+    .brand img {
+      width: 28px;
+      height: 27px
+    }
+
+    .progress {
+      position: fixed;
+      top: 0;
+      left: 0;
+      height: 3px;
+      background: var(--bronze);
+      z-index: 20;
+      transition: width .35s ease
+    }
+
+    .counter {
+      position: fixed;
+      bottom: 20px;
+      right: clamp(22px, 4vw, 40px);
+      z-index: 15;
+      font-family: var(--f-mono);
+      font-size: .74rem;
+      color: var(--mute);
+      letter-spacing: .06em;
+    }
+
+    .counter b {
+      color: var(--ink);
+      font-weight: 500
+    }
+
+    .hint {
+      position: fixed;
+      bottom: 20px;
+      left: clamp(22px, 4vw, 40px);
+      z-index: 15;
+      font-family: var(--f-mono);
+      font-size: .7rem;
+      color: var(--mute);
+    }
+
+    .nav {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 15;
+      display: flex;
+      gap: 6px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      padding: 5px;
+      border-radius: 999px;
+    }
+
+    .nav button {
+      border: 0;
+      background: transparent;
+      width: 34px;
+      height: 30px;
+      border-radius: 999px;
+      cursor: pointer;
+      color: var(--body);
+      font-family: var(--f-mono);
+      font-size: .9rem;
+    }
+
+    .nav button:hover {
+      background: var(--bronze-soft);
+      color: var(--ink)
+    }
+
+    .nav .dots {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 0 8px
+    }
+
+    .nav .dots i {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--line);
+      cursor: pointer;
+      display: block
+    }
+
+    .nav .dots i.on {
+      background: var(--bronze);
+      transform: scale(1.25)
+    }
+
+    @media (max-width:780px) {
+
+      .grid-3,
+      .nums {
+        grid-template-columns: 1fr
+      }
+
+      .brand,
+      .hint {
+        display: none
+      }
+
+      .h1 {
+        font-size: clamp(2.1rem, 11vw, 3.2rem)
+      }
+    }
+
+    @media (prefers-reduced-motion:reduce) {
+      * {
+        animation: none !important;
+        transition: none !important
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="brand">
+    <img src="../frontend/public/LogoOn.png" alt="" />
+    CHARON
+  </div>
+  <div class="progress" id="progress"></div>
+
+  <main class="deck" id="deck">
+
+    <section class="slide is-active" aria-label="Problem">
+      <div class="inner">
+        <p class="eyebrow">01 &nbsp; Problem</p>
+        <h1 class="h1">Every Solana payment<br>is a public record.</h1>
+        <p class="lead">Who paid whom. How much. A salary, an invesment and even a gift payment can be reconstructed by
+          anyone
+          with a block explorer.
+        </p>
+      </div>
+    </section>
+
+    <section class="slide" aria-label="Solution">
+      <div class="inner">
+        <p class="eyebrow">02 &nbsp; Solution</p>
+        <h1 class="h1">A private balance<br>on a public chain.</h1>
+
+        <div class="flow">
+          <b>Deposit/ Send</b><span class="dot" aria-hidden="true"></span>
+          <b>Sheilded Transfer / Swap</b><span class="dot" aria-hidden="true"></span>
+          <b>Payroll</b><span class="dot" aria-hidden="true"></span>
+          <b>Withdraw</b>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" aria-label="Market">
+      <div class="inner">
+        <p class="eyebrow">03 &nbsp; Market</p>
+        <h1 class="h1">Private payments Infra is for everyone.</h1>
+        <div class="grid-3">
+          <div class="item">
+            <h3>People</h3>
+            <p>Pay someone without handing the whole history to whoever is watching the address.</p>
+          </div>
+          <div class="item">
+            <h3>Teams</h3>
+            <p>Payroll and vendors from the same pool. Each amount lands in a private note.</p>
+          </div>
+          <div class="item">
+            <h3>Apps</h3>
+            <p>Other programs plug in through the SDK. Same pool. Same proofs.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" aria-label="Why now">
+      <div class="inner">
+        <p class="eyebrow">04 &nbsp; Why now</p>
+        <h1 class="h1">Privacy isn’t a new problem.<br>We need it now more than ever.</h1>
+        <div class="grid-3">
+          <div class="item">
+            <h3>Cheaper onchain</h3>
+
+          </div>
+          <div class="item">
+            <h3>Proved on the device</h3>
+
+          </div>
+          <div class="item">
+            <h3>Breaking the Link</h3>
+
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" aria-label="Numbers">
+      <div class="inner">
+        <p class="eyebrow">05 &nbsp; Numbers</p>
+        <div class="nums">
+          <div class="num">
+            <div class="v">136k</div>
+            <p>CU per spend.</p>
+          </div>
+          <div class="num">
+            <div class="v">0.8s</div>
+            <p>Proof in the browser.</p>
+          </div>
+          <div class="num">
+            <div class="v">0</div>
+            <p>Zero point of trust. Witness never leaves the Client.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="nav" id="nav" aria-label="Slide navigation">
+    <button id="prev" title="Previous (←)" aria-label="Previous">‹</button>
+    <div class="dots" id="dots"></div>
+    <button id="next" title="Next (→)" aria-label="Next">›</button>
+  </nav>
+  <div class="counter" id="counter"><b id="cur">1</b> / <span id="tot">5</span></div>
+  <div class="hint">← → &nbsp; F fullscreen</div>
+
+  <script>
+    (function () {
+      var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+      var total = slides.length;
+      var idx = 0;
+      var dotsEl = document.getElementById('dots');
+      var curEl = document.getElementById('cur');
+      var totEl = document.getElementById('tot');
+      var progress = document.getElementById('progress');
+      totEl.textContent = total;
+      slides.forEach(function (s, i) {
+        var d = document.createElement('i');
+        d.setAttribute('role', 'button');
+        d.setAttribute('tabindex', '0');
+        d.setAttribute('aria-label', 'Slide ' + (i + 1));
+        d.addEventListener('click', function () { go(i); });
+        dotsEl.appendChild(d);
+      });
+      var dots = Array.prototype.slice.call(dotsEl.children);
+      function render() {
+        slides.forEach(function (s, i) { s.classList.toggle('is-active', i === idx); });
+        dots.forEach(function (d, i) { d.classList.toggle('on', i === idx); });
+        curEl.textContent = idx + 1;
+        progress.style.width = ((idx + 1) / total * 100) + '%';
+        history.replaceState(null, '', '#' + (idx + 1));
+      }
+      function go(i) { idx = Math.max(0, Math.min(total - 1, i)); render(); }
+      function next() { go(idx + 1); }
+      function prev() { go(idx - 1); }
+      document.getElementById('next').addEventListener('click', next);
+      document.getElementById('prev').addEventListener('click', prev);
+      document.addEventListener('keydown', function (e) {
+        var k = e.key;
+        if (k === 'ArrowRight' || k === 'PageDown' || k === ' ') { e.preventDefault(); next(); }
+        else if (k === 'ArrowLeft' || k === 'PageUp') { e.preventDefault(); prev(); }
+        else if (k === 'Home') { e.preventDefault(); go(0); }
+        else if (k === 'End') { e.preventDefault(); go(total - 1); }
+        else if (k === 'f' || k === 'F') {
+          if (!document.fullscreenElement) { document.documentElement.requestFullscreen(); }
+          else { document.exitFullscreen(); }
+        }
+      });
+      var sx = 0, sy = 0;
+      document.addEventListener('touchstart', function (e) { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, { passive: true });
+      document.addEventListener('touchend', function (e) {
+        var dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
+        if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? next() : prev(); }
+      }, { passive: true });
+      function fromHash() {
+        var h = parseInt((location.hash || '').replace('#', ''), 10);
+        if (!isNaN(h) && h >= 1 && h <= total) go(h - 1);
+      }
+      window.addEventListener('hashchange', fromHash);
+      fromHash();
+      render();
+    })();
+  </script>
+</body>
+
+</html>

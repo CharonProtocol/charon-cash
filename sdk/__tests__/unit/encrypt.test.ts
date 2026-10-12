@@ -2,7 +2,10 @@ import { describe, beforeAll, test, expect } from "bun:test";
 import {
   EncryptionService,
   generateX25519CipherKeypair,
+  generateSharedSecret,
+  aes_decrypt,
 } from "../../src/encrypt";
+import { gunzipSync } from "node:zlib";
 import { randomBytes } from "@noble/ciphers/utils.js";
 
 describe("Encryption Service Tests", () => {
@@ -47,6 +50,20 @@ describe("Encryption Service Tests", () => {
     const receivedMessage = new TextDecoder().decode(decryptedMessage);
 
     expect(receivedMessage).toBe(sentMessage);
+  });
+
+  test("encrypted notes contain standard gzip data", async () => {
+    const recipient = await generateX25519CipherKeypair("GZIP_RECIPIENT");
+    const note = randomBytes(108);
+    const encrypted = await alice.encrypt(note, recipient.publicKey);
+    const sharedSecret = await generateSharedSecret(
+      recipient,
+      encrypted.slice(8, 40),
+    );
+    const key = await alice.generateEncryptionDecryptionKey(sharedSecret);
+    const compressed = await aes_decrypt(encrypted.slice(40), key);
+
+    expect(new Uint8Array(gunzipSync(compressed))).toEqual(note);
   });
 
   test("Alice encrypt message to self ", async () => {

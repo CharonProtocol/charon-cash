@@ -18,6 +18,11 @@ pub enum PrivacyCashError {
     InvalidTokenAccountMintAddress = 13,
     InvalidProof = 14,
     InvalidMerkleTreeAccount = 15,
+    InvalidSwapAmount = 16,
+    InvalidSwapMintPair = 17,
+    SwapSlippageExceeded = 18,
+    SwapInputNotConsumed = 19,
+    InvalidSwapRouteAccount = 20,
 }
 
 impl From<PrivacyCashError> for ProgramError {

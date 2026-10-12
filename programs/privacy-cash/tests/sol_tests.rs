@@ -54,7 +54,7 @@ use std::{
     str::FromStr,
 };
 
-const PROGRAM_ID: &str = "HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV";
+const PROGRAM_ID: Pubkey = Pubkey::new_from_array(privacy_cash::ID);
 
 pub fn generate_random_nullifier() -> [u8; 32] {
     let mut nullifier = [0u8; 32];
@@ -112,9 +112,9 @@ pub fn bn_to_bytes(value: u128) -> [u8; 32] {
 // Helper to turn the DepositProofToSubmit struct into the Proof struct we use in next 2 functions
 pub fn format_proof(proof: DepositProofToSubmit) -> Proof {
     Proof {
-        proof_a: proof.proof_a.try_into().expect("proof_a must be 64 bytes"),
-        proof_b: proof.proof_b.try_into().expect("proof_b must be 128 bytes"),
-        proof_c: proof.proof_c.try_into().expect("proof_c must be 64 bytes"),
+        proof_a: proof.proof_a.try_into().expect("proof_a must be 32 bytes"),
+        proof_b: proof.proof_b.try_into().expect("proof_b must be 64 bytes"),
+        proof_c: proof.proof_c.try_into().expect("proof_c must be 32 bytes"),
 
         root: proof.root,
         public_amount: proof.public_amount,
@@ -289,7 +289,7 @@ pub fn setup() -> TestContext {
     reset_global_test_alt();
     let mut svm = LiteSVM::new();
 
-    let program_id = Pubkey::from_str(PROGRAM_ID).unwrap();
+    let program_id = PROGRAM_ID;
 
     // Load the Anchor program into LiteSVM.
     // Replace the path with your actual built .so.
@@ -529,18 +529,18 @@ fn double_spend_attack_fails() {
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
     let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );
@@ -555,7 +555,7 @@ fn double_spend_attack_fails() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -694,14 +694,14 @@ fn double_spend_attack_fails() {
         format_proof(deposit_artifacts_to_submit(&first_proof_result, false).unwrap());
 
     let first_nullifiers =
-        find_nullifier_pdas(&Pubkey::from_str_const(PROGRAM_ID), &first_proof_to_submit);
+        find_nullifier_pdas(&PROGRAM_ID, &first_proof_to_submit);
     let first_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &first_proof_to_submit,
     );
 
     let first_test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );
@@ -716,7 +716,7 @@ fn double_spend_attack_fails() {
     advance_one_slot(&mut ctx.svm);
 
     let first_transact_ix = build_transact_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &first_proof_to_submit,
         &create_ext_data_minified(&first_ext_data),
         &first_ext_data.encrypted_output1,
@@ -862,14 +862,14 @@ fn double_spend_attack_fails() {
         format_proof(deposit_artifacts_to_submit(&second_proof_result, false).unwrap());
 
     let second_nullifiers =
-        find_nullifier_pdas(&Pubkey::from_str_const(PROGRAM_ID), &second_proof_to_submit);
+        find_nullifier_pdas(&PROGRAM_ID, &second_proof_to_submit);
     let second_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &second_proof_to_submit,
     );
 
     let second_test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );
@@ -882,7 +882,7 @@ fn double_spend_attack_fails() {
     );
 
     let second_transact_ix = build_transact_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &second_proof_to_submit,
         &create_ext_data_minified(&second_ext_data),
         &second_ext_data.encrypted_output1,
@@ -1027,18 +1027,18 @@ fn can_execute_both_deposit_and_withdraw_for_correct_input_with_positive_fee() {
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
     let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );
@@ -1058,7 +1058,7 @@ fn can_execute_both_deposit_and_withdraw_for_correct_input_with_positive_fee() {
     advance_one_slot(&mut ctx.svm);
 
     let deposit_transact_ix = build_transact_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -1208,16 +1208,16 @@ fn can_execute_both_deposit_and_withdraw_for_correct_input_with_positive_fee() {
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
     let withdraw_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &withdraw_proof_to_submit,
     );
     let withdraw_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &withdraw_proof_to_submit,
     );
 
     let withdraw_test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );
@@ -1232,7 +1232,7 @@ fn can_execute_both_deposit_and_withdraw_for_correct_input_with_positive_fee() {
     advance_one_slot(&mut ctx.svm);
 
     let withdraw_transact_ix = build_transact_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &withdraw_proof_to_submit,
         &create_ext_data_minified(&withdraw_ext_data),
         &withdraw_ext_data.encrypted_output1,
@@ -1274,7 +1274,7 @@ fn can_execute_both_deposit_and_withdraw_for_correct_input_with_positive_fee() {
 fn can_execute_both_deposit_and_withdraw_to_pda_recipient_with_positive_fees() {
     let mut ctx = setup();
 
-    let program_id = Pubkey::from_str_const(PROGRAM_ID);
+    let program_id = PROGRAM_ID;
 
     // Match the TS test: use PDA recipient + PDA fee recipient.
     let (pda_recipient, _) = Pubkey::find_program_address(
@@ -1415,7 +1415,7 @@ fn can_execute_both_deposit_and_withdraw_to_pda_recipient_with_positive_fees() {
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &pda_fee_recipient,
     );
@@ -1590,7 +1590,7 @@ fn can_execute_both_deposit_and_withdraw_to_pda_recipient_with_positive_fees() {
         find_cross_check_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
 
     let withdraw_test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &pda_fee_recipient,
     );
@@ -1673,7 +1673,7 @@ fn can_execute_both_deposit_and_withdraw_to_pda_recipient_with_positive_fees() {
 fn can_execute_both_deposit_and_withdraw_with_pda_fee_recipient_with_positive_fees() {
     let mut ctx = setup();
 
-    let program_id = Pubkey::from_str_const(PROGRAM_ID);
+    let program_id = PROGRAM_ID;
 
     let (pda_fee_recipient, _) = Pubkey::find_program_address(
         &[b"test_fee_recipient", ctx.random_user.pubkey().as_ref()],
@@ -1804,7 +1804,7 @@ fn can_execute_both_deposit_and_withdraw_with_pda_fee_recipient_with_positive_fe
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &pda_fee_recipient,
     );
@@ -1978,7 +1978,7 @@ fn can_execute_both_deposit_and_withdraw_with_pda_fee_recipient_with_positive_fe
         find_cross_check_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
 
     let withdraw_test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &pda_fee_recipient,
     );
@@ -2059,7 +2059,7 @@ fn can_execute_both_deposit_and_withdraw_with_pda_fee_recipient_with_positive_fe
 #[test]
 fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_with_zero_fee() {
     let mut ctx = setup();
-    let program_id = Pubkey::from_str_const(PROGRAM_ID);
+    let program_id = PROGRAM_ID;
 
     // -----------------------------
     // Step 1: Deposit
@@ -2175,7 +2175,7 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_with_zero
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );
@@ -2353,7 +2353,7 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_with_zero
         find_cross_check_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
 
     let withdraw_test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );
@@ -2422,7 +2422,7 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_with_zero
 #[test]
 fn attacker_cant_frontrun_withdraw_transaction() {
     let mut ctx = setup();
-    let program_id = Pubkey::from_str_const(PROGRAM_ID);
+    let program_id = PROGRAM_ID;
 
     // -----------------------------
     // Step 1: Deposit
@@ -2537,7 +2537,7 @@ fn attacker_cant_frontrun_withdraw_transaction() {
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let mut test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );
@@ -2553,7 +2553,7 @@ fn attacker_cant_frontrun_withdraw_transaction() {
     advance_one_slot(&mut ctx.svm);
 
     let deposit_transact_ix = build_transact_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -2712,7 +2712,7 @@ fn attacker_cant_frontrun_withdraw_transaction() {
         find_cross_check_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
 
     let withdraw_transact_ix = build_transact_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &withdraw_proof_to_submit,
         &create_ext_data_minified(&withdraw_ext_data),
         &withdraw_ext_data.encrypted_output1,
@@ -2750,7 +2750,7 @@ fn attacker_cant_frontrun_withdraw_transaction() {
 fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_after_withdrawing_full_amount(
 ) {
     let mut ctx = setup();
-    let program_id = Pubkey::from_str_const(PROGRAM_ID);
+    let program_id = PROGRAM_ID;
 
     let tree_token_account_balance_before_deposit =
         ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
@@ -2874,7 +2874,7 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_after_wit
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );
@@ -3131,7 +3131,7 @@ fn can_execute_both_deposit_and_withdraw_instruction_for_correct_input_after_wit
 fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdraw_fees_higher_than_deposit_change(
 ) {
     let mut ctx = setup();
-    let program_id = Pubkey::from_str_const(PROGRAM_ID);
+    let program_id = PROGRAM_ID;
 
     let tree_token_account_balance_before = ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
     let fee_recipient_balance_before = ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
@@ -3252,7 +3252,7 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );
@@ -3509,7 +3509,7 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
 fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdraw_fees_the_same_as_deposit_change(
 ) {
     let mut ctx = setup();
-    let program_id = Pubkey::from_str_const(PROGRAM_ID);
+    let program_id = PROGRAM_ID;
 
     let tree_token_account_balance_before = ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
     let fee_recipient_balance_before = ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
@@ -3630,7 +3630,7 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );
@@ -3884,7 +3884,7 @@ fn tree_token_account_has_zero_change_after_withdrawing_full_amount_with_withdra
 fn can_execute_both_deposit_and_withdraw_instruction_with_zero_deposit_fee_and_positive_withdraw_fee_after_withdrawing_full_amount(
 ) {
     let mut ctx = setup();
-    let program_id = Pubkey::from_str_const(PROGRAM_ID);
+    let program_id = PROGRAM_ID;
 
     let tree_token_account_balance_before = ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
     let fee_recipient_balance_before = ctx.svm.get_balance(&FEE_RECIPIENT_ACCOUNT).unwrap_or(0);
@@ -4005,7 +4005,7 @@ fn can_execute_both_deposit_and_withdraw_instruction_with_zero_deposit_fee_and_p
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );
@@ -4368,7 +4368,7 @@ fn build_failure_fixture(
     let cross_check_nullifiers = find_cross_check_nullifier_pdas(program_id, &proof);
 
     let test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );
@@ -4390,7 +4390,7 @@ fn build_failure_fixture(
 #[test]
 fn fails_transact_instruction_for_wrong_ext_data_hash() {
     let mut ctx = setup();
-    let program_id = Pubkey::from_str_const(PROGRAM_ID);
+    let program_id = PROGRAM_ID;
 
     let (mut proof, ext_data, lookup_table_address, nullifiers, cross_check_nullifiers) =
         build_failure_fixture(
@@ -4462,7 +4462,7 @@ fn fails_transact_instruction_for_wrong_ext_data_hash() {
 #[test]
 fn fails_transact_instruction_for_an_unknown_root() {
     let mut ctx = setup();
-    let program_id = Pubkey::from_str_const(PROGRAM_ID);
+    let program_id = PROGRAM_ID;
 
     let (mut proof, ext_data, lookup_table_address, nullifiers, cross_check_nullifiers) =
         build_failure_fixture(
@@ -4524,7 +4524,7 @@ fn fails_transact_instruction_for_an_unknown_root() {
 #[test]
 fn fails_transact_instruction_for_zero_root() {
     let mut ctx = setup();
-    let program_id = Pubkey::from_str_const(PROGRAM_ID);
+    let program_id = PROGRAM_ID;
 
     let (mut proof, ext_data, lookup_table_address, nullifiers, cross_check_nullifiers) =
         build_failure_fixture(
@@ -4635,11 +4635,11 @@ fn read_max_deposit_amount(ctx: &mut TestContext) -> u64 {
 #[test]
 fn authority_can_update_deposit_limit() {
     let mut ctx = setup();
-    let program_id = Pubkey::from_str_const(PROGRAM_ID);
+    let program_id = PROGRAM_ID;
     let new_limit: u64 = 2_000_000_000; // 2 SOL
 
     let test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );
@@ -4681,7 +4681,7 @@ fn authority_can_update_deposit_limit() {
 #[test]
 fn non_authority_cannot_update_deposit_limit() {
     let mut ctx = setup();
-    let program_id = Pubkey::from_str_const(PROGRAM_ID);
+    let program_id = PROGRAM_ID;
     let new_limit: u64 = 3_000_000_000; // 3 SOL
 
     let non_authority = Keypair::new();
@@ -4702,7 +4702,7 @@ fn non_authority_cannot_update_deposit_limit() {
     // Use whatever funded signer you already have in this context if needed.
     // If your test context has a dedicated funding account, fund `non_authority` exactly as you do elsewhere.
     let test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );
@@ -4751,7 +4751,7 @@ fn non_authority_cannot_update_deposit_limit() {
 #[test]
 fn can_deposit_after_increasing_limit() {
     let mut ctx = setup();
-    let program_id = Pubkey::from_str_const(PROGRAM_ID);
+    let program_id = PROGRAM_ID;
 
     // Increase deposit limit to 2 SOL
     let update_ix = build_update_deposit_limit_ix(
@@ -4878,7 +4878,7 @@ fn can_deposit_after_increasing_limit() {
     let cross_check_nullifiers = find_cross_check_nullifier_pdas(&program_id, &proof);
 
     let test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );
@@ -4934,7 +4934,7 @@ fn can_deposit_after_increasing_limit() {
 #[test]
 fn withdrawal_has_no_limit_can_withdraw_any_amount() {
     let mut ctx = setup();
-    let program_id = Pubkey::from_str_const(PROGRAM_ID);
+    let program_id = PROGRAM_ID;
 
     // Fund randomUser so it can cover deposit + fees.
     let withdrawal_test_funding_tx = Transaction::new_signed_with_payer(
@@ -5066,7 +5066,7 @@ fn withdrawal_has_no_limit_can_withdraw_any_amount() {
         find_cross_check_nullifier_pdas(&program_id, &deposit_proof_to_submit);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );
@@ -5219,7 +5219,7 @@ fn withdrawal_has_no_limit_can_withdraw_any_amount() {
         find_cross_check_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
 
     let withdraw_test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );
@@ -5267,7 +5267,7 @@ fn withdrawal_has_no_limit_can_withdraw_any_amount() {
 #[test]
 fn tests_arithmetic_overflow_protection_in_transact_with_edge_case_balances() {
     let mut ctx = setup();
-    let program_id = Pubkey::from_str_const(PROGRAM_ID);
+    let program_id = PROGRAM_ID;
 
     // -----------------------------
     // Step 1: Deposit
@@ -5381,7 +5381,7 @@ fn tests_arithmetic_overflow_protection_in_transact_with_edge_case_balances() {
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );
@@ -5535,7 +5535,7 @@ fn tests_arithmetic_overflow_protection_in_transact_with_edge_case_balances() {
         find_cross_check_nullifier_pdas(&program_id, &withdraw_proof_to_submit);
 
     let withdraw_test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );
@@ -5587,7 +5587,7 @@ fn tests_arithmetic_overflow_protection_in_transact_with_edge_case_balances() {
 #[test]
 fn fails_transact_instruction_for_invalid_mint_address() {
     let mut ctx = setup();
-    let program_id = Pubkey::from_str_const(PROGRAM_ID);
+    let program_id = PROGRAM_ID;
 
     let ext_data = ExtData {
         recipient: ctx.recipient.pubkey().to_bytes(),
@@ -5603,9 +5603,9 @@ fn fails_transact_instruction_for_invalid_mint_address() {
     };
 
     let proof = Proof {
-        proof_a: [1u8; 64],
-        proof_b: [2u8; 128],
-        proof_c: [3u8; 64],
+        proof_a: [1u8; 32],
+        proof_b: [2u8; 64],
+        proof_c: [3u8; 32],
         root: ZERO_BYTES[DEFAULT_HEIGHT],
         input_nullifiers: [generate_random_nullifier(), generate_random_nullifier()],
         output_commitments: [[3u8; 32], [4u8; 32]],
@@ -5713,7 +5713,7 @@ fn authority_can_update_global_config() {
     let mut ctx = setup();
 
     let test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );
@@ -5730,7 +5730,7 @@ fn authority_can_update_global_config() {
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let ix = build_update_global_config_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         ctx.global_config,
         ctx.authority.pubkey(),
         None,
@@ -5758,7 +5758,7 @@ fn authority_can_update_global_config_deposit_fee_rate() {
     let new_rate = 50;
 
     let ix = build_update_global_config_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         ctx.global_config,
         ctx.authority.pubkey(),
         Some(new_rate),
@@ -5790,7 +5790,7 @@ fn authority_can_update_global_config_withdrawal_fee_rate() {
     let new_rate = 100;
 
     let ix = build_update_global_config_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         ctx.global_config,
         ctx.authority.pubkey(),
         None,
@@ -5822,7 +5822,7 @@ fn authority_can_update_global_config_fee_error_margin() {
     let new_margin = 1000;
 
     let ix = build_update_global_config_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         ctx.global_config,
         ctx.authority.pubkey(),
         None,
@@ -5856,7 +5856,7 @@ fn authority_can_update_multiple_global_config_parameters() {
     let fee_error_margin = 250;
 
     let ix = build_update_global_config_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         ctx.global_config,
         ctx.authority.pubkey(),
         Some(deposit_fee_rate),
@@ -5905,7 +5905,7 @@ fn non_authority_cannot_update_global_config() {
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let ix = build_update_global_config_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         ctx.global_config,
         non_authority.pubkey(),
         Some(100),
@@ -5940,7 +5940,7 @@ fn fails_to_update_global_config_with_invalid_deposit_fee_rate() {
     let mut ctx = setup();
 
     let ix = build_update_global_config_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         ctx.global_config,
         ctx.authority.pubkey(),
         Some(15_000),
@@ -5978,7 +5978,7 @@ fn fails_to_update_global_config_with_invalid_withdrawal_fee_rate() {
     let mut ctx = setup();
 
     let ix = build_update_global_config_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         ctx.global_config,
         ctx.authority.pubkey(),
         None,
@@ -6016,7 +6016,7 @@ fn fails_to_update_global_config_with_invalid_fee_error_margin() {
     let mut ctx = setup();
 
     let ix = build_update_global_config_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         ctx.global_config,
         ctx.authority.pubkey(),
         None,
@@ -6056,7 +6056,7 @@ fn global_config_update_with_null_values_leaves_existing_values_unchanged() {
     let initial = read_global_config(&ctx.svm, ctx.global_config);
 
     let ix = build_update_global_config_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         ctx.global_config,
         ctx.authority.pubkey(),
         None,
@@ -6086,7 +6086,7 @@ fn global_config_update_with_null_values_leaves_existing_values_unchanged() {
 #[test]
 fn succeeds_with_valid_sol_mint_address() {
     let mut ctx = setup();
-    let program_id = Pubkey::from_str_const(PROGRAM_ID);
+    let program_id = PROGRAM_ID;
 
     let deposit_amount: u64 = 200;
     let actual_deposit_fee = calculate_deposit_fee(deposit_amount);
@@ -6171,7 +6171,7 @@ fn succeeds_with_valid_sol_mint_address() {
     let cross_check_nullifiers = find_cross_check_nullifier_pdas(&program_id, &proof);
 
     let test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &FEE_RECIPIENT_ACCOUNT,
     );

@@ -1,0 +1,9 @@
+export const PAY_FLOW = "pay-flow";
+export const PAY_ENTRY = "pay-entry";
+export const PAY_FIELD = "pay-entry pay-entry--field";
+export const PAY_NEXT = "pay-next";
+export const PAY_AMOUNT = "pay-amount";
+export const PAY_RECIPIENT = "pay-recipient";
+export const PAY_ERROR = "pay-error";
+export const PAY_BACK = "pay-back";
+export const PAY_FORM = "pay-form";

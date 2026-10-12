@@ -85,18 +85,6 @@ pub fn verify_cross_nullifier(account: &AccountView) -> ProgramResult {
     Ok(())
 }
 
-/// Claims the nullifier PDA for `nullifier_hash`, which fails if it already
-/// exists -- that is the double-spend check.
-///
-/// `rent` is passed in because both callers claim two nullifiers and already
-/// need the sysvar themselves; fetching it here would cost three reads.
-///
-/// The `verify_pda` below is load-bearing and must stay. `invoke_signed`
-/// grants the PDA signature for the derived address, but the runtime unions
-/// that with the transaction's own signers: a caller who passes a keypair they
-/// control as `nullifier_account` and signs with it satisfies `CreateAccount`
-/// without the derivation ever matching, leaving the real nullifier PDA
-/// unclaimed and the note spendable again.
 pub fn init_nullifier_account(
     payer: &AccountView,
     nullifier_account: &AccountView,
@@ -108,6 +96,9 @@ pub fn init_nullifier_account(
     verify_uninitialized(nullifier_account)?;
 
     let bump_seed = [bump];
+    // `CreateAccount` also accepts a transaction signer. Without this
+    // derivation a caller can pass a keypair they control and leave the real
+    // nullifier PDA unclaimed.
     verify_pda(
         nullifier_account,
         &[seed_prefix, nullifier_hash, &bump_seed],

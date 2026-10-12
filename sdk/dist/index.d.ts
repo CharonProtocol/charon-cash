@@ -1,4 +1,5 @@
-export { prove, parseProofToBytesArray, parseToBytesArray, setCircuitBuffers, } from "./prover";
 export { CharonProtocol } from "./client";
 export { CharonProtocolError, CharonProtocolErrorCode } from "./error";
+export { configureProver, preloadProver, prove, proverThreads, terminateProver, type ProverOptions, type Groth16Proof, } from "./prover";
+export { CIRCUIT_CACHE_NAME, verifyArtifact } from "./circuit-artifacts";
 //# sourceMappingURL=index.d.ts.map

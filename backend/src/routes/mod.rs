@@ -1,5 +1,6 @@
 pub mod health;
 pub mod indexer;
+pub mod jupiter;
 pub mod merkle;
 pub mod register;
 pub mod utxos;
@@ -34,5 +35,6 @@ pub fn router(state: AppState) -> Router {
         .merge(merkle::routes())
         .merge(utxos::routes())
         .merge(register::routes())
+        .route("/api/jupiter/route", post(jupiter::jupiter_route))
         .with_state(state)
 }

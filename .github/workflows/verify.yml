@@ -80,7 +80,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@1.89.0
+      - uses: dtolnay/rust-toolchain@1.90.0
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: verification/programs
@@ -105,7 +105,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@1.89.0
+      - uses: dtolnay/rust-toolchain@1.90.0
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
@@ -162,10 +162,36 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  web:
+    name: SDK and frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.2'
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Build and test the SDK
+        run: |
+          bun run --cwd sdk build
+          bun test --cwd sdk
+      - name: Test, lint and build the frontend
+        run: |
+          bun run --cwd frontend test
+          bun run --cwd frontend lint
+          bun run --cwd frontend build
+
   correctness:
     name: Correctness gate
     if: always()
-    needs: [workflow-lint, model, circuits, program]
+    needs: [workflow-lint, model, circuits, program, web]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

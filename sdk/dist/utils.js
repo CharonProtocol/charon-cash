@@ -18,8 +18,14 @@ export function getMintAddressField(mint) {
     const mintBytes = mint.toBytes();
     return new BN(mintBytes.slice(0, 31), "be").toString();
 }
-export function deriveAccounts(programId, nullifierHash0, nullifierHash1) {
-    const [treeAccount] = PublicKey.findProgramAddressSync([Buffer.from(SEED.TREE_ACCOUNT)], programId);
+export function deriveAccounts(programId, nullifierHash0, nullifierHash1, mintAddress) {
+    const treeAccountSeeds = [
+        Buffer.from(SEED.TREE_ACCOUNT),
+    ];
+    if (mintAddress) {
+        treeAccountSeeds.push(mintAddress.toBuffer());
+    }
+    const [treeAccount] = PublicKey.findProgramAddressSync(treeAccountSeeds, programId);
     const [treeTokenAccount] = PublicKey.findProgramAddressSync([Buffer.from(SEED.TREE_TOKEN)], programId);
     const [globalConfig] = PublicKey.findProgramAddressSync([Buffer.from(SEED.GLOBAL_CONFIG)], programId);
     const [nullifier0, bump0] = PublicKey.findProgramAddressSync([Buffer.from(SEED.NULLIFIER0), Buffer.from(nullifierHash0)], programId);
@@ -113,6 +119,38 @@ export function getExtDataHash(ext) {
         fee.toArrayLike(Buffer, "le", 8),
         feeRecipient,
         mint,
+    ]);
+    return Buffer.from(sha256(data).slice(2), "hex");
+}
+const SWAP_IN_DOMAIN = Buffer.from("privacy_cash:swap_in:v1");
+const SWAP_OUT_DOMAIN = Buffer.from("privacy_cash:swap_out:v1");
+/** In-leg hash. Byte layout matches `calculate_swap_in_ext_data_hash`. */
+export function getSwapInExtDataHash(args) {
+    const data = Buffer.concat([
+        SWAP_IN_DOMAIN,
+        new BN(args.extAmountIn.toString()).toTwos(64).toArrayLike(Buffer, "le", 8),
+        toU32LE(args.encryptedOutput1.length),
+        Buffer.from(args.encryptedOutput1),
+        toU32LE(args.encryptedOutput2.length),
+        Buffer.from(args.encryptedOutput2),
+        toPubkeyBytes(args.inMint),
+        toPubkeyBytes(args.outMint),
+        new BN(args.minAmountOut.toString()).toTwos(64).toArrayLike(Buffer, "le", 8),
+        Buffer.from(args.outCommitments[0]),
+        Buffer.from(args.outCommitments[1]),
+    ]);
+    return Buffer.from(sha256(data).slice(2), "hex");
+}
+/** Out-leg hash. Does not mention the in-leg. Matches `calculate_swap_out_ext_data_hash`. */
+export function getSwapOutExtDataHash(args) {
+    const data = Buffer.concat([
+        SWAP_OUT_DOMAIN,
+        new BN(args.extAmountOut.toString()).toTwos(64).toArrayLike(Buffer, "le", 8),
+        toU32LE(args.encryptedOutput1.length),
+        Buffer.from(args.encryptedOutput1),
+        toU32LE(args.encryptedOutput2.length),
+        Buffer.from(args.encryptedOutput2),
+        toPubkeyBytes(args.outMint),
     ]);
     return Buffer.from(sha256(data).slice(2), "hex");
 }

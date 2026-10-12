@@ -43,7 +43,7 @@ use spl_token::{
 };
 use std::{path::PathBuf, str::FromStr};
 
-const PROGRAM_ID: &str = "HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV";
+const PROGRAM_ID: Pubkey = Pubkey::new_from_array(privacy_cash::ID);
 
 pub fn generate_random_nullifier() -> [u8; 32] {
     let mut nullifier = [0u8; 32];
@@ -101,9 +101,9 @@ pub fn bn_to_bytes(value: u128) -> [u8; 32] {
 // Helper to turn the DepositProofToSubmit struct into the Proof struct we use in next 2 functions
 pub fn format_proof(proof: DepositProofToSubmit) -> Proof {
     Proof {
-        proof_a: proof.proof_a.try_into().expect("proof_a must be 64 bytes"),
-        proof_b: proof.proof_b.try_into().expect("proof_b must be 128 bytes"),
-        proof_c: proof.proof_c.try_into().expect("proof_c must be 64 bytes"),
+        proof_a: proof.proof_a.try_into().expect("proof_a must be 32 bytes"),
+        proof_b: proof.proof_b.try_into().expect("proof_b must be 64 bytes"),
+        proof_c: proof.proof_c.try_into().expect("proof_c must be 32 bytes"),
 
         root: proof.root,
         public_amount: proof.public_amount,
@@ -217,7 +217,7 @@ pub fn setup() -> TestContext {
     reset_global_test_alt();
     let mut svm = LiteSVM::new();
 
-    let program_id = Pubkey::from_str(PROGRAM_ID).unwrap();
+    let program_id = PROGRAM_ID;
 
     // Load the Anchor program into LiteSVM.
     // Replace the path with your actual built .so.
@@ -554,7 +554,7 @@ pub fn build_transact_spl_ix(
 // -----------------------------------------------------------------------------
 
 #[test]
-fn fails_deposit_instruction_for_non_usdc_token_mint() {
+fn rejects_spl_deposit_using_the_sol_tree() {
     let mut ctx = setup();
     let fixtures = create_mint_and_atas(&mut ctx);
 
@@ -667,9 +667,9 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
     let proof_result = prove(&proof_input, &key_base_path).unwrap();
     let proof_to_submit = format_proof(deposit_artifacts_to_submit(&proof_result, false).unwrap());
 
-    let nullifiers = find_nullifier_pdas(&Pubkey::from_str_const(PROGRAM_ID), &proof_to_submit);
+    let nullifiers = find_nullifier_pdas(&PROGRAM_ID, &proof_to_submit);
     let cross_check_nullifiers =
-        find_cross_check_nullifier_pdas(&Pubkey::from_str_const(PROGRAM_ID), &proof_to_submit);
+        find_cross_check_nullifier_pdas(&PROGRAM_ID, &proof_to_submit);
 
     let tree_ata = get_associated_token_address_with_program_id(
         &ctx.global_config,
@@ -694,7 +694,7 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
     ctx.svm.send_transaction(tx).unwrap();
 
     let test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &tree_ata,
         &ctx.fee_recipient.pubkey(),
@@ -719,14 +719,14 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
     advance_one_slot(&mut ctx.svm);
 
     let tx_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &proof_to_submit,
         &create_ext_data_minified(&ext_data),
         &ext_data.encrypted_output1,
         &ext_data.encrypted_output2,
         nullifiers.bump0,
         nullifiers.bump1,
-        ctx.tree_account, // This Tree Account is Still Wrong But Since Check Never Reaches till here so we move
+        ctx.tree_account, // SOL tree: not the PDA derived from this SPL mint.
         nullifiers.nullifier0,
         nullifiers.nullifier1,
         cross_check_nullifiers.0,
@@ -752,21 +752,12 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
     let err = ctx
         .svm
         .send_transaction(versioned_tx)
-        .expect_err("expected non-USDC SPL deposit to fail, but the transaction succeeded");
+        .expect_err("expected an SPL deposit using the SOL tree to fail");
 
-    // The rejection does not come from the mint allowlist. `ALLOW_ALL_SPL_TOKENS`
-    // is `true` in src/constants.rs, which makes the `InvalidMintAddress` gate in
-    // `transact_spl` compile-time dead, so no mint is refused on that basis.
-    //
-    // What still binds a deposit to its mint is the per-mint tree PDA, derived
-    // from ["merkle_tree", mint]. This transaction passes the native-SOL tree
-    // account (seeds ["merkle_tree"]) instead, so `verify_pda` cannot re-derive
-    // it from this mint and returns `InvalidAccountData`. That is the property
-    // under test: an SPL deposit cannot be routed through another tree's account.
     let logs = err.meta.logs.join("\n");
     assert!(
-        logs.contains("invalid account data"),
-        "expected the per-mint tree PDA check to reject this tree account: {logs}"
+        logs.contains("invalid account data for instruction"),
+        "unexpected error: {logs}"
     );
 
     assert_eq!(
