@@ -1,0 +1,14 @@
+main.root 1
+main.publicAmount 1
+main.extDataHash 1
+main.inputNullifier 2
+main.outputCommitment 2
+main.mintAddress 1
+main.inAmount 2
+main.inPrivateKey 2
+main.inBlinding 2
+main.inPathIndices 2
+main.inPathElements 52
+main.outAmount 2
+main.outPubkey 2
+main.outBlinding 2

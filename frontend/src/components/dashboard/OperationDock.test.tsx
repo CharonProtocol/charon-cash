@@ -25,6 +25,8 @@ describe("payment navigation and results", () => {
     expect(html).toMatch(/id="pay-tab-swap"[^>]*disabled=""/);
     expect(html).toMatch(/id="pay-tab-payroll"[^>]*disabled=""/);
     expect(html).toMatch(/id="pay-tab-send"[^>]*aria-selected="true"/);
+    expect(html).toContain(">Shield<");
+    expect(html).not.toContain(">Transfer<");
   });
   it("locks navigation during submission", () => {
     const html = wrap(
@@ -62,7 +64,7 @@ describe("payment navigation and results", () => {
       />,
     );
     expect(failed).toContain("Wallet rejected the transaction");
-    expect(failed).toContain("Back to review");
+    expect(failed).toContain("Try again");
     expect(failed).not.toContain("View transaction");
     const confirmed = wrap(
       <ProcessingStep

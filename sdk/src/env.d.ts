@@ -1,17 +1,11 @@
-declare global {
-  interface ImportMetaEnv {
-    VITE_BACKEND_URL?: string
-    VITE_SOLANA_RPC_URL?: string
-    VITE_PROGRAM_ID?: string
-  }
-
-  interface ImportMeta {
-    readonly env: ImportMetaEnv
-  }
+interface ImportMetaEnv {
+  VITE_BACKEND_URL?: string
+  VITE_SOLANA_RPC_URL?: string
+  VITE_PROGRAM_ID?: string
 }
 
-declare module "snarkjs" {
-  export const groth16: any
+interface ImportMeta {
+  readonly env: ImportMetaEnv
 }
 
 declare module "ffjavascript" {

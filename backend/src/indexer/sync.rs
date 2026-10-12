@@ -17,13 +17,17 @@ use yellowstone_grpc_proto::geyser::{
 };
 use yellowstone_grpc_proto::solana::storage::confirmed_block::Message;
 
+use solana_sdk::pubkey::Pubkey;
+
 use crate::config::Config;
 use crate::db::Db;
 use crate::merkle::{sol_address, MerkleManager};
+use crate::relayer::chain::TREE_ACCOUNT_SEED;
 
-use super::decode::decode_transact_ix;
-use super::types::{IndexedTransact, TransactKind, SOL_TREE_KEY};
+use super::decode::{decode_swap_ix, decode_transact_ix};
+use super::types::{IndexedEvent, TransactKind};
 
+#[derive(Clone)]
 pub struct Indexer {
     config: Config,
     db: Db,
@@ -46,6 +50,21 @@ impl Indexer {
             grpc = %self.config.yellowstone_grpc_url,
             "indexer starting (yellowstone gRPC)"
         );
+
+        // Surfpool's geyser stream stays connected but does not deliver local
+        // program transactions. Pull the same transactions from RPC so a
+        // deposit's notes reach the client.
+        if self.config.indexer_rpc_fallback {
+            let catch_up = self.clone();
+            tokio::spawn(async move {
+                loop {
+                    if let Err(err) = catch_up.catch_up_from_rpc().await {
+                        warn!(error = %err, "rpc note catch-up failed");
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
+            });
+        }
 
         loop {
             if let Err(err) = self.stream_once().await {
@@ -85,7 +104,7 @@ impl Indexer {
         let filter = SubscribeRequestFilterTransactions {
             vote: Some(false),
             failed: Some(false),
-            account_include: vec![],
+            account_include: vec![self.config.program_id.to_string()],
             account_exclude: vec![],
             account_required: vec![],
             signature: None,
@@ -95,7 +114,8 @@ impl Indexer {
         subscribe_tx
             .send(SubscribeRequest {
                 transactions: HashMap::from([("privacy_cash".to_string(), filter)]),
-                commitment: Some(CommitmentLevel::Processed as i32),
+                // Relayer confirms at this level; finalized adds multi-slot lag on Surfpool.
+                commitment: Some(CommitmentLevel::Confirmed as i32),
                 ..Default::default()
             })
             .await
@@ -138,13 +158,28 @@ impl Indexer {
     ) -> Result<()> {
         let signature = bs58::encode(&tx_info.signature).into_string();
 
+        // This check is important for rebuilds / restarts: Yellowstone may send a transaction that was already indexed.
         if self.db.has_tx(&signature).await? {
             debug!(%signature, "already indexed");
             return Ok(());
         }
 
         match self.build_indexed(slot, &signature, tx_info).await? {
-            Some(mut indexed) => {
+            Some(event) => self.persist_event(event).await?,
+            None => {
+                // Non-transact program ix (initialize, etc.) — still advance cursor.
+                self.db.set_cursor(&signature, slot).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn persist_event(&self, event: IndexedEvent) -> Result<()> {
+        match event {
+            IndexedEvent::Transact(mut indexed) => {
+                let signature = indexed.signature.clone();
+                let tree_key = indexed.tree_key.clone();
                 self.db.fill_commitment_and_insert_utxos(&indexed).await?;
                 let mut lock = self.merkle_manager.write().await;
                 let token_merkle_tree = lock.get_or_create_pool(&indexed.tree_key);
@@ -157,16 +192,38 @@ impl Indexer {
 
                 info!(
                     signature = %signature,
-                    tree = %indexed.tree_key,
+                    tree = %tree_key,
                     "indexed transact"
                 );
             }
-            None => {
-                // Non-transact program ix (initialize, etc.) — still advance cursor.
-                self.db.set_cursor(&signature, slot).await?;
+            IndexedEvent::Swap(swap) => {
+                let signature = swap.signature.clone();
+                let in_tree_key = swap.in_tree_key.clone();
+                let out_tree_key = swap.out_tree_key.clone();
+                self.db.insert_swap(&swap).await?;
+                let mut lock = self.merkle_manager.write().await;
+                {
+                    let tree = lock.get_or_create_pool(&swap.in_tree_key);
+                    tree.add_leaves(&[
+                        Node::from(swap.decoded.in_commitments[0]),
+                        Node::from(swap.decoded.in_commitments[1]),
+                    ])?;
+                }
+                {
+                    let tree = lock.get_or_create_pool(&swap.out_tree_key);
+                    tree.add_leaves(&[
+                        Node::from(swap.decoded.out_commitments[0]),
+                        Node::from(swap.decoded.out_commitments[1]),
+                    ])?;
+                }
+                info!(
+                    signature = %signature,
+                    in_tree = %in_tree_key,
+                    out_tree = %out_tree_key,
+                    "indexed swap"
+                );
             }
         }
-
         Ok(())
     }
 
@@ -175,7 +232,7 @@ impl Indexer {
         slot: u64,
         signature: &str,
         tx_info: SubscribeUpdateTransactionInfo,
-    ) -> Result<Option<IndexedTransact>> {
+    ) -> Result<Option<IndexedEvent>> {
         // Yellowstone flattens ConfirmedTransaction into `transaction` + `meta`.
         if let Some(meta) = &tx_info.meta {
             if meta.err.is_some() {
@@ -208,13 +265,63 @@ impl Indexer {
         }
 
         let program_id = self.config.program_id.to_string();
-        let Some((ix_data, accounts)) =
-            extract_program_instruction(message, &account_keys, &program_id)
-        else {
+        let instructions = program_instructions(message, &account_keys, &program_id);
+        if instructions.is_empty() {
+            return Ok(None);
+        }
+
+        // A swap transaction also carries wrap_sol. Index the swap when it is present.
+        if let Some((ix_data, accounts)) = instructions
+            .iter()
+            .find(|(data, _)| data.first().copied() == Some(super::decode::SWAP))
+        {
+            let decoded = match decode_swap_ix(ix_data) {
+                Ok(decoded) => decoded,
+                Err(err) => {
+                    warn!(%signature, error = %err, "swap instruction did not decode");
+                    return Ok(None);
+                }
+            };
+            // Account 0 is the spent tree. The SOL tree is `[merkle_tree]`; the SPL mint is account 14.
+            let sol_tree =
+                Pubkey::find_program_address(&[TREE_ACCOUNT_SEED], &self.config.program_id)
+                    .0
+                    .to_string();
+            let Some(in_tree) = accounts.first() else {
+                return Ok(None);
+            };
+            let Some(spl_mint) = accounts.get(14) else {
+                warn!(%signature, "swap instruction is missing the SPL mint account");
+                return Ok(None);
+            };
+            let (in_tree_key, out_tree_key) = if in_tree == &sol_tree {
+                (sol_address(), spl_mint.clone())
+            } else {
+                (spl_mint.clone(), sol_address())
+            };
+            let in_index = self.db.next_index(&in_tree_key).await?;
+            let out_index = self.db.next_index(&out_tree_key).await?;
+            return Ok(Some(IndexedEvent::Swap(super::types::IndexedSwap {
+                signature: signature.to_string(),
+                slot,
+                in_tree_key,
+                out_tree_key,
+                in_index,
+                out_index,
+                decoded,
+            })));
+        }
+
+        let Some((ix_data, accounts)) = instructions.iter().find(|(data, _)| {
+            matches!(
+                data.first().copied(),
+                Some(super::decode::TRANSACT | super::decode::TRANSACT_SPL)
+            )
+        }) else {
             return Ok(None);
         };
 
-        let decoded = match decode_transact_ix(&ix_data) {
+        let decoded = match decode_transact_ix(ix_data) {
             Ok(d) => d,
             Err(_) => return Ok(None),
         };
@@ -230,23 +337,245 @@ impl Indexer {
 
         let start_index = self.db.next_index(&tree_key).await?;
 
-        Ok(Some(IndexedTransact {
-            curr_index: start_index,
-            signature: signature.to_string(),
-            slot,
-            tree_key,
-            decoded,
-        }))
+        Ok(Some(IndexedEvent::Transact(
+            super::types::IndexedTransact {
+                curr_index: start_index,
+                signature: signature.to_string(),
+                slot,
+                tree_key,
+                decoded,
+            },
+        )))
+    }
+
+    /// Yellowstone on this local validator does not deliver program transactions.
+    /// Read them from RPC and store the same notes the live stream would.
+    async fn catch_up_from_rpc(&self) -> Result<()> {
+        let rpc = std::env::var("SOLANA_RPC_URL")
+            .unwrap_or_else(|_| "http://127.0.0.1:8899".to_string());
+        info!(%rpc, "catching up notes from rpc");
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .context("rpc http client")?;
+        let program = self.config.program_id.to_string();
+        let signatures: serde_json::Value = client
+            .post(&rpc)
+            .json(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getSignaturesForAddress",
+                "params": [program, {"limit": 1000, "commitment": "confirmed"}]
+            }))
+            .send()
+            .await
+            .context("getSignaturesForAddress")?
+            .json()
+            .await
+            .context("parse signature list")?;
+
+        let Some(list) = signatures["result"].as_array() else {
+            return Ok(());
+        };
+
+        for entry in list.iter().rev() {
+            if entry.get("err").is_some_and(|err| !err.is_null()) {
+                continue;
+            }
+            let Some(signature) = entry["signature"].as_str() else {
+                continue;
+            };
+            if self.db.has_tx(signature).await? {
+                continue;
+            }
+            let slot = entry["slot"].as_u64().unwrap_or(0);
+            if let Err(err) = self.index_rpc_transaction(&client, &rpc, signature, slot).await {
+                warn!(%signature, error = %err, "rpc transaction was not indexed");
+            }
+        }
+        Ok(())
+    }
+
+    async fn index_rpc_transaction(
+        &self,
+        client: &reqwest::Client,
+        rpc: &str,
+        signature: &str,
+        slot: u64,
+    ) -> Result<()> {
+        let tx: serde_json::Value = client
+            .post(rpc)
+            .json(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getTransaction",
+                "params": [signature, {
+                    "encoding": "json",
+                    "commitment": "confirmed",
+                    "maxSupportedTransactionVersion": 0
+                }]
+            }))
+            .send()
+            .await
+            .context("getTransaction")?
+            .json()
+            .await
+            .context("parse transaction")?;
+
+        let Some(result) = tx.get("result").filter(|value| !value.is_null()) else {
+            return Ok(());
+        };
+        if !result["meta"]["err"].is_null() {
+            return Ok(());
+        }
+
+        let message = &result["transaction"]["message"];
+        let mut account_keys: Vec<String> = message["accountKeys"]
+            .as_array()
+            .map(|keys| {
+                keys.iter()
+                    .filter_map(|key| key.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        for field in ["writable", "readonly"] {
+            if let Some(extra) = result["meta"]["loadedAddresses"][field].as_array() {
+                for key in extra {
+                    if let Some(key) = key.as_str() {
+                        account_keys.push(key.to_string());
+                    }
+                }
+            }
+        }
+
+        let program_id = self.config.program_id.to_string();
+        let Some(instructions) = message["instructions"].as_array() else {
+            return Ok(());
+        };
+
+        for ix in instructions {
+            let Some(program_index) = ix["programIdIndex"].as_u64() else {
+                continue;
+            };
+            if account_keys.get(program_index as usize) != Some(&program_id) {
+                continue;
+            }
+            let Some(data_b58) = ix["data"].as_str() else {
+                continue;
+            };
+            let data = bs58::decode(data_b58)
+                .into_vec()
+                .context("instruction data is not base58")?;
+            let accounts = ix["accounts"]
+                .as_array()
+                .map(|indexes| {
+                    indexes
+                        .iter()
+                        .filter_map(|index| index.as_u64())
+                        .filter_map(|index| account_keys.get(index as usize).cloned())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+
+            if let Some(event) = self
+                .event_from_instruction(signature, slot, &data, &accounts)
+                .await?
+            {
+                self.persist_event(event).await?;
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
+
+    async fn event_from_instruction(
+        &self,
+        signature: &str,
+        slot: u64,
+        data: &[u8],
+        accounts: &[String],
+    ) -> Result<Option<IndexedEvent>> {
+        if data.first().copied() == Some(super::decode::SWAP) {
+            let decoded = match super::decode::decode_swap_ix(data) {
+                Ok(decoded) => decoded,
+                Err(err) => {
+                    warn!(%signature, error = %err, "swap instruction did not decode");
+                    return Ok(None);
+                }
+            };
+            let sol_tree =
+                Pubkey::find_program_address(&[TREE_ACCOUNT_SEED], &self.config.program_id)
+                    .0
+                    .to_string();
+            let Some(in_tree) = accounts.first() else {
+                return Ok(None);
+            };
+            let Some(spl_mint) = accounts.get(14) else {
+                warn!(%signature, "swap instruction is missing the SPL mint account");
+                return Ok(None);
+            };
+            let (in_tree_key, out_tree_key) = if in_tree == &sol_tree {
+                (sol_address(), spl_mint.clone())
+            } else {
+                (spl_mint.clone(), sol_address())
+            };
+            let in_index = self.db.next_index(&in_tree_key).await?;
+            let out_index = self.db.next_index(&out_tree_key).await?;
+            return Ok(Some(IndexedEvent::Swap(super::types::IndexedSwap {
+                signature: signature.to_string(),
+                slot,
+                in_tree_key,
+                out_tree_key,
+                in_index,
+                out_index,
+                decoded,
+            })));
+        }
+
+        if !matches!(
+            data.first().copied(),
+            Some(super::decode::TRANSACT | super::decode::TRANSACT_SPL)
+        ) {
+            return Ok(None);
+        }
+
+        let decoded = match super::decode::decode_transact_ix(data) {
+            Ok(decoded) => decoded,
+            Err(err) => {
+                warn!(%signature, error = %err, "transact instruction did not decode");
+                return Ok(None);
+            }
+        };
+        let tree_key = match decoded.kind {
+            TransactKind::Sol => sol_address(),
+            TransactKind::Spl => accounts
+                .get(7)
+                .cloned()
+                .unwrap_or_else(|| "unknown_mint".to_string()),
+        };
+        let start_index = self.db.next_index(&tree_key).await?;
+        Ok(Some(IndexedEvent::Transact(
+            super::types::IndexedTransact {
+                curr_index: start_index,
+                signature: signature.to_string(),
+                slot,
+                tree_key,
+                decoded,
+            },
+        )))
     }
 }
 
-fn extract_program_instruction(
+fn program_instructions(
     message: &Message,
     account_keys: &[String],
     program_id: &str,
-) -> Option<(Vec<u8>, Vec<String>)> {
+) -> Vec<(Vec<u8>, Vec<String>)> {
+    let mut found = Vec::new();
     for ix in &message.instructions {
-        let pid = account_keys.get(ix.program_id_index as usize)?;
+        let Some(pid) = account_keys.get(ix.program_id_index as usize) else {
+            continue;
+        };
         if pid != program_id {
             continue;
         }
@@ -256,9 +585,9 @@ fn extract_program_instruction(
             .iter()
             .filter_map(|idx| account_keys.get(*idx as usize).cloned())
             .collect();
-        return Some((ix.data.clone(), accounts));
+        found.push((ix.data.clone(), accounts));
     }
-    None
+    found
 }
 
 /// Background task entrypoint from `main`.

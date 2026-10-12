@@ -5,10 +5,38 @@ import { Utxo } from "../model/utxo";
 import { StorageService } from "../storage";
 import { Connection } from "@solana/web3.js";
 import { deriveNullifiers, poseidonStringToBytes32 } from "../utils";
-const POLL_TIME = 20 * 1000;
+const POLL_TIME = 2 * 1000;
 let isRunning = false;
 const SYNC_MESSAGE = "SYNC_UTXOS";
+let wakePoll = null;
+let pendingWake = false;
+function waitForPollInterval() {
+    if (pendingWake) {
+        pendingWake = false;
+        return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+            if (wakePoll === finish)
+                wakePoll = null;
+            resolve();
+        }, POLL_TIME);
+        const finish = () => {
+            clearTimeout(timer);
+            wakePoll = null;
+            resolve();
+        };
+        wakePoll = finish;
+    });
+}
 self.addEventListener("message", async (event) => {
+    if (event.data.type === "poll") {
+        if (wakePoll)
+            wakePoll();
+        else
+            pendingWake = true;
+        return;
+    }
     if (event.data.type !== "start") {
         return;
     }
@@ -61,6 +89,6 @@ async function startWorker(walletPubkey, masterSeed, rpcUrl) {
         catch (error) {
             console.log("Worker Sync Failed", error);
         }
-        await new Promise((resolve) => setTimeout(resolve, POLL_TIME));
+        await waitForPollInterval();
     }
 }

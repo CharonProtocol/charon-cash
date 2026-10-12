@@ -15,13 +15,23 @@
   },
   "files": [
     "dist",
+    "prover-wasm/privacy_cash_prover.js",
+    "prover-wasm/privacy_cash_prover.d.ts",
+    "prover-wasm/privacy_cash_prover_bg.wasm",
+    "prover-wasm/privacy_cash_prover_bg.wasm.d.ts",
+    "prover-wasm-mt/privacy_cash_prover.js",
+    "prover-wasm-mt/privacy_cash_prover.d.ts",
+    "prover-wasm-mt/privacy_cash_prover_bg.wasm",
+    "prover-wasm-mt/privacy_cash_prover_bg.wasm.d.ts",
+    "prover-wasm-mt/snippets",
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && cp -r circuits dist/circuits",
-    "prepublishOnly": "bun run build && bun test",
+    "build": "tsc -p tsconfig.json",
+    "build:prover": "node scripts/build-prover.mjs",
+    "prepublishOnly": "bun run build:prover && bun run build && bun test",
     "test": "bun test",
-    "setup": "node scripts/"
+    "setup": "node scripts/initialize.mjs && node scripts/init-spl.mjs && node scripts/alt-init.mjs"
   },
   "keywords": [
     "solana",
@@ -38,6 +48,7 @@
     "access": "public"
   },
   "dependencies": {
+    "@bokuweb/zstd-wasm": "^0.0.27",
     "@lightprotocol/hasher.rs": "^0.2.1",
     "@noble/ciphers": "^2.3.0",
     "@noble/curves": "^2.3.0",
@@ -46,15 +57,16 @@
     "@solana/spl-token": "^0.4.15",
     "@solana/web3.js": "^1.98.4",
     "bn.js": "^5.2.5",
+    "brotli-wasm": "^3.0.1",
     "bs58": "^6.0.0",
     "ethers": "^6.17.0",
     "ffjavascript": "^0.3.1",
     "idb": "^8.0.3",
-    "snarkjs": "^0.7.6",
     "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "@types/bn.js": "^5.2.0",
+    "@types/bun": "^1.4.2",
     "@types/node": "^24.3.0",
     "fake-indexeddb": "^6.2.5",
     "typescript": "~6.0.2",

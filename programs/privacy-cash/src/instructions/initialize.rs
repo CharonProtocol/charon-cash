@@ -54,11 +54,11 @@ pub fn process_initialize(accounts: &[AccountView], data: &[u8]) -> ProgramResul
     let tree_token_account_bump = [params.tree_token_account_bump];
     let global_bump = [params.global_config_bump];
     // These three are singletons at compile-time-known addresses. Checking
-    // against the constants -- rather than re-deriving from whatever bumps the
-    // caller supplied -- also rejects the non-canonical bumps that would
-    // otherwise let a second SOL tree or global config be created alongside
-    // the real one. `CreateAccount` below still needs the caller's bumps to
-    // sign, and they must equal the canonical ones for that to succeed.
+    // against the constants, rather than re-deriving from whatever bumps the
+    // caller supplied, rejects the non-canonical bumps that would otherwise
+    // let a second SOL tree or global config be created alongside the real
+    // one. CreateAccount below still signs with the caller's bumps, and they
+    // have to equal the canonical ones for that signature to match.
     {
         verify_address(tree_account, &TREE_ACCOUNT_ADDRESS)?;
         verify_address(tree_token_account, &TREE_TOKEN_ACCOUNT_ADDRESS)?;
@@ -66,7 +66,6 @@ pub fn process_initialize(accounts: &[AccountView], data: &[u8]) -> ProgramResul
     }
 
     let rent = Rent::get()?;
-
     let tree_account_seed = [
         Seed::from(TREE_ACCOUNT_SEED),
         Seed::from(&tree_account_bump),

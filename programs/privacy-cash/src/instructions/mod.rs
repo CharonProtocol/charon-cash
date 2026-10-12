@@ -1,16 +1,20 @@
 pub mod initialize;
 pub mod initialize_tree_account_for_spl_token;
+pub mod swap;
 pub mod transact;
 pub mod transact_spl;
 pub mod update_deposit_limit;
 pub mod update_deposit_limit_for_spl;
 pub mod update_global_config;
+pub mod wrap_sol;
 
 pub use initialize::*;
 pub use initialize_tree_account_for_spl_token::*;
+pub use swap::*;
 pub use transact::*;
 pub use transact_spl::*;
 pub use update_global_config::*;
+pub use wrap_sol::*;
 
 use pinocchio::error::ProgramError;
 
@@ -22,6 +26,8 @@ pub enum PrivacyCashInstructions {
     UpdateDepositLimit = 4,
     UpdateDepositLimitForSpl = 5,
     UpdateGlobalConfig = 6,
+    Swap = 7,
+    WrapSol = 8,
 }
 
 impl TryFrom<&u8> for PrivacyCashInstructions {
@@ -36,6 +42,8 @@ impl TryFrom<&u8> for PrivacyCashInstructions {
             4 => Ok(PrivacyCashInstructions::UpdateDepositLimit),
             5 => Ok(PrivacyCashInstructions::UpdateDepositLimitForSpl),
             6 => Ok(PrivacyCashInstructions::UpdateGlobalConfig),
+            7 => Ok(PrivacyCashInstructions::Swap),
+            8 => Ok(PrivacyCashInstructions::WrapSol),
             _ => Err(ProgramError::InvalidInstructionData),
         }
     }

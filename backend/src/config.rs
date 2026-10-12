@@ -10,6 +10,8 @@ pub struct Config {
     pub yellowstone_grpc_url: String,
     pub yellowstone_x_token: Option<String>,
     pub indexer_reconnect_secs: u64,
+    /// Enable RPC polling for local validators that do not stream transactions.
+    pub indexer_rpc_fallback: bool,
     pub supported_mints: Vec<Pubkey>,
     /// Operator password for the admin/operator endpoints (`ADMIN_PASSWORD` env).
     /// When `None`, operator routes fail closed (403/401).
@@ -39,6 +41,12 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(3),
+            indexer_rpc_fallback: std::env::var("INDEXER_RPC_FALLBACK")
+                .ok()
+                .map(|value| value.parse::<bool>())
+                .transpose()
+                .context("INDEXER_RPC_FALLBACK must be true or false")?
+                .unwrap_or(false),
 
             supported_mints: parse_supported_mints(),
             admin_password: std::env::var("ADMIN_PASSWORD")
@@ -54,6 +62,7 @@ impl Config {
 
 fn parse_supported_mints() -> Vec<Pubkey> {
     let default = [
+        "11111111111111111111111111111112",
         "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
         "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
     ];
@@ -62,4 +71,8 @@ fn parse_supported_mints() -> Vec<Pubkey> {
         .filter(|s| !s.trim().is_empty())
         .filter_map(|s| Pubkey::from_str(s.trim()).ok())
         .collect()
+}
+
+pub fn sol_address() -> String {
+    "11111111111111111111111111111112".to_owned()
 }

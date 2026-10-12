@@ -9,7 +9,8 @@ use common::{
     },
     merkle_tree::MerkleTree,
     prover::{
-        deposit_artifacts_to_submit, prove, DepositProofArtifacts, DepositProofToSubmit, ProofInput,
+        deposit_artifacts_to_submit, prove, prove_unverified, DepositProofArtifacts,
+        DepositProofToSubmit, ProofInput,
     },
     test_alt::{
         create_global_test_alt, create_versioned_tx_with_alt, get_global_test_alt,
@@ -60,11 +61,10 @@ use std::{
     path::PathBuf,
     str::FromStr,
 };
-use wasmer::sys::global;
 
 use crate::common::utxo::default_mint_address;
 
-const PROGRAM_ID: &str = "HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV";
+const PROGRAM_ID: Pubkey = Pubkey::new_from_array(privacy_cash::ID);
 const DEFAULT_ZERO: [u8; 32] = ZERO_BYTES[0]; // The default value of elements for initializing a tree
 
 pub fn generate_random_nullifier() -> [u8; 32] {
@@ -123,9 +123,9 @@ pub fn bn_to_bytes(value: u128) -> [u8; 32] {
 // Helper to turn the DepositProofToSubmit struct into the Proof struct we use in next 2 functions
 pub fn format_proof(proof: DepositProofToSubmit) -> Proof {
     Proof {
-        proof_a: proof.proof_a.try_into().expect("proof_a must be 64 bytes"),
-        proof_b: proof.proof_b.try_into().expect("proof_b must be 128 bytes"),
-        proof_c: proof.proof_c.try_into().expect("proof_c must be 64 bytes"),
+        proof_a: proof.proof_a.try_into().expect("proof_a must be 32 bytes"),
+        proof_b: proof.proof_b.try_into().expect("proof_b must be 64 bytes"),
+        proof_c: proof.proof_c.try_into().expect("proof_c must be 32 bytes"),
 
         root: proof.root,
         public_amount: proof.public_amount,
@@ -423,7 +423,7 @@ pub fn setup() -> TestContextSpl {
     reset_global_test_alt();
     let mut svm = LiteSVM::new();
 
-    let program_id = Pubkey::from_str(PROGRAM_ID).unwrap();
+    let program_id = PROGRAM_ID;
 
     // Load the Anchor program into LiteSVM.
     // Replace the path with your actual built .so.
@@ -538,7 +538,7 @@ pub fn setup() -> TestContextSpl {
 
     let (spl_tree_account, spl_tree_bump) = Address::derive_program_address(
         &[b"merkle_tree", spl_token_mint.as_array()],
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
     )
     .expect("Spl Tree Account For USDC transactions");
 
@@ -769,18 +769,18 @@ fn transact_spl_deposit_running_correctly() {
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
     let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -799,7 +799,7 @@ fn transact_spl_deposit_running_correctly() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -965,18 +965,18 @@ fn deposit_sol_withdraw_usdc() {
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
     let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.fee_recipient.pubkey(),
     );
@@ -996,7 +996,7 @@ fn deposit_sol_withdraw_usdc() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -1190,25 +1190,26 @@ fn deposit_sol_withdraw_usdc() {
         .join("circuits")
         .join("transaction2");
 
-    let withdraw_proof_result = prove(&withdraw_input, &key_base_path).unwrap();
+    // The SOL note is not in the SPL tree, so the witness is unsatisfied.
+    let withdraw_proof_result = prove_unverified(&withdraw_input, &key_base_path).unwrap();
 
     let withdraw_artifacts = deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap();
 
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
     let withdraw_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &withdraw_proof_to_submit,
     );
     let withdraw_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &withdraw_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let withdraw_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -1227,7 +1228,7 @@ fn deposit_sol_withdraw_usdc() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &withdraw_proof_to_submit,
         &create_ext_data_minified(&withdraw_ext_data),
         &withdraw_ext_data.encrypted_output1,
@@ -1392,18 +1393,18 @@ fn spl_double_spend_fails() {
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
     let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -1422,7 +1423,7 @@ fn spl_double_spend_fails() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -1623,18 +1624,18 @@ fn spl_double_spend_fails() {
     let first_withdraw_proof_to_submit = format_proof(first_withdraw_artifacts);
 
     let first_withdraw_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &first_withdraw_proof_to_submit,
     );
     let first_withdraw_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &first_withdraw_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let first_withdraw_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -1653,7 +1654,7 @@ fn spl_double_spend_fails() {
     advance_one_slot(&mut ctx.svm);
 
     let first_transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &first_withdraw_proof_to_submit,
         &create_ext_data_minified(&first_withdraw_ext_data),
         &first_withdraw_ext_data.encrypted_output1,
@@ -1837,18 +1838,18 @@ fn spl_double_spend_fails() {
     let second_withdraw_proof_to_submit = format_proof(second_withdraw_artifacts);
 
     let second_withdraw_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &second_withdraw_proof_to_submit,
     );
     let second_withdraw_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &second_withdraw_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let second_withdraw_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -1867,7 +1868,7 @@ fn spl_double_spend_fails() {
     advance_one_slot(&mut ctx.svm);
 
     let second_transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &second_withdraw_proof_to_submit,
         &create_ext_data_minified(&second_withdraw_ext_data),
         &second_withdraw_ext_data.encrypted_output1,
@@ -2030,18 +2031,18 @@ fn deposit_and_withdraw_tx_execute_for_correct_inputs() {
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
     let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -2060,7 +2061,7 @@ fn deposit_and_withdraw_tx_execute_for_correct_inputs() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -2254,18 +2255,18 @@ fn deposit_and_withdraw_tx_execute_for_correct_inputs() {
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
     let withdraw_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &withdraw_proof_to_submit,
     );
     let withdraw_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &withdraw_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let withdraw_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -2284,7 +2285,7 @@ fn deposit_and_withdraw_tx_execute_for_correct_inputs() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &withdraw_proof_to_submit,
         &create_ext_data_minified(&withdraw_ext_data),
         &withdraw_ext_data.encrypted_output1,
@@ -2368,7 +2369,7 @@ fn deposit_and_withdraw_tx_execute_for_pda_recipient() {
     let mut ctx = setup();
 
     let (pda_recipient, _) =
-        Address::find_program_address(&[b"RandomPDA"], &Address::from_str_const(PROGRAM_ID));
+        Address::find_program_address(&[b"RandomPDA"], &Address::new_from_array(privacy_cash::ID));
 
     let pda_recipient_ata =
         CreateAssociatedTokenAccount::new(&mut ctx.svm, &ctx.authority, &ctx.spl_token_mint)
@@ -2495,18 +2496,18 @@ fn deposit_and_withdraw_tx_execute_for_pda_recipient() {
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
     let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -2525,7 +2526,7 @@ fn deposit_and_withdraw_tx_execute_for_pda_recipient() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -2720,18 +2721,18 @@ fn deposit_and_withdraw_tx_execute_for_pda_recipient() {
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
     let withdraw_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &withdraw_proof_to_submit,
     );
     let withdraw_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &withdraw_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let withdraw_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -2750,7 +2751,7 @@ fn deposit_and_withdraw_tx_execute_for_pda_recipient() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &withdraw_proof_to_submit,
         &create_ext_data_minified(&withdraw_ext_data),
         &withdraw_ext_data.encrypted_output1,
@@ -2834,7 +2835,7 @@ fn spl_tx_deposit_and_withdraw_execute_for_pda_fee_recipient() {
     let mut ctx = setup();
 
     let (pda_fee_recipient, _) =
-        Address::find_program_address(&[b"RandomPDA"], &Address::from_str_const(PROGRAM_ID));
+        Address::find_program_address(&[b"RandomPDA"], &Address::new_from_array(privacy_cash::ID));
 
     let pda_fee_recipient_ata =
         CreateAssociatedTokenAccount::new(&mut ctx.svm, &ctx.authority, &ctx.spl_token_mint)
@@ -2961,18 +2962,18 @@ fn spl_tx_deposit_and_withdraw_execute_for_pda_fee_recipient() {
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
     let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -2991,7 +2992,7 @@ fn spl_tx_deposit_and_withdraw_execute_for_pda_fee_recipient() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -3185,18 +3186,18 @@ fn spl_tx_deposit_and_withdraw_execute_for_pda_fee_recipient() {
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
     let withdraw_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &withdraw_proof_to_submit,
     );
     let withdraw_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &withdraw_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let withdraw_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -3215,7 +3216,7 @@ fn spl_tx_deposit_and_withdraw_execute_for_pda_fee_recipient() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &withdraw_proof_to_submit,
         &create_ext_data_minified(&withdraw_ext_data),
         &withdraw_ext_data.encrypted_output1,
@@ -3299,7 +3300,7 @@ fn spl_attacker_cannot_frontrun_withdraw_tx() {
     let mut ctx = setup();
 
     let (pda_fee_recipient, _) =
-        Address::find_program_address(&[b"RandomPDA"], &Address::from_str_const(PROGRAM_ID));
+        Address::find_program_address(&[b"RandomPDA"], &Address::new_from_array(privacy_cash::ID));
 
     let pda_fee_recipient_ata =
         CreateAssociatedTokenAccount::new(&mut ctx.svm, &ctx.authority, &ctx.spl_token_mint)
@@ -3426,18 +3427,18 @@ fn spl_attacker_cannot_frontrun_withdraw_tx() {
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
     let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -3456,7 +3457,7 @@ fn spl_attacker_cannot_frontrun_withdraw_tx() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -3651,11 +3652,11 @@ fn spl_attacker_cannot_frontrun_withdraw_tx() {
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
     let withdraw_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &withdraw_proof_to_submit,
     );
     let withdraw_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &withdraw_proof_to_submit,
     );
 
@@ -3679,7 +3680,7 @@ fn spl_attacker_cannot_frontrun_withdraw_tx() {
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let attacker_withdraw_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -3698,7 +3699,7 @@ fn spl_attacker_cannot_frontrun_withdraw_tx() {
     advance_one_slot(&mut ctx.svm);
 
     let attacker_transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &withdraw_proof_to_submit,
         &create_ext_data_minified(&attacker_ext_data),
         &attacker_ext_data.encrypted_output1,
@@ -3740,7 +3741,7 @@ fn spl_attacker_cannot_frontrun_withdraw_tx() {
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let withdraw_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -3759,7 +3760,7 @@ fn spl_attacker_cannot_frontrun_withdraw_tx() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &withdraw_proof_to_submit,
         &create_ext_data_minified(&legitimate_withdraw_ext_data),
         &legitimate_withdraw_ext_data.encrypted_output1,
@@ -3962,18 +3963,18 @@ fn spl_tree_ata_has_zero_amount_after_withdraw_full_amount_when_withdraw_fee_is_
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
     let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -3992,7 +3993,7 @@ fn spl_tree_ata_has_zero_amount_after_withdraw_full_amount_when_withdraw_fee_is_
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -4186,18 +4187,18 @@ fn spl_tree_ata_has_zero_amount_after_withdraw_full_amount_when_withdraw_fee_is_
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
     let withdraw_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &withdraw_proof_to_submit,
     );
     let withdraw_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &withdraw_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let withdraw_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -4216,7 +4217,7 @@ fn spl_tree_ata_has_zero_amount_after_withdraw_full_amount_when_withdraw_fee_is_
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &withdraw_proof_to_submit,
         &create_ext_data_minified(&withdraw_ext_data),
         &withdraw_ext_data.encrypted_output1,
@@ -4418,18 +4419,18 @@ fn spl_tree_ata_has_zero_amount_after_withdraw_full_amount_when_withdraw_fee_sam
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
     let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -4448,7 +4449,7 @@ fn spl_tree_ata_has_zero_amount_after_withdraw_full_amount_when_withdraw_fee_sam
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -4642,18 +4643,18 @@ fn spl_tree_ata_has_zero_amount_after_withdraw_full_amount_when_withdraw_fee_sam
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
     let withdraw_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &withdraw_proof_to_submit,
     );
     let withdraw_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &withdraw_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let withdraw_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -4672,7 +4673,7 @@ fn spl_tree_ata_has_zero_amount_after_withdraw_full_amount_when_withdraw_fee_sam
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &withdraw_proof_to_submit,
         &create_ext_data_minified(&withdraw_ext_data),
         &withdraw_ext_data.encrypted_output1,
@@ -4835,9 +4836,9 @@ fn spl_transaction_fails_for_wrong_data_hash() {
         panic!("BigInt value is too large to fit in 32 bytes");
     }
     let deposit_proof_to_submit = Proof {
-        proof_a: [1u8; 64],
-        proof_b: [1u8; 128],
-        proof_c: [1u8; 64],
+        proof_a: [1u8; 32],
+        proof_b: [1u8; 64],
+        proof_c: [1u8; 32],
         root: deposit_root,
         public_amount: public_amount,
         ext_data_hash: deposit_ext_data_hash,
@@ -4846,18 +4847,18 @@ fn spl_transaction_fails_for_wrong_data_hash() {
     };
 
     let deposit_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
     let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -4876,7 +4877,7 @@ fn spl_transaction_fails_for_wrong_data_hash() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -4996,9 +4997,9 @@ fn spl_transaction_fails_for_invalid_root() {
     let invalid_root = [123u8; 32];
 
     let deposit_proof_to_submit = Proof {
-        proof_a: [1u8; 64],
-        proof_b: [1u8; 128],
-        proof_c: [1u8; 64],
+        proof_a: [1u8; 32],
+        proof_b: [1u8; 64],
+        proof_c: [1u8; 32],
         root: invalid_root,
         public_amount: public_amount,
         ext_data_hash: deposit_ext_data_hash,
@@ -5007,18 +5008,18 @@ fn spl_transaction_fails_for_invalid_root() {
     };
 
     let deposit_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
     let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -5037,7 +5038,7 @@ fn spl_transaction_fails_for_invalid_root() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -5159,9 +5160,9 @@ fn spl_transaction_fails_for_zero_root() {
     let invalid_root = [0u8; 32];
 
     let deposit_proof_to_submit = Proof {
-        proof_a: [1u8; 64],
-        proof_b: [1u8; 128],
-        proof_c: [1u8; 64],
+        proof_a: [1u8; 32],
+        proof_b: [1u8; 64],
+        proof_c: [1u8; 32],
         root: invalid_root,
         public_amount: public_amount,
         ext_data_hash: deposit_ext_data_hash,
@@ -5170,18 +5171,18 @@ fn spl_transaction_fails_for_zero_root() {
     };
 
     let deposit_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
     let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -5200,7 +5201,7 @@ fn spl_transaction_fails_for_zero_root() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -5327,9 +5328,9 @@ fn spl_transaction_fails_for_modified_mint() {
         .expect("Different Mint Could Not Be Created");
 
     let deposit_proof_to_submit = Proof {
-        proof_a: [1u8; 64],
-        proof_b: [1u8; 128],
-        proof_c: [1u8; 64],
+        proof_a: [1u8; 32],
+        proof_b: [1u8; 64],
+        proof_c: [1u8; 32],
         root: invalid_root,
         public_amount: public_amount,
         ext_data_hash: deposit_ext_data_hash,
@@ -5338,18 +5339,18 @@ fn spl_transaction_fails_for_modified_mint() {
     };
 
     let deposit_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
     let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -5368,7 +5369,7 @@ fn spl_transaction_fails_for_modified_mint() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -5535,18 +5536,18 @@ fn transact_spl_can_execute_for_deposit_larger_the_sol_tree_max_limit() {
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
     let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -5565,7 +5566,7 @@ fn transact_spl_can_execute_for_deposit_larger_the_sol_tree_max_limit() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -5735,18 +5736,18 @@ fn spl_fails_when_transact_instruction_signer_ata_owner_does_not_match_signer() 
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
     let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -5765,7 +5766,7 @@ fn spl_fails_when_transact_instruction_signer_ata_owner_does_not_match_signer() 
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -5872,7 +5873,7 @@ fn read_max_deposit_amount(ctx: &mut TestContextSpl) -> u64 {
 fn spl_fails_to_deposit_when_exceeding_the_default_deposit_limit() {
     let mut ctx = setup();
     let new_deposit_limit = 1000;
-    let program_id = Address::from_str(PROGRAM_ID).expect("Program Could Not Be Parsed");
+    let program_id = Address::new_from_array(privacy_cash::ID);
 
     let update_deposit_limit_ix = build_update_deposit_limit_ix(
         program_id,
@@ -5883,7 +5884,7 @@ fn spl_fails_to_deposit_when_exceeding_the_default_deposit_limit() {
     );
 
     let test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.fee_recipient_ata,
     );
@@ -6035,18 +6036,18 @@ fn spl_fails_to_deposit_when_exceeding_the_default_deposit_limit() {
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
     let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -6065,7 +6066,7 @@ fn spl_fails_to_deposit_when_exceeding_the_default_deposit_limit() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -6113,7 +6114,7 @@ fn spl_fails_to_deposit_when_exceeding_the_default_deposit_limit() {
 fn spl_authority_can_update_deposit_limit() {
     let mut ctx = setup();
     let new_deposit_limit = 1000;
-    let program_id = Address::from_str(PROGRAM_ID).expect("Program Could Not Be Parsed");
+    let program_id = Address::new_from_array(privacy_cash::ID);
 
     let update_deposit_limit_ix = build_update_deposit_limit_ix(
         program_id,
@@ -6124,7 +6125,7 @@ fn spl_authority_can_update_deposit_limit() {
     );
 
     let test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.fee_recipient_ata,
     );
@@ -6160,7 +6161,7 @@ fn spl_authority_can_update_deposit_limit() {
 fn spl_non_authority_cannot_update_deposit_limit() {
     let mut ctx = setup();
     let new_deposit_limit = 1000;
-    let program_id = Address::from_str(PROGRAM_ID).expect("Program Could Not Be Parsed");
+    let program_id = Address::new_from_array(privacy_cash::ID);
 
     let update_deposit_limit_ix = build_update_deposit_limit_ix(
         program_id,
@@ -6171,7 +6172,7 @@ fn spl_non_authority_cannot_update_deposit_limit() {
     );
 
     let test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.attacker.pubkey(),
         &ctx.fee_recipient_ata,
     );
@@ -6213,7 +6214,7 @@ fn spl_non_authority_cannot_update_deposit_limit() {
 fn spl_can_deposit_after_increasing_limit() {
     let mut ctx = setup();
     let new_deposit_limit = 2_000_000;
-    let program_id = Address::from_str(PROGRAM_ID).expect("Program Could Not Be Parsed");
+    let program_id = Address::new_from_array(privacy_cash::ID);
 
     let update_deposit_limit_ix = build_update_deposit_limit_ix(
         program_id,
@@ -6224,7 +6225,7 @@ fn spl_can_deposit_after_increasing_limit() {
     );
 
     let test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.fee_recipient_ata,
     );
@@ -6374,18 +6375,18 @@ fn spl_can_deposit_after_increasing_limit() {
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
     let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -6404,7 +6405,7 @@ fn spl_can_deposit_after_increasing_limit() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -6459,7 +6460,7 @@ fn spl_withdrawal_has_no_limits() {
     let mut ctx = setup();
 
     let new_deposit_limit = 2000;
-    let program_id = Address::from_str(PROGRAM_ID).expect("Program Could Not Be Parsed");
+    let program_id = Address::new_from_array(privacy_cash::ID);
 
     let update_deposit_limit_ix = build_update_deposit_limit_ix(
         program_id,
@@ -6470,7 +6471,7 @@ fn spl_withdrawal_has_no_limits() {
     );
 
     let test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.fee_recipient_ata,
     );
@@ -6620,18 +6621,18 @@ fn spl_withdrawal_has_no_limits() {
     let deposit_proof_to_submit = format_proof(deposit_artifacts);
 
     let deposit_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
     let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -6650,7 +6651,7 @@ fn spl_withdrawal_has_no_limits() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -6707,7 +6708,7 @@ fn spl_withdrawal_has_no_limits() {
     // Step 2: Lower the deposit limit to 1000 tokens
 
     let new_deposit_limit = 1000;
-    let program_id = Address::from_str(PROGRAM_ID).expect("Program Could Not Be Parsed");
+    let program_id = Address::new_from_array(privacy_cash::ID);
 
     let update_deposit_limit_ix = build_update_deposit_limit_ix(
         program_id,
@@ -6718,7 +6719,7 @@ fn spl_withdrawal_has_no_limits() {
     );
 
     let test_protocol_addresses = get_test_protocol_addresses(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.fee_recipient_ata,
     );
@@ -6895,18 +6896,18 @@ fn spl_withdrawal_has_no_limits() {
     let withdraw_proof_to_submit = format_proof(withdraw_artifacts);
 
     let withdraw_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &withdraw_proof_to_submit,
     );
     let withdraw_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &withdraw_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let withdraw_test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &ctx.spl_tree_token_account,
         &ctx.fee_recipient.pubkey(),
@@ -6925,7 +6926,7 @@ fn spl_withdrawal_has_no_limits() {
     advance_one_slot(&mut ctx.svm);
 
     let transact_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &withdraw_proof_to_submit,
         &create_ext_data_minified(&withdraw_ext_data),
         &withdraw_ext_data.encrypted_output1,
@@ -7070,12 +7071,12 @@ fn security_finding_cross_mint_tree_ata_drain() {
 
     let (attacker_tree_account, attacker_tree_bump) = Address::derive_program_address(
         &[b"merkle_tree", attacker_mint.as_array()],
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
     )
     .expect("attacker tree PDA derivation failed");
 
     let init_attacker_tree_ix = build_initialize_for_spl_ix(
-        Pubkey::from_str(PROGRAM_ID).unwrap(),
+        PROGRAM_ID,
         ctx.attacker.pubkey(),
         attacker_tree_account,
         attacker_mint,
@@ -7226,18 +7227,18 @@ fn security_finding_cross_mint_tree_ata_drain() {
         format_proof(deposit_artifacts_to_submit(&deposit_proof_result, false).unwrap());
 
     let deposit_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
     let deposit_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &deposit_proof_to_submit,
     );
 
     let modify_compute_units = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
     let deposit_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &attacker_tree_ata,
         &ctx.fee_recipient.pubkey(),
@@ -7255,7 +7256,7 @@ fn security_finding_cross_mint_tree_ata_drain() {
     advance_one_slot(&mut ctx.svm);
 
     let deposit_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &deposit_proof_to_submit,
         &create_ext_data_minified(&deposit_ext_data),
         &deposit_ext_data.encrypted_output1,
@@ -7414,11 +7415,11 @@ fn security_finding_cross_mint_tree_ata_drain() {
         format_proof(deposit_artifacts_to_submit(&withdraw_proof_result, false).unwrap());
 
     let withdraw_nullifiers = find_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &withdraw_proof_to_submit,
     );
     let withdraw_cross_check_nullifiers = find_cross_check_nullifier_pdas(
-        &Pubkey::from_str_const(PROGRAM_ID),
+        &PROGRAM_ID,
         &withdraw_proof_to_submit,
     );
 
@@ -7438,7 +7439,7 @@ fn security_finding_cross_mint_tree_ata_drain() {
     advance_one_slot(&mut ctx.svm);
 
     let attack_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &withdraw_proof_to_submit,
         &create_ext_data_minified(&withdraw_ext_data),
         &withdraw_ext_data.encrypted_output1,
@@ -7476,12 +7477,6 @@ fn security_finding_cross_mint_tree_ata_drain() {
     // deposit branch's `CreateIdempotent` call, so this cross-mint
     // substitution must now be rejected with `InvalidMintAddress` and the
     // real vault must be left untouched.
-    //
-    // (Verified against the pre-fix code first: with the `tree_ata` mint
-    // check removed, this exact transaction succeeds and drains
-    // `withdraw_amount` raw units from `ctx.spl_tree_token_account` into
-    // `ctx.attacker_ata` -- see .qed/findings/audit-20260814T150536Z.md,
-    // finding 1.)
     let err = ctx
         .svm
         .send_transaction(attack_tx)

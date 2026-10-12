@@ -1,6 +1,7 @@
 mod common;
 
 use mollusk_svm::{Mollusk, result::Check};
+use solana_program_error::ProgramError;
 
 use solana_sdk::{
     native_token::LAMPORTS_PER_SOL,
@@ -36,7 +37,7 @@ use spl_token::state::{Mint, Account as SplTokenAccount, AccountState};
 use solana_program_pack::Pack;
 use solana_sdk::program_option::COption;
 
-const PROGRAM_ID: &str = "HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV";
+const PROGRAM_ID: Pubkey = Pubkey::new_from_array(privacy_cash::ID);
 
 pub fn create_ext_data_minified(ext_data: &ExtData) -> ExtDataMinified {
     ExtDataMinified { ext_amount: ext_data.ext_amount, fee: ext_data.fee }
@@ -44,9 +45,9 @@ pub fn create_ext_data_minified(ext_data: &ExtData) -> ExtDataMinified {
 
 pub fn format_proof(proof: DepositProofToSubmit) -> Proof {
     Proof {
-        proof_a: proof.proof_a.try_into().expect("proof_a must be 64 bytes"),
-        proof_b: proof.proof_b.try_into().expect("proof_b must be 128 bytes"),
-        proof_c: proof.proof_c.try_into().expect("proof_c must be 64 bytes"),
+        proof_a: proof.proof_a.try_into().expect("proof_a must be 32 bytes"),
+        proof_b: proof.proof_b.try_into().expect("proof_b must be 64 bytes"),
+        proof_c: proof.proof_c.try_into().expect("proof_c must be 32 bytes"),
         root: proof.root,
         public_amount: proof.public_amount,
         ext_data_hash: proof.ext_data_hash,
@@ -301,10 +302,17 @@ pub fn build_transact_spl_ix(
 }
 
 fn setup() -> BenchContext {
-    let program_id = Pubkey::from_str_const(PROGRAM_ID);
+    let program_id = PROGRAM_ID;
 
     std::env::set_var("RUST_LOG", "off");
-    let mut mollusk = Mollusk::new(&program_id, concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/deploy/privacy_cash"));
+    let sbf_out = std::env::var_os("CARGO_TARGET_DIR")
+        .map(|dir| PathBuf::from(dir).join("deploy"))
+        .filter(|dir| dir.join("privacy_cash.so").exists())
+        .unwrap_or_else(|| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/deploy")
+        });
+    std::env::set_var("SBF_OUT_DIR", sbf_out.canonicalize().unwrap_or(sbf_out));
+    let mut mollusk = Mollusk::new(&program_id, "privacy_cash");
 
     let authority = Keypair::new();
     let funding_account = Keypair::new();
@@ -375,7 +383,7 @@ fn genesis_tree_account(authority: Pubkey, bump: u8) -> Account {
         authority: authority.to_bytes(),
     };
 
-    account_with_data(Pubkey::from_str_const(PROGRAM_ID), bytemuck::bytes_of(&tree).to_vec())
+    account_with_data(PROGRAM_ID, bytemuck::bytes_of(&tree).to_vec())
 }
 
 fn global_config_account(
@@ -384,7 +392,7 @@ fn global_config_account(
     let cfg = GlobalConfig {
         authority: authority.to_bytes(), deposit_fee_rate, withdrawal_fee_rate, fee_error_margin, _padding: 0, bump,
     };
-    account_with_data(Pubkey::from_str_const(PROGRAM_ID), bytemuck::bytes_of(&cfg).to_vec())
+    account_with_data(PROGRAM_ID, bytemuck::bytes_of(&cfg).to_vec())
 }
 
 #[repr(C)]
@@ -399,7 +407,7 @@ fn tree_token_account_account(authority: Pubkey, bump: u8) -> Account {
     let mut data = Vec::with_capacity(33);
     data.extend_from_slice(&state.authority.to_bytes());
     data.push(state.bump);
-    account_with_data(Pubkey::from_str_const(PROGRAM_ID), data)
+    account_with_data(PROGRAM_ID, data)
 }
 
 fn funded_tree_token_account(authority: Pubkey, bump: u8, extra_lamports: u64) -> Account {
@@ -482,7 +490,7 @@ fn seed_one_deposit(ctx: &BenchContext, amount: u64, off_chain_tree: &mut Merkle
         authority: ctx.authority.pubkey().to_bytes(),
     };
     OnChainMerkleTree::intialize::<Poseidon>(&mut on_chain_tree).unwrap();
-    OnChainMerkleTree::append_pair::<Poseidon>(commitment0, commitment1, &mut on_chain_tree)
+    OnChainMerkleTree::append_pair::<Poseidon>(&[commitment0, commitment1], &mut on_chain_tree)
         .unwrap();
 
     (deposited, on_chain_tree)
@@ -521,9 +529,42 @@ fn run_and_report(mollusk: &Mollusk, entries: Vec<Entry>) {
             ],
         };
 
-        let result = mollusk.process_and_validate_instruction(&entry.instruction, &entry.accounts, &checks);
+        let result = if entry.name.starts_with("transact") {
+            let r = mollusk.process_instruction(&entry.instruction, &entry.accounts);
+            println!(
+                "DIAG {} program_result={:?} cu={} raw={:?}",
+                entry.name, r.program_result, r.compute_units_consumed, r.raw_result
+            );
+            if !r.program_result.is_ok() {
+                panic!(
+                    "{} failed: {:?} cu={}",
+                    entry.name, r.program_result, r.compute_units_consumed
+                );
+            }
+            r
+        } else {
+            mollusk.process_and_validate_instruction(&entry.instruction, &entry.accounts, &checks)
+        };
         let pinocchio_cu = result.compute_units_consumed;
         let anchor_cu = entry.anchor_cu;
+
+        if entry.name == "transact_deposit_first" {
+            assert!(
+                pinocchio_cu < 250_000,
+                "CU gate: compressed transact {} CU exceeds 250k — abort Swap, use 3-tx",
+                pinocchio_cu
+            );
+            let swap_est = pinocchio_cu.saturating_mul(2).saturating_add(400_000);
+            assert!(
+                swap_est < 1_200_000,
+                "CU gate: estimated swap {} CU exceeds 1.2M headroom under 1.4M",
+                swap_est
+            );
+            println!(
+                "CU gate transact_deposit_first={} estimated_swap={}",
+                pinocchio_cu, swap_est
+            );
+        }
 
         let improvement = if anchor_cu > 0 {
             let saved = anchor_cu as i64 - pinocchio_cu as i64;
@@ -948,6 +989,169 @@ fn scenario_transact_spl_deposit(ctx: &BenchContext, tree_ata_exists: bool) -> E
     }
 }
 
+fn native_mint_account() -> Account {
+    let mint = Mint {
+        mint_authority: COption::None,
+        supply: 0,
+        decimals: 9,
+        is_initialized: true,
+        freeze_authority: COption::None,
+    };
+    let mut data = vec![0u8; Mint::LEN];
+    Mint::pack(mint, &mut data).unwrap();
+    account_with_data(spl_token::ID, data)
+}
+
+fn native_token_account(owner: Pubkey) -> Account {
+    let rent = Rent::default().minimum_balance(SplTokenAccount::LEN);
+    let acct = SplTokenAccount {
+        mint: spl_token::native_mint::ID,
+        owner,
+        amount: 0,
+        delegate: COption::None,
+        state: AccountState::Initialized,
+        is_native: COption::Some(rent),
+        delegated_amount: 0,
+        close_authority: COption::None,
+    };
+    let mut data = vec![0u8; SplTokenAccount::LEN];
+    SplTokenAccount::pack(acct, &mut data).unwrap();
+    Account {
+        lamports: rent,
+        data,
+        owner: spl_token::ID,
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
+#[test]
+fn wrap_sol_set_lamports_balances() {
+    let ctx = setup();
+    let wrap_amount = LAMPORTS_PER_SOL;
+    let vault = funded_tree_token_account(
+        ctx.authority.pubkey(),
+        ctx.tree_token_bump,
+        wrap_amount,
+    );
+    let vault_before = vault.lamports;
+    let pool_wsol_key = Pubkey::new_unique();
+    let pool_wsol = native_token_account(ctx.global_config);
+    let pool_before = pool_wsol.lamports;
+    let native_mint = spl_token::native_mint::ID;
+
+    let mut data = vec![PrivacyCashInstructions::WrapSol as u8];
+    data.extend_from_slice(&wrap_amount.to_le_bytes());
+
+    let instruction = Instruction {
+        program_id: ctx.program_id,
+        accounts: vec![
+            AccountMeta::new(ctx.tree_token_account, false),
+            AccountMeta::new(pool_wsol_key, false),
+            AccountMeta::new_readonly(native_mint, false),
+            AccountMeta::new(ctx.random_user.pubkey(), true),
+            AccountMeta::new_readonly(spl_token::ID, false),
+            AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
+        ],
+        data,
+    };
+
+    let accounts = vec![
+        (ctx.tree_token_account, vault),
+        (pool_wsol_key, pool_wsol),
+        (native_mint, native_mint_account()),
+        (ctx.random_user.pubkey(), funded_account(10 * LAMPORTS_PER_SOL)),
+        mollusk_svm_programs_token::token::keyed_account(),
+        system_program_keyed_account(),
+    ];
+
+    let amount_le = wrap_amount.to_le_bytes();
+    let sync_native = Instruction {
+        program_id: spl_token::ID,
+        accounts: vec![AccountMeta::new(pool_wsol_key, false)],
+        data: vec![17],
+    };
+
+    ctx.mollusk.process_and_validate_instruction_chain(
+        &[
+            (
+                &instruction,
+                &[
+                    Check::success(),
+                    Check::account(&ctx.tree_token_account)
+                        .lamports(vault_before - wrap_amount)
+                        .owner(&ctx.program_id)
+                        .build(),
+                    Check::account(&pool_wsol_key)
+                        .lamports(pool_before + wrap_amount)
+                        .owner(&spl_token::ID)
+                        .build(),
+                ],
+            ),
+            (
+                &sync_native,
+                &[
+                    Check::success(),
+                    Check::account(&pool_wsol_key)
+                        .lamports(pool_before + wrap_amount)
+                        .data_slice(64, &amount_le)
+                        .build(),
+                ],
+            ),
+        ],
+        &accounts,
+    );
+}
+
+#[test]
+fn wrap_sol_rejects_attacker_owned_wsol() {
+    let ctx = setup();
+    let wrap_amount = LAMPORTS_PER_SOL;
+    let vault = funded_tree_token_account(
+        ctx.authority.pubkey(),
+        ctx.tree_token_bump,
+        wrap_amount,
+    );
+    let pool_wsol_key = Pubkey::new_unique();
+    assert_ne!(ctx.random_user.pubkey(), ctx.global_config);
+    let pool_wsol = native_token_account(ctx.random_user.pubkey());
+    assert_eq!(&pool_wsol.data[32..64], ctx.random_user.pubkey().as_ref());
+    let native_mint = spl_token::native_mint::ID;
+
+    let mut data = vec![PrivacyCashInstructions::WrapSol as u8];
+    data.extend_from_slice(&wrap_amount.to_le_bytes());
+
+    let instruction = Instruction {
+        program_id: ctx.program_id,
+        accounts: vec![
+            AccountMeta::new(ctx.tree_token_account, false),
+            AccountMeta::new(pool_wsol_key, false),
+            AccountMeta::new_readonly(native_mint, false),
+            AccountMeta::new(ctx.random_user.pubkey(), true),
+            AccountMeta::new_readonly(spl_token::ID, false),
+            AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
+        ],
+        data,
+    };
+
+    let accounts = vec![
+        (ctx.tree_token_account, vault),
+        (pool_wsol_key, pool_wsol),
+        (native_mint, native_mint_account()),
+        (ctx.random_user.pubkey(), funded_account(10 * LAMPORTS_PER_SOL)),
+        mollusk_svm_programs_token::token::keyed_account(),
+        system_program_keyed_account(),
+    ];
+
+    ctx.mollusk.process_and_validate_instruction(
+        &instruction,
+        &accounts,
+        &[Check::err(ProgramError::Custom(
+            privacy_cash::error::PrivacyCashError::InvalidTokenAccount as u32,
+        ))],
+    );
+}
+
 #[test]
 fn bench_all() {
     let ctx = setup();
@@ -955,7 +1159,6 @@ fn bench_all() {
     run_and_report(&ctx.mollusk, vec![
         scenario_initialize(&ctx),
         scenario_update_global_config(&ctx, None, Some(50), None, "update_global_config_one_field", 3659),
-        // scenario_update_global_config(&ctx, Some(10), Some(60), Some(300), "update_global_config_all_fields", 0), Find anchor CU count for this
         scenario_update_deposit_limit(&ctx),
         scenario_update_deposit_limit_for_spl(&ctx),
         scenario_initialize_tree_account_for_spl_token(&ctx),

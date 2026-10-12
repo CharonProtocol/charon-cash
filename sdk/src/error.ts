@@ -15,6 +15,7 @@ export class CharonProtocolError extends Error {
 export enum CharonProtocolErrorCode {
   INVALID_INPUT = "INVALID_INPUT",
   INVALID_UTXO_COUNT = "INVALID_UTXO_COUNT",
+  INVALID_MINT = "INVALID_MINT",
 
   API_ERROR = "API_ERROR",
 

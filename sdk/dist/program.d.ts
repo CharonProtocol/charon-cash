@@ -38,12 +38,28 @@ export type TransactArgs = {
     encryptionService: EncryptionService;
     signer: PublicKey;
     connection: Connection;
-    circuit: {
-        wasm: Uint8Array;
-        zkey: Uint8Array;
-    };
     signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>;
 };
-export declare function transactSol({ inputUtxos, extAmount, fee, mintAddress, lightwasm, recipientKey, encryptionService, signer, connection, signTransaction, circuit, }: TransactArgs): Promise<string>;
-export declare function transactSpl({ inputUtxos, extAmount, fee, mintAddress, lightwasm, recipientKey, encryptionService, signer, connection, signTransaction, circuit, }: TransactArgs): Promise<string>;
+export type TransferArgs = {
+    inputUtxos: Utxo[];
+    transferAmount: BN;
+    fee: BN;
+    mintAddress: string;
+    recipientKey: string;
+    lightwasm: LightWasm;
+    encryptionService: EncryptionService;
+    signer: PublicKey;
+    connection: Connection;
+    signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>;
+};
+export declare function transactSol({ inputUtxos, extAmount, fee, mintAddress, lightwasm, recipientKey, encryptionService, signer, connection, signTransaction, }: TransactArgs): Promise<any>;
+export declare function shieldedTransferSol({ inputUtxos, transferAmount, fee, mintAddress, lightwasm, recipientKey, encryptionService, signer, connection, signTransaction, }: TransferArgs): Promise<any>;
+export declare function transactSpl({ inputUtxos, extAmount, fee, mintAddress, lightwasm, recipientKey, encryptionService, signer, connection, signTransaction, }: TransactArgs): Promise<any>;
+/**
+ * This does shielded transfer for spl tokens.
+ *
+ * @param param0
+ * @returns
+ */
+export declare function shieldedTransferSpl({ inputUtxos, transferAmount, fee, mintAddress, lightwasm, recipientKey, encryptionService, signer, connection, signTransaction, }: TransferArgs): Promise<any>;
 //# sourceMappingURL=program.d.ts.map
