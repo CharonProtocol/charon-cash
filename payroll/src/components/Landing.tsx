@@ -25,8 +25,7 @@ const bento = [
     cls: "text-foreground",
     body: (
       <>
-        In about <span className="font-semibold text-gold">80 seconds</span> with{" "}
-        <span className="font-semibold text-gold">1 wallet signature</span>. No sequential signing prompts.
+        About <span className="font-semibold text-gold">80 seconds</span>, one wallet signature.
       </>
     ),
   },
@@ -37,7 +36,7 @@ const bento = [
     unit: "",
     label: "Signatures",
     cls: "text-ok",
-    body: <>Direct shielded leaf insertion into the Merkle tree.</>,
+    body: <>Direct shielded leaf insertion.</>,
   },
   {
     icon: "memory",
@@ -47,7 +46,7 @@ const bento = [
     unit: "s",
     label: "Proof Generation",
     cls: "text-foreground",
-    body: <>Groth16 built in the employee's browser - the relayer only broadcasts signed transactions.</>,
+    body: <>Groth16, built in the browser.</>,
   },
   {
     icon: "speed",
@@ -56,7 +55,7 @@ const bento = [
     unit: "k",
     label: "Compute Units",
     cls: "text-foreground",
-    body: <>Per packed payout transact. Substantially below Solana's 1.4M ceiling.</>,
+    body: <>Per packed payout transact.</>,
   },
   {
     icon: "data_object",
@@ -65,7 +64,7 @@ const bento = [
     unit: " B",
     label: "Payload Size",
     cls: "text-foreground",
-    body: <>Compact raw payload per settlement, comfortably under the 1,232 B wire cap.</>,
+    body: <>Under the 1,232 B wire cap.</>,
   },
 ]
 
@@ -363,8 +362,8 @@ function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void 
         <div className="mx-auto flex h-16 w-full max-w-[1150px] items-center justify-between gap-4 px-4 sm:px-8">
           <div className="flex items-center gap-6">
             <button onClick={() => scrollTo("overview")} className="flex cursor-pointer items-center gap-2 outline-none">
-              <img src="/charon-mark.png" alt="Charon Pay" className="size-7 rounded-full object-cover" />
-              <span className="whitespace-nowrap text-[1.05rem] font-semibold tracking-tight">Charon Pay</span>
+              <img src="/charon-mark.png" alt="Charon Cash" className="size-7 rounded-full object-cover" />
+              <span className="whitespace-nowrap text-[1.05rem] font-semibold tracking-tight">Charon Cash</span>
             </button>
           </div>
           <div className="flex items-center gap-2">
@@ -416,7 +415,7 @@ function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void 
               onClick={() => scrollTo("comparison")}
             >
               <Ms name="terminal" className="text-base text-body-ink" />
-              Explore Architecture
+              See the difference
             </Button>
           </div>
 
@@ -1056,7 +1055,7 @@ function LandingBody({ onRole }: { onRole: (r: "employer" | "employee") => void 
             <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
               <span>Groth16 Finality Verified</span>
               <span className="text-band-line">·</span>
-              <span>© 2026 Charon Pay Protocol Ltd.</span>
+              <span>© 2026 Charon Cash Protocol Ltd.</span>
             </div>
           </div>
         </footer>

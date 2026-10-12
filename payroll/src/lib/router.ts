@@ -5,7 +5,7 @@ export type Route =
   | {
       role: "employer"
       path: "/employer" | "/employer/run" | "/employer/history" | "/employer/team"
-      page: "overview" | "payroll" | "history" | "team"
+      page: "payroll" | "history" | "team"
     }
   | { role: "employee"; path: "/employee" }
 
@@ -16,8 +16,8 @@ export function parsePath(pathname: string): Route {
     if (sub === "/run") return { role: "employer", path: "/employer/run", page: "payroll" }
     if (sub === "/history") return { role: "employer", path: "/employer/history", page: "history" }
     if (sub === "/team") return { role: "employer", path: "/employer/team", page: "team" }
-    // bare /employer and unknown subpaths both land on the overview
-    return { role: "employer", path: "/employer", page: "overview" }
+    // bare /employer and unknown subpaths land on Run Payroll
+    return { role: "employer", path: "/employer", page: "payroll" }
   }
   if (p === "/employee") return { role: "employee", path: "/employee" }
   return { role: "landing", path: "/" }

@@ -148,7 +148,7 @@ function LiveStats({ sent, total, failed }: { sent: number; total: number; faile
       <Stat label="eta" value={eta !== null ? fmtTime(eta) : "-"} />
       <Stat
         label="prover"
-        value={prover ? `${prover.workers}w · ${prover.avgMs ? (prover.avgMs / 1000).toFixed(1) + "s" : "warming"}` : "snarkjs"}
+        value={prover ? `${prover.workers}w · ${prover.avgMs ? (prover.avgMs / 1000).toFixed(1) + "s" : "warming"}` : "warming"}
         pulse={prover?.proves === 0}
       />
       {failed > 0 && (

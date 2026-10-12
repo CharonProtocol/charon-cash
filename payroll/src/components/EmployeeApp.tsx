@@ -142,10 +142,6 @@ export function EmployeeApp() {
               <h1 className="h-display text-3xl tracking-[-0.02em] sm:text-4xl">
                 Employee Shielded Note Claims
               </h1>
-              <p className="mt-1 max-w-2xl text-sm text-body-ink">
-                ECDH-encrypted salary notes waiting in the shielded pool - scan, select, and redeem
-                gaslessly. Amounts are invisible to everyone but you.
-              </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="outline" size="sm" onClick={() => rescan()} disabled={busy}>
@@ -171,7 +167,7 @@ export function EmployeeApp() {
           </div>
 
           {/* ── stat strip ─────────────────────────────────────────────── */}
-          <div data-stagger className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div data-stagger className="mt-6 grid gap-4 sm:grid-cols-2">
             <StatCard
               label="Claimable private notes"
               value={noteSolRaw === null ? <span className="text-mute">-</span> : <CountUp to={Number(lamportsToSol(noteSolRaw.toString()))} decimals={4} suffix=" SOL" />}
@@ -186,26 +182,12 @@ export function EmployeeApp() {
               dotLabel="public"
               sub="spendable now · visible on-chain"
             />
-            <StatCard
-              label="Gasless relayer"
-              value={<CountUp to={100} suffix="%" />}
-              dot="ok"
-              dotLabel="sponsored"
-              sub={bps !== null ? `fee ${(bps / 100).toFixed(2)}% · min ${lamportsToSol(minFee.toString())} SOL` : "checking relayer…"}
-            />
-            <StatCard
-              label="ECDH key sync"
-              value={registered ? "100%" : "-"}
-              dot={registered ? "ok" : "wait"}
-              dotLabel={registered ? "synced" : "pending"}
-              sub="recipient keys published · Poseidon depth 32"
-            />
           </div>
 
           {/* ── main grid ──────────────────────────────────────────────── */}
           <div data-stagger className="mt-6 grid gap-5 lg:grid-cols-12">
             {/* left column */}
-            <div className="space-y-5 lg:col-span-8">
+            <div className="space-y-5 lg:col-span-12">
               {/* unclaimed notes ledger */}
               <Card className="card-lift specular">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
@@ -302,7 +284,7 @@ export function EmployeeApp() {
                                     "Proving…"
                                   ) : (
                                     <>
-                                      <Ms name="bolt" className="mr-1 text-xs text-gold" /> Claim gasless
+                                      <Ms name="bolt" className="mr-1 text-xs text-gold" /> Claim
                                     </>
                                   )}
                                 </Button>
@@ -414,82 +396,6 @@ export function EmployeeApp() {
                       {gross > 0n
                         ? `receive ${lamportsToSol(net.toString()).toFixed(6)} SOL · relayer fee ${lamportsToSol(fee.toString()).toFixed(6)} SOL`
                         : "Moves notes out of the shielded pool to your public balance."}
-                    </p>
-                  </div>
-                </div>
-              </Card>
-            </div>
-
-            {/* right rail */}
-            <div className="space-y-5 lg:col-span-4">
-              {/* stealth address manager */}
-              <Card className="card-lift specular">
-                <div className="flex items-center gap-3 border-b border-line px-5 py-4">
-                  <span className="flex size-9 flex-none items-center justify-center rounded-lg border border-gold-line bg-gold-soft">
-                    <Ms name="fingerprint" className="text-sm text-gold" />
-                  </span>
-                  <div>
-                    <div className="h-display text-base font-semibold tracking-tight">Stealth Address Manager</div>
-                    <div className="text-[11px] text-mute">dual-key · derived from your wallet</div>
-                  </div>
-                </div>
-                <div className="space-y-3 px-5 py-4">
-                  <div className="flex items-center justify-between gap-2 rounded-xl border border-line bg-panel px-3 py-2">
-                    <span className="font-mono text-[10px] uppercase tracking-wider text-mute">Master pubkey</span>
-                    <span className="flex items-center gap-1.5 font-mono text-xs">
-                      {publicKey ? shortHash(publicKey.toBase58(), 6, 4) : "-"}
-                      {publicKey && (
-                        <button
-                          type="button"
-                          aria-label="Copy master pubkey"
-                          onClick={() => {
-                            void navigator.clipboard.writeText(publicKey.toBase58())
-                            toast.success("Master pubkey copied")
-                          }}
-                        >
-                          <Copy className="size-3 text-mute hover:text-foreground" />
-                        </button>
-                      )}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-body-ink">Ephemeral key rotation</span>
-                    <span className="flex items-center gap-1.5 rounded-full border border-ok-line bg-ok-soft px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider text-ok">
-                      <span className="size-1.5 rounded-full bg-ok" /> active
-                    </span>
-                  </div>
-                  <p className="text-[11px] leading-relaxed text-body-ink">
-                    Receiving keys are derived deterministically from your wallet seed - same
-                    wallet, same stealth identity, no rotation ceremony needed.
-                  </p>
-                </div>
-              </Card>
-
-              {/* ZK proof generator */}
-              <Card className="card-lift specular">
-                <div className="flex items-center gap-3 border-b border-line px-5 py-4">
-                  <span className="flex size-9 flex-none items-center justify-center rounded-lg border border-gold-line bg-gold-soft">
-                    <Ms name="grid_goldenratio" className="text-sm text-gold" />
-                  </span>
-                  <div>
-                    <div className="h-display text-base font-semibold tracking-tight">ZK Proof Generator</div>
-                    <div className="text-[11px] text-mute">groth16 · BN254</div>
-                  </div>
-                </div>
-                <div className="space-y-3 px-5 py-4">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-body-ink">Prover latency</span>
-                    <span className="font-mono font-medium">~0.8s · on-device</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-body-ink">Runtime</span>
-                    <span className="font-mono font-medium">browser WASM</span>
-                  </div>
-                  <div className="rounded-xl border border-line bg-panel p-3">
-                    <p className="text-[11px] leading-relaxed text-body-ink">
-                      <span className="font-medium text-ink">Zero L1 trace:</span> your claim is
-                      authorized through the relay signature pool - the chain sees a relayer
-                      broadcast, never you.
                     </p>
                   </div>
                 </div>

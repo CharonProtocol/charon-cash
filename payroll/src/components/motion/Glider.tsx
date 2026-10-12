@@ -37,11 +37,12 @@ export function GliderGroup<T extends string>({
       if (!el || !c) return
       const er = el.getBoundingClientRect()
       const cr = c.getBoundingClientRect()
-      setPill({ left: er.left - cr.left, top: er.top - cr.top, w: er.width, h: er.height })
+      setPill({ left: er.left - cr.left - c.clientLeft, top: er.top - cr.top - c.clientTop, w: er.width, h: er.height })
     }
     measure()
     const ro = new ResizeObserver(measure)
     if (containerRef.current) ro.observe(containerRef.current)
+    itemRefs.current.forEach((b) => ro.observe(b))
     const fonts = document.fonts?.ready
     fonts?.then(measure).catch(() => {})
     return () => ro.disconnect()

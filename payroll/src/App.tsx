@@ -73,7 +73,7 @@ export default function App() {
             aria-label="Back to landing"
           >
             <img src="/charon-mark.png" alt="" className="size-7 rounded-full" />
-            <span className="hidden font-semibold tracking-tight text-ink sm:inline">Charon Pay</span>
+            <span className="hidden font-semibold tracking-tight text-ink sm:inline">Charon Cash</span>
           </button>
           <nav className="min-w-0 flex-1 overflow-x-auto no-scrollbar">
             <GliderGroup
@@ -85,13 +85,11 @@ export default function App() {
                 if (id === "payroll") navigate("/employer/run")
                 else if (id === "history") navigate("/employer/history")
                 else if (id === "team") navigate("/employer/team")
-                else if (id === "overview") navigate("/employer")
                 else navigate("/employee")
               }}
               items={
                 employer
                   ? [
-                      { id: "overview", label: "Overview" },
                       { id: "payroll", label: "Run Payroll" },
                       { id: "history", label: "Ledger & Receipts" },
                       { id: "team", label: "Team Registry" },
