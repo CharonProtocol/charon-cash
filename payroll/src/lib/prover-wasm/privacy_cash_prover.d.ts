@@ -20,6 +20,11 @@ export class WasmProver {
  */
 export function proverThreads(): number;
 
+/**
+ * A/B switch for benches: true = arkworks' MSM, false = batch-affine (default).
+ */
+export function setArkMsm(on: boolean): void;
+
 export function start(): void;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
@@ -28,6 +33,7 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_wasmprover_free: (a: number, b: number) => void;
     readonly proverThreads: () => number;
+    readonly setArkMsm: (a: number) => void;
     readonly start: () => void;
     readonly wasmprover_new: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly wasmprover_prove: (a: number, b: number, c: number) => [number, number, number, number];

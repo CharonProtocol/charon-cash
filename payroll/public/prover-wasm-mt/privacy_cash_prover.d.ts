@@ -22,6 +22,11 @@ export function initThreadPool(num_threads: number): Promise<any>;
  */
 export function proverThreads(): number;
 
+/**
+ * A/B switch for benches: true = arkworks' MSM, false = batch-affine (default).
+ */
+export function setArkMsm(on: boolean): void;
+
 export function start(): void;
 
 export class wbg_rayon_PoolBuilder {
@@ -39,12 +44,13 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly __wbg_wasmprover_free: (a: number, b: number) => void;
-    readonly __wbg_wbg_rayon_poolbuilder_free: (a: number, b: number) => void;
-    readonly initThreadPool: (a: number) => any;
     readonly proverThreads: () => number;
+    readonly setArkMsm: (a: number) => void;
     readonly start: () => void;
     readonly wasmprover_new: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly wasmprover_prove: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly __wbg_wbg_rayon_poolbuilder_free: (a: number, b: number) => void;
+    readonly initThreadPool: (a: number) => any;
     readonly wbg_rayon_poolbuilder_build: (a: number) => void;
     readonly wbg_rayon_poolbuilder_numThreads: (a: number) => number;
     readonly wbg_rayon_poolbuilder_receiver: (a: number) => number;
