@@ -286,6 +286,9 @@ async function convergedMerkleInputs(
   }
 }
 
+/** Minimum gap between background note-backup uploads. */
+const PERSIST_MIN_GAP_MS = 3000
+
 export class PrivacyCashClient {
   private signer: Signer
   private wasm?: LightWasm
@@ -382,13 +385,16 @@ export class PrivacyCashClient {
 
   private persistRunning: Promise<void> | null = null
   private persistAgain = false
+  private lastPersistAt = 0
 
   /**
-   * Coalesced, non-blocking backup of the encrypted note set: at most one
-   * upload in flight plus one trailing. Payout paths used to await a full
-   * re-encrypt + PUT of every note after each relay and each change-note
-   * resolve, which sat on the lane's critical path; the notes stay in memory
-   * and are recoverable from the chain, so nothing needs to wait on it.
+   * Coalesced, throttled, non-blocking backup of the encrypted note set: at
+   * most one upload in flight, at most one every PERSIST_MIN_GAP_MS, plus a
+   * trailing one so the last change always lands. Payout paths used to await
+   * a full re-encrypt + PUT of every note after each relay and each
+   * change-note resolve (on the lane's critical path); running them back to
+   * back in the background instead kept the main thread busy re-encrypting.
+   * Notes stay in memory and are recoverable from the chain.
    */
   private schedulePersist(): void {
     if (this.persistRunning) {
@@ -398,6 +404,9 @@ export class PrivacyCashClient {
     this.persistRunning = (async () => {
       do {
         this.persistAgain = false
+        const wait = PERSIST_MIN_GAP_MS - (Date.now() - this.lastPersistAt)
+        if (wait > 0) await new Promise((r) => setTimeout(r, wait))
+        this.lastPersistAt = Date.now()
         await this.persistNotes().catch(() => {})
       } while (this.persistAgain)
     })().finally(() => {

@@ -118,12 +118,15 @@ export declare class PrivacyCashClient {
     private persistNotes;
     private persistRunning;
     private persistAgain;
+    private lastPersistAt;
     /**
-     * Coalesced, non-blocking backup of the encrypted note set: at most one
-     * upload in flight plus one trailing. Payout paths used to await a full
-     * re-encrypt + PUT of every note after each relay and each change-note
-     * resolve, which sat on the lane's critical path; the notes stay in memory
-     * and are recoverable from the chain, so nothing needs to wait on it.
+     * Coalesced, throttled, non-blocking backup of the encrypted note set: at
+     * most one upload in flight, at most one every PERSIST_MIN_GAP_MS, plus a
+     * trailing one so the last change always lands. Payout paths used to await
+     * a full re-encrypt + PUT of every note after each relay and each
+     * change-note resolve (on the lane's critical path); running them back to
+     * back in the background instead kept the main thread busy re-encrypting.
+     * Notes stay in memory and are recoverable from the chain.
      */
     private schedulePersist;
     /** In-memory notes for the current session (decrypted; never persisted locally). */
