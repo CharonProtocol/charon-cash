@@ -17,7 +17,7 @@ import { TeamPage } from "@/components/TeamPage"
 import { UploadCard } from "@/components/UploadCard"
 import { WalletBar } from "@/components/WalletBar"
 import { usePayrollClient } from "@/hooks/usePayrollClient"
-import { detectNativeProver, ensureBrowserProver, useNativeProver, proverPlan } from "@/lib/browserProver"
+import { browserProverInfo, detectNativeProver, ensureBrowserProver, useNativeProver, proverPlan } from "@/lib/browserProver"
 import { createEngine, type RunSnapshot } from "@/lib/engine"
 import { lamportsToSol, shortHash } from "@/lib/format"
 import { estimateTotals } from "@/lib/estimate"
@@ -210,6 +210,10 @@ export function EmployerApp({ page }: { page: Page }) {
           mode,
           lanes,
           rows: entries.length,
+          // which prover ran (native helper / MT teams / ST pool) and its pace
+          prover: browserProverInfo(),
+          crossOriginIsolated: (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true,
+          cores: navigator.hardwareConcurrency || 0,
           startedAt: r.startedAt,
           fundedAt: r.fundedAt,
           finishedAt: r.finishedAt,
