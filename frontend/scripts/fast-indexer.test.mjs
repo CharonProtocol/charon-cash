@@ -4,6 +4,7 @@ import { WasmFactory } from "@lightprotocol/hasher.rs"
 import { LocalMirror } from "privacy-cash-sdk"
 
 import { FastIndexer, dec2hex } from "./fast-indexer.mjs"
+import { toTxLike } from "./grpc-source.mjs"
 
 const wasm = await WasmFactory.getInstance()
 const PROGRAM = Keypair.generate().publicKey
@@ -184,5 +185,28 @@ describe("FastIndexer", () => {
     c.conn.getSignaturesForAddress = orig
     expect(leafValues(ix)).toEqual([1, 2, 3, 4])
     expect(ix.applied).toBe(2)
+  })
+
+  it("applies streamed (gRPC) txs in root-ring order with no RPC calls", async () => {
+    const c = fakeChain()
+    c.add("g1", 9, [1, 2, 71, 72])
+    c.add("g2", 9, [3, 4, 73, 74])
+    c.truth.reverse() // chain executed g2 first
+    const noRpc = () => {
+      throw new Error("stream path must not touch RPC")
+    }
+    const ix = new FastIndexer({ conn: { ...c.conn, getSignaturesForAddress: noRpc, getTransaction: noRpc, getAccountInfo: noRpc }, program: PROGRAM, wasm })
+    const proto = (c0, c1, n0, n1) => ({
+      signature: new Uint8Array(64),
+      transaction: { message: { accountKeys: [PROGRAM.toBytes()], instructions: [{ programIdIndex: 0, accounts: new Uint8Array(), data: transactData(c0, c1, n0, n1) }] } },
+      meta: { err: undefined, loadedWritableAddresses: [], loadedReadonlyAddresses: [] },
+    })
+    ix.ingestStreamTx("g1", 9, toTxLike(proto(1, 2, 71, 72)))
+    expect(leafValues(ix)).toEqual([]) // no ring yet: wait
+    ix.ingestStreamTree("sol", (await c.conn.getAccountInfo()).data)
+    expect(leafValues(ix)).toEqual([]) // ring wants g2 first
+    ix.ingestStreamTx("g2", 9, toTxLike(proto(3, 4, 73, 74)))
+    expect(leafValues(ix)).toEqual([3, 4, 1, 2])
+    expect(ix.nullifiers.get(field(71).toString("hex"))).toBe("g1")
   })
 })

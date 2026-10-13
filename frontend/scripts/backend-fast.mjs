@@ -17,6 +17,7 @@ import {
 } from "@solana/spl-token"
 import { WasmFactory } from "@lightprotocol/hasher.rs"
 import { FastIndexer, ROOT_HISTORY } from "./fast-indexer.mjs"
+import { startGrpcSource } from "./grpc-source.mjs"
 
 import {
   LocalMirror, readGlobalFees, readTreeState, deriveAccounts,
@@ -134,6 +135,11 @@ if (!(await conn.getAccountInfo(solTree))) {
 // ---- index: scan program tx history -> commitments / encrypted outputs / nullifiers ----
 const indexer = new FastIndexer({ conn, program: PROGRAM, wasm, pollMs: Number(process.env.POLL_MS ?? 1000) })
 await indexer.start()
+// GRPC_URL (e.g. http://127.0.0.1:10000 for surfpool -g, or a LaserStream
+// endpoint + GRPC_X_TOKEN): leaves arrive pushed with the tx itself.
+if (process.env.GRPC_URL) {
+  void startGrpcSource({ url: process.env.GRPC_URL, xToken: process.env.GRPC_X_TOKEN, indexer })
+}
 
 // Blockhash cache: relays never wait on getLatestBlockhash.
 let cachedBlockhash = (await conn.getLatestBlockhash("confirmed")).blockhash
@@ -223,7 +229,7 @@ Bun.serve({
       }
 
       if (p === "/indexer/status") {
-        return json({ last_signature: indexer.lastSig, last_slot: indexer.lastSlot, passes: indexer.passes, applied: indexer.applied,
+        return json({ last_signature: indexer.lastSig, last_slot: indexer.lastSlot, passes: indexer.passes, applied: indexer.applied, stats: indexer.stats,
           pools: [...indexer.pools.values()].map((q) => ({ tree_key: q.treeKey, leaves: q.leaves.length, root: q.root() })) })
       }
 

@@ -155,6 +155,8 @@ export class FastIndexer {
     this.lastSlot = 0
     this.passes = 0
     this.applied = 0
+    /** counters for /indexer/status (grpc source fills grpcTxs/grpcAccounts) */
+    this.stats = {}
     this.running = null
     this.again = false
     this.waiters = []
@@ -163,6 +165,10 @@ export class FastIndexer {
     /** every signature ever applied: RPC list order is not monotonic, so a
      *  landed tx can be listed again after the cursor passed it */
     this.appliedSigs = new Set()
+    /** treeKey -> Map(sig -> candidate) of landed transacts not yet applied */
+    this.pending = new Map()
+    /** treeKey -> latest streamed tree account ({txCount, ring}) */
+    this.streamTree = new Map()
     this.lastPassAt = 0
   }
 
@@ -249,11 +255,38 @@ export class FastIndexer {
     if (treeKey !== "sol") seeds.push(new PublicKey(treeKey).toBuffer())
     const [pda] = PublicKey.findProgramAddressSync(seeds, this.program)
     const acct = await this.conn.getAccountInfo(pda, "confirmed").catch(() => null)
-    if (!acct || acct.data.length < 848 + 32 * ROOT_HISTORY) return null
-    const d = acct.data
-    const ring = []
-    for (let i = 0; i < ROOT_HISTORY; i++) ring.push(Buffer.from(d.subarray(848 + i * 32, 880 + i * 32)).toString("hex"))
-    return { txCount: d.readUInt32LE(8) / 2, ring }
+    return acct ? parseTreeAccount(acct.data) : null
+  }
+
+  treePda(treeKey) {
+    const seeds = [Buffer.from("merkle_tree")]
+    if (treeKey !== "sol") seeds.push(new PublicKey(treeKey).toBuffer())
+    return PublicKey.findProgramAddressSync(seeds, this.program)[0]
+  }
+
+  /** Push path (gRPC): a confirmed tx with its full message — no RPC needed. */
+  ingestStreamTx(signature, slot, tx) {
+    if (this.appliedSigs.has(signature) || tx.meta?.err) return
+    for (const t of transactsOf(tx, this.program)) {
+      this.addPending(t.treeKey, { sig: signature, slot, t })
+      this.drain(t.treeKey, this.streamTree.get(t.treeKey) ?? null, false)
+    }
+    this.flushWaiters()
+  }
+
+  /** Push path (gRPC): the tree account changed — its root ring orders the pending txs. */
+  ingestStreamTree(treeKey, data) {
+    const chain = parseTreeAccount(data)
+    if (!chain) return
+    this.streamTree.set(treeKey, chain)
+    this.drain(treeKey, chain, false)
+    this.flushWaiters()
+  }
+
+  addPending(treeKey, cand) {
+    let m = this.pending.get(treeKey)
+    if (!m) this.pending.set(treeKey, (m = new Map()))
+    if (!this.appliedSigs.has(cand.sig)) m.set(cand.sig, cand)
   }
 
   async pass() {
@@ -279,7 +312,7 @@ export class FastIndexer {
           ? Promise.resolve(null)
           : this.conn.getTransaction(s.signature, { maxSupportedTransactionVersion: 0, commitment: "confirmed" }),
       )
-      const byTree = new Map()
+      const touched = new Set()
       for (let i = 0; i < ordered.length; i++) {
         const s = ordered[i]
         if (s.err || (txs[i] && txs[i].meta?.err)) {
@@ -293,12 +326,11 @@ export class FastIndexer {
           continue
         }
         for (const t of ts) {
-          const list = byTree.get(t.treeKey) ?? []
-          list.push({ sig: s.signature, slot: s.slot, t })
-          byTree.set(t.treeKey, list)
+          this.addPending(t.treeKey, { sig: s.signature, slot: s.slot, t })
+          touched.add(t.treeKey)
         }
       }
-      for (const [treeKey, list] of byTree) await this.applyInChainOrder(treeKey, list)
+      for (const treeKey of touched) this.drain(treeKey, await this.chainTree(treeKey), true)
     }
     // the cursor moves only once everything it covers has been applied
     if (sigs.length > 0 && sigs.every((s) => this.seen.has(s.signature))) {
@@ -310,30 +342,38 @@ export class FastIndexer {
   /**
    * Apply a pool's pending transacts in true execution order: the chain's
    * root ring says which root comes next, so the tx that produces it goes
-   * next — whatever order the RPC listed them in. A pending tx whose
-   * predecessor isn't visible yet waits for the next pass.
+   * next — whatever order the RPC or stream delivered them in. A tx whose
+   * predecessor isn't here yet waits. `blind` (RPC catch-up only) allows
+   * list order when the ring can't decide (no account, or >100 txs behind).
    */
-  async applyInChainOrder(treeKey, list) {
+  drain(treeKey, chain, blind) {
+    const pending = this.pending.get(treeKey)
+    if (!pending || pending.size === 0) return
     const pool = this.pool(treeKey)
-    const chain = await this.chainTree(treeKey)
-    const remaining = [...list]
-    while (remaining.length > 0) {
+    for (;;) {
+      if (pending.size === 0) return
       const next = pool.leaves.length / 2 + 1
-      let pick = 0
+      let pick
       if (chain && chain.txCount < next) return // the chain hasn't caught up to us: wait
       if (chain && chain.txCount - next < ROOT_HISTORY) {
         const want = chain.ring[next % ROOT_HISTORY]
-        pick = remaining.findIndex((c) => pool.rootAfter(c.t.decoded.commitments[0], c.t.decoded.commitments[1]) === want)
-        if (pick === -1) {
-          if (this.stuckAt !== next) this.log(`indexer: no pending tx yields chain root #${next} (${remaining.length} pending), waiting`)
+        pick = [...pending.values()].find(
+          (c) => pool.rootAfter(c.t.decoded.commitments[0], c.t.decoded.commitments[1]) === want,
+        )
+        if (!pick) {
+          if (this.stuckAt !== next) this.log(`indexer: no pending tx yields chain root #${next} (${pending.size} pending), waiting`)
           this.stuckAt = next
           return
         }
+      } else if (blind) {
+        pick = pending.values().next().value
+      } else {
+        return
       }
-      const [c] = remaining.splice(pick, 1)
-      this.applyTransact(c.sig, c.slot, c.t)
-      this.seen.add(c.sig)
-      this.appliedSigs.add(c.sig)
+      pending.delete(pick.sig)
+      this.applyTransact(pick.sig, pick.slot, pick.t)
+      this.seen.add(pick.sig)
+      this.appliedSigs.add(pick.sig)
     }
   }
 
@@ -364,6 +404,15 @@ export class FastIndexer {
     }
     return out
   }
+}
+
+/** Tree account -> { txCount, ring }: next_index u32 @8, root ring @848. */
+export function parseTreeAccount(data) {
+  const d = Buffer.from(data)
+  if (d.length < 848 + 32 * ROOT_HISTORY) return null
+  const ring = []
+  for (let i = 0; i < ROOT_HISTORY; i++) ring.push(d.subarray(848 + i * 32, 880 + i * 32).toString("hex"))
+  return { txCount: d.readUInt32LE(8) / 2, ring }
 }
 
 async function mapLimit(items, limit, fn) {
