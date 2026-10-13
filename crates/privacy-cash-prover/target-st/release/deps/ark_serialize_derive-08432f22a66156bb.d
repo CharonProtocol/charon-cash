@@ -1,0 +1,7 @@
+/Users/singupallikartik/Developer/chat/privacy-cash/.claude/worktrees/payroll-fast/crates/privacy-cash-prover/target-st/release/deps/ark_serialize_derive-08432f22a66156bb.d: /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-serialize-derive-0.6.0/src/lib.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-serialize-derive-0.6.0/src/serialize.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-serialize-derive-0.6.0/src/deserialize.rs
+
+/Users/singupallikartik/Developer/chat/privacy-cash/.claude/worktrees/payroll-fast/crates/privacy-cash-prover/target-st/release/deps/libark_serialize_derive-08432f22a66156bb.dylib: /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-serialize-derive-0.6.0/src/lib.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-serialize-derive-0.6.0/src/serialize.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-serialize-derive-0.6.0/src/deserialize.rs
+
+/Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-serialize-derive-0.6.0/src/lib.rs:
+/Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-serialize-derive-0.6.0/src/serialize.rs:
+/Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-serialize-derive-0.6.0/src/deserialize.rs:

@@ -1,0 +1,10 @@
+/Users/singupallikartik/Developer/chat/privacy-cash/.claude/worktrees/payroll-fast/crates/privacy-cash-prover/target-st/release/deps/bs58-f23e7a87f5b9f16b.d: /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bs58-0.5.1/src/lib.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bs58-0.5.1/src/alphabet.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bs58-0.5.1/src/decode.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bs58-0.5.1/src/encode.rs
+
+/Users/singupallikartik/Developer/chat/privacy-cash/.claude/worktrees/payroll-fast/crates/privacy-cash-prover/target-st/release/deps/libbs58-f23e7a87f5b9f16b.rlib: /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bs58-0.5.1/src/lib.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bs58-0.5.1/src/alphabet.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bs58-0.5.1/src/decode.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bs58-0.5.1/src/encode.rs
+
+/Users/singupallikartik/Developer/chat/privacy-cash/.claude/worktrees/payroll-fast/crates/privacy-cash-prover/target-st/release/deps/libbs58-f23e7a87f5b9f16b.rmeta: /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bs58-0.5.1/src/lib.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bs58-0.5.1/src/alphabet.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bs58-0.5.1/src/decode.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bs58-0.5.1/src/encode.rs
+
+/Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bs58-0.5.1/src/lib.rs:
+/Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bs58-0.5.1/src/alphabet.rs:
+/Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bs58-0.5.1/src/decode.rs:
+/Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bs58-0.5.1/src/encode.rs:

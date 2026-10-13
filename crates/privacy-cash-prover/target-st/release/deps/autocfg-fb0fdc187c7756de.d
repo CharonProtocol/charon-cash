@@ -1,0 +1,10 @@
+/Users/singupallikartik/Developer/chat/privacy-cash/.claude/worktrees/payroll-fast/crates/privacy-cash-prover/target-st/release/deps/autocfg-fb0fdc187c7756de.d: /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/lib.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/error.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/rustc.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/version.rs
+
+/Users/singupallikartik/Developer/chat/privacy-cash/.claude/worktrees/payroll-fast/crates/privacy-cash-prover/target-st/release/deps/libautocfg-fb0fdc187c7756de.rlib: /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/lib.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/error.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/rustc.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/version.rs
+
+/Users/singupallikartik/Developer/chat/privacy-cash/.claude/worktrees/payroll-fast/crates/privacy-cash-prover/target-st/release/deps/libautocfg-fb0fdc187c7756de.rmeta: /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/lib.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/error.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/rustc.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/version.rs
+
+/Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/lib.rs:
+/Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/error.rs:
+/Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/rustc.rs:
+/Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/version.rs:

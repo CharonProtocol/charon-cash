@@ -1,0 +1,10 @@
+/Users/singupallikartik/Developer/chat/privacy-cash/.claude/worktrees/payroll-fast/crates/privacy-cash-prover/target-st/release/deps/log-f6efedbf0cc190ce.d: /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.34/src/lib.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.34/src/macros.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.34/src/serde.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.34/src/__private_api.rs
+
+/Users/singupallikartik/Developer/chat/privacy-cash/.claude/worktrees/payroll-fast/crates/privacy-cash-prover/target-st/release/deps/liblog-f6efedbf0cc190ce.rlib: /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.34/src/lib.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.34/src/macros.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.34/src/serde.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.34/src/__private_api.rs
+
+/Users/singupallikartik/Developer/chat/privacy-cash/.claude/worktrees/payroll-fast/crates/privacy-cash-prover/target-st/release/deps/liblog-f6efedbf0cc190ce.rmeta: /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.34/src/lib.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.34/src/macros.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.34/src/serde.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.34/src/__private_api.rs
+
+/Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.34/src/lib.rs:
+/Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.34/src/macros.rs:
+/Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.34/src/serde.rs:
+/Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.34/src/__private_api.rs:

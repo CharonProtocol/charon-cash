@@ -5,27 +5,38 @@
 //! stay affine and additions are queued; each flush adds a whole batch with
 //! ONE field inversion (Montgomery's batch-inversion trick), so a bucket add
 //! costs ~6 multiplications. The proving-key bases are affine already. A
-//! bucket can only appear once per batch; colliding points wait for the next
-//! flush. Same-x pairs (doubling or P + -P) fall back to projective math.
+//! bucket can only appear once per batch; a point whose bucket is already in
+//! the batch goes to that bucket's projective overflow instead (a plain mixed
+//! add — rare in full windows, and the whole story in the narrow top window,
+//! where a retry queue went quadratic). Same-x pairs (doubling or P + -P)
+//! fall back to projective math.
 //!
 //! Scalars use signed c-bit digits, so each window needs 2^(c-1) buckets.
 
 use ark_ec::short_weierstrass::{Affine, Projective, SWCurveConfig};
-use ark_ec::{AdditiveGroup, CurveGroup};
+use ark_ec::{AdditiveGroup, AffineRepr, CurveGroup};
 use ark_ff::{BigInteger, Field, PrimeField, Zero};
 
 type BigIntOf<P> = <<P as ark_ec::CurveConfig>::ScalarField as PrimeField>::BigInt;
 
-/// Additions batched per field inversion.
+/// Additions batched per field inversion (capped at an eighth of the bucket
+/// count so random digits rarely collide inside a batch).
 const BATCH: usize = 1024;
 
-/// Window size for `n` points: the bucket count stays well below `n` so the
-/// batches fill and the per-window bucket sweep stays a small share.
+/// Scalars at or below this many bits go to arkworks, which sums 0/1 and
+/// small scalars without windows; they would otherwise pile into a handful
+/// of buckets and collide on every add.
+const SMALL_BITS: u32 = 64;
+
+/// Below this many full-width scalars batching doesn't pay for itself (an
+/// 8-thread split of the 2^16 h-query, 8192 per chunk, measured slower).
+const MIN_BATCH_AFFINE: usize = 16384;
+
+/// Window size for `n` points: bit-length(n) - 4 (swept on an M1: G1 2^16
+/// best at 13, G2 2^14 at 11 — wider windows lose more to the per-window
+/// bucket sweep than they save in accumulation).
 fn window_bits(n: usize) -> usize {
-    match n {
-        0..=31 => 3,
-        _ => ((usize::BITS - n.leading_zeros()) as usize).saturating_sub(3).clamp(4, 16),
-    }
+    ((usize::BITS - n.leading_zeros()) as usize).saturating_sub(4).clamp(3, 16)
 }
 
 /// Signed c-bit digits of every scalar, window-major: `out[w * n + i]`.
@@ -60,42 +71,45 @@ fn signed_digits<B: BigInteger>(scalars: &[B], c: usize, windows: usize) -> Vec<
 
 /// One window's bucket accumulator with affine buckets and a pending batch.
 struct Buckets<P: SWCurveConfig> {
+    batch_cap: usize,
     buckets: Vec<Affine<P>>,
     busy: Vec<bool>,
     batch: Vec<(u32, Affine<P>)>,
-    queue: Vec<(u32, Affine<P>)>,
+    overflow: Vec<Projective<P>>,
     scratch: Vec<P::BaseField>,
 }
 
 impl<P: SWCurveConfig> Buckets<P> {
     fn new(count: usize) -> Self {
         Self {
+            batch_cap: (count / 8).clamp(8, BATCH),
             buckets: vec![Affine::identity(); count],
             busy: vec![false; count],
             batch: Vec::with_capacity(BATCH),
-            queue: Vec::new(),
+            overflow: vec![Projective::zero(); count],
             scratch: Vec::with_capacity(BATCH),
         }
     }
 
     fn reset(&mut self) {
         self.buckets.iter_mut().for_each(|b| *b = Affine::identity());
+        self.overflow.iter_mut().for_each(|b| *b = Projective::zero());
     }
 
     #[inline]
     fn add(&mut self, b: u32, p: Affine<P>) {
         let bi = b as usize;
         if self.busy[bi] {
-            self.queue.push((b, p));
+            self.overflow[bi] += &p;
             return;
         }
-        if self.buckets[bi].infinity {
+        if self.buckets[bi].is_zero() {
             self.buckets[bi] = p;
             return;
         }
         self.busy[bi] = true;
         self.batch.push((b, p));
-        if self.batch.len() == BATCH {
+        if self.batch.len() >= self.batch_cap {
             self.flush();
         }
     }
@@ -141,34 +155,52 @@ impl<P: SWCurveConfig> Buckets<P> {
         self.batch.clear();
     }
 
-    /// Flush, then drain collisions until every point has landed.
-    fn finish(&mut self) {
-        self.flush();
-        while !self.queue.is_empty() {
-            let pending = std::mem::take(&mut self.queue);
-            for (b, p) in pending {
-                self.add(b, p);
-            }
-            self.flush();
-        }
-    }
-
     /// Σ (i + 1) · bucket[i] via the running-sum sweep.
     fn sum(&self) -> Projective<P> {
         let mut running = Projective::<P>::zero();
         let mut total = Projective::<P>::zero();
-        for b in self.buckets.iter().rev() {
-            if !b.infinity {
+        for (b, o) in self.buckets.iter().zip(&self.overflow).rev() {
+            if !b.is_zero() {
                 running += b;
             }
+            running += o;
             total += &running;
         }
         total
     }
 }
 
-/// Σ scalars[i] · bases[i]. Points at infinity and zero scalars are skipped.
+/// Σ scalars[i] · bases[i]: full-width scalars through the batch-affine
+/// Pippenger, small ones through arkworks.
 pub fn msm<P: SWCurveConfig>(bases: &[Affine<P>], scalars: &[BigIntOf<P>]) -> Projective<P> {
+    let n = bases.len().min(scalars.len());
+    let (mut big_b, mut big_s, mut small_b, mut small_s) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for i in 0..n {
+        if scalars[i].is_zero() || bases[i].is_zero() {
+            continue;
+        }
+        if scalars[i].num_bits() > SMALL_BITS {
+            big_b.push(bases[i]);
+            big_s.push(scalars[i]);
+        } else {
+            small_b.push(bases[i]);
+            small_s.push(scalars[i]);
+        }
+    }
+    if big_b.len() < MIN_BATCH_AFFINE {
+        small_b.append(&mut big_b);
+        small_s.append(&mut big_s);
+    }
+    let small = if small_b.is_empty() {
+        Projective::zero()
+    } else {
+        <Projective<P> as ark_ec::VariableBaseMSM>::msm_bigint(&small_b, &small_s)
+    };
+    small + msm_batch_affine(&big_b, &big_s)
+}
+
+/// Batch-affine Pippenger over every (base, scalar) pair.
+pub fn msm_batch_affine<P: SWCurveConfig>(bases: &[Affine<P>], scalars: &[BigIntOf<P>]) -> Projective<P> {
     let n = bases.len().min(scalars.len());
     let (bases, scalars) = (&bases[..n], &scalars[..n]);
     if n == 0 {
@@ -188,7 +220,7 @@ pub fn msm<P: SWCurveConfig>(bases: &[Affine<P>], scalars: &[BigIntOf<P>]) -> Pr
         let row = &digits[w * n..(w + 1) * n];
         let mut any = false;
         for (i, &d) in row.iter().enumerate() {
-            if d == 0 || bases[i].infinity {
+            if d == 0 || bases[i].is_zero() {
                 continue;
             }
             any = true;
@@ -199,7 +231,7 @@ pub fn msm<P: SWCurveConfig>(bases: &[Affine<P>], scalars: &[BigIntOf<P>]) -> Pr
             }
         }
         if any {
-            acc.finish();
+            acc.flush();
             result += acc.sum();
             acc.reset();
         }
@@ -217,14 +249,16 @@ mod tests {
 
     fn check_g1(bases: &[G1Affine], scalars: &[Fr]) {
         let big: Vec<_> = scalars.iter().map(|s| s.into_bigint()).collect();
-        let want = G1Projective::msm(bases, scalars).unwrap();
-        assert_eq!(msm(bases, &big).into_affine(), want.into_affine());
+        let want = G1Projective::msm(bases, scalars).unwrap().into_affine();
+        assert_eq!(msm(bases, &big).into_affine(), want);
+        assert_eq!(msm_batch_affine(bases, &big).into_affine(), want);
     }
 
     fn check_g2(bases: &[G2Affine], scalars: &[Fr]) {
         let big: Vec<_> = scalars.iter().map(|s| s.into_bigint()).collect();
-        let want = G2Projective::msm(bases, scalars).unwrap();
-        assert_eq!(msm(bases, &big).into_affine(), want.into_affine());
+        let want = G2Projective::msm(bases, scalars).unwrap().into_affine();
+        assert_eq!(msm(bases, &big).into_affine(), want);
+        assert_eq!(msm_batch_affine(bases, &big).into_affine(), want);
     }
 
     fn mixed_scalars(n: usize) -> Vec<Fr> {
@@ -244,7 +278,7 @@ mod tests {
     #[test]
     fn g1_matches_arkworks_with_edge_cases() {
         let mut rng = test_rng();
-        for n in [1usize, 2, 7, 33, 300, 5000] {
+        for n in [1usize, 2, 7, 33, 300, 5000, 20000] {
             let mut bases: Vec<G1Affine> = (0..n).map(|_| G1Affine::rand(&mut rng)).collect();
             if n > 3 {
                 bases[1] = G1Affine::identity();

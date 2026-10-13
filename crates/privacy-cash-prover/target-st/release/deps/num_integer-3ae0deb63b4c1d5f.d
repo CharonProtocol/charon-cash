@@ -1,0 +1,9 @@
+/Users/singupallikartik/Developer/chat/privacy-cash/.claude/worktrees/payroll-fast/crates/privacy-cash-prover/target-st/release/deps/num_integer-3ae0deb63b4c1d5f.d: /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/num-integer-0.1.47/src/lib.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/num-integer-0.1.47/src/roots.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/num-integer-0.1.47/src/average.rs
+
+/Users/singupallikartik/Developer/chat/privacy-cash/.claude/worktrees/payroll-fast/crates/privacy-cash-prover/target-st/release/deps/libnum_integer-3ae0deb63b4c1d5f.rlib: /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/num-integer-0.1.47/src/lib.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/num-integer-0.1.47/src/roots.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/num-integer-0.1.47/src/average.rs
+
+/Users/singupallikartik/Developer/chat/privacy-cash/.claude/worktrees/payroll-fast/crates/privacy-cash-prover/target-st/release/deps/libnum_integer-3ae0deb63b4c1d5f.rmeta: /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/num-integer-0.1.47/src/lib.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/num-integer-0.1.47/src/roots.rs /Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/num-integer-0.1.47/src/average.rs
+
+/Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/num-integer-0.1.47/src/lib.rs:
+/Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/num-integer-0.1.47/src/roots.rs:
+/Users/singupallikartik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/num-integer-0.1.47/src/average.rs:
