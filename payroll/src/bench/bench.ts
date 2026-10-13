@@ -97,6 +97,8 @@ async function main() {
     errors: receipt.entries.filter((e) => e.error).map((e) => e.error),
     perRow: receipt.entries.map((e) => ({
       status: e.status,
+      sig: e.txSignature,
+      error: e.error,
       attempts: e.attempts,
       startedAt: e.startedAt,
       relayedAt: e.relayedAt,

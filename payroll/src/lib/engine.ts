@@ -1281,34 +1281,45 @@ async function defaultWaitUntilIndexed(treeKey: string, minLeafIndex: number, ti
   throw new Error(`merkle tree did not index leaf ${minLeafIndex} within ${timeoutMs}ms`)
 }
 
+// One websocket for every confirm (a Connection per payout opened 100 sockets).
+let confirmConn: Connection | null = null
+function confirmConnection(): Connection {
+  const url = config.confirmRpcUrl()
+  if (!confirmConn || confirmConn.rpcEndpoint !== url) confirmConn = new Connection(url, "confirmed")
+  return confirmConn
+}
+
 async function defaultConfirm(sig: string): Promise<ConfirmOutcome> {
-  const conn = new Connection(config.confirmRpcUrl(), "confirmed")
-  // The relay may broadcast faster than we subscribe; catch already-landed
-  // signatures before waiting on the websocket.
-  try {
-    const { value } = await conn.getSignatureStatuses([sig])
-    const st = value?.[0]
-    if (st?.confirmationStatus === "confirmed" || st?.confirmationStatus === "finalized")
-      return st.err ? "failed" : "confirmed"
-    if (st?.err) return "failed"
-  } catch {
-    /* fall through to the websocket */
-  }
-  // Push, not poll: Alpenglow finality is sub-second on devnet, so a polling
-  // interval added more latency than the chain itself.
+  const conn = confirmConnection()
+  // Push, not poll: Alpenglow finality is sub-second on devnet. Subscribe
+  // FIRST, then read the status: the relay answers on broadcast, so a tx can
+  // confirm between a status read and the subscription — that notification
+  // never comes and the row idled out at 45s. A slow status poll backs the
+  // websocket up.
   return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      conn.removeSignatureListener(subId)
-      resolve("unknown")
-    }, 45_000)
-    const subId = conn.onSignature(
-      sig,
-      (result) => {
-        clearTimeout(timer)
-        resolve(result.err ? "failed" : "confirmed")
-      },
-      "confirmed",
-    )
+    let done = false
+    const finish = (outcome: ConfirmOutcome) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      clearInterval(poll)
+      void conn.removeSignatureListener(subId).catch(() => {})
+      resolve(outcome)
+    }
+    const subId = conn.onSignature(sig, (result) => finish(result.err ? "failed" : "confirmed"), "confirmed")
+    const check = async () => {
+      try {
+        const st = (await conn.getSignatureStatuses([sig])).value?.[0]
+        if (st?.confirmationStatus === "confirmed" || st?.confirmationStatus === "finalized")
+          finish(st.err ? "failed" : "confirmed")
+        else if (st?.err) finish("failed")
+      } catch {
+        /* the websocket or the next poll decides */
+      }
+    }
+    const poll = setInterval(check, 2000)
+    const timer = setTimeout(() => finish("unknown"), 45_000)
+    void check()
   })
 }
 

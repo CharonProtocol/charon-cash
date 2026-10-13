@@ -142,8 +142,34 @@ setInterval(() => {
 }, 2000)
 
 /** Background: once `sig` confirms, pull it into the mirror right away. */
-function absorb(sig) {
-  conn.confirmTransaction(sig, "confirmed").catch(() => {}).finally(() => indexer.sync().catch(() => {}))
+function absorb(sig, onFailed) {
+  conn
+    .confirmTransaction(sig, "confirmed")
+    .then((r) => {
+      if (r?.value?.err) onFailed?.()
+    })
+    .catch(() => {})
+    .finally(() => indexer.sync().catch(() => {}))
+}
+
+// Nullifiers of relayed txs the mirror hasn't indexed yet. They count as
+// spent everywhere (relay guard + nullifier queries): otherwise a ledger
+// refresh in that window resurrects the note and a second lane re-spends it
+// in the same slot (AccountAlreadyInitialized on-chain). Cleared when the tx
+// fails on-chain or after the TTL; indexed ones fall through to the mirror.
+const INFLIGHT_TTL_MS = 90_000
+/** nullifier hex -> { sig, at } */
+const inflight = new Map()
+function spentBy(hex) {
+  const indexed = indexer.nullifiers.get(hex)
+  if (indexed) {
+    inflight.delete(hex)
+    return indexed
+  }
+  const f = inflight.get(hex)
+  if (f && Date.now() - f.at < INFLIGHT_TTL_MS) return f.sig
+  if (f) inflight.delete(hex)
+  return null
 }
 console.log(`indexed ${indexer.applied} transacts across ${indexer.pools.size} trees, ${indexer.nullifiers.size} nullifiers`)
 
@@ -316,8 +342,8 @@ Bun.serve({
       const n = p.match(/^\/api\/nullifier\/([^/]+)$/)
       if (n) {
         const hex = n[1].replace(/^0x/i, "")
-        let spent = indexer.nullifiers.has(hex)
-        let signature = indexer.nullifiers.get(hex) ?? null
+        let signature = spentBy(hex)
+        let spent = signature !== null
         if (!spent) {
           const h = Buffer.from(hex, "hex")
           const [p0] = PublicKey.findProgramAddressSync([Buffer.from("nullifier0"), h], PROGRAM)
@@ -332,7 +358,8 @@ Bun.serve({
         const hashes = Array.isArray(body.hashes) ? body.hashes : []
         return json({ results: hashes.map((raw) => {
           const hex = String(raw).replace(/^0x/i, "")
-          return { hash: hex, spent: indexer.nullifiers.has(hex), signature: indexer.nullifiers.get(hex) ?? null }
+          const signature = spentBy(hex)
+          return { hash: hex, spent: signature !== null, signature }
         }) })
       }
       if (p === "/api/indexer/kick" && method === "POST") {
@@ -513,6 +540,29 @@ async function ensureSplAlt(mint) {
 }
 
 async function relayWithdraw(body) {
+  const nfs = (body.input_nullifiers ?? []).map((h) => String(h).replace(/^0x/i, "").toLowerCase())
+  for (const hex of nfs) {
+    const by = spentBy(hex)
+    if (by) {
+      throw Object.assign(new Error(`one of the input nullifiers has already been spent (by tx ${by})`), {
+        status: 409,
+        code: "NULLIFIER_SPENT",
+      })
+    }
+  }
+  for (const hex of nfs) inflight.set(hex, { sig: "pending", at: Date.now() })
+  try {
+    const res = await relayWithdrawInner(body)
+    for (const hex of nfs) inflight.set(hex, { sig: res.signature, at: Date.now() })
+    absorb(res.signature, () => nfs.forEach((hex) => inflight.delete(hex)))
+    return res
+  } catch (e) {
+    for (const hex of nfs) inflight.delete(hex)
+    throw e
+  }
+}
+
+async function relayWithdrawInner(body) {
   const kind = String(body.kind || "").toLowerCase()
   // ext < 0: public withdrawal (SOL moves to the recipient). ext == 0:
   // shielded note transfer (payroll payouts — nothing public moves).
@@ -637,8 +687,7 @@ async function sendIxMany(ixs, altAccount = null) {
   }).compileToV0Message(alts)
   const tx = new VersionedTransaction(msg)
   tx.sign([payer])
+  // answer on broadcast; relayWithdraw tracks the outcome (absorb)
   const sig = await sendRawWithRetry(tx.serialize(), { skipPreflight: true, maxRetries: 5 })
-  try { await conn.confirmTransaction(sig, "confirmed") } catch { }
-  const slot = await conn.getSlot("confirmed")
-  return { signature: sig, slot, status: "confirmed" }
+  return { signature: sig, slot: null, status: "submitted" }
 }
