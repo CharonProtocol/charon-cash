@@ -380,6 +380,31 @@ export class PrivacyCashClient {
     await pushEncryptedNotes(this.publicKey, this.enc)
   }
 
+  private persistRunning: Promise<void> | null = null
+  private persistAgain = false
+
+  /**
+   * Coalesced, non-blocking backup of the encrypted note set: at most one
+   * upload in flight plus one trailing. Payout paths used to await a full
+   * re-encrypt + PUT of every note after each relay and each change-note
+   * resolve, which sat on the lane's critical path; the notes stay in memory
+   * and are recoverable from the chain, so nothing needs to wait on it.
+   */
+  private schedulePersist(): void {
+    if (this.persistRunning) {
+      this.persistAgain = true
+      return
+    }
+    this.persistRunning = (async () => {
+      do {
+        this.persistAgain = false
+        await this.persistNotes().catch(() => {})
+      } while (this.persistAgain)
+    })().finally(() => {
+      this.persistRunning = null
+    })
+  }
+
   /** In-memory notes for the current session (decrypted; never persisted locally). */
   getNotes(): Note[] {
     return loadNotes(this.publicKey)
@@ -506,7 +531,7 @@ export class PrivacyCashClient {
         }
       }
     }
-    await this.persistNotes().catch(() => {})
+    this.schedulePersist()
     return { scanned, added, spent }
   }
 
@@ -1603,7 +1628,7 @@ export class PrivacyCashClient {
         pending: changeIndex < 0,
       })
     }
-    await this.persistNotes().catch(() => {})
+    this.schedulePersist()
 
     return {
       signature,
@@ -1663,7 +1688,7 @@ export class PrivacyCashClient {
           blinding: change.blinding,
           index: hit.leafIndex,
         })
-        await this.persistNotes().catch(() => {})
+        this.schedulePersist()
         return true
       } catch {
         // 404 until the sync indexes the leaf — keep polling
@@ -1955,7 +1980,7 @@ export class PrivacyCashClient {
         pending: true,
       })
     }
-    await this.persistNotes().catch(() => {})
+    this.schedulePersist()
 
     return {
       signature,

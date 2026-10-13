@@ -116,6 +116,16 @@ export declare class PrivacyCashClient {
      * is non-fatal because `syncNotes` can always rebuild notes from the indexer.
      */
     private persistNotes;
+    private persistRunning;
+    private persistAgain;
+    /**
+     * Coalesced, non-blocking backup of the encrypted note set: at most one
+     * upload in flight plus one trailing. Payout paths used to await a full
+     * re-encrypt + PUT of every note after each relay and each change-note
+     * resolve, which sat on the lane's critical path; the notes stay in memory
+     * and are recoverable from the chain, so nothing needs to wait on it.
+     */
+    private schedulePersist;
     /** In-memory notes for the current session (decrypted; never persisted locally). */
     getNotes(): Note[];
     exportNotesString(): string;

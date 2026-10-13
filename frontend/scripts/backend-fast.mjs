@@ -163,6 +163,24 @@ function absorb(sig, onFailed) {
     .finally(() => indexer.sync().catch(() => {}))
 }
 
+// relay -> indexed latency per relayed tx (ms), for /indexer/status
+const relayedAt = new Map()
+const indexLagMs = []
+const applyTransact = indexer.applyTransact.bind(indexer)
+indexer.applyTransact = (sig, slot, t) => {
+  applyTransact(sig, slot, t)
+  const at = relayedAt.get(sig)
+  if (at !== undefined) {
+    relayedAt.delete(sig)
+    indexLagMs.push(Date.now() - at)
+    if (indexLagMs.length > 1000) indexLagMs.shift()
+  }
+}
+const pct = (xs, p) => {
+  const s = [...xs].sort((a, b) => a - b)
+  return s.length ? s[Math.min(s.length - 1, Math.floor((p / 100) * s.length))] : null
+}
+
 // Nullifiers of relayed txs the mirror hasn't indexed yet. They count as
 // spent everywhere (relay guard + nullifier queries): otherwise a ledger
 // refresh in that window resurrects the note and a second lane re-spends it
@@ -235,6 +253,7 @@ Bun.serve({
 
       if (p === "/indexer/status") {
         return json({ last_signature: indexer.lastSig, last_slot: indexer.lastSlot, passes: indexer.passes, applied: indexer.applied, stats: indexer.stats,
+          index_lag_ms: { n: indexLagMs.length, p50: pct(indexLagMs, 50), p90: pct(indexLagMs, 90), max: pct(indexLagMs, 100) },
           pools: [...indexer.pools.values()].map((q) => ({ tree_key: q.treeKey, leaves: q.leaves.length, root: q.root() })) })
       }
 
@@ -562,9 +581,11 @@ async function relayWithdraw(body) {
     }
   }
   for (const hex of nfs) inflight.set(hex, { sig: "pending", at: Date.now() })
+  const t0 = Date.now()
   try {
     const res = await relayWithdrawInner(body)
     for (const hex of nfs) inflight.set(hex, { sig: res.signature, at: Date.now() })
+    relayedAt.set(res.signature, t0)
     absorb(res.signature, () => nfs.forEach((hex) => inflight.delete(hex)))
     return res
   } catch (e) {
