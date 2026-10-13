@@ -40,15 +40,21 @@ export interface Note {
      * re-added by any scan.
      */
     pendingAttempts?: number;
+    /**
+     * Leaf index at/after the current tree's end (another network's note, or a
+     * reset chain): held out of spending, never deleted, and cleared as soon as
+     * a sync sees a tree that contains the index.
+     */
+    foreign?: boolean;
 }
 export declare function loadNotes(wallet: PublicKey): Note[];
 /**
- * Confirmed notes whose leaf lies at or beyond this tree's end cannot exist on
- * this chain (another network's notes, or a simnet that was reset): drop them
- * so nothing ever tries to spend them. Pending notes keep their guessed index
- * until resolved and are left alone. Returns how many were dropped.
+ * Flag confirmed notes whose leaf lies at or beyond this tree's end as
+ * foreign (not spendable) and clear the flag on notes the tree now contains.
+ * Nothing is deleted: the tree size comes from the backend, which must not be
+ * able to make the wallet forget real notes. Returns how many are flagged.
  */
-export declare function dropNotesBeyondTree(wallet: PublicKey, mintAddress: string, treeSize: number): number;
+export declare function flagNotesBeyondTree(wallet: PublicKey, mintAddress: string, treeSize: number): number;
 export declare function saveNote(wallet: PublicKey, note: Note): void;
 /** Insert or replace by (mintAddress, index). Preserves existing id/createdAt. */
 export declare function upsertNote(wallet: PublicKey, note: Note): void;

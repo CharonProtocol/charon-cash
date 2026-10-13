@@ -63,7 +63,7 @@ import {
   purgeLegacyStorage,
   removeStaleNote,
   readLegacyNotes,
-  dropNotesBeyondTree,
+  flagNotesBeyondTree,
   resolvePendingNote,
   saveNote,
   setSyncOffset,
@@ -813,9 +813,9 @@ export class PrivacyCashClient {
     }
 
     // notes this backend's tree can't contain (another network's backup, a
-    // reset simnet) would fail every spend attempt: drop them
+    // reset simnet) would fail every spend attempt: hold them out (not deleted)
     if (treeSize !== null) {
-      dropNotesBeyondTree(wallet, treeKey === SOL_TREE_KEY ? WRAPPED_SOL_MINT : treeKey, treeSize)
+      flagNotesBeyondTree(wallet, treeKey === SOL_TREE_KEY ? WRAPPED_SOL_MINT : treeKey, treeSize)
     }
     this.lastSyncDoneAt.set(treeKey, Date.now())
     return { scanned, added, spent }

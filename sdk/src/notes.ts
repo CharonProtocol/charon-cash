@@ -43,6 +43,12 @@ export interface Note {
    * re-added by any scan.
    */
   pendingAttempts?: number
+  /**
+   * Leaf index at/after the current tree's end (another network's note, or a
+   * reset chain): held out of spending, never deleted, and cleared as soon as
+   * a sync sees a tree that contains the index.
+   */
+  foreign?: boolean
 }
 
 /** Page-wide note cache, keyed by wallet base58. Wiped on reload by design. */
@@ -71,16 +77,24 @@ function persist(wallet: PublicKey, notes: Note[]): void {
 }
 
 /**
- * Confirmed notes whose leaf lies at or beyond this tree's end cannot exist on
- * this chain (another network's notes, or a simnet that was reset): drop them
- * so nothing ever tries to spend them. Pending notes keep their guessed index
- * until resolved and are left alone. Returns how many were dropped.
+ * Flag confirmed notes whose leaf lies at or beyond this tree's end as
+ * foreign (not spendable) and clear the flag on notes the tree now contains.
+ * Nothing is deleted: the tree size comes from the backend, which must not be
+ * able to make the wallet forget real notes. Returns how many are flagged.
  */
-export function dropNotesBeyondTree(wallet: PublicKey, mintAddress: string, treeSize: number): number {
-  const notes = loadNotes(wallet)
-  const keep = notes.filter((n) => n.mintAddress !== mintAddress || n.pending || n.index < treeSize)
-  if (keep.length !== notes.length) persist(wallet, keep)
-  return notes.length - keep.length
+export function flagNotesBeyondTree(wallet: PublicKey, mintAddress: string, treeSize: number): number {
+  let flagged = 0
+  for (const n of loadNotes(wallet)) {
+    if (n.mintAddress !== mintAddress) continue
+    const beyond = !n.pending && n.index >= treeSize
+    if (beyond) {
+      n.foreign = true
+      flagged++
+    } else if (n.foreign) {
+      delete n.foreign
+    }
+  }
+  return flagged
 }
 
 export function saveNote(wallet: PublicKey, note: Note): void {
@@ -205,7 +219,8 @@ export function markNoteSpentByIndex(
 export function unspentNotes(wallet: PublicKey): Note[] {
   // pending = index still a guess; spending one makes the circuit's root
   // check fail (ForceEqualIfEnabled), so hold it out until located/scanned
-  return loadNotes(wallet).filter((n) => !n.spent && !n.pending && n.index >= 0)
+  // foreign = leaf past this chain's tree end: unspendable here
+  return loadNotes(wallet).filter((n) => !n.spent && !n.pending && !n.foreign && n.index >= 0)
 }
 
 export function totalBalance(

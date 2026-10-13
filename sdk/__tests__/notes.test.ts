@@ -19,7 +19,7 @@ import {
   newNoteId,
   readLegacyNotes,
   purgeLegacyStorage,
-  dropNotesBeyondTree,
+  flagNotesBeyondTree,
   type Note,
 } from "../src/notes"
 import { EncryptionService } from "../src/crypto"
@@ -186,15 +186,18 @@ describe("encrypted note blob round-trip", () => {
   })
 })
 
-describe("dropNotesBeyondTree", () => {
-  it("drops confirmed notes past the tree end, keeps pending and other mints", () => {
+describe("flagNotesBeyondTree", () => {
+  it("holds out confirmed notes past the tree end without deleting, and clears when the tree grows", () => {
     const w = wallet("foreign")
     clearNotes(w)
     upsertNote(w, note({ index: 10, blinding: "a" }))
     upsertNote(w, note({ index: 6505, blinding: "b" })) // another network's note
     upsertNote(w, note({ index: 6600, blinding: "c", pending: true }))
     upsertNote(w, note({ index: 9000, blinding: "d", mintAddress: "OtherMint1111111111111111111111111111111111" }))
-    expect(dropNotesBeyondTree(w, SOL, 214)).toBe(1)
-    expect(loadNotes(w).map((n) => n.blinding).sort()).toEqual(["a", "c", "d"])
+    expect(flagNotesBeyondTree(w, SOL, 214)).toBe(1)
+    expect(loadNotes(w)).toHaveLength(4) // nothing deleted
+    expect(unspentNotes(w).map((n) => n.blinding).sort()).toEqual(["a", "d"])
+    expect(flagNotesBeyondTree(w, SOL, 7000)).toBe(0) // tree grew: no longer foreign
+    expect(unspentNotes(w).map((n) => n.blinding).sort()).toEqual(["a", "b", "d"])
   })
 })
