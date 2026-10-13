@@ -84,6 +84,7 @@ export function transactsOf(tx, program) {
 
 class Pool {
   constructor(wasm, treeKey) {
+    this.wasm = wasm
     this.treeKey = treeKey
     this.mirror = new LocalMirror(wasm)
     /** @type {{commitment: string, encryptedHex: string, signature: string, slot: number}[]} */
@@ -111,6 +112,18 @@ class Pool {
   }
   root() {
     return dec2hex(this.mirror.root())
+  }
+  /** Root the tree would have after appending (c0, c1) — nothing mutated. */
+  rootAfter(c0Buf, c1Buf) {
+    const i = this.leaves.length
+    const path = this.mirror.path(i)
+    let node = this.wasm.poseidonHashString([be(c0Buf).toString(), be(c1Buf).toString()])
+    let idx = i >> 1
+    for (let lv = 1; lv < MERKLE_TREE_DEPTH; lv++) {
+      node = idx & 1 ? this.wasm.poseidonHashString([path[lv], node]) : this.wasm.poseidonHashString([node, path[lv]])
+      idx >>= 1
+    }
+    return dec2hex(node)
   }
   proof(index) {
     if (index < 0 || index >= this.leaves.length) return null
@@ -145,6 +158,12 @@ export class FastIndexer {
     this.running = null
     this.again = false
     this.waiters = []
+    /** signatures newer than lastSig already applied (or failed) */
+    this.seen = new Set()
+    /** every signature ever applied: RPC list order is not monotonic, so a
+     *  landed tx can be listed again after the cursor passed it */
+    this.appliedSigs = new Set()
+    this.lastPassAt = 0
   }
 
   pool(treeKey) {
@@ -156,17 +175,14 @@ export class FastIndexer {
     return p
   }
 
-  /** Apply one landed tx (in chain order). Failed txs mint nothing. */
-  applyTx(signature, slot, tx) {
-    if (!tx || tx.meta?.err) return
-    for (const { decoded, treeKey } of transactsOf(tx, this.program)) {
-      const p = this.pool(treeKey)
-      p.append(decoded.commitments[0], decoded.encrypted[0], signature, slot)
-      p.append(decoded.commitments[1], decoded.encrypted[1], signature, slot)
-      p.pushRoot()
-      for (const n of decoded.nullifiers) this.nullifiers.set(n.toString("hex"), signature)
-      this.applied++
-    }
+  /** Apply one transact to its pool. */
+  applyTransact(signature, slot, { decoded, treeKey }) {
+    const p = this.pool(treeKey)
+    p.append(decoded.commitments[0], decoded.encrypted[0], signature, slot)
+    p.append(decoded.commitments[1], decoded.encrypted[1], signature, slot)
+    p.pushRoot()
+    for (const n of decoded.nullifiers) this.nullifiers.set(n.toString("hex"), signature)
+    this.applied++
     this.lastSlot = Math.max(this.lastSlot, slot)
   }
 
@@ -181,7 +197,7 @@ export class FastIndexer {
     if (this.subId != null) this.conn.removeOnLogsListener(this.subId).catch(() => {})
   }
 
-  /** Single-flight sync; a call during a pass schedules exactly one more. */
+  /** Single-flight sync; calls during a pass coalesce into one more pass. */
   sync() {
     if (this.running) {
       this.again = true
@@ -191,7 +207,11 @@ export class FastIndexer {
       try {
         do {
           this.again = false
+          const gap = 40 - (Date.now() - this.lastPassAt)
+          if (gap > 0) await new Promise((r) => setTimeout(r, gap))
+          this.lastPassAt = Date.now()
           await this.pass()
+          this.flushWaiters()
         } while (this.again)
       } finally {
         this.running = null
@@ -201,17 +221,18 @@ export class FastIndexer {
     return this.running
   }
 
-  /** Resolve once `pred()` holds, syncing until `timeoutMs`. */
+  /** Resolve once `pred()` holds: one sync request, then wait on passes. */
   async waitFor(pred, timeoutMs = 10_000) {
     if (pred()) return true
     const deadline = Date.now() + timeoutMs
+    this.sync().catch(() => {})
     while (Date.now() < deadline) {
-      await this.sync()
-      if (pred()) return true
       await new Promise((r) => {
         this.waiters.push(r)
-        setTimeout(r, 150)
+        setTimeout(r, 250)
       })
+      if (pred()) return true
+      if (!this.running) this.sync().catch(() => {})
     }
     return pred()
   }
@@ -220,6 +241,19 @@ export class FastIndexer {
     const w = this.waiters
     this.waiters = []
     for (const r of w) r()
+  }
+
+  /** On-chain tree account: tx count + the 100-root ring, or null. */
+  async chainTree(treeKey) {
+    const seeds = [Buffer.from("merkle_tree")]
+    if (treeKey !== "sol") seeds.push(new PublicKey(treeKey).toBuffer())
+    const [pda] = PublicKey.findProgramAddressSync(seeds, this.program)
+    const acct = await this.conn.getAccountInfo(pda, "confirmed").catch(() => null)
+    if (!acct || acct.data.length < 848 + 32 * ROOT_HISTORY) return null
+    const d = acct.data
+    const ring = []
+    for (let i = 0; i < ROOT_HISTORY; i++) ring.push(Buffer.from(d.subarray(848 + i * 32, 880 + i * 32)).toString("hex"))
+    return { txCount: d.readUInt32LE(8) / 2, ring }
   }
 
   async pass() {
@@ -236,19 +270,70 @@ export class FastIndexer {
       if (page.length < 1000) break
       before = page[page.length - 1].signature
     }
-    if (sigs.length === 0) return
-    const ordered = await this.chainOrder(sigs)
-    const txs = await mapLimit(ordered, 16, (s) =>
-      s.err
-        ? Promise.resolve(null)
-        : this.conn.getTransaction(s.signature, { maxSupportedTransactionVersion: 0, commitment: "confirmed" }),
-    )
-    for (let i = 0; i < ordered.length; i++) {
-      const s = ordered[i]
-      // a landed-but-not-yet-fetchable tx: stop here, never skip a leaf
-      if (!s.err && !txs[i]) break
-      if (!s.err) this.applyTx(s.signature, s.slot, txs[i])
-      this.lastSig = s.signature
+    for (const s of sigs) if (this.appliedSigs.has(s.signature)) this.seen.add(s.signature)
+    const fresh = sigs.filter((s) => !this.seen.has(s.signature))
+    if (fresh.length > 0) {
+      const ordered = await this.chainOrder(fresh)
+      const txs = await mapLimit(ordered, 16, (s) =>
+        s.err
+          ? Promise.resolve(null)
+          : this.conn.getTransaction(s.signature, { maxSupportedTransactionVersion: 0, commitment: "confirmed" }),
+      )
+      const byTree = new Map()
+      for (let i = 0; i < ordered.length; i++) {
+        const s = ordered[i]
+        if (s.err || (txs[i] && txs[i].meta?.err)) {
+          this.seen.add(s.signature)
+          continue
+        }
+        if (!txs[i]) continue // landed but not fetchable yet: next pass
+        const ts = transactsOf(txs[i], this.program)
+        if (ts.length === 0) {
+          this.seen.add(s.signature)
+          continue
+        }
+        for (const t of ts) {
+          const list = byTree.get(t.treeKey) ?? []
+          list.push({ sig: s.signature, slot: s.slot, t })
+          byTree.set(t.treeKey, list)
+        }
+      }
+      for (const [treeKey, list] of byTree) await this.applyInChainOrder(treeKey, list)
+    }
+    // the cursor moves only once everything it covers has been applied
+    if (sigs.length > 0 && sigs.every((s) => this.seen.has(s.signature))) {
+      this.lastSig = sigs[0].signature
+      this.seen.clear()
+    }
+  }
+
+  /**
+   * Apply a pool's pending transacts in true execution order: the chain's
+   * root ring says which root comes next, so the tx that produces it goes
+   * next — whatever order the RPC listed them in. A pending tx whose
+   * predecessor isn't visible yet waits for the next pass.
+   */
+  async applyInChainOrder(treeKey, list) {
+    const pool = this.pool(treeKey)
+    const chain = await this.chainTree(treeKey)
+    const remaining = [...list]
+    while (remaining.length > 0) {
+      const next = pool.leaves.length / 2 + 1
+      let pick = 0
+      if (chain && chain.txCount < next) return // the chain hasn't caught up to us: wait
+      if (chain && chain.txCount - next < ROOT_HISTORY) {
+        const want = chain.ring[next % ROOT_HISTORY]
+        pick = remaining.findIndex((c) => pool.rootAfter(c.t.decoded.commitments[0], c.t.decoded.commitments[1]) === want)
+        if (pick === -1) {
+          if (this.stuckAt !== next) this.log(`indexer: no pending tx yields chain root #${next} (${remaining.length} pending), waiting`)
+          this.stuckAt = next
+          return
+        }
+      }
+      const [c] = remaining.splice(pick, 1)
+      this.applyTransact(c.sig, c.slot, c.t)
+      this.seen.add(c.sig)
+      this.appliedSigs.add(c.sig)
     }
   }
 

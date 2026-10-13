@@ -30,11 +30,17 @@ function transactData(c0, c1, n0, n1) {
   return Buffer.concat([Buffer.from([2]), args, enc(c0), enc(c1)])
 }
 
+/**
+ * A fake RPC. `add` lists txs in RPC order; `truth` is the order the chain
+ * actually executed the successful ones (defaults to add order) and drives
+ * the tree account's root ring, exactly like the program's root_history.
+ */
 function fakeChain() {
   const sigs = [] // oldest first: {signature, slot, err}
   const txs = new Map()
   const blocks = new Map()
   const hidden = new Set()
+  const truth = []
   const conn = {
     async getSignaturesForAddress(_p, { until }) {
       const newest = [...sigs].reverse()
@@ -48,25 +54,39 @@ function fakeChain() {
     async getTransaction(sig) {
       return hidden.has(sig) ? null : txs.get(sig) ?? null
     },
+    async getAccountInfo() {
+      const m = new LocalMirror(wasm)
+      const data = Buffer.alloc(848 + 32 * 100)
+      Buffer.from(dec2hex(m.root()), "hex").copy(data, 848)
+      truth.forEach(([c0, c1], k) => {
+        m.insert(String(c0))
+        m.insert(String(c1))
+        Buffer.from(dec2hex(m.root()), "hex").copy(data, 848 + ((k + 1) % 100) * 32)
+      })
+      data.writeUInt32LE(truth.length * 2, 8)
+      data[12] = truth.length % 100
+      return { data }
+    },
     onLogs() {
       return 1
     },
     async removeOnLogsListener() {},
   }
-  const add = (signature, slot, data, err = null) => {
+  const add = (signature, slot, [c0, c1, n0, n1], err = null) => {
     sigs.push({ signature, slot, err })
     blocks.set(slot, [...(blocks.get(slot) ?? []), signature])
+    if (!err) truth.push([c0, c1])
     txs.set(signature, {
       meta: { err },
       transaction: {
         message: {
           staticAccountKeys: [PROGRAM],
-          compiledInstructions: [{ programIdIndex: 0, accountKeyIndexes: [], data }],
+          compiledInstructions: [{ programIdIndex: 0, accountKeyIndexes: [], data: transactData(c0, c1, n0, n1) }],
         },
       },
     })
   }
-  return { conn, add, sigs, blocks, hidden }
+  return { conn, add, blocks, hidden, truth }
 }
 
 const fold = (leafDec, index, path) => {
@@ -78,23 +98,25 @@ const fold = (leafDec, index, path) => {
   return dec2hex(h)
 }
 
+const leafValues = (ix) => (ix.pools.get("sol")?.leaves ?? []).map((l) => parseInt(l.commitment, 16))
+
 describe("FastIndexer", () => {
-  it("orders same-slot txs by block execution order, not signature list order", async () => {
+  it("orders same-slot txs by execution order, not RPC list order", async () => {
     const c = fakeChain()
-    c.add("A", 5, transactData(1, 2, 101, 102))
-    c.add("B", 5, transactData(3, 4, 103, 104))
-    c.blocks.set(5, ["B", "A"]) // B executed first in the block
+    c.add("A", 5, [1, 2, 101, 102])
+    c.add("B", 5, [3, 4, 103, 104])
+    c.blocks.set(5, ["B", "A"])
+    c.truth.reverse() // B executed first
     const ix = new FastIndexer({ conn: c.conn, program: PROGRAM, wasm })
     await ix.sync()
-    const leaves = ix.pools.get("sol").leaves.map((l) => parseInt(l.commitment, 16))
-    expect(leaves).toEqual([3, 4, 1, 2])
+    expect(leafValues(ix)).toEqual([3, 4, 1, 2])
   })
 
   it("failed txs mint no leaves and spend no nullifiers", async () => {
     const c = fakeChain()
-    c.add("ok1", 1, transactData(1, 2, 11, 12))
-    c.add("bad", 2, transactData(9, 9, 13, 14), { InstructionError: [1, { Custom: 5 }] })
-    c.add("ok2", 3, transactData(3, 4, 15, 16))
+    c.add("ok1", 1, [1, 2, 11, 12])
+    c.add("bad", 2, [9, 9, 13, 14], { InstructionError: [1, { Custom: 5 }] })
+    c.add("ok2", 3, [3, 4, 15, 16])
     const ix = new FastIndexer({ conn: c.conn, program: PROGRAM, wasm })
     await ix.sync()
     expect(ix.pools.get("sol").leaves.length).toBe(4)
@@ -105,7 +127,7 @@ describe("FastIndexer", () => {
 
   it("serves paths that fold to the root it reports", async () => {
     const c = fakeChain()
-    for (let i = 0; i < 5; i++) c.add(`s${i}`, 10 + i, transactData(2 * i + 1, 2 * i + 2, 200 + 2 * i, 201 + 2 * i))
+    for (let i = 0; i < 5; i++) c.add(`s${i}`, 10 + i, [2 * i + 1, 2 * i + 2, 200 + 2 * i, 201 + 2 * i])
     const ix = new FastIndexer({ conn: c.conn, program: PROGRAM, wasm })
     await ix.sync()
     const pool = ix.pools.get("sol")
@@ -118,19 +140,49 @@ describe("FastIndexer", () => {
     expect(pool.proof(10)).toBeNull()
   })
 
-  it("stops at a landed-but-unfetchable tx and resumes without skipping it", async () => {
+  it("waits for a landed-but-unfetchable tx and resumes without skipping it", async () => {
     const c = fakeChain()
-    c.add("t1", 1, transactData(1, 2, 31, 32))
-    c.add("t2", 2, transactData(3, 4, 33, 34))
-    c.add("t3", 3, transactData(5, 6, 35, 36))
+    c.add("t1", 1, [1, 2, 31, 32])
+    c.add("t2", 2, [3, 4, 33, 34])
+    c.add("t3", 3, [5, 6, 35, 36])
     c.hidden.add("t2")
     const ix = new FastIndexer({ conn: c.conn, program: PROGRAM, wasm })
     await ix.sync()
-    expect(ix.pools.get("sol").leaves.length).toBe(2)
+    expect(leafValues(ix)).toEqual([1, 2])
     c.hidden.delete("t2")
     await ix.sync()
-    const leaves = ix.pools.get("sol").leaves.map((l) => parseInt(l.commitment, 16))
-    expect(leaves).toEqual([1, 2, 3, 4, 5, 6])
+    expect(leafValues(ix)).toEqual([1, 2, 3, 4, 5, 6])
     expect(ix.pools.get("sol").byCommitment.get(field(4).toString("hex"))).toBe(3)
+  })
+
+  it("follows the chain root ring when the RPC lists a slot out of order across passes", async () => {
+    const c = fakeChain()
+    c.add("w", 7, [1, 2, 51, 52])
+    c.add("x", 7, [3, 4, 53, 54])
+    c.add("y", 7, [5, 6, 55, 56])
+    c.truth.splice(0, 3, [5, 6], [1, 2], [3, 4]) // the chain executed y, w, x
+    c.hidden.add("y") // and y is not fetchable on the first pass
+    const ix = new FastIndexer({ conn: c.conn, program: PROGRAM, wasm })
+    await ix.sync()
+    expect(leafValues(ix)).toEqual([]) // w and x wait for y
+    c.hidden.delete("y")
+    await ix.sync()
+    expect(leafValues(ix)).toEqual([5, 6, 1, 2, 3, 4])
+    const ring = (await c.conn.getAccountInfo()).data
+    expect(ix.pools.get("sol").root()).toBe(Buffer.from(ring.subarray(848 + 3 * 32, 880 + 3 * 32)).toString("hex"))
+  })
+
+  it("never applies a tx twice when the RPC lists it again after the cursor moved", async () => {
+    const c = fakeChain()
+    c.add("p", 1, [1, 2, 61, 62])
+    c.add("q", 2, [3, 4, 63, 64])
+    const ix = new FastIndexer({ conn: c.conn, program: PROGRAM, wasm })
+    await ix.sync()
+    const orig = c.conn.getSignaturesForAddress
+    c.conn.getSignaturesForAddress = async () => [{ signature: "p", slot: 1, err: null }] // stale relist
+    await ix.sync()
+    c.conn.getSignaturesForAddress = orig
+    expect(leafValues(ix)).toEqual([1, 2, 3, 4])
+    expect(ix.applied).toBe(2)
   })
 })
