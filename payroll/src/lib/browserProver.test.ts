@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { browserProverInfo, ensureBrowserProver, poolShape, proverPlan } from "./browserProver"
+import { createHmac } from "node:crypto"
+
+import { browserProverInfo, detectNativeProver, ensureBrowserProver, poolShape, proverPlan } from "./browserProver"
 
 describe("prover pool shape", () => {
   it("splits MT cores so every worker keeps at least 2 threads", () => {
@@ -128,5 +130,33 @@ describe("prover pool service accounting", () => {
     const p = [1, 2, 3].map((n) => capture.override!({ n }).then(() => done.push(n)))
     await Promise.all(p)
     expect(done).toEqual([2, 3, 1])
+  })
+})
+
+describe("native helper pairing", () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  const helper = (token: string) =>
+    vi.fn(async (url: string) => {
+      const nonce = new URL(url).searchParams.get("nonce") ?? ""
+      const mac = createHmac("sha256", token).update(nonce).digest("hex")
+      return { ok: true, json: async () => ({ ok: true, jobs: 4, mac }) }
+    })
+
+  it("never contacts a helper without a stored pairing token", async () => {
+    const f = helper("t0k3n")
+    vi.stubGlobal("fetch", f)
+    expect(await detectNativeProver(null)).toBeNull()
+    expect(f).not.toHaveBeenCalled()
+  })
+
+  it("rejects a responder that cannot answer the HMAC challenge", async () => {
+    vi.stubGlobal("fetch", helper("someone-else"))
+    expect(await detectNativeProver("t0k3n")).toBeNull()
+  })
+
+  it("accepts the paired helper", async () => {
+    vi.stubGlobal("fetch", helper("t0k3n"))
+    expect(await detectNativeProver("t0k3n")).toEqual({ url: "http://127.0.0.1:8790", token: "t0k3n", jobs: 4 })
   })
 })

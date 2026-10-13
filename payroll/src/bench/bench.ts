@@ -57,8 +57,8 @@ async function main() {
   const plan = proverPlan(lanes, cores)
   const tProver = performance.now()
   // prover=native routes proofs to the loopback helper (prover-server)
-  const helper = q.get("prover") === "native" ? await detectNativeProver() : null
-  if (q.get("prover") === "native" && !helper) throw new Error("prover=native but no helper on 127.0.0.1:8790")
+  const helper = q.get("prover") === "native" ? await detectNativeProver(q.get("proverToken")) : null
+  if (q.get("prover") === "native" && !helper) throw new Error("prover=native but no paired helper on 127.0.0.1:8790 (pass proverToken)")
   const prover = helper
     ? useNativeProver(helper)
     : await ensureBrowserProver({ workers: forcedWorkers ?? plan.workers, mode: forcedMode ?? plan.mode })

@@ -27,7 +27,7 @@ const recipientsFile = args.recipients ?? path.join(here, "../.local-recipients.
 const recipients = Object.keys(JSON.parse(readFileSync(recipientsFile, "utf8")))
 
 const qs = new URLSearchParams({ rows, lanes, collector: `http://localhost:${port}` })
-for (const k of ["workers", "mode", "backend", "rpc", "amount", "prover"]) if (args[k]) qs.set(k, args[k])
+for (const k of ["workers", "mode", "backend", "rpc", "amount", "prover", "proverToken"]) if (args[k]) qs.set(k, args[k])
 
 const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*" }
 let resolveResult

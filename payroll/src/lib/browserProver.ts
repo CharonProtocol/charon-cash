@@ -294,26 +294,61 @@ export function browserProverInfo(): BrowserProverInfo | null {
 }
 
 // --- Native helper (crates/privacy-cash-prover `prover-server`) ------------
-// Same input JSON and compressed output as the wasm prover, proved natively
-// on the employer's own machine (~3x faster per core than wasm). Opt-in by
-// running the helper; the app detects it on loopback before a run.
+// Optional: same input JSON and compressed output as the wasm prover, proved
+// natively on the employer's own machine (~3x faster per core). The witness
+// holds note spend keys, so it is only ever sent to a helper the user paired
+// with: the helper prints a token, the app stores it, and before each run the
+// helper must answer a fresh nonce with HMAC-SHA256(token, nonce). Anything
+// else listening on the port gets nothing.
 
 export const NATIVE_PROVER_URL = "http://127.0.0.1:8790"
+const TOKEN_KEY = "payroll:prover-token"
 
-let native: { url: string; jobs: number; count: number; totalMs: number } | null = null
+let native: { url: string; token: string; jobs: number; count: number; totalMs: number } | null = null
 
-/** The helper's {url, jobs} if it answers on loopback within `timeoutMs`. */
+/** The pairing token the user gave the app (null = native helper off). */
+export function nativeProverToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function setNativeProverToken(token: string | null): void {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token)
+    else localStorage.removeItem(TOKEN_KEY)
+  } catch {
+    /* storage unavailable: helper stays off */
+  }
+}
+
+async function hmacHex(key: string, msg: string): Promise<string> {
+  const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(key), { name: "HMAC", hash: "SHA-256" }, false, ["sign"])
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(msg)))
+  return Array.from(sig, (b) => b.toString(16).padStart(2, "0")).join("")
+}
+
+/**
+ * The paired helper's {url, token, jobs}, or null when no token is stored,
+ * nothing answers, or the answer fails the HMAC challenge (not our helper).
+ */
 export async function detectNativeProver(
+  token: string | null = nativeProverToken(),
   url: string = NATIVE_PROVER_URL,
   timeoutMs = 400,
-): Promise<{ url: string; jobs: number } | null> {
+): Promise<{ url: string; token: string; jobs: number } | null> {
+  if (!token) return null
+  const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("")
   const ctl = new AbortController()
   const timer = setTimeout(() => ctl.abort(), timeoutMs)
   try {
-    const res = await fetch(`${url}/health`, { signal: ctl.signal })
+    const res = await fetch(`${url}/health?nonce=${nonce}`, { signal: ctl.signal })
     if (!res.ok) return null
-    const body = (await res.json()) as { ok?: boolean; jobs?: number }
-    return body.ok ? { url, jobs: Math.max(1, Number(body.jobs) || 1) } : null
+    const body = (await res.json()) as { ok?: boolean; jobs?: number; mac?: string }
+    if (!body.ok || body.mac !== (await hmacHex(token, nonce))) return null
+    return { url, token, jobs: Math.max(1, Number(body.jobs) || 1) }
   } catch {
     return null
   } finally {
@@ -322,14 +357,14 @@ export async function detectNativeProver(
 }
 
 /** Route every SDK proof to the native helper. */
-export function useNativeProver(helper: { url: string; jobs: number }): BrowserProverInfo {
-  native = { url: helper.url, jobs: helper.jobs, count: 0, totalMs: 0 }
+export function useNativeProver(helper: { url: string; token: string; jobs: number }): BrowserProverInfo {
+  native = { url: helper.url, token: helper.token, jobs: helper.jobs, count: 0, totalMs: 0 }
   const n = native
   setProver(async (input) => {
     const t = performance.now()
     const res = await fetch(`${n.url}/prove`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-prover-token": n.token },
       body: proverInputJson(input),
     })
     const text = await res.text()

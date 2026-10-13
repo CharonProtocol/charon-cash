@@ -8,13 +8,24 @@
 //!        PROVER_PORT (8790), PROVER_JOBS (concurrent proofs, default cores/2),
 //!        PROVER_ORIGINS (comma list of allowed page origins, default local dev)
 //!
+//! Pairing: the witness carries the employer's note spend keys, so the app
+//! must never hand it to whatever happens to listen on this port. At startup
+//! the server prints a random token (or takes PROVER_TOKEN); the user gives it
+//! to the app once. Before every run the app sends a random nonce to
+//! /health?nonce=..., and only sends inputs if the reply carries
+//! HMAC-SHA256(token, nonce) — a port squatter can't produce it. /prove also
+//! requires the token in `x-prover-token`.
+//!
 //! Std-only HTTP/1.1 (one request per connection), bound to loopback.
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Instant;
 
+use hmac::{Hmac, Mac};
 use privacy_cash_prover::Prover;
+use rand::RngCore;
+use sha2::Sha256;
 
 struct Slots {
     free: Mutex<usize>,
@@ -45,6 +56,11 @@ fn main() -> anyhow::Result<()> {
         .map(|s| s.trim().to_string())
         .collect();
 
+    let token = std::env::var("PROVER_TOKEN").unwrap_or_else(|_| {
+        let mut b = [0u8; 16];
+        rand::rngs::OsRng.fill_bytes(&mut b);
+        hex::encode(b)
+    });
     let t = Instant::now();
     let app = concat!(env!("CARGO_MANIFEST_DIR"), "/../../payroll/public");
     let zkey = std::env::var("PROVER_ZKEY").unwrap_or_else(|_| format!("{app}/circuit/transaction2.zkey"));
@@ -56,12 +72,13 @@ fn main() -> anyhow::Result<()> {
         "prover-server on 127.0.0.1:{port}: {jobs} concurrent proofs over {cores} cores, loaded in {} ms",
         t.elapsed().as_millis()
     );
+    eprintln!("pairing token: {token}   (paste into the app: ?proverToken={token})");
     for conn in listener.incoming() {
         let Ok(conn) = conn else { continue };
         let (prover, slots, origins) = (prover.clone(), slots.clone(), origins.clone());
-        let health = format!(r#"{{"ok":true,"jobs":{jobs}}}"#);
+        let token = token.clone();
         std::thread::spawn(move || {
-            if let Err(e) = handle(conn, &prover, &slots, &origins, &health) {
+            if let Err(e) = handle(conn, &prover, &slots, &origins, jobs, &token) {
                 eprintln!("request failed: {e:#}");
             }
         });
@@ -69,13 +86,20 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn handle(mut conn: TcpStream, prover: &Prover, slots: &Slots, origins: &[String], health: &str) -> anyhow::Result<()> {
+fn handle(
+    mut conn: TcpStream,
+    prover: &Prover,
+    slots: &Slots,
+    origins: &[String],
+    jobs: usize,
+    token: &str,
+) -> anyhow::Result<()> {
     let mut reader = BufReader::new(conn.try_clone()?);
     let mut line = String::new();
     reader.read_line(&mut line)?;
     let mut parts = line.split_whitespace();
     let (method, path) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
-    let (mut len, mut origin) = (0usize, String::new());
+    let (mut len, mut origin, mut presented) = (0usize, String::new(), String::new());
     loop {
         let mut h = String::new();
         if reader.read_line(&mut h)? == 0 || h == "\r\n" {
@@ -86,13 +110,15 @@ fn handle(mut conn: TcpStream, prover: &Prover, slots: &Slots, origins: &[String
             len = v.trim().parse().unwrap_or(0);
         } else if lower.starts_with("origin:") {
             origin = h[7..].trim().to_string();
+        } else if lower.starts_with("x-prover-token:") {
+            presented = h[15..].trim().to_string();
         }
     }
     let allowed = origins.iter().any(|o| o == "*" || *o == origin);
     let cors = if allowed && !origin.is_empty() {
         format!(
             "Access-Control-Allow-Origin: {origin}\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\n\
-             Access-Control-Allow-Headers: content-type\r\nAccess-Control-Allow-Private-Network: true\r\n\
+             Access-Control-Allow-Headers: content-type, x-prover-token\r\nAccess-Control-Allow-Private-Network: true\r\n\
              Cross-Origin-Resource-Policy: cross-origin\r\nVary: Origin\r\n"
         )
     } else {
@@ -108,10 +134,20 @@ fn handle(mut conn: TcpStream, prover: &Prover, slots: &Slots, origins: &[String
     if !origin.is_empty() && !allowed {
         return Ok(reply(&mut conn, "403 Forbidden", r#"{"error":"origin not allowed"}"#)?);
     }
-    match (method, path) {
+    let (route, query) = path.split_once('?').unwrap_or((path, ""));
+    match (method, route) {
         ("OPTIONS", _) => reply(&mut conn, "204 No Content", "")?,
-        ("GET", "/health") => reply(&mut conn, "200 OK", health)?,
+        ("GET", "/health") => {
+            let nonce = query.split('&').find_map(|kv| kv.strip_prefix("nonce=")).unwrap_or("");
+            let mut mac = Hmac::<Sha256>::new_from_slice(token.as_bytes())?;
+            mac.update(nonce.as_bytes());
+            let mac = hex::encode(mac.finalize().into_bytes());
+            reply(&mut conn, "200 OK", &format!(r#"{{"ok":true,"jobs":{jobs},"mac":"{mac}"}}"#))?
+        }
         ("POST", "/prove") => {
+            if !ct_eq(presented.as_bytes(), token.as_bytes()) {
+                return Ok(reply(&mut conn, "401 Unauthorized", r#"{"error":"bad pairing token"}"#)?);
+            }
             if len > 1 << 20 {
                 return Ok(reply(&mut conn, "413 Payload Too Large", r#"{"error":"input too large"}"#)?);
             }
@@ -132,4 +168,8 @@ fn handle(mut conn: TcpStream, prover: &Prover, slots: &Slots, origins: &[String
         _ => reply(&mut conn, "404 Not Found", r#"{"error":"not found"}"#)?,
     }
     Ok(())
+}
+
+fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }

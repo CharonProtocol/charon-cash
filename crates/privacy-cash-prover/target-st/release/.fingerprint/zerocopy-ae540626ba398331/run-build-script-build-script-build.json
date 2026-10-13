@@ -1,1 +1,0 @@
-{"rustc":13462371384788945141,"features":"","declared_features":"","target":0,"profile":0,"path":0,"deps":[[5098172256179770124,"build_script_build",false,1642680508664705808]],"local":[{"RerunIfChanged":{"output":"release/build/zerocopy-ae540626ba398331/output","paths":["build.rs","Cargo.toml"]}}],"rustflags":["--cfg","getrandom_backend=\"wasm_js\""],"config":0,"compile_kind":0}
