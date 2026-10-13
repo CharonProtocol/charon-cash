@@ -82,7 +82,7 @@ export const PlanReviewCard = forwardRef<
       ? 2
       : rowCount < 50
         ? 4
-        : Math.min(8, Math.max(4, Math.floor(cores / 2)))
+        : Math.min(8, Math.max(4, cores)) // 8 lanes measured fastest for 100 rows on 8 cores
   const recommendedLanes = laneOptions.reduce((a, b) =>
     Math.abs(b - rawRec) < Math.abs(a - rawRec) ? b : a,
   )

@@ -62,6 +62,7 @@ EOF
 if [ -f frontend/.env.local ]; then
   grep -E '^VITE_ALT_ADDRESS=' frontend/.env.local >> frontend/.env 2>/dev/null || true
 fi
+pkill -f '[b]ackend-(fast|shim).mjs' >/dev/null 2>&1; sleep 1
 ( cd frontend && PROGRAM_ID="$PROG" RECIPIENTS_FILE="$RECIPIENTS_FILE" nohup env ${GEYSER_CONFIG:+GRPC_URL=http://127.0.0.1:10000 GRPC_COMMITMENT=processed} bun "scripts/backend-${BACKEND:-fast}.mjs" > "$L-backend.log" 2>&1 & )
 wait_http http://localhost:8080/health || { echo "    ✗ shim failed (log $L-backend.log)"; exit 1; }
 INIT=""
@@ -88,6 +89,20 @@ pkill -f "vite" >/dev/null 2>&1; sleep 1
 wait_http http://localhost:5173 && echo "    frontend up" || echo "    ⚠ frontend failed (log $L-frontend.log)"
 wait_http http://localhost:5174 && echo "    payroll up" || echo "    ⚠ payroll failed (log $L-payroll.log)"
 
+# Optional native prover helper (NATIVE_PROVER=1): proves on this machine
+# ~3x faster than the browser; pair it in the app's Settings with the code.
+PAIR_LINE=""
+if [ "${NATIVE_PROVER:-0}" = "1" ]; then
+  echo "▶ +    Native prover helper (:8790)…"
+  PS_BIN="$ROOT/crates/privacy-cash-prover/target/release/prover-server"
+  [ -x "$PS_BIN" ] || cargo +stable build --release --bin prover-server --manifest-path "$ROOT/crates/privacy-cash-prover/Cargo.toml" 2>&1 | tail -1
+  pkill -f '[p]rover-server' >/dev/null 2>&1; sleep 1
+  PROVER_CODE="${PROVER_TOKEN:-$(openssl rand -hex 8)}"
+  ( PROVER_TOKEN="$PROVER_CODE" nohup "$PS_BIN" > "$L-prover.log" 2>&1 & )
+  wait_http http://127.0.0.1:8790/health && echo "    up" || echo "    ⚠ prover-server failed (log $L-prover.log)"
+  PAIR_LINE="    native    paste this pairing code in Settings → Native prover pairing code: $PROVER_CODE"
+fi
+
 cat <<EOF
 
 ✅  all up — payroll: http://localhost:5174  (demo app: http://localhost:5173)
@@ -95,7 +110,8 @@ cat <<EOF
     backend   http://localhost:8080   (program $PROG)
     rpc       http://localhost:8899   (surfpool --offline — resets on restart,
                                        run.sh redeploys/re-inits automatically)
-    logs      /tmp/privacy-cash-{surfpool,backend,frontend,payroll}.log
+    logs      /tmp/privacy-cash-{surfpool,backend,frontend,payroll,prover}.log
+$PAIR_LINE
 
     fund your Phantom on surfpool:
       solana airdrop 100 <phantom-address> --url localhost
