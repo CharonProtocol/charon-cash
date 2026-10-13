@@ -30,7 +30,6 @@ interface PendingEntry {
 interface Slot {
   worker: Worker
   busy: PendingEntry | null
-  pending: PendingEntry[]
 }
 
 // The v2 wasm parser reads extDataHash little-endian (pad_be then
@@ -57,7 +56,10 @@ function bigintsToString(v: unknown): unknown {
 
 class BrowserProverPool {
   private slots: Slot[] = []
-  private next = 0
+  // One queue for the whole pool: a proof goes to whichever worker frees up
+  // first, so a slow (efficiency-core) worker never holds a backlog while a
+  // fast one idles.
+  private queue: PendingEntry[] = []
   private id = 1
   proveCount = 0
   proveTotalMs = 0
@@ -116,7 +118,7 @@ class BrowserProverPool {
         w.postMessage({ type: "init", zkey: zkey.slice(0), graph: graph.slice(0), mode: this.mode, threads: this.threadsPerWorker })
       }),
     )
-    this.slots = (await Promise.all(spawns)).map((worker) => ({ worker, busy: null, pending: [] }))
+    this.slots = (await Promise.all(spawns)).map((worker) => ({ worker, busy: null }))
   }
 
   // ProverOverride shape: input already passed through utils.stringifyBigInts
@@ -125,7 +127,6 @@ class BrowserProverPool {
     const patched = input.extDataHash !== undefined
       ? { ...input, extDataHash: swapBytes32(input.extDataHash) }
       : input
-    const slot = this.slots[this.next++ % this.slots.length]
     const entry: PendingEntry = {
       id: this.id++,
       inputJson: JSON.stringify(bigintsToString(patched)),
@@ -137,12 +138,19 @@ class BrowserProverPool {
       entry.resolve = resolve
       entry.reject = reject
     })
-    if (slot.busy) slot.pending.push(entry)
-    else {
-      slot.busy = entry
-      this.run(slot, entry)
-    }
+    this.queue.push(entry)
+    this.pump()
     return promise
+  }
+
+  private pump() {
+    for (const slot of this.slots) {
+      if (slot.busy) continue
+      const next = this.queue.shift()
+      if (!next) return
+      slot.busy = next
+      this.run(slot, next)
+    }
   }
 
   private run(slot: Slot, e: PendingEntry) {
@@ -176,9 +184,8 @@ class BrowserProverPool {
         }
         e.reject(new Error(`wasm prover: ${d.error ?? "unknown"}`))
       }
-      const next = slot.pending.shift()
-      slot.busy = next ?? null
-      if (next) this.run(slot, next)
+      slot.busy = null
+      this.pump()
     }
     slot.worker.addEventListener("message", onMsg)
     e.dispatchedAt = performance.now()
@@ -291,14 +298,19 @@ export function poolShape(
 
 /** Prover engine plan for a run with `lanes` parallel chains on `cores`
  *  logical cores. 1-2 lanes are latency-bound → MT teams that split the
- *  whole machine. Queued runs (3+ lanes waiting) are throughput-bound → the
- *  ST pool of independent single-thread workers: the Oct-4 field baseline
- *  (2m21s/100 rows) ran that shape, while both MT splits measured on the
- *  same 4-core machine were slower (1×4 MT = 3m55s, 2×2 MT = 3m48s) — rayon
- *  team splits cost coordination and win nothing when proofs queue. */
-export function proverPlan(lanes: number, cores: number): { mode: "mt" | "st"; workers: number } {
+ *  whole machine. Queued runs (3+ lanes) are throughput-bound: on isolated
+ *  pages with 8+ cores, 2-thread MT teams finish the most proofs per second
+ *  (8-core M1, 2026-10-13: 4×2 MT 1.17-1.32 proofs/s vs 6×1 ST 1.01-1.23 and
+ *  8×1 ST 1.06; 1×8 MT only 0.87 — one wide team spends its time
+ *  coordinating). Smaller or non-isolated machines keep the ST pool. */
+export function proverPlan(
+  lanes: number,
+  cores: number,
+  isolated: boolean = (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true,
+): { mode: "mt" | "st"; workers: number } {
   if (lanes <= 1) return { mode: "mt", workers: 1 }
   if (lanes === 2) return { mode: "mt", workers: 2 }
+  if (isolated && cores >= 8) return { mode: "mt", workers: Math.min(8, Math.floor(cores / 2)) }
   return { mode: "st", workers: Math.max(2, Math.min(cores >= 8 ? 6 : 4, cores)) }
 }
 

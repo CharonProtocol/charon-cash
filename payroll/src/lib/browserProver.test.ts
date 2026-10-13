@@ -23,6 +23,16 @@ describe("prover pool shape", () => {
     expect(proverPlan(8, 8)).toEqual({ mode: "st", workers: 6 })
     expect(proverPlan(32, 24)).toEqual({ mode: "st", workers: 6 })
   })
+
+  it("queued runs on isolated 8+ core pages use 2-thread MT teams", () => {
+    expect(proverPlan(8, 8, true)).toEqual({ mode: "mt", workers: 4 })
+    expect(poolShape(4, 8, true)).toEqual({ count: 4, threadsPerWorker: 2 })
+    expect(proverPlan(16, 16, true)).toEqual({ mode: "mt", workers: 8 })
+    expect(proverPlan(32, 32, true)).toEqual({ mode: "mt", workers: 8 })
+    expect(poolShape(8, 32, true)).toEqual({ count: 8, threadsPerWorker: 4 })
+    expect(proverPlan(8, 4, true)).toEqual({ mode: "st", workers: 4 })
+    expect(proverPlan(8, 8, false)).toEqual({ mode: "st", workers: 6 })
+  })
 })
 
 // The pool's "prove ≈ Xs" chip used to be a queue-inflated mean: a proof that
@@ -39,46 +49,47 @@ vi.mock("privacy-cash-sdk", () => ({
   getBackendUrl: () => "http://test",
 }))
 
+  class FakeWorker {
+    static delays: number[] = []
+    private listeners = new Map<string, Array<(m: { data: unknown }) => void>>()
+    constructor(public url: string | URL) {}
+    addEventListener(type: string, fn: (m: { data: unknown }) => void) {
+      const fns = this.listeners.get(type) ?? []
+      fns.push(fn)
+      this.listeners.set(type, fns)
+    }
+    removeEventListener(type: string, fn: (m: { data: unknown }) => void) {
+      this.listeners.set(type, (this.listeners.get(type) ?? []).filter((f) => f !== fn))
+    }
+    postMessage(msg: { type?: string; id?: number }) {
+      if (msg.type === "init") {
+        queueMicrotask(() => this.emit({ type: "ready", threads: 1 }))
+      } else if (msg.type === "prove") {
+        const delay = FakeWorker.delays.shift() ?? 20
+        setTimeout(
+          () =>
+            this.emit({
+              type: "proof",
+              id: msg.id,
+              proof: { pi_a: [], pi_b: [], pi_c: [], protocol: "groth16", curve: "bn128" },
+              publicSignals: [],
+            }),
+          delay,
+        )
+      }
+    }
+    private emit(d: unknown) {
+      for (const fn of this.listeners.get("message") ?? []) fn({ data: d })
+    }
+    terminate() {}
+  }
+
 describe("prover pool service accounting", () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
   it("splits slot wait from pure service time on a queued proof", async () => {
-    class FakeWorker {
-      static delays: number[] = []
-      private listeners = new Map<string, Array<(m: { data: unknown }) => void>>()
-      constructor(public url: string | URL) {}
-      addEventListener(type: string, fn: (m: { data: unknown }) => void) {
-        const fns = this.listeners.get(type) ?? []
-        fns.push(fn)
-        this.listeners.set(type, fns)
-      }
-      removeEventListener(type: string, fn: (m: { data: unknown }) => void) {
-        this.listeners.set(type, (this.listeners.get(type) ?? []).filter((f) => f !== fn))
-      }
-      postMessage(msg: { type?: string; id?: number }) {
-        if (msg.type === "init") {
-          queueMicrotask(() => this.emit({ type: "ready", threads: 1 }))
-        } else if (msg.type === "prove") {
-          const delay = FakeWorker.delays.shift() ?? 20
-          setTimeout(
-            () =>
-              this.emit({
-                type: "proof",
-                id: msg.id,
-                proof: { pi_a: [], pi_b: [], pi_c: [], protocol: "groth16", curve: "bn128" },
-                publicSignals: [],
-              }),
-            delay,
-          )
-        }
-      }
-      private emit(d: unknown) {
-        for (const fn of this.listeners.get("message") ?? []) fn({ data: d })
-      }
-      terminate() {}
-    }
     vi.stubGlobal("Worker", FakeWorker)
     vi.stubGlobal("fetch", (async () => ({
       arrayBuffer: async () => new ArrayBuffer(8),
@@ -101,5 +112,21 @@ describe("prover pool service accounting", () => {
     expect(after.serviceMs).toBeLessThanOrEqual(115)
     expect(after.avgMs).toBeGreaterThan(after.serviceMs)
     expect(after.avgMs).toBeGreaterThanOrEqual(115)
+  })
+
+  it("hands a queued proof to whichever worker frees first", async () => {
+    vi.stubGlobal("Worker", FakeWorker)
+    vi.stubGlobal("fetch", (async () => ({
+      arrayBuffer: async () => new ArrayBuffer(8),
+    })) as unknown)
+    const info = await ensureBrowserProver({ workers: 2, mode: "st" })
+    expect(info.workers).toBe(2)
+
+    // worker 0 is stuck on a slow proof; proof 3 must not queue behind it
+    FakeWorker.delays = [300, 20, 20]
+    const done: number[] = []
+    const p = [1, 2, 3].map((n) => capture.override!({ n }).then(() => done.push(n)))
+    await Promise.all(p)
+    expect(done).toEqual([2, 3, 1])
   })
 })
