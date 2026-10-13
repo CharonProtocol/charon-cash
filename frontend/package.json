@@ -14,6 +14,8 @@
   "dependencies": {
     "@ethersproject/keccak256": "^5.8.0",
     "@ethersproject/sha2": "^5.8.0",
+    "@grpc/grpc-js": "1.13.6",
+    "@grpc/proto-loader": "0.8.1",
     "@lightprotocol/hasher.rs": "^0.2.1",
     "@radix-ui/react-label": "^2.1.11",
     "@radix-ui/react-slot": "^1.1.11",
@@ -23,7 +25,6 @@
     "@solana/wallet-adapter-react-ui": "^0.9.39",
     "@solana/wallet-adapter-wallets": "^0.19.38",
     "@solana/web3.js": "^1.98.4",
-    "@triton-one/yellowstone-grpc": "8.0.0",
     "bn.js": "^5.2.5",
     "borsh": "^2.0.0",
     "bs58": "^6.0.0",

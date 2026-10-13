@@ -138,7 +138,12 @@ await indexer.start()
 // GRPC_URL (e.g. http://127.0.0.1:10000 for surfpool -g, or a LaserStream
 // endpoint + GRPC_X_TOKEN): leaves arrive pushed with the tx itself.
 if (process.env.GRPC_URL) {
-  void startGrpcSource({ url: process.env.GRPC_URL, xToken: process.env.GRPC_X_TOKEN, indexer })
+  void startGrpcSource({
+    url: process.env.GRPC_URL,
+    xToken: process.env.GRPC_X_TOKEN,
+    commitment: process.env.GRPC_COMMITMENT ?? "confirmed",
+    indexer,
+  })
 }
 
 // Blockhash cache: relays never wait on getLatestBlockhash.

@@ -1,0 +1,2 @@
+geyser.proto + solana-storage.proto from rpcpool/yellowstone-grpc tag v15.1.0+solana.4.2.0
+(yellowstone-grpc-proto). See that repo's LICENSING.md for terms.
