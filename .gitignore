@@ -46,3 +46,4 @@ docs/
 programs/privacy-cash/target/
 programs/privacy-cash/artifacts/circuits/*.ptau
 refs/
+crates/*/target/

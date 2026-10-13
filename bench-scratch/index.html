@@ -1,0 +1,29 @@
+<!doctype html><meta charset=utf-8><body><pre id=o>run</pre><script type=module>
+const q = new URLSearchParams(location.search)
+const shapes = JSON.parse(q.get('shapes'))  // [{mode,count,threads}]
+const N = Number(q.get('n') || 24)
+const stPath = q.get('stPath'), stWasm = q.get('stWasm'), mtPath = q.get('mtPath')
+const [zkey, graph, input] = await Promise.all([fetch('transaction2.zkey').then(r=>r.arrayBuffer()), fetch('transaction2.graph').then(r=>r.arrayBuffer()), fetch('input.json').then(r=>r.text())])
+const results = []
+for (const s of shapes) {
+  const ws = await Promise.all(Array.from({length: s.count}, () => new Promise((res, rej) => {
+    const w = new Worker(`worker.mjs?mode=${s.mode}`, {type:'module'})
+    w.onmessage = (e) => e.data.type === 'ready' ? res(w) : rej(new Error(e.data.error))
+    w.postMessage({type:'init', zkey: zkey.slice(0), graph: graph.slice(0), threads: s.threads, stPath, stWasm, mtPath, ark: !!s.ark})
+  })))
+  const one = (w) => new Promise((res, rej) => { w.onmessage = (e) => e.data.type==='done' ? res(e.data.ms) : rej(new Error(e.data.error)); w.postMessage({type:'prove', input}) })
+  await Promise.all(ws.map(one)) // warmup
+  // single-proof latency on an idle machine
+  const lat = []; for (let i=0;i<3;i++) lat.push(await one(ws[0]))
+  // throughput: shared queue (work-stealing), N proofs
+  let left = N; const per = []; const t0 = performance.now()
+  await Promise.all(ws.map(async (w) => { while (left-- > 0) per.push(await one(w)) }))
+  const wall = performance.now() - t0
+  lat.sort((a,b)=>a-b); per.sort((a,b)=>a-b)
+  results.push({ ...s, idleLatencyMs: Math.round(lat[1]), loadedProofP50Ms: Math.round(per[per.length>>1]), wallMs: Math.round(wall), proofsPerSec: +(N/wall*1000).toFixed(2) })
+  ws.forEach(w => w.terminate())
+  await new Promise(r => setTimeout(r, 3000))
+}
+await fetch('/result', {method:'POST', body: JSON.stringify({cores: navigator.hardwareConcurrency, isolated: crossOriginIsolated, results})})
+document.getElementById('o').textContent = 'done'
+</script>

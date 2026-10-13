@@ -1,0 +1,230 @@
+diff --git a/payroll/src/lib/browserProver.test.ts b/payroll/src/lib/browserProver.test.ts
+index db4ea0a..e72fe71 100644
+--- a/payroll/src/lib/browserProver.test.ts
++++ b/payroll/src/lib/browserProver.test.ts
+@@ -23,6 +23,16 @@ describe("prover pool shape", () => {
+     expect(proverPlan(8, 8)).toEqual({ mode: "st", workers: 6 })
+     expect(proverPlan(32, 24)).toEqual({ mode: "st", workers: 6 })
+   })
++
++  it("queued runs on isolated 8+ core pages use 2-thread MT teams", () => {
++    expect(proverPlan(8, 8, true)).toEqual({ mode: "mt", workers: 4 })
++    expect(poolShape(4, 8, true)).toEqual({ count: 4, threadsPerWorker: 2 })
++    expect(proverPlan(16, 16, true)).toEqual({ mode: "mt", workers: 8 })
++    expect(proverPlan(32, 32, true)).toEqual({ mode: "mt", workers: 8 })
++    expect(poolShape(8, 32, true)).toEqual({ count: 8, threadsPerWorker: 4 })
++    expect(proverPlan(8, 4, true)).toEqual({ mode: "st", workers: 4 })
++    expect(proverPlan(8, 8, false)).toEqual({ mode: "st", workers: 6 })
++  })
+ })
+ 
+ // The pool's "prove ≈ Xs" chip used to be a queue-inflated mean: a proof that
+@@ -39,46 +49,47 @@ vi.mock("privacy-cash-sdk", () => ({
+   getBackendUrl: () => "http://test",
+ }))
+ 
++  class FakeWorker {
++    static delays: number[] = []
++    private listeners = new Map<string, Array<(m: { data: unknown }) => void>>()
++    constructor(public url: string | URL) {}
++    addEventListener(type: string, fn: (m: { data: unknown }) => void) {
++      const fns = this.listeners.get(type) ?? []
++      fns.push(fn)
++      this.listeners.set(type, fns)
++    }
++    removeEventListener(type: string, fn: (m: { data: unknown }) => void) {
++      this.listeners.set(type, (this.listeners.get(type) ?? []).filter((f) => f !== fn))
++    }
++    postMessage(msg: { type?: string; id?: number }) {
++      if (msg.type === "init") {
++        queueMicrotask(() => this.emit({ type: "ready", threads: 1 }))
++      } else if (msg.type === "prove") {
++        const delay = FakeWorker.delays.shift() ?? 20
++        setTimeout(
++          () =>
++            this.emit({
++              type: "proof",
++              id: msg.id,
++              proof: { pi_a: [], pi_b: [], pi_c: [], protocol: "groth16", curve: "bn128" },
++              publicSignals: [],
++            }),
++          delay,
++        )
++      }
++    }
++    private emit(d: unknown) {
++      for (const fn of this.listeners.get("message") ?? []) fn({ data: d })
++    }
++    terminate() {}
++  }
++
+ describe("prover pool service accounting", () => {
+   afterEach(() => {
+     vi.unstubAllGlobals()
+   })
+ 
+   it("splits slot wait from pure service time on a queued proof", async () => {
+-    class FakeWorker {
+-      static delays: number[] = []
+-      private listeners = new Map<string, Array<(m: { data: unknown }) => void>>()
+-      constructor(public url: string | URL) {}
+-      addEventListener(type: string, fn: (m: { data: unknown }) => void) {
+-        const fns = this.listeners.get(type) ?? []
+-        fns.push(fn)
+-        this.listeners.set(type, fns)
+-      }
+-      removeEventListener(type: string, fn: (m: { data: unknown }) => void) {
+-        this.listeners.set(type, (this.listeners.get(type) ?? []).filter((f) => f !== fn))
+-      }
+-      postMessage(msg: { type?: string; id?: number }) {
+-        if (msg.type === "init") {
+-          queueMicrotask(() => this.emit({ type: "ready", threads: 1 }))
+-        } else if (msg.type === "prove") {
+-          const delay = FakeWorker.delays.shift() ?? 20
+-          setTimeout(
+-            () =>
+-              this.emit({
+-                type: "proof",
+-                id: msg.id,
+-                proof: { pi_a: [], pi_b: [], pi_c: [], protocol: "groth16", curve: "bn128" },
+-                publicSignals: [],
+-              }),
+-            delay,
+-          )
+-        }
+-      }
+-      private emit(d: unknown) {
+-        for (const fn of this.listeners.get("message") ?? []) fn({ data: d })
+-      }
+-      terminate() {}
+-    }
+     vi.stubGlobal("Worker", FakeWorker)
+     vi.stubGlobal("fetch", (async () => ({
+       arrayBuffer: async () => new ArrayBuffer(8),
+@@ -102,4 +113,20 @@ describe("prover pool service accounting", () => {
+     expect(after.avgMs).toBeGreaterThan(after.serviceMs)
+     expect(after.avgMs).toBeGreaterThanOrEqual(115)
+   })
++
++  it("hands a queued proof to whichever worker frees first", async () => {
++    vi.stubGlobal("Worker", FakeWorker)
++    vi.stubGlobal("fetch", (async () => ({
++      arrayBuffer: async () => new ArrayBuffer(8),
++    })) as unknown)
++    const info = await ensureBrowserProver({ workers: 2, mode: "st" })
++    expect(info.workers).toBe(2)
++
++    // worker 0 is stuck on a slow proof; proof 3 must not queue behind it
++    FakeWorker.delays = [300, 20, 20]
++    const done: number[] = []
++    const p = [1, 2, 3].map((n) => capture.override!({ n }).then(() => done.push(n)))
++    await Promise.all(p)
++    expect(done).toEqual([2, 3, 1])
++  })
+ })
+diff --git a/payroll/src/lib/browserProver.ts b/payroll/src/lib/browserProver.ts
+index aff5df2..32d063a 100644
+--- a/payroll/src/lib/browserProver.ts
++++ b/payroll/src/lib/browserProver.ts
+@@ -30,7 +30,6 @@ interface PendingEntry {
+ interface Slot {
+   worker: Worker
+   busy: PendingEntry | null
+-  pending: PendingEntry[]
+ }
+ 
+ // The v2 wasm parser reads extDataHash little-endian (pad_be then
+@@ -57,7 +56,10 @@ function bigintsToString(v: unknown): unknown {
+ 
+ class BrowserProverPool {
+   private slots: Slot[] = []
+-  private next = 0
++  // One queue for the whole pool: a proof goes to whichever worker frees up
++  // first, so a slow (efficiency-core) worker never holds a backlog while a
++  // fast one idles.
++  private queue: PendingEntry[] = []
+   private id = 1
+   proveCount = 0
+   proveTotalMs = 0
+@@ -116,7 +118,7 @@ class BrowserProverPool {
+         w.postMessage({ type: "init", zkey: zkey.slice(0), graph: graph.slice(0), mode: this.mode, threads: this.threadsPerWorker })
+       }),
+     )
+-    this.slots = (await Promise.all(spawns)).map((worker) => ({ worker, busy: null, pending: [] }))
++    this.slots = (await Promise.all(spawns)).map((worker) => ({ worker, busy: null }))
+   }
+ 
+   // ProverOverride shape: input already passed through utils.stringifyBigInts
+@@ -125,7 +127,6 @@ class BrowserProverPool {
+     const patched = input.extDataHash !== undefined
+       ? { ...input, extDataHash: swapBytes32(input.extDataHash) }
+       : input
+-    const slot = this.slots[this.next++ % this.slots.length]
+     const entry: PendingEntry = {
+       id: this.id++,
+       inputJson: JSON.stringify(bigintsToString(patched)),
+@@ -137,14 +138,21 @@ class BrowserProverPool {
+       entry.resolve = resolve
+       entry.reject = reject
+     })
+-    if (slot.busy) slot.pending.push(entry)
+-    else {
+-      slot.busy = entry
+-      this.run(slot, entry)
+-    }
++    this.queue.push(entry)
++    this.pump()
+     return promise
+   }
+ 
++  private pump() {
++    for (const slot of this.slots) {
++      if (slot.busy) continue
++      const next = this.queue.shift()
++      if (!next) return
++      slot.busy = next
++      this.run(slot, next)
++    }
++  }
++
+   private run(slot: Slot, e: PendingEntry) {
+     const onMsg = (m: MessageEvent) => {
+       const d = m.data as { type?: string; id?: number; error?: string; input?: string; proof?: unknown; raw?: { proof_a: string; proof_b: string; proof_c: string; public_signals: string[] }; publicSignals?: string[] }
+@@ -176,9 +184,8 @@ class BrowserProverPool {
+         }
+         e.reject(new Error(`wasm prover: ${d.error ?? "unknown"}`))
+       }
+-      const next = slot.pending.shift()
+-      slot.busy = next ?? null
+-      if (next) this.run(slot, next)
++      slot.busy = null
++      this.pump()
+     }
+     slot.worker.addEventListener("message", onMsg)
+     e.dispatchedAt = performance.now()
+@@ -291,14 +298,19 @@ export function poolShape(
+ 
+ /** Prover engine plan for a run with `lanes` parallel chains on `cores`
+  *  logical cores. 1-2 lanes are latency-bound → MT teams that split the
+- *  whole machine. Queued runs (3+ lanes waiting) are throughput-bound → the
+- *  ST pool of independent single-thread workers: the Oct-4 field baseline
+- *  (2m21s/100 rows) ran that shape, while both MT splits measured on the
+- *  same 4-core machine were slower (1×4 MT = 3m55s, 2×2 MT = 3m48s) — rayon
+- *  team splits cost coordination and win nothing when proofs queue. */
+-export function proverPlan(lanes: number, cores: number): { mode: "mt" | "st"; workers: number } {
++ *  whole machine. Queued runs (3+ lanes) are throughput-bound: on isolated
++ *  pages with 8+ cores, 2-thread MT teams finish the most proofs per second
++ *  (8-core M1, 2026-10-13: 4×2 MT 1.17-1.32 proofs/s vs 6×1 ST 1.01-1.23 and
++ *  8×1 ST 1.06; 1×8 MT only 0.87 — one wide team spends its time
++ *  coordinating). Smaller or non-isolated machines keep the ST pool. */
++export function proverPlan(
++  lanes: number,
++  cores: number,
++  isolated: boolean = (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true,
++): { mode: "mt" | "st"; workers: number } {
+   if (lanes <= 1) return { mode: "mt", workers: 1 }
+   if (lanes === 2) return { mode: "mt", workers: 2 }
++  if (isolated && cores >= 8) return { mode: "mt", workers: Math.min(8, Math.floor(cores / 2)) }
+   return { mode: "st", workers: Math.max(2, Math.min(cores >= 8 ? 6 : 4, cores)) }
+ }
+ 
