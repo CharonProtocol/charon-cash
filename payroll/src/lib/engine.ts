@@ -548,8 +548,15 @@ export class PayrollEngine {
     let lastRefreshAt = 0
     let lastFromScratchAt = 0
     let refreshInFlight: Promise<void> | null = null
+    // Lanes waiting for a note wake the moment the ledger changes (a change
+    // note resolved, a refresh landed) instead of on the next poll tick.
+    let ledgerWaiters: Array<() => void> = []
+    const ledgerChanged = (): Promise<void> => new Promise((r) => ledgerWaiters.push(r))
     const reloadLedger = (): void => {
       if (ledger && this.deps.listNotes) ledger.reload(this.deps.listNotes(req.asset), this.deps.now())
+      const waiters = ledgerWaiters
+      ledgerWaiters = []
+      for (const w of waiters) w()
     }
     // bring fresh notes (change notes land after each relay) into the ledger,
     // at most one scan in flight and never more often than the gap
@@ -721,7 +728,7 @@ export class PayrollEngine {
           void gatedKick()
         }
         void scheduleRefresh()
-        await this.deps.sleep(RESERVE_POLL_MS)
+        await Promise.race([this.deps.sleep(RESERVE_POLL_MS), ledgerChanged()])
       }
     }
 
