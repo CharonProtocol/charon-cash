@@ -6,6 +6,7 @@
 //!   cargo run --release --bin prover-server
 //!   env: PROVER_ZKEY / PROVER_GRAPH (default: the payroll app's public/ copies),
 //!        PROVER_PORT (8790), PROVER_JOBS (concurrent proofs, default cores/2),
+//!        PROVER_THREADS (rayon threads per proof, default cores/jobs),
 //!        PROVER_ORIGINS (comma list of allowed page origins, default local dev)
 //!
 //! Pairing: the witness carries the employer's note spend keys, so the app
@@ -31,21 +32,26 @@ use privacy_cash_prover::Prover;
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 
+/// Free job slots; each slot owns its own rayon pool so concurrent proofs
+/// don't fight over one shared pool (one proof on 8 threads costs ~2.3
+/// CPU-s vs 0.9 on one thread: small per-job pools finish more proofs).
 struct Slots {
-    free: Mutex<usize>,
+    free: Mutex<Vec<usize>>,
     cv: Condvar,
 }
 
 impl Slots {
-    fn acquire(&self) {
+    fn acquire(&self) -> usize {
         let mut free = self.free.lock().unwrap();
-        while *free == 0 {
+        loop {
+            if let Some(i) = free.pop() {
+                return i;
+            }
             free = self.cv.wait(free).unwrap();
         }
-        *free -= 1;
     }
-    fn release(&self) {
-        *self.free.lock().unwrap() += 1;
+    fn release(&self, i: usize) {
+        self.free.lock().unwrap().push(i);
         self.cv.notify_one();
     }
 }
@@ -54,6 +60,12 @@ fn main() -> anyhow::Result<()> {
     let port: u16 = std::env::var("PROVER_PORT").ok().and_then(|s| s.parse().ok()).unwrap_or(8790);
     let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
     let jobs: usize = std::env::var("PROVER_JOBS").ok().and_then(|s| s.parse().ok()).unwrap_or((cores / 2).max(1));
+    let threads: usize = std::env::var("PROVER_THREADS").ok().and_then(|s| s.parse().ok()).unwrap_or((cores / jobs).max(1));
+    let pools: Arc<Vec<rayon::ThreadPool>> = Arc::new(
+        (0..jobs)
+            .map(|_| rayon::ThreadPoolBuilder::new().num_threads(threads).build())
+            .collect::<Result<_, _>>()?,
+    );
     let origins: Vec<String> = std::env::var("PROVER_ORIGINS")
         .unwrap_or_else(|_| "http://localhost:5174,http://127.0.0.1:5174,http://localhost:5173".into())
         .split(',')
@@ -70,19 +82,19 @@ fn main() -> anyhow::Result<()> {
     let zkey = std::env::var("PROVER_ZKEY").unwrap_or_else(|_| format!("{app}/circuit/transaction2.zkey"));
     let graph = std::env::var("PROVER_GRAPH").unwrap_or_else(|_| format!("{app}/prover-wasm/transaction2.graph"));
     let prover = Arc::new(Prover::new(&std::fs::read(&zkey)?, &std::fs::read(&graph)?)?);
-    let slots = Arc::new(Slots { free: Mutex::new(jobs), cv: Condvar::new() });
+    let slots = Arc::new(Slots { free: Mutex::new((0..jobs).collect()), cv: Condvar::new() });
     let listener = TcpListener::bind(("127.0.0.1", port))?;
     eprintln!(
-        "prover-server on 127.0.0.1:{port}: {jobs} concurrent proofs over {cores} cores, loaded in {} ms",
+        "prover-server on 127.0.0.1:{port}: {jobs} concurrent proofs x {threads} threads ({cores} cores), loaded in {} ms",
         t.elapsed().as_millis()
     );
     eprintln!("pairing token: {token}   (paste into the app: ?proverToken={token})");
     for conn in listener.incoming() {
         let Ok(conn) = conn else { continue };
-        let (prover, slots, origins) = (prover.clone(), slots.clone(), origins.clone());
+        let (prover, slots, origins, pools) = (prover.clone(), slots.clone(), origins.clone(), pools.clone());
         let token = token.clone();
         std::thread::spawn(move || {
-            if let Err(e) = handle(conn, &prover, &slots, &origins, jobs, &token) {
+            if let Err(e) = handle(conn, &prover, &slots, &pools, &origins, jobs, &token) {
                 eprintln!("request failed: {e:#}");
             }
         });
@@ -94,6 +106,7 @@ fn handle(
     mut conn: TcpStream,
     prover: &Prover,
     slots: &Slots,
+    pools: &[rayon::ThreadPool],
     origins: &[String],
     jobs: usize,
     token: &str,
@@ -156,10 +169,10 @@ fn handle(
             let Some(input) = decrypt_input(&body, token) else {
                 return Ok(reply(&mut conn, "401 Unauthorized", r#"{"error":"not paired: input did not decrypt"}"#)?);
             };
-            slots.acquire();
+            let slot = slots.acquire();
             let t = Instant::now();
-            let out = prover.prove_json(&input);
-            slots.release();
+            let out = pools[slot].install(|| prover.prove_json(&input));
+            slots.release(slot);
             match out.and_then(|r| Ok(serde_json::to_string(&r)?)) {
                 Ok(json) => {
                     eprintln!("proved in {} ms", t.elapsed().as_millis());
