@@ -31,6 +31,7 @@ for (const k of ["workers", "mode", "backend", "rpc", "amount"]) if (args[k]) qs
 
 const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*" }
 let resolveResult
+let lastPrint = 0
 const resultP = new Promise((r) => (resolveResult = r))
 const server = Bun.serve({
   port,
@@ -39,7 +40,11 @@ const server = Bun.serve({
     if (req.method === "OPTIONS") return new Response(null, { headers: cors })
     if (u.pathname === "/recipients") return Response.json(recipients, { headers: cors })
     if (u.pathname === "/progress") {
-      process.stdout.write(`\r  ${(await req.text()).padEnd(70)}`)
+      const line = await req.text()
+      if (Date.now() - lastPrint > 5000) {
+        lastPrint = Date.now()
+        console.log(`  ${line}`)
+      }
       return new Response("ok", { headers: cors })
     }
     if (u.pathname === "/result") {
@@ -60,7 +65,6 @@ clearTimeout(timer)
 proc.kill()
 server.stop()
 rmSync(profile, { recursive: true, force: true })
-process.stdout.write("\n")
 
 const dir = path.join(here, "results")
 mkdirSync(dir, { recursive: true })
