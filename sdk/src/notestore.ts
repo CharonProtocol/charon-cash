@@ -16,7 +16,7 @@
  */
 import type { PublicKey } from "@solana/web3.js"
 
-import { backendUrl } from "./constants"
+import { getBackendUrl } from "./merkle"
 import { EncryptionService } from "./crypto"
 import { loadNotes, upsertNote, type Note } from "./notes"
 
@@ -45,7 +45,7 @@ export async function pushEncryptedNotes(
   enc: EncryptionService,
 ): Promise<void> {
   const ciphertext = await encryptNotesBlob(enc, loadNotes(wallet))
-  const res = await fetch(`${backendUrl()}/api/notes`, {
+  const res = await fetch(`${getBackendUrl()}/api/notes`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ wallet: wallet.toBase58(), ciphertext }),
@@ -61,7 +61,7 @@ export async function pullEncryptedNotes(
   wallet: PublicKey,
   enc: EncryptionService,
 ): Promise<Note[]> {
-  const res = await fetch(`${backendUrl()}/api/notes/${wallet.toBase58()}`)
+  const res = await fetch(`${getBackendUrl()}/api/notes/${wallet.toBase58()}`)
   if (res.status === 404) return []
   if (!res.ok) throw new Error(`notes restore failed: HTTP ${res.status}`)
   const data = (await res.json()) as {

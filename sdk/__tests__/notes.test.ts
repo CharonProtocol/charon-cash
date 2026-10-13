@@ -19,6 +19,7 @@ import {
   newNoteId,
   readLegacyNotes,
   purgeLegacyStorage,
+  dropNotesBeyondTree,
   type Note,
 } from "../src/notes"
 import { EncryptionService } from "../src/crypto"
@@ -182,5 +183,18 @@ describe("encrypted note blob round-trip", () => {
     const back = await decryptNotesBlob(enc, blob)
 
     expect(back).toEqual(notes)
+  })
+})
+
+describe("dropNotesBeyondTree", () => {
+  it("drops confirmed notes past the tree end, keeps pending and other mints", () => {
+    const w = wallet("foreign")
+    clearNotes(w)
+    upsertNote(w, note({ index: 10, blinding: "a" }))
+    upsertNote(w, note({ index: 6505, blinding: "b" })) // another network's note
+    upsertNote(w, note({ index: 6600, blinding: "c", pending: true }))
+    upsertNote(w, note({ index: 9000, blinding: "d", mintAddress: "OtherMint1111111111111111111111111111111111" }))
+    expect(dropNotesBeyondTree(w, SOL, 214)).toBe(1)
+    expect(loadNotes(w).map((n) => n.blinding).sort()).toEqual(["a", "c", "d"])
   })
 })

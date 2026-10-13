@@ -12,7 +12,7 @@
  * Read-only data (merkle proofs, nullifiers, utxos, pool info, encrypted notes)
  * does NOT go through here — those routes are unauthenticated.
  */
-import { backendUrl } from "./constants";
+import { getBackendUrl } from "./merkle";
 /** Error carrying the backend's machine-readable code (e.g. HTTP_401, INVALID_HEX). */
 export class OperatorError extends Error {
     code;
@@ -38,7 +38,7 @@ function authHeaders() {
 /** Verify a password against the backend. Resolves false on any failure. */
 export async function verifyOperator(password) {
     try {
-        const res = await fetch(`${backendUrl()}/api/admin/verify`, {
+        const res = await fetch(`${getBackendUrl()}/api/admin/verify`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-admin-password": password },
         });
@@ -51,7 +51,7 @@ export async function verifyOperator(password) {
 async function operatorPost(path, body) {
     let res;
     try {
-        res = await fetch(`${backendUrl()}${path}`, {
+        res = await fetch(`${getBackendUrl()}${path}`, {
             method: "POST",
             headers: authHeaders(),
             body: body !== undefined ? JSON.stringify(body) : undefined,

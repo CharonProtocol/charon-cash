@@ -63,6 +63,7 @@ import {
   purgeLegacyStorage,
   removeStaleNote,
   readLegacyNotes,
+  dropNotesBeyondTree,
   resolvePendingNote,
   saveNote,
   setSyncOffset,
@@ -720,10 +721,12 @@ export class PrivacyCashClient {
     let spent = 0
     let lastScannedTo = -1
     let pass = 0
+    let treeSize: number | null = null
 
     for (;;) {
       if (++pass > 128) break // bounded against a misbehaving server
       const page = await fetchUtxoRange(treeKey, start, start + RANGE_PAGE)
+      treeSize = page.nextIndex
       if (pass === 1 && !fromScratch && page.utxos.length === 0 && page.nextIndex < start) {
         // stored offset beyond the tree: the indexer was reset (devnet or D1
         // wipe) — rescan from zero instead of seeing an empty vault
@@ -809,6 +812,11 @@ export class PrivacyCashClient {
       start = nextStart
     }
 
+    // notes this backend's tree can't contain (another network's backup, a
+    // reset simnet) would fail every spend attempt: drop them
+    if (treeSize !== null) {
+      dropNotesBeyondTree(wallet, treeKey === SOL_TREE_KEY ? WRAPPED_SOL_MINT : treeKey, treeSize)
+    }
     this.lastSyncDoneAt.set(treeKey, Date.now())
     return { scanned, added, spent }
   }

@@ -70,6 +70,19 @@ function persist(wallet: PublicKey, notes: Note[]): void {
   NOTES.set(wk(wallet), notes)
 }
 
+/**
+ * Confirmed notes whose leaf lies at or beyond this tree's end cannot exist on
+ * this chain (another network's notes, or a simnet that was reset): drop them
+ * so nothing ever tries to spend them. Pending notes keep their guessed index
+ * until resolved and are left alone. Returns how many were dropped.
+ */
+export function dropNotesBeyondTree(wallet: PublicKey, mintAddress: string, treeSize: number): number {
+  const notes = loadNotes(wallet)
+  const keep = notes.filter((n) => n.mintAddress !== mintAddress || n.pending || n.index < treeSize)
+  if (keep.length !== notes.length) persist(wallet, keep)
+  return notes.length - keep.length
+}
+
 export function saveNote(wallet: PublicKey, note: Note): void {
   upsertNote(wallet, note)
 }
