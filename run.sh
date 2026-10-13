@@ -21,7 +21,9 @@ echo "▶ 1/7  Surfpool (local Solana, :8899, --offline)…"
 if rpc_up; then echo "    already running"
 else
   pkill -f '[s]urfpool' 2>/dev/null; sleep 1
-  nohup surfpool start --offline > "$L-surfpool.log" 2>&1 &
+  # GEYSER_CONFIG=~/yellowstone/config.json loads the Yellowstone gRPC plugin
+  # (:10000) so backend-fast can stream (start it with GRPC_URL)
+  nohup surfpool start --offline ${GEYSER_CONFIG:+-g "$GEYSER_CONFIG"} > "$L-surfpool.log" 2>&1 &
   disown
   echo "    starting (log $L-surfpool.log)…"
   wait_rpc || { echo "    ✗ surfpool didn't come up — check $L-surfpool.log"; exit 1; }
@@ -60,7 +62,7 @@ EOF
 if [ -f frontend/.env.local ]; then
   grep -E '^VITE_ALT_ADDRESS=' frontend/.env.local >> frontend/.env 2>/dev/null || true
 fi
-( cd frontend && PROGRAM_ID="$PROG" RECIPIENTS_FILE="$RECIPIENTS_FILE" nohup bun "scripts/backend-${BACKEND:-fast}.mjs" > "$L-backend.log" 2>&1 & )
+( cd frontend && PROGRAM_ID="$PROG" RECIPIENTS_FILE="$RECIPIENTS_FILE" nohup env ${GEYSER_CONFIG:+GRPC_URL=http://127.0.0.1:10000} bun "scripts/backend-${BACKEND:-fast}.mjs" > "$L-backend.log" 2>&1 & )
 wait_http http://localhost:8080/health || { echo "    ✗ shim failed (log $L-backend.log)"; exit 1; }
 INIT=""
 for i in $(seq 1 10); do

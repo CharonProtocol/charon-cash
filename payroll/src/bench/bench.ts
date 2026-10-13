@@ -8,7 +8,7 @@ import { PrivacyCashClient, fetchRelayerInfo, totalBalance, WRAPPED_SOL_MINT } f
 
 import { config } from "@/lib/config"
 import { createEngine } from "@/lib/engine"
-import { browserProverInfo, ensureBrowserProver, proverPlan } from "@/lib/browserProver"
+import { browserProverInfo, detectNativeProver, ensureBrowserProver, proverPlan, useNativeProver } from "@/lib/browserProver"
 
 const q = new URLSearchParams(location.search)
 const rows = Number(q.get("rows") ?? 20)
@@ -56,7 +56,12 @@ async function main() {
   const cores = navigator.hardwareConcurrency || 4
   const plan = proverPlan(lanes, cores)
   const tProver = performance.now()
-  const prover = await ensureBrowserProver({ workers: forcedWorkers ?? plan.workers, mode: forcedMode ?? plan.mode })
+  // prover=native routes proofs to the loopback helper (prover-server)
+  const helper = q.get("prover") === "native" ? await detectNativeProver() : null
+  if (q.get("prover") === "native" && !helper) throw new Error("prover=native but no helper on 127.0.0.1:8790")
+  const prover = helper
+    ? useNativeProver(helper)
+    : await ensureBrowserProver({ workers: forcedWorkers ?? plan.workers, mode: forcedMode ?? plan.mode })
   const proverStartMs = Math.round(performance.now() - tProver)
   log(`prover ${prover.mode} ${prover.workers}w ${prover.threads}t; paying ${rows} rows on ${lanes} lanes`)
 

@@ -43,6 +43,14 @@ function swapBytes32(v: unknown): bigint {
   return out
 }
 
+/** The exact JSON string the wasm prover (and the native helper) parse. */
+function proverInputJson(input: Record<string, unknown>): string {
+  const patched = input.extDataHash !== undefined
+    ? { ...input, extDataHash: swapBytes32(input.extDataHash) }
+    : input
+  return JSON.stringify(bigintsToString(patched))
+}
+
 function bigintsToString(v: unknown): unknown {
   if (typeof v === "bigint") return v.toString(10)
   if (Array.isArray(v)) return v.map(bigintsToString)
@@ -124,12 +132,9 @@ class BrowserProverPool {
   // ProverOverride shape: input already passed through utils.stringifyBigInts
   // by the SDK; resolves {proof, publicSignals}.
   prove(input: Record<string, unknown>): Promise<{ proof: SnarkjsProof; publicSignals: string[] }> {
-    const patched = input.extDataHash !== undefined
-      ? { ...input, extDataHash: swapBytes32(input.extDataHash) }
-      : input
     const entry: PendingEntry = {
       id: this.id++,
-      inputJson: JSON.stringify(bigintsToString(patched)),
+      inputJson: proverInputJson(input),
       startedAt: performance.now(),
       resolve: () => {},
       reject: () => {},
@@ -219,7 +224,7 @@ export interface BrowserProverInfo {
   /** Mean dispatch→reply time — the actual proof math, slot-queue wait excluded. */
   serviceMs: number
   proves: number
-  mode: "mt" | "st"
+  mode: "mt" | "st" | "native"
   threads: number
 }
 
@@ -235,6 +240,7 @@ function workerCount(): number {
 // Idempotent: fetches artifacts + spawns workers once, then installs the
 // setProver hook. Concurrent callers share the same startup.
 export function ensureBrowserProver(opts?: { workers?: number; mode?: "mt" | "st" }): Promise<BrowserProverInfo> {
+  native = null
   // A run can request a specific pool shape (proverPlan); re-init when the
   // live pool doesn't match it — size or engine mode.
   if (
@@ -279,8 +285,61 @@ function info(p: BrowserProverPool): BrowserProverInfo {
 }
 
 export function browserProverInfo(): BrowserProverInfo | null {
+  if (native) {
+    return { workers: native.jobs, avgMs: native.count ? Math.round(native.totalMs / native.count) : 0,
+      serviceMs: native.count ? Math.round(native.totalMs / native.count) : 0, proves: native.count, mode: "native", threads: 0 }
+  }
   if (!pool) return null
   return info(pool)
+}
+
+// --- Native helper (crates/privacy-cash-prover `prover-server`) ------------
+// Same input JSON and compressed output as the wasm prover, proved natively
+// on the employer's own machine (~3x faster per core than wasm). Opt-in by
+// running the helper; the app detects it on loopback before a run.
+
+export const NATIVE_PROVER_URL = "http://127.0.0.1:8790"
+
+let native: { url: string; jobs: number; count: number; totalMs: number } | null = null
+
+/** The helper's {url, jobs} if it answers on loopback within `timeoutMs`. */
+export async function detectNativeProver(
+  url: string = NATIVE_PROVER_URL,
+  timeoutMs = 400,
+): Promise<{ url: string; jobs: number } | null> {
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), timeoutMs)
+  try {
+    const res = await fetch(`${url}/health`, { signal: ctl.signal })
+    if (!res.ok) return null
+    const body = (await res.json()) as { ok?: boolean; jobs?: number }
+    return body.ok ? { url, jobs: Math.max(1, Number(body.jobs) || 1) } : null
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** Route every SDK proof to the native helper. */
+export function useNativeProver(helper: { url: string; jobs: number }): BrowserProverInfo {
+  native = { url: helper.url, jobs: helper.jobs, count: 0, totalMs: 0 }
+  const n = native
+  setProver(async (input) => {
+    const t = performance.now()
+    const res = await fetch(`${n.url}/prove`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: proverInputJson(input),
+    })
+    const text = await res.text()
+    if (!res.ok) throw new Error(`native prover: ${text.slice(0, 300)}`)
+    const out = compressedToSnarkjs(JSON.parse(text))
+    n.count++
+    n.totalMs += performance.now() - t
+    return out
+  })
+  return browserProverInfo()!
 }
 
 /** Turn a requested worker count into the concrete pool shape. Threaded

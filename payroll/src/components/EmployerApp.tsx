@@ -17,7 +17,7 @@ import { TeamPage } from "@/components/TeamPage"
 import { UploadCard } from "@/components/UploadCard"
 import { WalletBar } from "@/components/WalletBar"
 import { usePayrollClient } from "@/hooks/usePayrollClient"
-import { ensureBrowserProver, proverPlan } from "@/lib/browserProver"
+import { detectNativeProver, ensureBrowserProver, useNativeProver, proverPlan } from "@/lib/browserProver"
 import { createEngine, type RunSnapshot } from "@/lib/engine"
 import { lamportsToSol, shortHash } from "@/lib/format"
 import { estimateTotals } from "@/lib/estimate"
@@ -178,8 +178,16 @@ export function EmployerApp({ page }: { page: Page }) {
           const rawMode = params.get("mode")
           const forcedMode: "mt" | "st" | undefined = rawMode === "mt" || rawMode === "st" ? rawMode : undefined
           const plan = proverPlan(lanes, navigator.hardwareConcurrency || 4)
-          const info = await ensureBrowserProver({ workers: forced ?? plan.workers, mode: forcedMode ?? plan.mode })
-          toast.info(`Prover: ${info.workers} ${info.mode === "mt" ? "MT" : "ST"} worker${info.workers === 1 ? "" : "s"}${info.mode === "mt" ? ` × ${info.threads} threads` : ""} · run: ${lanes} lane${lanes === 1 ? "" : "s"}`)
+          // A native helper on loopback (prover-server) proves ~3x faster per
+          // core and keeps the witness on this machine; else the wasm pool.
+          const helper = params.get("prover") === "wasm" ? null : await detectNativeProver()
+          if (helper) {
+            useNativeProver(helper)
+            toast.info(`Prover: native helper (${helper.jobs} parallel) · run: ${lanes} lane${lanes === 1 ? "" : "s"}`)
+          } else {
+            const info = await ensureBrowserProver({ workers: forced ?? plan.workers, mode: forcedMode ?? plan.mode })
+            toast.info(`Prover: ${info.workers} ${info.mode === "mt" ? "MT" : "ST"} worker${info.workers === 1 ? "" : "s"}${info.mode === "mt" ? ` × ${info.threads} threads` : ""} · run: ${lanes} lane${lanes === 1 ? "" : "s"}`)
+          }
         } catch (e) {
           toast.warning(`Browser prover unavailable, using snarkjs: ${(e as Error).message}`)
         }
