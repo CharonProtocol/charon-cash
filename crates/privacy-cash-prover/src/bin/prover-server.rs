@@ -13,8 +13,10 @@
 //! the server prints a random token (or takes PROVER_TOKEN); the user gives it
 //! to the app once. Before every run the app sends a random nonce to
 //! /health?nonce=..., and only sends inputs if the reply carries
-//! HMAC-SHA256(token, nonce) — a port squatter can't produce it. /prove also
-//! requires the token in `x-prover-token`.
+//! HMAC-SHA256(token, nonce) — a port squatter can't produce it. And the
+//! input itself travels AES-256-GCM encrypted under SHA-256("charon-prover-v1:"
+//! + token): a squatter that relays the challenge to the real helper still
+//! only ever sees ciphertext, and a request that doesn't decrypt is refused.
 //!
 //! Std-only HTTP/1.1 (one request per connection), bound to loopback.
 use std::io::{BufRead, BufReader, Read, Write};
@@ -22,10 +24,12 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Instant;
 
+use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Nonce};
 use hmac::{Hmac, Mac};
 use privacy_cash_prover::Prover;
 use rand::RngCore;
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 
 struct Slots {
     free: Mutex<usize>,
@@ -99,7 +103,7 @@ fn handle(
     reader.read_line(&mut line)?;
     let mut parts = line.split_whitespace();
     let (method, path) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
-    let (mut len, mut origin, mut presented) = (0usize, String::new(), String::new());
+    let (mut len, mut origin) = (0usize, String::new());
     loop {
         let mut h = String::new();
         if reader.read_line(&mut h)? == 0 || h == "\r\n" {
@@ -110,15 +114,13 @@ fn handle(
             len = v.trim().parse().unwrap_or(0);
         } else if lower.starts_with("origin:") {
             origin = h[7..].trim().to_string();
-        } else if lower.starts_with("x-prover-token:") {
-            presented = h[15..].trim().to_string();
         }
     }
     let allowed = origins.iter().any(|o| o == "*" || *o == origin);
     let cors = if allowed && !origin.is_empty() {
         format!(
             "Access-Control-Allow-Origin: {origin}\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\n\
-             Access-Control-Allow-Headers: content-type, x-prover-token\r\nAccess-Control-Allow-Private-Network: true\r\n\
+             Access-Control-Allow-Headers: content-type\r\nAccess-Control-Allow-Private-Network: true\r\n\
              Cross-Origin-Resource-Policy: cross-origin\r\nVary: Origin\r\n"
         )
     } else {
@@ -139,23 +141,24 @@ fn handle(
         ("OPTIONS", _) => reply(&mut conn, "204 No Content", "")?,
         ("GET", "/health") => {
             let nonce = query.split('&').find_map(|kv| kv.strip_prefix("nonce=")).unwrap_or("");
-            let mut mac = Hmac::<Sha256>::new_from_slice(token.as_bytes())?;
+            let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(token.as_bytes())?;
             mac.update(nonce.as_bytes());
             let mac = hex::encode(mac.finalize().into_bytes());
             reply(&mut conn, "200 OK", &format!(r#"{{"ok":true,"jobs":{jobs},"mac":"{mac}"}}"#))?
         }
         ("POST", "/prove") => {
-            if !ct_eq(presented.as_bytes(), token.as_bytes()) {
-                return Ok(reply(&mut conn, "401 Unauthorized", r#"{"error":"bad pairing token"}"#)?);
-            }
+
             if len > 1 << 20 {
                 return Ok(reply(&mut conn, "413 Payload Too Large", r#"{"error":"input too large"}"#)?);
             }
             let mut body = vec![0u8; len];
             reader.read_exact(&mut body)?;
+            let Some(input) = decrypt_input(&body, token) else {
+                return Ok(reply(&mut conn, "401 Unauthorized", r#"{"error":"not paired: input did not decrypt"}"#)?);
+            };
             slots.acquire();
             let t = Instant::now();
-            let out = prover.prove_json(std::str::from_utf8(&body)?);
+            let out = prover.prove_json(&input);
             slots.release();
             match out.and_then(|r| Ok(serde_json::to_string(&r)?)) {
                 Ok(json) => {
@@ -170,6 +173,17 @@ fn handle(
     Ok(())
 }
 
-fn ct_eq(a: &[u8], b: &[u8]) -> bool {
-    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+/// `{"iv":hex12,"ct":hex}` sealed with AES-256-GCM under
+/// SHA-256("charon-prover-v1:" + token) -> the circuit-input JSON.
+fn decrypt_input(body: &[u8], token: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let iv = hex::decode(v.get("iv")?.as_str()?).ok()?;
+    let ct = hex::decode(v.get("ct")?.as_str()?).ok()?;
+    if iv.len() != 12 {
+        return None;
+    }
+    let key = Sha256::digest(format!("charon-prover-v1:{token}").as_bytes());
+    let cipher = Aes256Gcm::new_from_slice(&key).ok()?;
+    let plain = cipher.decrypt(Nonce::from_slice(&iv), ct.as_ref()).ok()?;
+    String::from_utf8(plain).ok()
 }

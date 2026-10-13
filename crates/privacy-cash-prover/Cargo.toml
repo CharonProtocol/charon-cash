@@ -13,7 +13,7 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = ["native"]
 # Multi-threaded native build (tests, program tests, benches).
-native = ["parallel", "dep:hmac", "dep:sha2"]
+native = ["parallel", "dep:aes-gcm", "dep:hmac", "dep:sha2"]
 # Not ark-ec/ark-groth16 `parallel`: their MSM spawns OS threads per call, which
 # wasm threads cannot do. src/groth16.rs parallelises the MSMs on the rayon pool.
 parallel = [
@@ -51,6 +51,7 @@ wasm-bindgen = { version = "=0.2.127", optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
 
 # prover-server pairing (HMAC challenge); native only
+aes-gcm = { version = "0.10", optional = true }
 hmac = { version = "0.12", optional = true }
 sha2 = { version = "0.10", optional = true }
 

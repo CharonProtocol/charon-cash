@@ -297,9 +297,10 @@ export function browserProverInfo(): BrowserProverInfo | null {
 // Optional: same input JSON and compressed output as the wasm prover, proved
 // natively on the employer's own machine (~3x faster per core). The witness
 // holds note spend keys, so it is only ever sent to a helper the user paired
-// with: the helper prints a token, the app stores it, and before each run the
-// helper must answer a fresh nonce with HMAC-SHA256(token, nonce). Anything
-// else listening on the port gets nothing.
+// with: the helper prints a pairing code, the user enters it in Settings, the
+// helper must answer a fresh nonce with HMAC-SHA256(code, nonce) before each
+// run, and every input is AES-GCM sealed to a key derived from the code — a
+// squatter on the port (even one relaying the challenge) reads nothing.
 
 export const NATIVE_PROVER_URL = "http://127.0.0.1:8790"
 const TOKEN_KEY = "payroll:prover-token"
@@ -322,6 +323,17 @@ export function setNativeProverToken(token: string | null): void {
   } catch {
     /* storage unavailable: helper stays off */
   }
+}
+
+/** AES-256-GCM under SHA-256("charon-prover-v1:" + token): only the paired
+ *  helper can read the witness, even if something relays the challenge. */
+async function sealForHelper(token: string, plaintext: string): Promise<string> {
+  const raw = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`charon-prover-v1:${token}`))
+  const key = await crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt"])
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(plaintext)))
+  const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("")
+  return JSON.stringify({ iv: hex(iv), ct: hex(ct) })
 }
 
 async function hmacHex(key: string, msg: string): Promise<string> {
@@ -364,8 +376,8 @@ export function useNativeProver(helper: { url: string; token: string; jobs: numb
     const t = performance.now()
     const res = await fetch(`${n.url}/prove`, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-prover-token": n.token },
-      body: proverInputJson(input),
+      headers: { "content-type": "application/json" },
+      body: await sealForHelper(n.token, proverInputJson(input)),
     })
     const text = await res.text()
     if (!res.ok) throw new Error(`native prover: ${text.slice(0, 300)}`)

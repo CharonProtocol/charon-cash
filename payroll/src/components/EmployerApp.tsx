@@ -17,7 +17,7 @@ import { TeamPage } from "@/components/TeamPage"
 import { UploadCard } from "@/components/UploadCard"
 import { WalletBar } from "@/components/WalletBar"
 import { usePayrollClient } from "@/hooks/usePayrollClient"
-import { detectNativeProver, ensureBrowserProver, setNativeProverToken, useNativeProver, proverPlan } from "@/lib/browserProver"
+import { detectNativeProver, ensureBrowserProver, useNativeProver, proverPlan } from "@/lib/browserProver"
 import { createEngine, type RunSnapshot } from "@/lib/engine"
 import { lamportsToSol, shortHash } from "@/lib/format"
 import { estimateTotals } from "@/lib/estimate"
@@ -180,10 +180,8 @@ export function EmployerApp({ page }: { page: Page }) {
           const plan = proverPlan(lanes, navigator.hardwareConcurrency || 4)
           // A native helper on loopback (prover-server) proves ~3x faster per
           // core and keeps the witness on this machine; else the wasm pool.
-          // Paired helpers only (?proverToken=... stores the pairing); a
-          // helper that fails the HMAC challenge is ignored.
-          const pairing = params.get("proverToken")
-          if (pairing) setNativeProverToken(pairing)
+          // Paired helpers only (Settings -> pairing code); a helper that
+          // fails the HMAC challenge is ignored.
           const helper = params.get("prover") === "wasm" ? null : await detectNativeProver()
           if (helper) {
             useNativeProver(helper)

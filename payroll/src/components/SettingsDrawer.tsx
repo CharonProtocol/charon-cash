@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { config } from "@/lib/config"
+import { nativeProverToken, setNativeProverToken } from "@/lib/browserProver"
 
 const PRESETS = {
   local: {
@@ -36,6 +37,7 @@ export function SettingsDrawer({ onClose }: { onClose: () => void }) {
   const initial = config.get()
   const [backendUrl, setBackendUrl] = useState(initial.backendUrl)
   const [rpcUrl, setRpcUrl] = useState(initial.rpcUrl)
+  const [proverToken, setProverToken] = useState(() => nativeProverToken() ?? "")
   const [preset, setPreset] = useState<PresetKey | null>(() =>
     detectPreset(initial.backendUrl, initial.rpcUrl),
   )
@@ -48,6 +50,7 @@ export function SettingsDrawer({ onClose }: { onClose: () => void }) {
 
   const save = () => {
     config.set({ backendUrl, rpcUrl })
+    setNativeProverToken(proverToken.trim() || null)
     location.reload()
   }
 
@@ -104,6 +107,21 @@ export function SettingsDrawer({ onClose }: { onClose: () => void }) {
               }}
               placeholder="https://api.devnet.solana.com"
             />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="prover-token">Native prover pairing code (optional)</Label>
+            <Input
+              id="prover-token"
+              type="password"
+              autoComplete="off"
+              value={proverToken}
+              onChange={(e) => setProverToken(e.target.value)}
+              placeholder="printed by prover-server at start"
+            />
+            <p className="text-xs text-muted-foreground">
+              Leave empty to prove in the browser. With a code, runs use the paired native helper
+              on this computer; inputs are encrypted to it and never leave the machine.
+            </p>
           </div>
           <p className="text-xs text-muted-foreground">
             Saving reloads the app so the SDK re-points at the new backend. For the local simnet,
