@@ -6,6 +6,10 @@ export interface PayrollConfig {
   /** Optional faster RPC (e.g. Helius). Used for confirmations so signature
    *  websockets and status calls skip the public endpoint's rate limits. */
   fastRpcUrl?: string
+  /** CPU cores the prover may plan for; unset = what the browser reports.
+   *  Privacy browsers fake navigator.hardwareConcurrency (Helium reported 4
+   *  and 6 on an 8-core M1, which halved the prover pool). */
+  cores?: number
 }
 
 const KEY = "payroll:settings:v1"
@@ -28,6 +32,7 @@ function read(): PayrollConfig {
       backendUrl: parsed.backendUrl?.trim() || DEFAULTS.backendUrl,
       rpcUrl: parsed.rpcUrl?.trim() || DEFAULTS.rpcUrl,
       fastRpcUrl: parsed.fastRpcUrl?.trim() || DEFAULTS.fastRpcUrl,
+      cores: Number.isInteger(parsed.cores) && parsed.cores! > 0 ? parsed.cores : undefined,
     }
   } catch {
     return { ...DEFAULTS }
@@ -41,7 +46,12 @@ export const config = {
     if (patch.backendUrl?.trim()) next.backendUrl = patch.backendUrl.trim()
     if (patch.rpcUrl?.trim()) next.rpcUrl = patch.rpcUrl.trim()
     if (patch.fastRpcUrl !== undefined) next.fastRpcUrl = patch.fastRpcUrl.trim() || undefined
+    if ("cores" in patch) next.cores = patch.cores && patch.cores > 0 ? Math.min(128, Math.floor(patch.cores)) : undefined
     localStorage.setItem(KEY, JSON.stringify(next))
+  },
+  /** Cores the prover plans for: the Settings value, else the browser's report. */
+  cores(): number {
+    return read().cores ?? (navigator.hardwareConcurrency || 4)
   },
   /** RPC for latency-sensitive calls (confirm), falling back to the base. */
   confirmRpcUrl(): string {

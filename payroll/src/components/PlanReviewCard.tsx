@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { RangeSlider } from "@/components/motion/range-slider"
 import { Ms } from "@/components/motion/ms"
 import { rawToHuman, shortHash } from "@/lib/format"
+import { config } from "@/lib/config"
 import { estimateTotals, recommendLanes } from "@/lib/estimate"
 import { validateDecimals } from "@/lib/parse"
 import type { Asset, ParsedFile, RunMode } from "@/lib/types"
@@ -63,7 +64,7 @@ export const PlanReviewCard = forwardRef<
   // more than they save below ~10 rows); big runs overlap chain latency
   // across chains, capped by the machine's cores. The user can always
   // override — the recommendation just preselects and is badged below.
-  const cores = navigator.hardwareConcurrency || 4
+  const cores = config.cores()
   const rowCount = parsed?.entries.length ?? 0
   // Same list the picker renders — the recommendation must land on a real
   // button or the "rec" badge (and the preselection) silently disappears

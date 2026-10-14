@@ -19,6 +19,7 @@ import { WalletBar } from "@/components/WalletBar"
 import { usePayrollClient } from "@/hooks/usePayrollClient"
 import { browserProverInfo, detectNativeProver, ensureBrowserProver, useNativeProver, proverPlan } from "@/lib/browserProver"
 import { createEngine, type RunSnapshot } from "@/lib/engine"
+import { config } from "@/lib/config"
 import { planRun } from "@/lib/fees"
 import { lamportsToSol, shortHash } from "@/lib/format"
 import { estimateTotals } from "@/lib/estimate"
@@ -125,7 +126,7 @@ export function EmployerApp({ page }: { page: Page }) {
     // Warm the shape a full run asks for (proverPlan gives the same pool for
     // every lane count >= 3): warming one all-core worker made the first run
     // tear it down and cold-start the real pool inside "Sign & deposit" (~5s).
-    void ensureBrowserProver(proverPlan(8, navigator.hardwareConcurrency || 4))
+    void ensureBrowserProver(proverPlan(8, config.cores()))
       .then((info) => {
         if (alive)
           toast.success(
@@ -203,7 +204,7 @@ export function EmployerApp({ page }: { page: Page }) {
           const forced = Number(params.get("provers") ?? "") || undefined
           const rawMode = params.get("mode")
           const forcedMode: "mt" | "st" | undefined = rawMode === "mt" || rawMode === "st" ? rawMode : undefined
-          const plan = proverPlan(lanes, navigator.hardwareConcurrency || 4)
+          const plan = proverPlan(lanes, config.cores())
           // A native helper on loopback (prover-server) proves ~3x faster per
           // core and keeps the witness on this machine; else the wasm pool.
           // Paired helpers only (Settings -> pairing code); a helper that
@@ -239,7 +240,8 @@ export function EmployerApp({ page }: { page: Page }) {
           // which prover ran (native helper / MT teams / ST pool) and its pace
           prover: browserProverInfo(),
           crossOriginIsolated: (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true,
-          cores: navigator.hardwareConcurrency || 0,
+          cores: config.cores(),
+          reportedCores: navigator.hardwareConcurrency || 0,
           startedAt: r.startedAt,
           fundedAt: r.fundedAt,
           finishedAt: r.finishedAt,

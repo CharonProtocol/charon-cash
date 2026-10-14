@@ -38,6 +38,8 @@ export function SettingsDrawer({ onClose }: { onClose: () => void }) {
   const [backendUrl, setBackendUrl] = useState(initial.backendUrl)
   const [rpcUrl, setRpcUrl] = useState(initial.rpcUrl)
   const [proverToken, setProverToken] = useState(() => nativeProverToken() ?? "")
+  const [cores, setCores] = useState(() => (initial.cores ? String(initial.cores) : ""))
+  const reported = navigator.hardwareConcurrency || 0
   const [preset, setPreset] = useState<PresetKey | null>(() =>
     detectPreset(initial.backendUrl, initial.rpcUrl),
   )
@@ -49,7 +51,7 @@ export function SettingsDrawer({ onClose }: { onClose: () => void }) {
   }
 
   const save = () => {
-    config.set({ backendUrl, rpcUrl })
+    config.set({ backendUrl, rpcUrl, cores: Number(cores) || undefined })
     setNativeProverToken(proverToken.trim() || null)
     location.reload()
   }
@@ -121,6 +123,23 @@ export function SettingsDrawer({ onClose }: { onClose: () => void }) {
             <p className="text-xs text-muted-foreground">
               Leave empty to prove in the browser. With a code, runs use the paired native helper
               on this computer; inputs are encrypted to it and never leave the machine.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="cores">CPU cores for proving</Label>
+            <Input
+              id="cores"
+              type="number"
+              min={1}
+              max={128}
+              value={cores}
+              onChange={(e) => setCores(e.target.value)}
+              placeholder={`auto (browser reports ${reported || "?"})`}
+            />
+            <p className="text-xs text-muted-foreground">
+              Leave empty to use what the browser reports. Privacy browsers (Helium, Brave) can
+              report fewer cores than the machine has, which shrinks the prover pool; set the real
+              number (an M1 has 8).
             </p>
           </div>
           <p className="text-xs text-muted-foreground">

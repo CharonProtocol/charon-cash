@@ -4,6 +4,7 @@
 // snarkjs. The wasm prove() is synchronous and blocks its worker, so
 // parallelism comes from the pool; size it to the machine's cores.
 import { getBackendUrl, setProver, type ProverOverride } from "privacy-cash-sdk"
+import { config } from "./config"
 import { compressedToSnarkjs } from "./groth16-decompress"
 
 // Mirrors the snarkjs Proof shape from privacy-cash-sdk/src/prover (the SDK
@@ -93,7 +94,7 @@ class BrowserProverPool {
     const mode = modeOverride ?? (isolated ? "mt" : "st")
     const shape =
       mode === "mt"
-        ? poolShape(workers, navigator.hardwareConcurrency || 4, isolated)
+        ? poolShape(workers, config.cores(), isolated)
         : { count: Math.max(1, workers), threadsPerWorker: 1 }
     this.threadsPerWorker = shape.threadsPerWorker
     this.mode = mode
@@ -238,7 +239,7 @@ export interface BrowserProverInfo {
  * workers land on efficiency cores and prove slower, but still add aggregate
  * throughput. Below that, stay conservative — the lanes and UI need headroom. */
 function workerCount(): number {
-  const cores = navigator.hardwareConcurrency || 4
+  const cores = config.cores()
   return Math.max(2, Math.min(cores >= 8 ? 6 : 4, cores))
 }
 

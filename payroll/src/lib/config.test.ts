@@ -24,3 +24,12 @@ describe("config", () => {
     expect(config.get().backendUrl).toBe("https://x.dev")
   })
 })
+
+describe("cores override", () => {
+  it("uses the Settings value when set, the browser's report otherwise", () => {
+    config.set({ cores: 8 })
+    expect(config.cores()).toBe(8)
+    config.set({ cores: undefined })
+    expect(config.cores()).toBe(navigator.hardwareConcurrency || 4)
+  })
+})
