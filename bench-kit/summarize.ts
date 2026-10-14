@@ -13,6 +13,14 @@ const runs = pairs.map((pair) => {
   } catch {
     /* verification output missing: reported as such */
   }
+  // distinct failure reasons, most common first, so a failed run explains itself
+  const counts = new Map<string, number>()
+  for (const row of r.perRow ?? []) {
+    if (row.status === "sent" || !row.error) continue
+    const key = String(row.error).slice(0, 400)
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  const errors = [...counts].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([error, rows]) => ({ rows, error }))
   return {
     label: r.label,
     at: r.at,
@@ -33,6 +41,7 @@ const runs = pairs.map((pair) => {
       proofSec: r.prover.serviceMs / 1000,
     },
     verified: v,
+    errors,
   }
 })
 writeFileSync(out, JSON.stringify({ machine: JSON.parse(machine), runs }, null, 2) + "\n")
@@ -43,4 +52,5 @@ for (const r of runs) {
       `(${r.prover.workers} prover workers, ${r.prover.proofSec.toFixed(2)}s/proof) — ` +
       `${r.sent} sent, ${r.failed} failed, notes verified ${v.allChecksPassed ?? "?"}/${v.employees ?? "?"}`,
   )
+  for (const e of r.errors) console.log(`      ✗ ${e.rows} rows: ${e.error}`)
 }

@@ -105,6 +105,16 @@ else
     "$(( $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1048576 ))")
 fi
 bun "$KIT/summarize.ts" "$OUT" "$MACHINE" "${RUNS[@]}"
+# a failed run ships its evidence: tool versions + backend/chain log tails next to the result
+if grep -q '"failed": [1-9]' "$OUT"; then
+  LOG="${OUT%.json}.log"
+  {
+    echo "== versions"; echo "bun $(bun --version)"; echo "$SOLANA_V"; surfpool --version; uname -a
+    echo; echo "== backend log (tail)"; tail -60 /tmp/privacy-cash-backend.log 2>/dev/null
+    echo; echo "== stack log (tail)"; tail -40 "$LOCAL/stack.log" 2>/dev/null
+  } > "$LOG"
+  echo "    ✗ some payouts failed — reasons above; also send $LOG"
+fi
 echo
 cat <<EOF
 ✅ done — send this file back: $OUT
