@@ -33,7 +33,8 @@ async function main() {
   config.set({ backendUrl: backend, rpcUrl: rpc, fastRpcUrl: "" })
   config.apply()
 
-  const recipients = (await (await fetch(`${collector}/recipients`)).json()) as string[]
+  const csv = (await (await fetch(`${collector}/entries`)).json()) as Array<{ address: string; amountHuman: string }> | null
+  const recipients = csv ? csv.map((e) => e.address) : ((await (await fetch(`${collector}/recipients`)).json()) as string[])
   if (recipients.length < rows) throw new Error(`only ${recipients.length} registered recipients, need ${rows}`)
 
   // --wallet file: reuse one wallet across runs (its note history grows like a real employer's)
@@ -69,7 +70,6 @@ async function main() {
   const proverStartMs = Math.round(performance.now() - tProver)
   log(`prover ${prover.mode} ${prover.workers}w ${prover.threads}t; paying ${rows} rows on ${lanes} lanes`)
 
-  const csv = (await (await fetch(`${collector}/entries`)).json()) as Array<{ address: string; amountHuman: string }> | null
   const entries = csv ? csv.slice(0, rows) : recipients.slice(0, rows).map((address) => ({ address, amountHuman: amount }))
   const engine = createEngine(client)
   const t0 = Date.now()

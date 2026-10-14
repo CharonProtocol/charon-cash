@@ -38,7 +38,8 @@ need cargo "Rust" "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | s
 need solana "Solana CLI" 'sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"'
 need surfpool "Surfpool (local Solana)" "curl -sL https://run.surfpool.run/ | bash"
 [ -f "$HOME/.config/solana/id.json" ] || solana-keygen new --no-bip39-passphrase --silent -o "$HOME/.config/solana/id.json"
-echo "    ok: bun $(bun --version), $(solana --version | head -c 40), $(surfpool --version)"
+SOLANA_V=$(solana --version 2>/dev/null || true)   # read whole: cutting the pipe makes solana panic
+echo "    ok: bun $(bun --version), ${SOLANA_V%% (*}, $(surfpool --version)"
 
 echo "▶ 2/6  Dependencies + SDK build"
 bun install --silent >/dev/null

@@ -35,7 +35,9 @@ const chrome =
     return found.at(-1)
   })()
 const recipientsFile = args.recipients ?? path.join(here, "../.local-recipients.json")
-const recipients = Object.keys(JSON.parse(readFileSync(recipientsFile, "utf8")))
+// the local registry file only exists on machines that enrolled wallets by hand;
+// --csv runs (bench-kit) bring their own registered employees
+const recipients = existsSync(recipientsFile) ? Object.keys(JSON.parse(readFileSync(recipientsFile, "utf8"))) : []
 // --wallet path: a throwaway local-chain keypair (JSON byte array), created on first use
 const walletKey = args.wallet
   ? (() => {
