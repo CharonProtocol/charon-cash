@@ -40,13 +40,21 @@ writeFileSync(
   { mode: 0o600 },
 )
 
+const registry: Record<string, { note_pubkey: string; enc_pubkey: string }> = {}
 for (const kp of employees) {
-  await publishRecipientKeys({
+  const keys = await publishRecipientKeys({
     publicKey: kp.publicKey,
     signMessage: async (m: Uint8Array) => nacl.sign.detached(m, kp.secretKey),
     signTransaction: async <T>(tx: T) => tx,
   })
+  registry[kp.publicKey.toBase58()] = { note_pubkey: keys.notePubkey, enc_pubkey: keys.encPubkey }
 }
+
+// The backend keeps API registrations in memory; also merge them (public keys
+// only) into the seed file run.sh loads, so the employees survive a restart.
+const seedFile = path.join(import.meta.dir, "../payroll/.local-recipients.json")
+const seed = existsSync(seedFile) ? JSON.parse(readFileSync(seedFile, "utf8")) : {}
+writeFileSync(seedFile, JSON.stringify({ ...seed, ...registry }, null, 1))
 
 const amount = (i: number) => (0.00105 + 0.00005 * (i % 20)).toFixed(5)
 const csv = ["address,amount,memo", ...employees.map((kp: { publicKey: { toBase58(): string } }, i: number) => `${kp.publicKey.toBase58()},${amount(i)},employee-${i + 1}`)]
