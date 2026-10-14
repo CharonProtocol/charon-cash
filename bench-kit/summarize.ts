@@ -53,4 +53,8 @@ for (const r of runs) {
       `${r.sent} sent, ${r.failed} failed, notes verified ${v.allChecksPassed ?? "?"}/${v.employees ?? "?"}`,
   )
   for (const e of r.errors) console.log(`      ✗ ${e.rows} rows: ${e.error}`)
+  // a verification miss names its reason (no note found, amount, commitment, spent)
+  const problems = (r.verified as { problems?: string[] }).problems ?? []
+  for (const p of problems.slice(0, 3)) console.log(`      ✗ verify: ${p}`)
+  if (problems.length > 3) console.log(`      … ${problems.length - 3} more in the result file`)
 }
