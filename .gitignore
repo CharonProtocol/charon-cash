@@ -47,3 +47,7 @@ programs/privacy-cash/target/
 programs/privacy-cash/artifacts/circuits/*.ptau
 refs/
 crates/*/target/
+
+# bench kit: local test keys + results stay on this machine
+bench-kit/.local/
+bench-kit/results/
