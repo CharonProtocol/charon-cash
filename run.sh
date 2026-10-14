@@ -39,11 +39,15 @@ echo "▶ 3/7  Program binary (build when the source changed)…"
 # Fingerprint of the program source (declare_id included): a binary left over
 # from another branch or checkout must never be reused — it decodes a
 # different instruction layout ("invalid instruction data" on every deposit).
-SRC_HASH=$( (cat programs/privacy-cash/Cargo.toml; find programs/privacy-cash/src -name '*.rs' | sort | xargs cat) | shasum -a 256 | cut -d' ' -f1)
+# Classic sBPF (v0) on purpose: newer CLIs can target sBPFv3, where the
+# Poseidon syscall light-hasher 4.0.0 uses no longer exists (build error). The
+# local chain accepts v0; the v3 migration is a separate dependency upgrade.
+SBF_ARCH=v0
+SRC_HASH=$( (echo "$SBF_ARCH"; cat programs/privacy-cash/Cargo.toml; find programs/privacy-cash/src -name '*.rs' | sort | xargs cat) | shasum -a 256 | cut -d' ' -f1)
 if [ ! -f target/deploy/privacy_cash.so ] || [ "$(cat target/deploy/.privacy_cash.src 2>/dev/null)" != "$SRC_HASH" ]; then
   echo "    building (5-10 min on first run)…"
   rm -f target/deploy/privacy_cash.so
-  cargo build-sbf --manifest-path "$ROOT/programs/privacy-cash/Cargo.toml" 2>&1 | tail -1
+  cargo build-sbf --arch "$SBF_ARCH" --manifest-path "$ROOT/programs/privacy-cash/Cargo.toml" 2>&1 | tail -1
   [ -f target/deploy/privacy_cash.so ] && echo "$SRC_HASH" > target/deploy/.privacy_cash.src
 fi
 [ -f target/deploy/privacy_cash.so ] || { echo "    ✗ build failed — see output above"; exit 1; }
