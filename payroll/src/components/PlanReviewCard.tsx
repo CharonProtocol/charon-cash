@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { RangeSlider } from "@/components/motion/range-slider"
 import { Ms } from "@/components/motion/ms"
 import { rawToHuman, shortHash } from "@/lib/format"
-import { estimateTotals } from "@/lib/estimate"
+import { estimateTotals, recommendLanes } from "@/lib/estimate"
 import { validateDecimals } from "@/lib/parse"
 import type { Asset, ParsedFile, RunMode } from "@/lib/types"
 
@@ -77,12 +77,7 @@ export const PlanReviewCard = forwardRef<
     ...(cores >= 24 ? [24] : []),
     ...(cores >= 32 ? [32] : []),
   ]
-  const rawRec =
-    rowCount === 0 || rowCount < 10
-      ? 2
-      : rowCount < 50
-        ? 4
-        : Math.min(8, Math.max(4, cores)) // 8 lanes measured fastest for 100 rows on 8 cores
+  const rawRec = recommendLanes(rowCount, cores)
   const recommendedLanes = laneOptions.reduce((a, b) =>
     Math.abs(b - rawRec) < Math.abs(a - rawRec) ? b : a,
   )

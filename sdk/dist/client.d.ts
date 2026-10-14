@@ -24,7 +24,10 @@ export interface DepositResult {
  * wave. The circuit only checks that the outputs sum to ext − fee, which
  * holds for any split; both halves must be > 0 to be spendable notes.
  */
-export declare function splitDepositAmounts(extAmount: BN, fee: BN): {
+/** A base58 transaction signature (64 bytes -> 86-88 chars), not a relayer
+ * placeholder such as "pending". */
+export declare function isTxSignature(s: string | null | undefined): s is string;
+export declare function splitDepositAmounts(extAmount: BN, fee: BN, first?: BN): {
     half: BN;
     rem: BN;
 };
@@ -55,6 +58,15 @@ export declare function shouldRecheckSpent(opts: {
     recheckSpent?: boolean;
     quick?: string;
 } | undefined, lastSpentRecheckAt: number, now: number): boolean;
+/** transferNote result; `second` is set when the call paid a second recipient. */
+export type TransferNoteResult = WithdrawResult & {
+    leafIndex: number;
+    commitment: string;
+    second?: {
+        leafIndex: number;
+        commitment: string;
+    };
+};
 export interface WithdrawResult {
     signature: string;
     recipientLamports: number;
@@ -213,6 +225,7 @@ export declare class PrivacyCashClient {
     private locateNoteLeaf;
     depositSOL(amountLamports: number, opts?: {
         split?: boolean;
+        firstAmount?: number;
     }): Promise<DepositResult>;
     withdrawSOL(grossLamports: number, recipient: PublicKey | string, opts?: {
         relay?: boolean;
@@ -233,10 +246,15 @@ export declare class PrivacyCashClient {
         inputNotes?: Array<{
             blinding: string;
         }>;
-    }): Promise<WithdrawResult & {
-        leafIndex: number;
-        commitment: string;
-    }>;
+        /** Exact relayer fee (overrides the bps + floor default). */
+        fee?: number;
+        /** Pay a second recipient with output 2 instead of change: the inputs
+         * must cover both nets + fee exactly (no change slot is left). */
+        second?: {
+            recipient: PublicKey | string;
+            net: number;
+        };
+    }): Promise<TransferNoteResult>;
     /** SPL twin of transferNoteSOL on a registered mint's tree. */
     transferNoteSPL(mint: PublicKey | string, recipient: PublicKey | string, netRaw: number, opts?: {
         relay?: boolean;
@@ -247,12 +265,18 @@ export declare class PrivacyCashClient {
         inputNotes?: Array<{
             blinding: string;
         }>;
-    }): Promise<WithdrawResult & {
-        leafIndex: number;
-        commitment: string;
-    }>;
+        /** Exact relayer fee (overrides the bps + floor default). */
+        fee?: number;
+        /** Pay a second recipient with output 2 instead of change: the inputs
+         * must cover both nets + fee exactly (no change slot is left). */
+        second?: {
+            recipient: PublicKey | string;
+            net: number;
+        };
+    }): Promise<TransferNoteResult>;
     depositSPL(mint: PublicKey | string, amountRaw: number | string, opts?: {
         split?: boolean;
+        firstAmount?: number;
     }): Promise<DepositResult>;
     withdrawSPL(mint: PublicKey | string, grossRaw: number | string, recipient: PublicKey | string, opts?: {
         relay?: boolean;

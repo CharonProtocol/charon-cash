@@ -29,3 +29,16 @@ export function estimateTotals(
       : (totalNet * BigInt(bps) + 9_999n) / 10_000n
   return { totalNet, totalFees }
 }
+
+/**
+ * Recommended payout lanes. Small runs pay faster serially (splits cost more
+ * than they save below ~10 rows). Big runs keep about two lanes per 2-thread
+ * prover team so a team never idles during a lane's relay + change handoff:
+ * 8 lanes on 8 cores (measured fastest there), scaling to 16 on 16+ cores.
+ */
+export function recommendLanes(rows: number, cores: number): number {
+  if (rows < 10) return 2
+  if (rows < 50) return 4
+  const teams = Math.min(8, Math.floor(cores / 2))
+  return cores >= 12 ? Math.min(16, 2 * teams) : 8
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { PublicKey } from "@solana/web3.js"
-import { PayrollEngine, NoteLedger, ADJUDICATE_POLLS, treeKeyOf, type EngineClient, type RunRequest, type RunSnapshot } from "./engine"
+import { PayrollEngine, NoteLedger, ADJUDICATE_POLLS, buildPayoutTree, planExactLanes, treeKeyOf, type EngineClient, type RunRequest, type RunSnapshot } from "./engine"
 import type { Asset, PayrollEntry } from "./types"
 
 const E: PayrollEntry[] = [
@@ -241,16 +241,23 @@ describe("PayrollEngine", () => {
           "a withdrawal for one of these nullifiers is already being processed",
         )
       },
-      signatureIfSpent: async (blindings) => (blindings.length ? "LANDED-SIG" : null),
+      // each payout spent its own note, so each lands its own tx; a landed
+      // note leaves the spendable set
+      signatureIfSpent: async (blindings) => {
+        if (!blindings.length) return null
+        landed.add(blindings[0])
+        return `LANDED-${blindings[0]}`
+      },
     }
+    const landed = new Set<string>()
     const notes = [1, 2, 3].map((i) => ({
       id: `n${i}`,
-      amount: (2n * 10n ** 9n).toString(),
+      amount: (5n * 10n ** 9n).toString(),
       blinding: `blind-${i}`,
     }))
     const engine = new PayrollEngine({
       client,
-      listNotes: () => notes,
+      listNotes: () => notes.filter((x) => !landed.has(x.blinding)),
       waitUntilIndexed: async () => {},
       confirmSignature: async (): Promise<"confirmed" | "failed" | "unknown"> => "confirmed",
       now: () => 1,
@@ -260,9 +267,49 @@ describe("PayrollEngine", () => {
     const receipt = await engine.run(req({ vaultRaw: 10n ** 18n, mode: "shielded" }))
     expect(receipt.summary.sent).toBe(3)
     expect(receipt.entries.every((e) => e.status === "sent")).toBe(true)
-    expect(receipt.entries.every((e) => e.txSignature === "LANDED-SIG")).toBe(true)
+    expect(receipt.entries.every((e) => e.txSignature?.startsWith("LANDED-blind-"))).toBe(true)
+    expect(new Set(receipt.entries.map((e) => e.txSignature)).size).toBe(3)
     expect(receipt.entries.every((e) => e.attempts === 1)).toBe(true)
     expect(receipt.entries.every((e) => e.error === undefined)).toBe(true)
+  })
+
+  it("never reports another row's tx as this row's payout (one note spent twice): retries on a fresh note", async () => {
+    // Row B's relay was refused after broadcast because row A had already
+    // spent the same note; the nullifier lookup then shows A's signature.
+    // B must not inherit it - it retries and is paid by its own tx.
+    const { client: base } = mockClient({ fails: new Map() })
+    let n = 0
+    const notes = [1, 2, 3, 4].map((i) => ({ id: `n${i}`, amount: (5n * 10n ** 9n).toString(), blinding: `blind-${i}` }))
+    const spentBy = new Map<string, string>()
+    const client: EngineClient = {
+      ...base,
+      transferNoteSOL: async (recipient, _net, opts) => {
+        await opts?.onSubmitted?.({})
+        const b = opts!.inputNotes![0].blinding
+        // the first payout to reach the relayer on blind-1 lands; a second
+        // spend of blind-1 is refused after broadcast
+        if (spentBy.has(b)) throw new Error("one of the input nullifiers has already been spent (by tx pending)")
+        const sig = `SIG-${recipient[0]}-${++n}`
+        spentBy.set(b, sig)
+        if (recipient[0] === "A") spentBy.set("blind-2", sig) // A's tx also burned blind-2 (the resurrected copy)
+        return { signature: sig, leafIndex: 10 + n, commitment: `0x${n}` }
+      },
+      signatureIfSpent: async (blindings) => spentBy.get(blindings[0]) ?? null,
+    }
+    const engine = new PayrollEngine({
+      client,
+      listNotes: () => notes.filter((x) => !spentBy.has(x.blinding)),
+      waitUntilIndexed: async () => {},
+      confirmSignature: async (): Promise<"confirmed" | "failed" | "unknown"> => "confirmed",
+      now: () => 1,
+      newId: () => "run1",
+      sleep: async () => {},
+    })
+    const receipt = await engine.run(req({ vaultRaw: 10n ** 18n, mode: "shielded", lanes: 1 }))
+    expect(receipt.summary.sent).toBe(3)
+    const sigs = receipt.entries.map((e) => e.txSignature)
+    expect(new Set(sigs).size).toBe(3)
+    expect(receipt.entries.map((e) => e.txSignature?.split("-")[1])).toEqual(["A", "B", "C"])
   })
 
   it("releases pins and retries when adjudication finds nothing on-chain", async () => {
@@ -320,14 +367,17 @@ describe("PayrollEngine", () => {
           "a withdrawal for one of these nullifiers is already being processed",
         )
       },
-      signatureIfSpent: async () => {
+      signatureIfSpent: async (blindings) => {
         polls++
-        return polls % 3 === 0 ? "POLL-SIG" : null
+        if (polls % 3 !== 0) return null
+        landed.add(blindings[0])
+        return `POLL-SIG-${blindings[0]}`
       },
     }
+    const landed = new Set<string>()
     const notes = [1, 2, 3].map((i) => ({
       id: `n${i}`,
-      amount: (2n * 10n ** 9n).toString(),
+      amount: (5n * 10n ** 9n).toString(),
       blinding: `blind-${i}`,
     }))
     // the kick gate is clock-based (min 20s between kicks), so drive a fake
@@ -336,7 +386,7 @@ describe("PayrollEngine", () => {
     let clock = 0
     const engine = new PayrollEngine({
       client,
-      listNotes: () => notes,
+      listNotes: () => notes.filter((x) => !landed.has(x.blinding)),
       waitUntilIndexed: async () => {},
       confirmSignature: async (): Promise<"confirmed" | "failed" | "unknown"> => "confirmed",
       kickIndexer: async () => {
@@ -351,7 +401,8 @@ describe("PayrollEngine", () => {
     const receipt = await engine.run(req({ vaultRaw: 10n ** 18n, mode: "shielded" }))
     expect(receipt.summary).toEqual({ sent: 3, failed: 0, total: 3 })
     expect(receipt.entries.every((e) => e.status === "sent")).toBe(true)
-    expect(receipt.entries.every((e) => e.txSignature === "POLL-SIG")).toBe(true)
+    expect(receipt.entries.every((e) => e.txSignature?.startsWith("POLL-SIG-blind-"))).toBe(true)
+    expect(new Set(receipt.entries.map((e) => e.txSignature)).size).toBe(3)
     expect(receipt.entries.every((e) => e.attempts === 1)).toBe(true)
     expect(kicks).toBeGreaterThanOrEqual(1)
   })
@@ -462,6 +513,7 @@ describe("PayrollEngine", () => {
         entries: [{ address: "D".repeat(32), amountHuman: "0.0005" }],
         vaultRaw: 0n,
         mode: "shielded",
+        tree: false,
         minTransferFee: 10_000,
       }),
     )
@@ -484,6 +536,7 @@ describe("PayrollEngine", () => {
         })),
         vaultRaw: 0n,
         mode: "shielded",
+        tree: false,
       }),
     )
     // replicate the spec: base = 12x(net+fee) + widest-row-fee margin, then
@@ -602,7 +655,7 @@ function laneClient(ctl: {
       }
       await payout(netLamports, recipient, pins)
       return {
-        signature: `NOTE-${recipient[0]}`,
+        signature: `NOTE-${recipient[0]}-${ctl.withdraws.length}`,
         leafIndex: 50 + ctl.withdraws.length,
         commitment: `0xcommit${ctl.withdraws.length}`,
       }
@@ -613,7 +666,7 @@ function laneClient(ctl: {
     withdrawSOL: async (lamports: number, recipient: string, opts) => {
       const pins = (opts?.inputNotes ?? []).map((p) => p.blinding)
       await payout(lamports, recipient, pins)
-      return { signature: `SIG-${recipient[0]}` }
+      return { signature: `SIG-${recipient[0]}-${ctl.withdraws.length}` }
     },
     withdrawSPL: async () => {
       throw new Error("not used")
@@ -703,6 +756,8 @@ describe("PayrollEngine lanes", () => {
         })),
         vaultRaw: 0n,
         mode: "shielded",
+        tree: false,
+        exactLanes: false,
         lanes: 8,
       }),
     )
@@ -943,6 +998,8 @@ describe("PayrollEngine lanes", () => {
       req({
         vaultRaw: 0n,
         mode: "shielded",
+        tree: false,
+        exactLanes: false,
         entries: Array.from({ length: 12 }, (_, i) => ({
           address: String(i).repeat(32),
           amountHuman: "1",
@@ -961,6 +1018,8 @@ describe("PayrollEngine lanes", () => {
       req({
         vaultRaw: 0n,
         mode: "shielded",
+        tree: false,
+        exactLanes: false,
         entries: [
           ...Array.from({ length: 11 }, (_, i) => ({
             address: String(i).repeat(32),
@@ -1152,7 +1211,7 @@ describe("PayrollEngine lanes", () => {
       newId: () => "run1",
       sleep: async () => {},
     })
-    const receipt = await engine.run(req({ vaultRaw: 0n, mode: "shielded" }))
+    const receipt = await engine.run(req({ vaultRaw: 0n, mode: "shielded", tree: false }))
     // 1 funding signature + 1 rejected mid-run top-up
     expect(funding).toBe(2)
     expect(receipt.entries[0].status).toBe("sent")
@@ -1343,7 +1402,7 @@ describe("mid-run refresh policy", () => {
     })
     const engine = new PayrollEngine(laneDeps(lane.client, lane.listNotes))
     const receipt = await engine.run(
-      req({ vaultRaw: 10n ** 18n, asset: { kind: "sol" } as Asset, mode: "shielded" }),
+      req({ vaultRaw: 10n ** 18n, asset: { kind: "sol" } as Asset, mode: "shielded", tree: false }),
     )
     expect(receipt.summary).toEqual({ sent: 3, failed: 0, total: 3 })
     // The telemetry POST and the Ledger read per-row stages from receipt
@@ -1373,7 +1432,7 @@ describe("mid-run refresh policy", () => {
     }
     const engine = new PayrollEngine(laneDeps(client, lane.listNotes))
     const receipt = await engine.run(
-      req({ vaultRaw: 10n ** 18n, asset: { kind: "sol" } as Asset, mode: "shielded" }),
+      req({ vaultRaw: 10n ** 18n, asset: { kind: "sol" } as Asset, mode: "shielded", tree: false }),
     )
     expect(receipt.summary).toEqual({ sent: 0, failed: 3, total: 3 })
     for (const e of receipt.entries) {
@@ -1382,5 +1441,201 @@ describe("mid-run refresh policy", () => {
       // proveRelay as undefined and its slice of the wall was unattributable
       expect(e.timing?.proveRelayMs, `proveRelay ${e.address}`).toBeGreaterThanOrEqual(0)
     }
+  })
+})
+
+/** Exact-note vault: a pair payout must spend a note worth exactly both
+ * grosses, a split mints net + change, deposits honor firstAmount. */
+function treeClient(ctl: { failLeafOf?: string; minFee?: number } = {}) {
+  const SELF = "11111111111111111111111111111111"
+  const notes: Array<{ id: string; amount: bigint }> = []
+  const paid: Array<{ to: string; net: number; sig: string }> = []
+  const txs: Array<{ kind: "split" | "leaf" | "single"; fee: number; inputs: number }> = []
+  let seq = 0
+  const take = (pins: string[]): bigint => {
+    let held = 0n
+    for (const b of pins) {
+      const i = notes.findIndex((n) => n.id === b)
+      if (i < 0) throw new Error("pinned note not found in spendable set")
+      held += notes[i].amount
+      notes.splice(i, 1)
+    }
+    return held
+  }
+  const client: EngineClient = {
+    init: async () => {},
+    unlock: async () => {},
+    publicKey: new PublicKey(SELF),
+    refreshNotes: async () => {},
+    depositSOL: async (lamports, opts) => {
+      const first = opts?.split && opts.firstAmount !== undefined ? BigInt(opts.firstAmount) : BigInt(lamports)
+      notes.push({ id: `d${seq++}`, amount: first })
+      if (BigInt(lamports) > first) notes.push({ id: `d${seq++}`, amount: BigInt(lamports) - first })
+      return { signature: "DEP", leafIndex: 0 }
+    },
+    depositSPL: async () => {
+      throw new Error("not used")
+    },
+    transferNoteSOL: async (recipient, net, opts) => {
+      const pins = (opts?.inputNotes ?? []).map((p) => p.blinding)
+      await opts?.onSubmitted?.({})
+      if (ctl.failLeafOf && (recipient === ctl.failLeafOf || opts?.second?.recipient === ctl.failLeafOf) && opts?.second)
+        throw new Error("relay 500")
+      const fee = BigInt(opts?.fee ?? Math.max(Math.ceil((net * 100) / 10_000), ctl.minFee ?? 0))
+      const gross = BigInt(net) + BigInt(opts?.second?.net ?? 0) + fee
+      const held = take(pins)
+      if (held < gross) throw new Error(`pinned notes hold ${held}, need ${gross}`)
+      const change = held - gross
+      if (opts?.second && change !== 0n) throw new Error(`pair payout needs exact inputs: ${change} left over`)
+      const sig = `T${seq++}`
+      if (recipient === SELF) {
+        txs.push({ kind: "split", fee: Number(fee), inputs: pins.length })
+        notes.push({ id: `n${seq++}`, amount: BigInt(net) })
+      } else {
+        txs.push({ kind: opts?.second ? "leaf" : "single", fee: Number(fee), inputs: pins.length })
+        paid.push({ to: recipient, net, sig })
+        if (opts?.second) paid.push({ to: opts.second.recipient, net: opts.second.net, sig })
+      }
+      const changeId = `c${seq++}`
+      if (change > 0n) notes.push({ id: changeId, amount: change })
+      return {
+        signature: sig,
+        leafIndex: 10,
+        commitment: "0xa",
+        second: opts?.second ? { leafIndex: 11, commitment: "0xb" } : undefined,
+        changeNote: change > 0n && recipient !== SELF ? { amount: change.toString(), blinding: changeId, index: 11 } : undefined,
+      }
+    },
+    resolveChangeNote: async () => true,
+    transferNoteSPL: async () => {
+      throw new Error("not used")
+    },
+    withdrawSOL: async () => {
+      throw new Error("not used")
+    },
+    withdrawSPL: async () => {
+      throw new Error("not used")
+    },
+  }
+  const listNotes = () => notes.map((n) => ({ id: n.id, amount: n.amount.toString(), blinding: n.id }))
+  return { client, listNotes, notes, paid, txs }
+}
+
+const rowsOf = (n: number): PayrollEntry[] =>
+  Array.from({ length: n }, (_, i) => ({ address: `emp${String(i).padStart(3, "0")}`.padEnd(32, "x"), amountHuman: `0.0${1 + (i % 7)}` }))
+
+describe("payout tree", () => {
+  it("builds exact amounts: leaves = their rows' gross, splits = children + split fee", () => {
+    const rows = [5n, 4n, 3n, 2n, 1n].map((g) => ({ gross: g * 100n, fee: g }))
+    const root = buildPayoutTree(rows, [0, 1, 2, 3, 4], 7n)
+    const leaves: number[][] = []
+    const check = (n: ReturnType<typeof buildPayoutTree>): bigint => {
+      if (n.rows) {
+        leaves.push(n.rows)
+        expect(n.amount).toBe(n.rows.reduce((s, i) => s + rows[i].gross, 0n))
+        expect(n.fee).toBe(n.rows.reduce((s, i) => s + rows[i].fee, 0n))
+        return n.amount
+      }
+      expect(n.amount).toBe(check(n.left!) + check(n.right!) + 7n)
+      expect(n.size).toBe(n.left!.size + n.right!.size)
+      return n.amount
+    }
+    check(root)
+    expect(leaves).toEqual([[0, 1], [2, 3], [4]])
+    expect(root.amount).toBe(1500n + 2n * 7n)
+  })
+
+  it("pays 100 rows in 98 proofs after the deposit (48 splits + 50 pair payouts), leaving no change", async () => {
+    const t = treeClient({ minFee: 5000 })
+    const engine = new PayrollEngine(laneDeps(t.client, t.listNotes))
+    const receipt = await engine.run(req({ entries: rowsOf(100), mode: "shielded", minTransferFee: 5000, lanes: 8, tree: true }))
+    expect(receipt.summary).toEqual({ sent: 100, failed: 0, total: 100 })
+    expect(t.txs.filter((x) => x.kind === "split")).toHaveLength(48)
+    expect(t.txs.filter((x) => x.kind === "leaf")).toHaveLength(50)
+    expect(receipt.splits).toBe(48)
+    // splits pay the relayer floor only; every row was paid its exact net once
+    expect(t.txs.filter((x) => x.kind === "split").every((x) => x.fee === 5000)).toBe(true)
+    expect(new Set(t.paid.map((p) => p.to)).size).toBe(100)
+    // exact tree: the deposit is spent to the lamport
+    expect(t.notes).toHaveLength(0)
+  })
+
+  it("pays an odd row count with one single-row leaf", async () => {
+    const t = treeClient()
+    const engine = new PayrollEngine(laneDeps(t.client, t.listNotes))
+    const receipt = await engine.run(req({ entries: rowsOf(11), mode: "shielded", tree: true }))
+    expect(receipt.summary).toEqual({ sent: 11, failed: 0, total: 11 })
+    expect(t.txs.filter((x) => x.kind === "leaf")).toHaveLength(5)
+    expect(t.txs.filter((x) => x.kind === "single")).toHaveLength(1)
+    expect(t.notes).toHaveLength(0)
+  })
+
+  it("hands a leaf that keeps failing to the lane path, which pays its rows one by one", async () => {
+    const entries = rowsOf(12)
+    const t = treeClient({ failLeafOf: entries[3].address })
+    const engine = new PayrollEngine(laneDeps(t.client, t.listNotes))
+    const receipt = await engine.run(req({ entries, mode: "shielded", tree: true }))
+    expect(receipt.summary).toEqual({ sent: 12, failed: 0, total: 12 })
+    expect(t.txs.filter((x) => x.kind === "single")).toHaveLength(2)
+    expect(new Set(t.paid.map((p) => p.to)).size).toBe(12)
+  })
+
+  it("is opt-in: without tree: true a shielded run keeps the lane path", async () => {
+    const t = treeClient()
+    const engine = new PayrollEngine(laneDeps(t.client, t.listNotes))
+    const receipt = await engine.run(req({ entries: rowsOf(12), mode: "shielded" }))
+    expect(receipt.summary).toEqual({ sent: 12, failed: 0, total: 12 })
+    expect(t.txs.filter((x) => x.kind === "leaf")).toHaveLength(0)
+  })
+})
+
+describe("NoteLedger one note per blinding", () => {
+  it("never offers a second copy of a note that is free or pinned", () => {
+    const l = new NoteLedger()
+    const a = { id: "a", amount: "100", blinding: "same" }
+    const b = { id: "b", amount: "100", blinding: "same" }
+    l.reload([a, b])
+    expect(l.freeNotes()).toHaveLength(1)
+    const pin = l.tryReserve(50n)
+    expect(pin).not.toBeNull()
+    // the copy must stay hidden while the first one is pinned
+    l.reload([a, b])
+    expect(l.tryReserve(50n)).toBeNull()
+  })
+})
+
+describe("exact lanes", () => {
+  it("deals rows largest-first onto the lightest lane", () => {
+    const rows = [9n, 8n, 7n, 6n, 5n, 4n, 3n, 2n].map((g) => ({ gross: g }))
+    const lanes = planExactLanes(rows, [0, 1, 2, 3, 4, 5, 6, 7], 3)
+    const sums = lanes.map((l) => l.reduce((s, i) => s + rows[i].gross, 0n))
+    expect(lanes.flat().sort()).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
+    expect(sums).toEqual([16n, 15n, 13n])
+  })
+
+  it("funds 8 lanes with exact notes: 6 splits, one input per payout, no merges, vault spent to the lamport", async () => {
+    const t = treeClient({ minFee: 5000 })
+    const engine = new PayrollEngine(laneDeps(t.client, t.listNotes))
+    const receipt = await engine.run(req({ entries: rowsOf(100), mode: "shielded", minTransferFee: 5000, lanes: 8 }))
+    expect(receipt.summary).toEqual({ sent: 100, failed: 0, total: 100 })
+    expect(t.txs.filter((x) => x.kind === "split")).toHaveLength(6)
+    expect(t.txs.every((x) => x.inputs === 1)).toBe(true)
+    expect(receipt.merges ?? 0).toBe(0)
+    expect(new Set(t.paid.map((p) => p.to)).size).toBe(100)
+    expect(t.notes).toHaveLength(0)
+  })
+})
+
+describe("receipt leaf index", () => {
+  it("replaces the shared pre-send guess with the indexed leaf once the payout confirms", async () => {
+    const { client } = mockClient({ fails: new Map() })
+    const engine = new PayrollEngine({
+      ...deps(client),
+      // the mock's commitments are 0xcommit1..3; the indexer puts them at 901..903
+      leafIndexOf: async (_tree, commitment) => 900 + Number(commitment.replace("0xcommit", "")),
+    })
+    const receipt = await engine.run(req({ vaultRaw: 10n ** 18n, mode: "shielded" }))
+    expect(receipt.summary.sent).toBe(3)
+    expect(receipt.entries.map((e) => e.noteLeafIndex).sort()).toEqual([901, 902, 903])
   })
 })

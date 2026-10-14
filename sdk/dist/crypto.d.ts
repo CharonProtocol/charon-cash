@@ -97,12 +97,21 @@ export declare class EncryptionService {
     private cryptoKey;
     private receiveSecretV3;
     private receivePublicV3;
+    /** The receive secret as a native WebCrypto X25519 key (null: no native support). */
+    private receiveKeyV3;
     /**
      * Derive keys from an ed25519 signature of the constant SIGN_MESSAGE, plus
      * optionally the second signature of RECEIVE_SIGN_MESSAGE that enables v3
      * note decryption (encryptUtxoTo payloads). Re-derivation resets both.
      */
     deriveFromSignature(signature: Uint8Array, receiveSignature?: Uint8Array): void;
+    /**
+     * x25519(receive secret, ephPub). Every v3 leaf a scan meets costs one of
+     * these, ours or not: native WebCrypto X25519 runs it ~35x faster than the
+     * pure-JS curve (0.02 vs 0.75 ms), which is most of a wallet's catch-up scan.
+     * Engines without it (older browsers) fall back to @noble — same result.
+     */
+    private receiveShared;
     /** x25519 public key others encrypt v3 notes to (null until receive keys are derived). */
     getReceivePublicKey(): Uint8Array | null;
     get utxoPrivateKey(): string;

@@ -67,6 +67,8 @@ export interface RunReceipt {
   merges?: number
   /** Funding-note splits the engine ran up front so lanes prove in parallel. */
   splits?: number
+  /** Where the funding phase went: vault check, deposit (prove + send + land), index + note scan. */
+  fundingTiming?: { verifyMs: number; depositMs: number; indexMs: number }
   /** Mean stage durations across paid rows (queue / reserve / prep / prove+relay / confirm). */
   timing?: {
     queueMs?: number

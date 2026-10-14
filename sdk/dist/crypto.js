@@ -214,6 +214,8 @@ export class EncryptionService {
     cryptoKey = null;
     receiveSecretV3 = null;
     receivePublicV3 = null;
+    /** The receive secret as a native WebCrypto X25519 key (null: no native support). */
+    receiveKeyV3 = null;
     /**
      * Derive keys from an ed25519 signature of the constant SIGN_MESSAGE, plus
      * optionally the second signature of RECEIVE_SIGN_MESSAGE that enables v3
@@ -229,6 +231,37 @@ export class EncryptionService {
             : null;
         this.receiveSecretV3 = receive ? receive.x25519Secret : null;
         this.receivePublicV3 = receive ? receive.x25519Public : null;
+        this.receiveKeyV3 = null;
+    }
+    /**
+     * x25519(receive secret, ephPub). Every v3 leaf a scan meets costs one of
+     * these, ours or not: native WebCrypto X25519 runs it ~35x faster than the
+     * pure-JS curve (0.02 vs 0.75 ms), which is most of a wallet's catch-up scan.
+     * Engines without it (older browsers) fall back to @noble — same result.
+     */
+    async receiveShared(ephPub) {
+        const secret = this.receiveSecretV3;
+        try {
+            if (!this.receiveKeyV3) {
+                // base64url by hand: browser Buffer polyfills lack the encoding, and
+                // a throw here made every self-addressed note undecryptable
+                const b64u = (u) => btoa(String.fromCharCode(...u)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+                this.receiveKeyV3 = crypto.subtle
+                    .importKey("jwk", { kty: "OKP", crv: "X25519", d: b64u(secret), x: b64u(this.receivePublicV3) }, { name: "X25519" }, false, [
+                    "deriveBits",
+                ])
+                    .catch(() => null);
+            }
+            const key = await this.receiveKeyV3;
+            if (key) {
+                const eph = await crypto.subtle.importKey("raw", bs(ephPub), { name: "X25519" }, true, []);
+                return new Uint8Array(await crypto.subtle.deriveBits({ name: "X25519", public: eph }, key, 256));
+            }
+        }
+        catch {
+            /* no native X25519, or it rejected the point: the reference implementation decides */
+        }
+        return x25519.getSharedSecret(secret, ephPub);
     }
     /** x25519 public key others encrypt v3 notes to (null until receive keys are derived). */
     getReceivePublicKey() {
@@ -287,7 +320,7 @@ export class EncryptionService {
             throw new Error("truncated v3 encrypted note");
         }
         const ephPub = encrypted.slice(V3_EPH_OFF, V3_IV_OFF);
-        const shared = x25519.getSharedSecret(this.receiveSecretV3, ephPub);
+        const shared = await this.receiveShared(ephPub);
         const key = await importAesKey(deriveNoteKey(shared, ephPub));
         const plain = await aesGcmOpen(key, encrypted.slice(V3_IV_OFF, V3_TAG_OFF), encrypted.slice(V3_TAG_OFF, V3_CT_OFF), encrypted.slice(V3_CT_OFF));
         return Buffer.from(plain);

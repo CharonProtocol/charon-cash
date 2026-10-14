@@ -107,12 +107,23 @@ export interface DepositResult {
  * wave. The circuit only checks that the outputs sum to ext − fee, which
  * holds for any split; both halves must be > 0 to be spendable notes.
  */
+/** A base58 transaction signature (64 bytes -> 86-88 chars), not a relayer
+ * placeholder such as "pending". */
+export function isTxSignature(s: string | null | undefined): s is string {
+  return typeof s === "string" && /^[1-9A-HJ-NP-Za-km-z]{80,90}$/.test(s)
+}
+
 export function splitDepositAmounts(
   extAmount: BN,
   fee: BN,
+  first?: BN,
 ): { half: BN; rem: BN } {
   const total = extAmount.sub(fee)
   if (total.ltn(2)) throw new Error("split deposit needs a total of at least 2 (ext − fee)")
+  if (first) {
+    if (first.lten(0) || first.gte(total)) throw new Error("split deposit first output must leave both outputs > 0")
+    return { half: first, rem: total.sub(first) }
+  }
   const half = total.div(new BN(2))
   return { half, rem: total.sub(half) }
 }
@@ -149,6 +160,13 @@ export function shouldRecheckSpent(
 ): boolean {
   if (opts?.fromScratch || opts?.quick) return false
   return Boolean(opts?.recheckSpent) || now - lastSpentRecheckAt > 15_000
+}
+
+/** transferNote result; `second` is set when the call paid a second recipient. */
+export type TransferNoteResult = WithdrawResult & {
+  leafIndex: number
+  commitment: string
+  second?: { leafIndex: number; commitment: string }
 }
 
 export interface WithdrawResult {
@@ -496,7 +514,7 @@ export class PrivacyCashClient {
           const flags = await this.spentFlags(hashes)
           for (let i = 0; i < mine.length; i++) {
             if (flags[i]) {
-              markNoteSpentByIndex(this.publicKey, mine[i].mintAddress, mine[i].index)
+              markNoteSpentByIndex(this.publicKey, mine[i].mintAddress, mine[i].index, undefined, mine[i].blinding)
               spent++
             }
           }
@@ -620,7 +638,8 @@ export class PrivacyCashClient {
     for (let i = 0; i < hashes.length; i++) {
       if (!flags[i]) continue
       const info = await nullifierInfo(hashes[i]).catch(() => null)
-      return info?.signature ?? null
+      // spent but still in the relayer's in-flight window: no signature yet
+      return isTxSignature(info?.signature) ? info.signature : null
     }
     return null
   }
@@ -768,10 +787,23 @@ export class PrivacyCashClient {
       for (let i = 0; i < found.length; i++) {
         const { row, utxo } = found[i]
         if (spentFlags[i]) {
-          markNoteSpentByIndex(wallet, utxo.mintAddress, utxo.index)
+          markNoteSpentByIndex(wallet, utxo.mintAddress, utxo.index, undefined, utxo.blinding.toString())
           spent++
           continue
         }
+        // A note this wallet spent at relay-accept stays spent: its spend can
+        // land between the spentFlags read above and this write, and
+        // upserting `spent: false` resurrected it for a second lane (two
+        // payouts on one note; the loser was reported with a placeholder
+        // signature). Failed spends come back via markNotesUnspent / the
+        // restore recheck, never via the forward scan.
+        const local = loadNotes(wallet).find(
+          (n) =>
+            n.mintAddress === utxo.mintAddress &&
+            n.index === utxo.index &&
+            n.blinding === utxo.blinding.toString(),
+        )
+        if (local?.spent) continue
         const before = unspentNotes(wallet).some(
           (n) => n.mintAddress === utxo.mintAddress && n.index === utxo.index,
         )
@@ -861,7 +893,7 @@ export class PrivacyCashClient {
 
   async depositSOL(
     amountLamports: number,
-    opts?: { split?: boolean },
+    opts?: { split?: boolean; firstAmount?: number },
   ): Promise<DepositResult> {
     await this.unlock()
     const treeKey = SOL_TREE_KEY
@@ -876,7 +908,11 @@ export class PrivacyCashClient {
     // — amounts identical to the pre-split behavior.
     const { half, rem } =
       opts?.split === true
-        ? splitDepositAmounts(extAmount, fee)
+        ? splitDepositAmounts(
+          extAmount,
+          fee,
+          opts.firstAmount !== undefined ? new BN(opts.firstAmount) : undefined,
+        )
         : { half: extAmount.sub(fee), rem: new BN(0) }
 
     const inputs = [
@@ -946,7 +982,7 @@ export class PrivacyCashClient {
         pending: true,
       })
     }
-    await this.persistNotes().catch(() => {})
+    this.schedulePersist() // backup off the funding path; the chain scan recovers notes
 
     await this.waitForLeaves(treeKey, nextLeafIndex + 1)
 
@@ -994,7 +1030,7 @@ export class PrivacyCashClient {
           depositTx: signature,
         })
       }
-      await this.persistNotes().catch(() => {})
+      this.schedulePersist() // backup off the funding path; the chain scan recovers notes
     }
 
     return {
@@ -1059,8 +1095,13 @@ export class PrivacyCashClient {
       onSubmitted?: OnSubmitted
       inputNote?: { blinding: string }
       inputNotes?: Array<{ blinding: string }>
+      /** Exact relayer fee (overrides the bps + floor default). */
+      fee?: number
+      /** Pay a second recipient with output 2 instead of change: the inputs
+       * must cover both nets + fee exactly (no change slot is left). */
+      second?: { recipient: PublicKey | string; net: number }
     },
-  ): Promise<WithdrawResult & { leafIndex: number; commitment: string }> {
+  ): Promise<TransferNoteResult> {
     await this.unlock()
     await this.syncForSpend(SOL_TREE_KEY)
     return this.transferNoteInternal({
@@ -1073,6 +1114,8 @@ export class PrivacyCashClient {
       onSubmitted: opts?.onSubmitted,
       inputNote: opts?.inputNote,
       inputNotes: opts?.inputNotes,
+      fee: opts?.fee,
+      second: opts?.second && { recipient: toPubkey(opts.second.recipient), net: opts.second.net },
     })
   }
 
@@ -1086,8 +1129,13 @@ export class PrivacyCashClient {
       onSubmitted?: OnSubmitted
       inputNote?: { blinding: string }
       inputNotes?: Array<{ blinding: string }>
+      /** Exact relayer fee (overrides the bps + floor default). */
+      fee?: number
+      /** Pay a second recipient with output 2 instead of change: the inputs
+       * must cover both nets + fee exactly (no change slot is left). */
+      second?: { recipient: PublicKey | string; net: number }
     },
-  ): Promise<WithdrawResult & { leafIndex: number; commitment: string }> {
+  ): Promise<TransferNoteResult> {
     await this.unlock()
     const mintPk = toPubkey(mint)
     await this.syncForSpend(mintPk.toBase58())
@@ -1102,13 +1150,15 @@ export class PrivacyCashClient {
       onSubmitted: opts?.onSubmitted,
       inputNote: opts?.inputNote,
       inputNotes: opts?.inputNotes,
+      fee: opts?.fee,
+      second: opts?.second && { recipient: toPubkey(opts.second.recipient), net: opts.second.net },
     })
   }
 
   async depositSPL(
     mint: PublicKey | string,
     amountRaw: number | string,
-    opts?: { split?: boolean },
+    opts?: { split?: boolean; firstAmount?: number },
   ): Promise<DepositResult> {
     await this.unlock()
     const mintPk = toPubkey(mint)
@@ -1126,7 +1176,11 @@ export class PrivacyCashClient {
     // — amounts identical to the pre-split behavior.
     const { half, rem } =
       opts?.split === true
-        ? splitDepositAmounts(extAmount, fee)
+        ? splitDepositAmounts(
+          extAmount,
+          fee,
+          opts.firstAmount !== undefined ? new BN(opts.firstAmount) : undefined,
+        )
         : { half: extAmount.sub(fee), rem: new BN(0) }
 
     const inputs = [
@@ -1202,7 +1256,7 @@ export class PrivacyCashClient {
         pending: true,
       })
     }
-    await this.persistNotes().catch(() => {})
+    this.schedulePersist() // backup off the funding path; the chain scan recovers notes
 
     await this.waitForLeaves(treeKey, nextLeafIndex + 1)
 
@@ -1250,7 +1304,7 @@ export class PrivacyCashClient {
           depositTx: signature,
         })
       }
-      await this.persistNotes().catch(() => {})
+      this.schedulePersist() // backup off the funding path; the chain scan recovers notes
     }
 
     return {
@@ -1743,7 +1797,9 @@ export class PrivacyCashClient {
     inputNote?: { blinding: string }
     /** Pin exact inputs (parallel callers): takes precedence over inputNote. */
     inputNotes?: Array<{ blinding: string }>
-  }): Promise<WithdrawResult & { leafIndex: number; commitment: string }> {
+    fee?: number
+    second?: { recipient: PublicKey; net: number }
+  }): Promise<TransferNoteResult> {
     // Self-transfers (note consolidation) resolve keys from the locally
     // derived identity — no registry enrollment needed, and the keys are
     // identical to the registered ones since both come from SIGN_MESSAGE.
@@ -1758,6 +1814,13 @@ export class PrivacyCashClient {
         `recipient ${args.recipient.toBase58()} has not enabled private receiving`,
       )
     }
+    const keys2 = args.second ? await fetchRecipientKeys(args.second.recipient) : undefined
+    if (args.second && !keys2) {
+      throw new Error(
+        `recipient ${args.second.recipient.toBase58()} has not enabled private receiving`,
+      )
+    }
+    const net2 = new BN(args.second?.net ?? 0)
     const feeBps = this.info!.withdrawalFeeRateBps
     const wasm = this.wasm!
     const utxoKeypair = this.utxoKeypair!
@@ -1765,10 +1828,14 @@ export class PrivacyCashClient {
     // ext=0 SOL relays must clear the relayer's fee floor; SPL fees are token
     // raw units, so the lamports floor never applies to them.
     const feeFloor = args.isSpl ? 0 : (this.info!.minTransferFee ?? 0)
+    if (args.fee !== undefined && (!Number.isSafeInteger(args.fee) || args.fee < 0)) {
+      throw new Error(`bad fee ${args.fee}`)
+    }
+    const paid = args.netLamports + net2.toNumber()
     const fee = new BN(
-      Math.max(Math.ceil((args.netLamports * feeBps) / 10000), feeFloor),
+      args.fee ?? Math.max(Math.ceil((paid * feeBps) / 10000), feeFloor),
     )
-    const gross = new BN(args.netLamports).add(fee)
+    const gross = new BN(args.netLamports).add(net2).add(fee)
 
     const sorted = unspentNotes(this.publicKey)
       .filter((n) => n.mintAddress === args.mintAddress)
@@ -1845,6 +1912,10 @@ export class PrivacyCashClient {
     }
     const net = new BN(args.netLamports)
     const change = totalInput.sub(gross)
+    // output 2 pays the second recipient, so nothing may be left over
+    if (args.second && !change.isZero()) {
+      throw new Error(`pair payout needs exact inputs: ${change.toString()} left over`)
+    }
     const extAmount = new BN(0)
 
     // The root and every sibling path must come from the same tree snapshot:
@@ -1863,17 +1934,27 @@ export class PrivacyCashClient {
         index: nextLeafIndex,
         mintAddress: args.mintAddress,
       }),
-      new Utxo({
-        wasm,
-        amount: change.toString(),
-        keypair: utxoKeypair,
-        index: nextLeafIndex + 1,
-        mintAddress: args.mintAddress,
-      }),
+      keys2
+        ? new Utxo({
+          wasm,
+          amount: net2.toString(),
+          pubkey: keys2.notePubkey,
+          index: nextLeafIndex + 1,
+          mintAddress: args.mintAddress,
+        })
+        : new Utxo({
+          wasm,
+          amount: change.toString(),
+          keypair: utxoKeypair,
+          index: nextLeafIndex + 1,
+          mintAddress: args.mintAddress,
+        }),
     ]
 
     const enc1 = await encryptUtxoTo(Buffer.from(keys.encPubkey, "hex"), outputs[0])
-    const enc2 = await this.enc!.encryptUtxo(outputs[1])
+    const enc2 = keys2
+      ? await encryptUtxoTo(Buffer.from(keys2.encPubkey, "hex"), outputs[1])
+      : await this.enc!.encryptUtxo(outputs[1])
 
     if (args.onSubmitted) {
       const pendingNullifiers = await Promise.all(
@@ -2007,6 +2088,9 @@ export class PrivacyCashClient {
       nullifiers,
       leafIndex: change.gt(new BN(0)) ? changeIndex - 1 : nextLeafIndex,
       commitment: fieldToHex32(outputs[0].getCommitment()),
+      second: keys2
+        ? { leafIndex: nextLeafIndex + 1, commitment: fieldToHex32(outputs[1].getCommitment()) }
+        : undefined,
       changeNote:
         change.gt(new BN(0))
           ? {
@@ -2109,7 +2193,7 @@ export class PrivacyCashClient {
       // instead of throwing the caller into a retry that would double-pay.
       for (const nf of nullifierHexes) {
         const info = await nullifierInfo(nf).catch(() => null)
-        if (info?.spent && info.signature) {
+        if (info?.spent && isTxSignature(info.signature)) {
           return { signature: info.signature, nullifiers: nullifierHexes }
         }
       }

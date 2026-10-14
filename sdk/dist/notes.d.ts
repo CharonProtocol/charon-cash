@@ -56,7 +56,7 @@ export declare function loadNotes(wallet: PublicKey): Note[];
  */
 export declare function flagNotesBeyondTree(wallet: PublicKey, mintAddress: string, treeSize: number): number;
 export declare function saveNote(wallet: PublicKey, note: Note): void;
-/** Insert or replace by (mintAddress, index). Preserves existing id/createdAt. */
+/** Insert, or update the same note (by blinding). Preserves existing id/createdAt. */
 export declare function upsertNote(wallet: PublicKey, note: Note): void;
 export declare function markNoteSpent(wallet: PublicKey, noteId: string, spendTx: string): void;
 /**
@@ -83,7 +83,7 @@ export declare function resolvePendingNote(wallet: PublicKey, match: {
  * stop polling. Notes that resolve successfully reset to zero instead.
  */
 export declare function recordResolveFailure(wallet: PublicKey, mintAddress: string, blinding: string, maxAttempts: number): boolean;
-export declare function markNoteSpentByIndex(wallet: PublicKey, mintAddress: string, index: number, spendTx?: string): void;
+export declare function markNoteSpentByIndex(wallet: PublicKey, mintAddress: string, index: number, spendTx?: string, blinding?: string): void;
 export declare function unspentNotes(wallet: PublicKey): Note[];
 export declare function totalBalance(wallet: PublicKey, mintAddress?: string): bigint;
 export declare function exportNotes(wallet: PublicKey): string;

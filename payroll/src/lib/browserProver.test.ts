@@ -32,7 +32,9 @@ describe("prover pool shape", () => {
     expect(proverPlan(16, 16, true)).toEqual({ mode: "mt", workers: 8 })
     expect(proverPlan(32, 32, true)).toEqual({ mode: "mt", workers: 8 })
     expect(poolShape(8, 32, true)).toEqual({ count: 8, threadsPerWorker: 4 })
-    expect(proverPlan(8, 4, true)).toEqual({ mode: "st", workers: 4 })
+    // browsers that under-report cores (Helium: 6 on an 8-core M1) still get MT teams
+    expect(proverPlan(8, 6, true)).toEqual({ mode: "mt", workers: 3 })
+    expect(proverPlan(8, 4, true)).toEqual({ mode: "mt", workers: 2 })
     expect(proverPlan(8, 8, false)).toEqual({ mode: "st", workers: 6 })
   })
 })

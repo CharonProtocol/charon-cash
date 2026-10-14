@@ -148,7 +148,11 @@ function LiveStats({ sent, total, failed }: { sent: number; total: number; faile
       <Stat label="eta" value={eta !== null ? fmtTime(eta) : "-"} />
       <Stat
         label="prover"
-        value={prover ? `${prover.workers}w · ${prover.avgMs ? (prover.avgMs / 1000).toFixed(1) + "s" : "warming"}` : "warming"}
+        // pure proof time (queue wait excluded): the lanes keep a queue on purpose
+        value={(() => {
+          const ms = prover?.serviceMs || prover?.avgMs
+          return prover ? `${prover.workers}w · ${ms ? (ms / 1000).toFixed(1) + "s/proof" : "warming"}` : "warming"
+        })()}
         pulse={prover?.proves === 0}
       />
       {failed > 0 && (

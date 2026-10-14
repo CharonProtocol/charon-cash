@@ -42,11 +42,28 @@ export function flagNotesBeyondTree(wallet, mintAddress, treeSize) {
 export function saveNote(wallet, note) {
     upsertNote(wallet, note);
 }
-/** Insert or replace by (mintAddress, index). Preserves existing id/createdAt. */
+/** Insert, or update the same note (by blinding). Preserves existing id/createdAt. */
 export function upsertNote(wallet, note) {
     const notes = loadNotes(wallet);
-    const i = notes.findIndex((n) => n.mintAddress === note.mintAddress && n.index === note.index);
+    // A note is identified by its blinding (random per note). Leaf indexes are
+    // only guesses until the tx lands, and concurrent senders guess the SAME
+    // next index: matching on index alone overwrote another lane's pending
+    // change note, and the store ended up with two spendable copies of one
+    // note — two lanes spent it, only one payout could land, and the other row
+    // reported the winner's signature (unpaid employees counted as sent).
+    const same = (n) => n.mintAddress === note.mintAddress && n.blinding === note.blinding;
+    let i = notes.findIndex(same);
+    // Only an authoritative (indexed) note may replace a different settled note
+    // at its leaf, e.g. a stale entry from a reset chain. A pending note's index
+    // is a guess: saveNote of a fresh change note used to overwrite whatever
+    // real note sat at the guessed index — often one a lane had just reserved —
+    // so it vanished, came back from the next scan under a new id, and a second
+    // lane spent it again (one employee unpaid, reported with the other's tx).
+    if (i < 0 && !note.pending) {
+        i = notes.findIndex((n) => n.mintAddress === note.mintAddress && n.index === note.index && !n.pending);
+    }
     if (i >= 0) {
+        const spent = notes.some((n) => same(n) && n.spent) || note.spent;
         notes[i] = {
             ...notes[i],
             ...note,
@@ -55,12 +72,16 @@ export function upsertNote(wallet, note) {
             // explicit (not spread): an authoritative upsert without `pending`
             // must clear a stale pending flag left by the pre-send save
             pending: note.pending,
+            // spent is sticky: only markNoteUnspent (chain-checked) un-spends
+            spent,
         };
+        const kept = notes[i];
+        persist(wallet, notes.filter((n) => n === kept || !same(n)));
     }
     else {
         notes.push(note);
+        persist(wallet, notes);
     }
-    persist(wallet, notes);
 }
 export function markNoteSpent(wallet, noteId, spendTx) {
     const notes = loadNotes(wallet).map((n) => n.id === noteId ? { ...n, spent: true, spendTx } : n);
@@ -120,8 +141,12 @@ export function recordResolveFailure(wallet, mintAddress, blinding, maxAttempts)
         persist(wallet, next);
     return exceeded;
 }
-export function markNoteSpentByIndex(wallet, mintAddress, index, spendTx) {
-    const notes = loadNotes(wallet).map((n) => n.mintAddress === mintAddress && n.index === index
+export function markNoteSpentByIndex(wallet, mintAddress, index, spendTx, blinding) {
+    // With a blinding, only that note: an index alone also matched other
+    // lanes' pending change notes whose GUESSED index equals this (spent)
+    // leaf, and they stayed "spent" after resolving to their real leaf (a lane
+    // stalled 30s on its own change, the money stuck until a full recheck).
+    const notes = loadNotes(wallet).map((n) => n.mintAddress === mintAddress && n.index === index && (blinding === undefined || n.blinding === blinding)
         ? { ...n, spent: true, spendTx: spendTx ?? n.spendTx }
         : n);
     persist(wallet, notes);
@@ -130,7 +155,20 @@ export function unspentNotes(wallet) {
     // pending = index still a guess; spending one makes the circuit's root
     // check fail (ForceEqualIfEnabled), so hold it out until located/scanned
     // foreign = leaf past this chain's tree end: unspendable here
-    return loadNotes(wallet).filter((n) => !n.spent && !n.pending && !n.foreign && n.index >= 0);
+    // one entry per note (blinding): a copy left by an older store version
+    // must never become a second spendable note, and a spent copy wins
+    const notes = loadNotes(wallet);
+    const spentKeys = new Set(notes.filter((n) => n.spent).map((n) => `${n.mintAddress}:${n.blinding}`));
+    const seen = new Set();
+    return notes.filter((n) => {
+        if (n.spent || n.pending || n.foreign || n.index < 0)
+            return false;
+        const key = `${n.mintAddress}:${n.blinding}`;
+        if (spentKeys.has(key) || seen.has(key))
+            return false;
+        seen.add(key);
+        return true;
+    });
 }
 export function totalBalance(wallet, mintAddress = WRAPPED_SOL_MINT) {
     return unspentNotes(wallet)

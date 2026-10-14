@@ -1,5 +1,6 @@
 import { Connection, type PublicKey } from "@solana/web3.js"
 import {
+  fetchCommitmentLeaf,
   fetchTreeState,
   getBackendUrl,
   solTreeKey,
@@ -75,17 +76,27 @@ export interface RunRequest {
   minTransferFee?: number
   /** Parallel proving lanes (1-8); defaults to 8. */
   lanes?: number
+  /** Pay a shielded full-size run through a payout tree (two rows per
+   * proof, 99 proofs per 100 rows instead of ~107). Opt-in: measured even
+   * with lanes in the browser (fewer proofs, each a little slower). */
+  tree?: boolean
+  /** Shielded full-size runs fund each lane with an exact note (see
+   * planExactLanes); false keeps the legacy halving fan-out. Defaults to true. */
+  exactLanes?: boolean
 }
 
 export interface EngineClient {
   init(): Promise<void>
   unlock(): Promise<void>
   refreshNotes(opts?: { fromScratch?: boolean; recheckSpent?: boolean; quick?: string }): Promise<unknown>
-  depositSOL(lamports: number, opts?: { split?: boolean }): Promise<{ signature: string; leafIndex: number }>
+  depositSOL(
+    lamports: number,
+    opts?: { split?: boolean; firstAmount?: number },
+  ): Promise<{ signature: string; leafIndex: number }>
   depositSPL(
     mint: string,
     raw: number | string,
-    opts?: { split?: boolean },
+    opts?: { split?: boolean; firstAmount?: number },
   ): Promise<{ signature: string; leafIndex: number }>
   withdrawSOL(
     lamports: number,
@@ -101,23 +112,14 @@ export interface EngineClient {
   transferNoteSOL(
     recipient: string,
     netLamports: number,
-    opts?: {
-      relay?: boolean
-      inputNotes?: Array<{ blinding: string }>
-      /** SDK hook fired after prep (recipient keys, merkle proof) but before proving. */
-      onSubmitted?: (info: unknown) => Promise<void> | void
-    },
-  ): Promise<{ signature: string; leafIndex: number; commitment: string; changeNote?: ChangeNoteRef }>
+    opts?: TransferOpts,
+  ): Promise<TransferResult>
   transferNoteSPL(
     mint: string,
     recipient: string,
     netRaw: number,
-    opts?: {
-      relay?: boolean
-      inputNotes?: Array<{ blinding: string }>
-      onSubmitted?: (info: unknown) => Promise<void> | void
-    },
-  ): Promise<{ signature: string; leafIndex: number; commitment: string; changeNote?: ChangeNoteRef }>
+    opts?: TransferOpts,
+  ): Promise<TransferResult>
   /**
    * Pins a minted change note's authoritative leaf index (matched by
    * blinding) and un-pends it, so the lane's next row can spend it without
@@ -144,6 +146,25 @@ export interface EngineClient {
   markNotesUnspent?(blindings: string[]): Promise<number>
   /** Exposed by the SDK client; lets the engine reserve/pin inputs for parallel lanes. */
   readonly publicKey?: PublicKey
+}
+
+export interface TransferOpts {
+  relay?: boolean
+  inputNotes?: Array<{ blinding: string }>
+  /** SDK hook fired after prep (recipient keys, merkle proof) but before proving. */
+  onSubmitted?: (info: unknown) => Promise<void> | void
+  /** Exact relayer fee (overrides the SDK's bps + floor default). */
+  fee?: number
+  /** Output 2 pays this recipient instead of change (inputs must be exact). */
+  second?: { recipient: string; net: number }
+}
+
+export interface TransferResult {
+  signature: string
+  leafIndex: number
+  commitment: string
+  changeNote?: ChangeNoteRef
+  second?: { leafIndex: number; commitment: string }
 }
 
 export interface NoteRef {
@@ -179,6 +200,9 @@ export interface EngineDeps {
   listNotes?(asset: Asset): NoteRef[]
   /** Forces one indexer sync so plan-time balance reads see fresh leaves. Optional: tests omit it and no network call is made. */
   kickIndexer?(): Promise<void>
+  /** Indexed leaf of a note commitment (null: not found). The SDK's leaf index
+   * is a pre-send guess that concurrent lanes share; receipts show this one. */
+  leafIndexOf?(treeKey: string, commitment: string): Promise<number | null>
 }
 
 const ATTEMPTS = 3
@@ -216,7 +240,8 @@ interface PinnedNotes {
  */
 export class NoteLedger {
   private free = new Map<string, { id: string; amount: bigint; blinding: string }>()
-  private reserved = new Set<string>()
+  /** Pinned note id -> its blinding. Pins end only via release/commitSpent. */
+  private reserved = new Map<string, string>()
   /** Per-lane change-note claims (A5): lane -> the blinding its last payout minted. */
   private laneClaims = new Map<number, { blinding: string; seenFree: boolean; at: number }>()
   /** Claims outlive the reloads that fire while their note is still pending —
@@ -228,18 +253,27 @@ export class NoteLedger {
 
   reload(notes: NoteRef[], now: number = Date.now()): void {
     const seen = new Set<string>()
+    // One note = one blinding: a second copy under another id must never be
+    // offered while the first is free or pinned (two lanes would spend it).
+    const heldBlindings = new Set(this.reserved.values())
+    const offered = new Set<string>()
     for (const n of notes) {
       seen.add(n.id)
-      if (!this.reserved.has(n.id)) {
-        this.free.set(n.id, { id: n.id, amount: BigInt(n.amount), blinding: n.blinding })
+      if (this.reserved.has(n.id)) continue
+      if (heldBlindings.has(n.blinding) || offered.has(n.blinding)) {
+        this.free.delete(n.id)
+        continue
       }
+      offered.add(n.blinding)
+      this.free.set(n.id, { id: n.id, amount: BigInt(n.amount), blinding: n.blinding })
     }
     for (const id of [...this.free.keys()]) {
       if (!seen.has(id)) this.free.delete(id)
     }
-    for (const id of [...this.reserved]) {
-      if (!seen.has(id)) this.reserved.delete(id)
-    }
+    // Pins are NOT dropped when their note is briefly missing from the list
+    // (flagged mid-heal, re-indexed under a new id): dropping them let the
+    // note come back "free" while its lane was still proving, and a second
+    // lane spent it again (NULLIFIER_SPENT retries, a wasted proof each).
     // A pending note must not void its claim: reloads fire every ~1.5s under
     // load while the note is still invisible to listNotes. Expire on evidence
     // only — landed-then-gone (spent/healed), or no landing within the cap.
@@ -276,7 +310,7 @@ export class NoteLedger {
     )
     const take = (n: { id: string; blinding: string }) => {
       this.free.delete(n.id)
-      this.reserved.add(n.id)
+      this.reserved.set(n.id, n.blinding)
     }
     const claimed = preferBlinding
       ? free.find((n) => n.blinding === preferBlinding && n.amount >= gross)
@@ -295,6 +329,28 @@ export class NoteLedger {
         take(b)
         return { ids: [a.id, b.id], blindings: [a.blinding, b.blinding] }
       }
+    }
+    return null
+  }
+
+  /** The free note with this blinding, if it covers `gross` (a lane's own change). */
+  reserveBlinding(blinding: string, gross: bigint): PinnedNotes | null {
+    for (const n of this.free.values()) {
+      if (n.blinding !== blinding || n.amount < gross) continue
+      this.free.delete(n.id)
+      this.reserved.set(n.id, n.blinding)
+      return { ids: [n.id], blindings: [n.blinding] }
+    }
+    return null
+  }
+
+  /** A free note of exactly `amount` that is not in `exclude` (payout tree). */
+  reserveExact(amount: bigint, exclude: Set<string>): PinnedNotes | null {
+    for (const n of this.free.values()) {
+      if (n.amount !== amount || exclude.has(n.id)) continue
+      this.free.delete(n.id)
+      this.reserved.set(n.id, n.blinding)
+      return { ids: [n.id], blindings: [n.blinding] }
     }
     return null
   }
@@ -325,8 +381,8 @@ export class NoteLedger {
     if (!a || !b) return null
     this.free.delete(a.id)
     this.free.delete(b.id)
-    this.reserved.add(a.id)
-    this.reserved.add(b.id)
+    this.reserved.set(a.id, a.blinding)
+    this.reserved.set(b.id, b.blinding)
     this.busy++
     return {
       pins: { ids: [a.id, b.id], blindings: [a.blinding, b.blinding] },
@@ -345,6 +401,91 @@ export class NoteLedger {
   }
 }
 
+/**
+ * Payout tree node. A leaf's tx pays one or two rows from a note worth
+ * exactly their gross (output 2 pays the second row, so no change note);
+ * an internal node's tx splits its note into its children's notes.
+ */
+export interface PayoutTreeNode {
+  /** Exact value of the note this node's tx spends. */
+  amount: bigint
+  /** Relayer fee of this node's tx. */
+  fee: bigint
+  /** Leaf only: the plan-row indexes its tx pays. */
+  rows?: number[]
+  /** Lane leaf (exact-lane plan): the note funds this lane's own chain. */
+  lane?: number
+  left?: PayoutTreeNode
+  right?: PayoutTreeNode
+  /** Leaves under this node (scheduling priority: widest first). */
+  size: number
+}
+
+/**
+ * Balanced payout tree over `order` (plan-row indexes), two rows per leaf.
+ * With the 2-in/2-out circuit every proof can mint at most one note more than
+ * it spends, so 100 payees need >= 99 proofs from one funding deposit: the
+ * tree hits that floor (deposit + 48 splits + 50 pair payouts), where lanes
+ * pay one row per proof plus the fan-out splits. Leaves pay exactly the
+ * per-row fees the plan quoted; each split pays `splitFee`.
+ */
+export function buildPayoutTree(
+  rows: Array<{ gross: bigint; fee: bigint }>,
+  order: number[],
+  splitFee: bigint,
+): PayoutTreeNode {
+  if (order.length === 0) throw new Error("payout tree needs rows")
+  const leaves: PayoutTreeNode[] = []
+  for (let k = 0; k < order.length; k += 2) {
+    const ix = order.slice(k, k + 2)
+    leaves.push({
+      amount: ix.reduce((s, i) => s + rows[i].gross, 0n),
+      fee: ix.reduce((s, i) => s + rows[i].fee, 0n),
+      rows: ix,
+      size: 1,
+    })
+  }
+  return buildSplitTree(leaves, splitFee)
+}
+
+/** Balanced binary split tree over `leaves`: each internal node's note is
+ * exactly its children's notes plus its own split fee. */
+export function buildSplitTree(leaves: PayoutTreeNode[], splitFee: bigint): PayoutTreeNode {
+  const build = (lo: number, hi: number): PayoutTreeNode => {
+    if (hi - lo === 1) return leaves[lo]
+    const mid = (lo + hi + 1) >> 1
+    const left = build(lo, mid)
+    const right = build(mid, hi)
+    return { amount: left.amount + right.amount + splitFee, fee: splitFee, left, right, size: left.size + right.size }
+  }
+  return build(0, leaves.length)
+}
+
+/**
+ * Exact-lane plan: rows dealt to `lanes` chains largest-first onto the
+ * lightest lane (balanced totals), each lane funded by a note worth exactly
+ * its rows' gross. A lane then pays only from its own change chain and ends
+ * at zero — no lane ever needs another lane's note, a 2-note pair or a merge.
+ * (Halving the deposit evenly left every lane a too-small leftover at the
+ * tail: payouts fell from ~1.3/s to ~0.3/s and runs ended in top-ups.)
+ */
+export function planExactLanes(
+  rows: Array<{ gross: bigint }>,
+  order: number[],
+  lanes: number,
+): number[][] {
+  const n = Math.max(1, Math.min(lanes, order.length))
+  const out: number[][] = Array.from({ length: n }, () => [])
+  const sums = new Array<bigint>(n).fill(0n)
+  for (const i of order) {
+    let k = 0
+    for (let j = 1; j < n; j++) if (sums[j] < sums[k]) k = j
+    out[k].push(i)
+    sums[k] += rows[i].gross
+  }
+  return out
+}
+
 export class PayrollEngine {
   private cancelled = false
   private emit: (phase: RunSnapshot["phase"], depositSig?: string) => void = () => {}
@@ -355,6 +496,7 @@ export class PayrollEngine {
   private merges = 0
   private splits = 0
   private laneCount = 0
+  private fundingTiming: RunReceipt["fundingTiming"] = undefined
 
   constructor(private deps: EngineDeps) {}
 
@@ -433,8 +575,10 @@ export class PayrollEngine {
     // exactly that. A regular refresh + the SDK's nullifier re-check cleans
     // phantoms in seconds; a fromScratch rescan here cost ~90s of start lag
     // on every run, so it is reserved for reserveFor's gated heal.
-    let vaultRaw = req.vaultRaw
-    if (this.deps.listNotes && !this.cancelled) {
+    this.fundingTiming = undefined
+    const verifyStart = this.deps.now()
+    const verifying = (async (): Promise<bigint> => {
+      if (!this.deps.listNotes || this.cancelled) return req.vaultRaw
       try {
         this.setStatus("Verifying the private vault balance from the chain…")
         // fire, never await: the kick runs a FULL backend sync and blocks
@@ -443,11 +587,18 @@ export class PayrollEngine {
         // heal and the mid-run top-up cover whatever it misses.
         void gatedKick()
         await this.deps.client.refreshNotes({ recheckSpent: true })
-        vaultRaw = this.deps.listNotes(req.asset).reduce((s, n) => s + BigInt(n.amount), 0n)
+        return this.deps.listNotes(req.asset).reduce((s, n) => s + BigInt(n.amount), 0n)
       } catch {
         // keep the caller's estimate — the mid-run top-up below still backstops it
+        return req.vaultRaw
       }
-    }
+    })()
+    // Full-size runs fund from a fresh deposit whatever the vault holds, so
+    // the vault check runs alongside the deposit proof instead of before it
+    // (a wallet with a long note history paid seconds here); the ledger
+    // still waits for it before lanes start.
+    const fullSize = !!this.deps.listNotes && req.entries.length >= SPLIT_MIN_ROWS
+    const vaultRaw = fullSize ? req.vaultRaw : await verifying
     const planOpts = {
       mode: req.mode,
       // the floor is SOL-denominated; token raw units never pay it
@@ -468,6 +619,47 @@ export class PayrollEngine {
       plan = planRun(req.entries, decimals, req.bps, 0n, planOpts)
     }
 
+    // Widest rows first: greedy consumption fragments the change pool and the
+    // circuit caps a proof at 2 inputs, so paying the largest rows while big
+    // notes still exist keeps the tail rows payable without merge round-trips.
+    const order = plan.rows
+      .map((r, i) => ({ gross: r.gross, i }))
+      .sort((a, b) => (a.gross > b.gross ? -1 : a.gross < b.gross ? 1 : 0))
+      .map((o) => o.i)
+    const selfAddress = this.deps.client.publicKey?.toBase58()
+    const payoutTree =
+      req.tree === true &&
+      req.mode === "shielded" &&
+      this.deps.listNotes &&
+      selfAddress &&
+      plan.rows.length >= SPLIT_MIN_ROWS &&
+      plan.shortfall > 0n
+        ? buildPayoutTree(plan.rows, order, BigInt(req.asset.kind === "sol" ? (req.minTransferFee ?? 0) : 0))
+        : null
+    const laneTarget = Math.min(Math.max(1, req.lanes ?? LANES), LANES, plan.rows.length)
+    const splitFeeExact = BigInt(req.asset.kind === "sol" ? (req.minTransferFee ?? 0) : 0)
+    const laneRows =
+      !payoutTree &&
+      req.exactLanes !== false &&
+      req.mode === "shielded" &&
+      this.deps.listNotes &&
+      selfAddress &&
+      plan.rows.length >= SPLIT_MIN_ROWS &&
+      plan.shortfall > 0n &&
+      laneTarget >= 2
+        ? planExactLanes(plan.rows, order, laneTarget)
+        : null
+    const laneTree = laneRows
+      ? buildSplitTree(
+          laneRows.map((ix, lane) => ({ amount: ix.reduce((s, i) => s + plan.rows[i].gross, 0n), fee: 0n, lane, size: 1 })),
+          splitFeeExact,
+        )
+      : null
+    const fundTree = payoutTree ?? laneTree
+    // notes the vault held before this run's deposit: the tree spends only
+    // its own exact-value notes, never an older one that happens to match
+    const preRunNotes = new Set((fundTree && this.deps.listNotes?.(req.asset).map((n) => n.id)) || [])
+
     const feeFloorBig = BigInt(req.asset.kind === "sol" ? (req.minTransferFee ?? 0) : 0)
     const bpsBig = BigInt(req.bps)
     const feeOf = (net: bigint): bigint => {
@@ -480,7 +672,7 @@ export class PayrollEngine {
     // halving waves on the deposit itself, then pad — the extra stays in the
     // payer's own vault.
     const splitBudget = ((): bigint => {
-      if (plan.shortfall === 0n || plan.rows.length < SPLIT_MIN_ROWS) return 0n
+      if (fundTree || plan.shortfall === 0n || plan.rows.length < SPLIT_MIN_ROWS) return 0n
       const target = Math.min(Math.max(1, req.lanes ?? LANES), LANES, plan.rows.length)
       let notes = [plan.shortfall]
       let fees = 0n
@@ -508,7 +700,15 @@ export class PayrollEngine {
         // replaced stranded rows when fragments couldn't fit a payout.)
         let firstSig: string | undefined
         let lastLeaf = -1
-        const amount = Number(plan.shortfall + splitBudget)
+        // The payout tree's deposit IS its root split: exactly its two halves.
+        const treeHalves = fundTree?.left && fundTree.right ? [fundTree.left, fundTree.right] : null
+        const amount = Number(
+          fundTree
+            ? treeHalves
+              ? treeHalves[0].amount + treeHalves[1].amount
+              : fundTree.amount
+            : plan.shortfall + splitBudget,
+        )
         if (amount <= 0 || !Number.isSafeInteger(amount)) throw new Error("bad deposit size")
         // A wide run starts its fan-out from two half-notes instead of one —
         // one fewer halving wave (a proof + relay per split) before the lanes
@@ -517,18 +717,31 @@ export class PayrollEngine {
         const maxGross = plan.rows.reduce((m, r) => (r.gross > m ? r.gross : m), 0n)
         const wantSplit =
           plan.rows.length >= SPLIT_MIN_ROWS && (plan.shortfall + splitBudget) / 2n >= maxGross
-        const splitOpt = wantSplit ? { split: true } : undefined
+        const splitOpt = treeHalves
+          ? { split: true, firstAmount: Number(treeHalves[0].amount) }
+          : fundTree
+            ? undefined
+            : wantSplit
+              ? { split: true }
+              : undefined
+        const depositStart = this.deps.now()
         const dep =
           req.asset.kind === "sol"
             ? await this.deps.client.depositSOL(amount, splitOpt)
             : await this.deps.client.depositSPL(req.asset.mint, amount, splitOpt)
         firstSig = dep.signature
         lastLeaf = dep.leafIndex
+        const indexStart = this.deps.now()
         await this.deps.waitUntilIndexed(treeKeyOf(req.asset), lastLeaf)
         // mid-run poll semantics: the deposit itself reported its note, so
         // only the paid tree needs scanning — no all-tree sweep, no recheck
         await this.deps.client.refreshNotes({ quick: treeKeyOf(req.asset) })
         this.fundedAt = this.deps.now()
+        this.fundingTiming = {
+          verifyMs: depositStart - verifyStart,
+          depositMs: indexStart - depositStart,
+          indexMs: this.fundedAt - indexStart,
+        }
         funding = { depositedRaw: BigInt(amount), txSignature: firstSig ?? "", depositedAt: this.fundedAt }
         this.emit("funding", firstSig)
       } catch (e) {
@@ -540,10 +753,9 @@ export class PayrollEngine {
       }
     }
 
+    await verifying
     const ledger = this.deps.listNotes ? new NoteLedger() : null
     if (ledger && this.deps.listNotes) ledger.reload(this.deps.listNotes(req.asset), this.deps.now())
-
-    const selfAddress = this.deps.client.publicKey?.toBase58()
 
     let lastRefreshAt = 0
     let lastFromScratchAt = 0
@@ -819,14 +1031,51 @@ export class PayrollEngine {
         .catch(() => {})
     }
 
+    // the line forms here: rows stamped before this moment waited on funding
+    // splits, after it on lane contention — queueMs names which
+    let payoutsStart = this.deps.now()
+
+    // A signature already recorded for another row is never this row's
+    // landing: the two spent one note (a resurrected note reserved twice).
+    const claimedByOther = (sig: string, row: RowState): boolean =>
+      rows.some((r) => r !== row && r.txSignature === sig)
+
+    /**
+     * Exact-lane reservation: only this lane's own change note (its claim).
+     * No claim, a claim that cannot cover the row, or a 30s stall falls back
+     * to the shared reserveFor path.
+     */
+    const reserveOwn = async (gross: bigint, lane: number): Promise<PinnedNotes | null> => {
+      if (!ledger) return null
+      const deadline = this.deps.now() + 30_000
+      for (;;) {
+        const claim = ledger.claimForLane(lane)
+        const seen = claim ? ledger.freeNotes().find((n) => n.blinding === claim) : undefined
+        if (!claim || (seen && seen.amount < gross) || this.deps.now() > deadline) {
+          return reserveFor(gross, lane)
+        }
+        const pin = ledger.reserveBlinding(claim, gross)
+        if (pin) {
+          ledger.busy++
+          return pin
+        }
+        if (this.cancelled) return null
+        await Promise.race([this.deps.sleep(RESERVE_POLL_MS), ledgerChanged()])
+      }
+    }
+
     const payOne = async (
       row: RowState,
       planRow: (typeof plan.rows)[number],
       lane: number,
+      opts?: { preset?: PinnedNotes; own?: boolean },
     ): Promise<void> => {
       const gross = planRow.gross
+      // a lane's funding note, already pinned by the fan-out (first try only)
+      let preset = opts?.preset
       for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
         if (this.cancelled) {
+          if (preset) ledger?.release(preset)
           row.status = "failed"
           row.error = "cancelled"
           return
@@ -851,7 +1100,13 @@ export class PayrollEngine {
         let proveStart = 0
         try {
           const reserveStart = this.deps.now()
-          pinned = await reserveFor(gross, lane)
+          if (preset && ledger) {
+            pinned = preset
+            preset = undefined
+            ledger.busy++
+          } else {
+            pinned = opts?.own ? await reserveOwn(gross, lane) : await reserveFor(gross, lane)
+          }
           timing.reserveMs = this.deps.now() - reserveStart
           if (this.cancelled) {
             if (pinned) {
@@ -890,14 +1145,18 @@ export class PayrollEngine {
               timing.prepMs = this.deps.now() - reserveStart - (timing.reserveMs ?? 0)
               proveStart = this.deps.now()
             }
+            // the plan's exact fee: exact lanes end their chain at zero
+            const fee = Number(planRow.fee)
             const res =
               req.asset.kind === "sol"
-                ? await this.deps.client.transferNoteSOL(row.address, net, { ...pinOpts, onSubmitted })
+                ? await this.deps.client.transferNoteSOL(row.address, net, { ...pinOpts, onSubmitted, fee })
                 : await this.deps.client.transferNoteSPL(req.asset.mint, row.address, net, {
                     ...pinOpts,
                     onSubmitted,
+                    fee,
                   })
             timing.proveRelayMs = this.deps.now() - proveStart
+            if (claimedByOther(res.signature, row)) throw new Error("input note was already spent by another payout")
             sig = res.signature
             row.txSignature = res.signature
             row.noteLeafIndex = res.leafIndex
@@ -937,11 +1196,16 @@ export class PayrollEngine {
           const confirmStart = this.deps.now()
           confirms.push(
             this.deps.confirmSignature(sig)
-              .then((outcome) => {
+              .then(async (outcome) => {
                 timing.confirmMs = this.deps.now() - confirmStart
                 if (outcome === "confirmed") {
                   row.status = "confirmed"
                   row.confirmedAt = this.deps.now()
+                  // the receipt's leaf: the indexed one, not the shared guess
+                  if (row.noteCommitment && this.deps.leafIndexOf) {
+                    const leaf = await this.deps.leafIndexOf(treeKeyOf(req.asset), row.noteCommitment).catch(() => null)
+                    if (leaf !== null) row.noteLeafIndex = leaf
+                  }
                 } else if (outcome === "failed") {
                   // Definitive on-chain execution failure (the program
                   // rejected the spend): no money moved, so the row must
@@ -1010,11 +1274,16 @@ export class PayrollEngine {
           // re-reserving the same notes and reporting a phantom success (the
           // run whose UI counted 98 paid while the chain held 73 payouts).
           let landed = false
+          let collided = false
           if (pinned && (submitted || req.mode !== "shielded")) {
             if (req.mode === "shielded" && this.deps.client.signatureIfSpent) {
               this.setStatus("Verifying whether the payout already reached the chain…")
               for (let poll = 0; poll < ADJUDICATE_POLLS; poll++) {
                 const sig = await this.deps.client.signatureIfSpent(pinned.blindings).catch(() => null)
+                if (sig && claimedByOther(sig, row)) {
+                  collided = true
+                  break
+                }
                 if (sig) {
                   landed = true
                   row.txSignature = sig
@@ -1025,7 +1294,7 @@ export class PayrollEngine {
                 await this.deps.sleep(ADJUDICATE_POLL_MS)
               }
             }
-            if (!landed) {
+            if (!landed && !collided) {
               await this.deps.client.refreshNotes({ quick: treeKeyOf(req.asset) }).catch(() => {})
               reloadLedger()
               const spendable = new Set(
@@ -1036,7 +1305,8 @@ export class PayrollEngine {
           }
           this.setStatus(undefined)
           if (pinned && ledger) {
-            if (landed) ledger.commitSpent(pinned)
+            // a collided note is gone (the other payout spent it)
+            if (landed || collided) ledger.commitSpent(pinned)
             else ledger.release(pinned)
             ledger.busy--
             pinned = null
@@ -1134,32 +1404,271 @@ export class PayrollEngine {
       this.setStatus(undefined)
     }
 
-    // Fan the funding note out before lanes start claiming pieces of it.
-    await splitForLanes()
+    /**
+     * Payout tree: every ready node (its exact-value note is in the vault)
+     * proves at once, widest first, up to the lane cap. A split mints its
+     * children's notes; a leaf pays its one or two rows. Any node that fails
+     * its attempts leaves its rows queued for the lane path, which pays them
+     * from whatever notes the tree left (each holds its subtree's full gross).
+     */
+    const payTree = async (
+      root: PayoutTreeNode,
+      startLane?: (lane: number, pin: PinnedNotes) => void,
+    ): Promise<void> => {
+      if (!ledger || !selfAddress) return
+      const treeKey = treeKeyOf(req.asset)
+      const cap = Math.min(Math.max(1, req.lanes ?? LANES), LANES)
+      this.laneCount = cap
+      const internal = root.size - 1 - (root.left ? 1 : 0)
+      const waiting: PayoutTreeNode[] = root.left && root.right ? [root.left, root.right] : [root]
+      const leafConfirms: Array<Promise<void>> = []
+      let inFlight = 0
+      let wake: () => void = () => {}
+      const woken = (): Promise<void> => new Promise((r) => (wake = r))
+      // single-flight refresh that always runs once more after a landing
+      // that arrived mid-scan, so a fresh split's notes are never missed
+      let scan: Promise<void> | null = null
+      let rescan = false
+      const refreshTree = (): Promise<void> => {
+        if (scan) {
+          rescan = true
+          return scan
+        }
+        scan = (async () => {
+          do {
+            rescan = false
+            await this.deps.client.refreshNotes({ quick: treeKey }).catch(() => {})
+            reloadLedger()
+          } while (rescan)
+        })().finally(() => {
+          scan = null
+        })
+        return scan
+      }
+      const transfer = (to: string, net: bigint, opts: TransferOpts): Promise<TransferResult> =>
+        req.asset.kind === "sol"
+          ? this.deps.client.transferNoteSOL(to, Number(net), opts)
+          : this.deps.client.transferNoteSPL(req.asset.mint, to, Number(net), opts)
+
+      const runNode = async (node: PayoutTreeNode, pin: PinnedNotes): Promise<void> => {
+        const leafRows = (node.rows ?? []).map((i) => rows[i])
+        for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+          if (this.cancelled) break
+          const timing: RowTiming = {}
+          const t0 = this.deps.now()
+          for (const r of leafRows) {
+            r.attempts = attempt
+            r.status = "proving"
+            if (!r.startedAt) {
+              r.startedAt = t0
+              timing.queueMs = t0 - (this.fundedAt ?? this.startedAt)
+            }
+          }
+          if (leafRows.length) this.emit("paying", funding?.txSignature)
+          let submitted = false
+          let proveStart = t0
+          let sig: string | undefined
+          let res: TransferResult | undefined
+          try {
+            const opts: TransferOpts = {
+              relay: true,
+              inputNotes: pin.blindings.map((blinding) => ({ blinding })),
+              fee: Number(node.fee),
+              onSubmitted: () => {
+                submitted = true
+                timing.prepMs = this.deps.now() - t0
+                proveStart = this.deps.now()
+              },
+            }
+            if (node.rows) {
+              const [a, b] = node.rows.map((i) => plan.rows[i])
+              if (b) opts.second = { recipient: b.address, net: Number(b.net) }
+              res = await transfer(a.address, a.net, opts)
+            } else {
+              res = await transfer(selfAddress, node.left!.amount, opts)
+            }
+            sig = res.signature
+            timing.proveRelayMs = this.deps.now() - proveStart
+          } catch (e) {
+            const msg = (e as Error).message
+            for (const r of leafRows) r.error = msg
+            // after broadcast the spend may have landed: adjudicate by the
+            // input's nullifier before ever re-spending the note
+            if (submitted && this.deps.client.signatureIfSpent) {
+              for (let poll = 0; poll < ADJUDICATE_POLLS && !sig; poll++) {
+                sig = (await this.deps.client.signatureIfSpent(pin.blindings).catch(() => null)) ?? undefined
+                if (!sig && poll < ADJUDICATE_POLLS - 1) {
+                  await gatedKick()
+                  await this.deps.sleep(ADJUDICATE_POLL_MS)
+                }
+              }
+            }
+            if (!sig) {
+              if (/pinned note not found|pinned notes hold /.test(msg)) await refreshTree()
+              if (attempt < ATTEMPTS) await this.deps.sleep(500 * 2 ** (attempt - 1))
+              continue
+            }
+          }
+          ledger.commitSpent(pin)
+          if (!node.rows) {
+            this.splits++
+            this.setStatus(
+              this.splits < internal
+                ? `Fanning out payout notes: split ${this.splits} of ${internal} (pays two employees per proof)…`
+                : undefined,
+            )
+            // the children's notes exist once the split confirms and the
+            // scan picks them up; a definitive failure gives the note back
+            const outcome = await this.deps.confirmSignature(sig!)
+            if (outcome === "failed") {
+              await this.deps.client.markNotesUnspent?.(pin.blindings).catch(() => 0)
+              await refreshTree()
+              const again = ledger.reserveExact(node.amount, preRunNotes)
+              if (again && attempt < ATTEMPTS) {
+                pin = again
+                continue
+              }
+              if (again) ledger.release(again)
+              return
+            }
+            waiting.push(node.left!, node.right!)
+            await refreshTree()
+            return
+          }
+          const leafIdx = [res?.leafIndex, res?.second?.leafIndex]
+          const commits = [res?.commitment, res?.second?.commitment]
+          leafRows.forEach((r, k) => {
+            r.error = undefined
+            r.txSignature = sig
+            r.noteLeafIndex = leafIdx[k]
+            r.noteCommitment = commits[k]
+            r.relayedAt = this.deps.now()
+            r.status = "relayed"
+            r.timing = { ...timing }
+          })
+          this.emit("paying", funding?.txSignature)
+          const confirmStart = this.deps.now()
+          leafConfirms.push(
+            this.deps.confirmSignature(sig!).then(
+              async (outcome) => {
+                for (const r of leafRows) {
+                  r.timing = { ...r.timing, confirmMs: this.deps.now() - confirmStart }
+                  if (outcome === "confirmed") {
+                    r.status = "confirmed"
+                    r.confirmedAt = this.deps.now()
+                  } else if (outcome === "failed") {
+                    // nothing moved: hand the rows to the lane path
+                    r.status = "queued"
+                    r.txSignature = undefined
+                    r.error = `payout tx failed on-chain: ${sig}`
+                  } else {
+                    r.status = "confirming"
+                  }
+                }
+                if (outcome === "failed") {
+                  await this.deps.client.markNotesUnspent?.(pin.blindings).catch(() => 0)
+                  await refreshTree()
+                }
+                this.emit("paying", funding?.txSignature)
+              },
+              () => {
+                for (const r of leafRows) r.status = "confirming"
+              },
+            ),
+          )
+          return
+        }
+        // out of attempts: the note goes back to the vault and the rows (or
+        // the whole subtree's rows) stay queued for the lane path
+        ledger.release(pin)
+        for (const r of leafRows) {
+          if (r.status === "proving") r.status = "queued"
+        }
+      }
+
+      this.setStatus(
+        startLane
+          ? `Funding ${root.size} payout lanes with exact notes (${internal} splits)…`
+          : `Fanning out payout notes: ${internal} splits, then two employees per proof…`,
+      )
+      let idleSince = this.deps.now()
+      let lastIdleScan = 0
+      while (!this.cancelled) {
+        waiting.sort((a, b) => b.size - a.size)
+        for (let k = 0; k < waiting.length && inFlight < cap; ) {
+          const pin = ledger.reserveExact(waiting[k].amount, preRunNotes)
+          if (!pin) {
+            k++
+            continue
+          }
+          const node = waiting.splice(k, 1)[0]
+          if (node.lane !== undefined) {
+            startLane?.(node.lane, pin)
+            continue
+          }
+          inFlight++
+          void runNode(node, pin)
+            .catch(() => {})
+            .finally(() => {
+              inFlight--
+              wake()
+            })
+        }
+        if (waiting.length === 0 && inFlight === 0) break
+        if (inFlight > 0) idleSince = this.deps.now()
+        // nothing proving and the notes the waiting nodes need never showed
+        // up: stop here and let the lane path pay those rows
+        else if (this.deps.now() - idleSince > 20_000) break
+        // idle with notes still missing: rescan at most twice a second (a
+        // landed scan wakes this loop, so an unthrottled one spins)
+        if (inFlight === 0 && this.deps.now() - lastIdleScan > 500) {
+          lastIdleScan = this.deps.now()
+          void gatedKick()
+          void refreshTree()
+        }
+        await Promise.race([woken(), ledgerChanged(), this.deps.sleep(RESERVE_POLL_MS)])
+      }
+      await Promise.allSettled(leafConfirms)
+      this.setStatus(undefined)
+    }
+
+    // Fan the funding note out before lanes start claiming pieces of it; a
+    // tree run pays through the tree and leaves lanes only its leftovers.
+    if (payoutTree) await payTree(payoutTree)
+    else if (laneTree && laneRows && ledger) {
+      // each lane starts the moment its exact note exists
+      const running: Array<Promise<void>> = []
+      this.laneCount = laneRows.length
+      payoutsStart = this.deps.now()
+      const runLane = async (lane: number, first: PinnedNotes): Promise<void> => {
+        let preset: PinnedNotes | undefined = first
+        for (const i of laneRows[lane]) {
+          if (rows[i].status !== "queued") continue
+          await payOne(rows[i], plan.rows[i], lane, { preset, own: true })
+          preset = undefined
+        }
+        if (preset) ledger.release(preset)
+      }
+      await payTree(laneTree, (lane, pin) => running.push(runLane(lane, pin)))
+      await Promise.all(running)
+    } else await splitForLanes()
     this.setStatus(undefined)
     this.emit("paying", funding?.txSignature)
     let next = 0
-    // Widest rows first: greedy consumption fragments the change pool and the
-    // circuit caps a proof at 2 inputs, so paying the largest rows while big
-    // notes still exist keeps the tail rows payable without merge round-trips.
-    const order = plan.rows
-      .map((r, i) => ({ gross: r.gross, i }))
-      .sort((a, b) => (a.gross > b.gross ? -1 : a.gross < b.gross ? 1 : 0))
-      .map((o) => o.i)
+    // rows the payout tree settled (or left mid-flight) are not lane work
+    const laneOrder = order.filter((i) => rows[i].status === "queued")
     const worker = async (lane: number): Promise<void> => {
       for (;;) {
         if (this.cancelled) return
         const k = next++
-        if (k >= order.length) return
-        const i = order[k]
+        if (k >= laneOrder.length) return
+        const i = laneOrder[k]
         await payOne(rows[i], plan.rows[i], lane)
       }
     }
     const laneCount = ledger ? Math.min(Math.max(1, req.lanes ?? LANES), LANES, rows.length) : 1
     this.laneCount = laneCount
-    // the line forms here: rows stamped before this moment waited on funding
-    // splits, after it on lane contention — queueMs names which
-    const payoutsStart = this.deps.now()
+    payoutsStart = this.deps.now()
     await Promise.all(Array.from({ length: laneCount }, (_, lane) => worker(lane)))
     // settle() maps anything not confirmed/confirming to failed, so every
     // detached confirm must have landed its final status first
@@ -1219,6 +1728,7 @@ export class PayrollEngine {
       finishedAt,
       merges: this.merges,
       splits: this.splits || undefined,
+      fundingTiming: this.fundingTiming,
       timing: meanTiming(rows),
       summary: {
         sent: entries.filter((e) => e.status === "sent").length,
@@ -1343,6 +1853,10 @@ export function createEngine(client: EngineClient): PayrollEngine {
     kickIndexer: () =>
       fetch(`${getBackendUrl()}/api/indexer/kick`, { method: "POST" }).then(() => undefined),
     confirmSignature: defaultConfirm,
+    leafIndexOf: (treeKey, commitment) =>
+      fetchCommitmentLeaf(commitment, treeKey)
+        .then((r) => r.leafIndex)
+        .catch(() => null),
     now: () => Date.now(),
     newId: () =>
       Array.from(crypto.getRandomValues(new Uint8Array(8)))

@@ -35,11 +35,13 @@ function wallet(id: string): PublicKey {
   return { toBase58: () => id } as unknown as PublicKey
 }
 
+let blindingSeq = 0
 function note(partial: Partial<Note> & { index: number }): Note {
   return {
     id: newNoteId(),
     amount: "1000",
-    blinding: "12345",
+    // every real note has its own random blinding (the store keys on it)
+    blinding: `b${++blindingSeq}`,
     mintAddress: SOL,
     spent: false,
     createdAt: 1,
@@ -199,5 +201,72 @@ describe("flagNotesBeyondTree", () => {
     expect(unspentNotes(w).map((n) => n.blinding).sort()).toEqual(["a", "d"])
     expect(flagNotesBeyondTree(w, SOL, 7000)).toBe(0) // tree grew: no longer foreign
     expect(unspentNotes(w).map((n) => n.blinding).sort()).toEqual(["a", "b", "d"])
+  })
+})
+
+describe("one note, one entry (concurrent lanes guess the same leaf index)", () => {
+  const w = wallet("lanes-same-guess")
+  beforeEach(() => clearNotes(w))
+
+  it("never merges another lane's pending guess, so no note gets two spendable copies", () => {
+    // two lanes proved against the same tree state: both change notes were
+    // saved pending at the same guessed index 501
+    saveNote(w, note({ index: 501, blinding: "c1", amount: "100", pending: true }))
+    saveNote(w, note({ index: 501, blinding: "c2", amount: "200", pending: true }))
+    // c1 lands at 501 (scan), c2 at 503
+    upsertNote(w, note({ index: 501, blinding: "c1", amount: "100" }))
+    upsertNote(w, note({ index: 503, blinding: "c2", amount: "200" }))
+    const live = unspentNotes(w)
+    expect(live.map((n) => `${n.blinding}@${n.index}`).sort()).toEqual(["c1@501", "c2@503"])
+    expect(loadNotes(w)).toHaveLength(2)
+  })
+
+  it("keeps a spent note spent when a scan re-upserts it as unspent", () => {
+    const n = note({ index: 7, blinding: "x", amount: "5" })
+    saveNote(w, n)
+    markNoteSpent(w, n.id, "SIG")
+    upsertNote(w, note({ index: 7, blinding: "x", amount: "5", spent: false }))
+    expect(unspentNotes(w)).toHaveLength(0)
+    markNoteUnspent(w, n.id)
+    expect(unspentNotes(w)).toHaveLength(1)
+  })
+
+  it("lists a note once even if an older store holds two copies", () => {
+    saveNote(w, note({ index: 9, blinding: "dup", amount: "5" }))
+    saveNote(w, note({ index: 9, blinding: "dup", amount: "5" }))
+    expect(unspentNotes(w)).toHaveLength(1)
+  })
+})
+
+describe("a fresh change note never clobbers the note at its guessed index", () => {
+  const w = wallet("guess-collides")
+  beforeEach(() => clearNotes(w))
+
+  it("keeps the settled note (and its id) when a pending note guesses the same leaf", () => {
+    const real = note({ index: 2319, blinding: "real", amount: "700" })
+    saveNote(w, real)
+    // another lane's change note, saved at its guessed index = the same leaf
+    saveNote(w, note({ index: 2319, blinding: "guess", amount: "300", pending: true }))
+    const live = unspentNotes(w)
+    expect(live).toHaveLength(1)
+    expect(live[0].id).toBe(real.id)
+    expect(live[0].blinding).toBe("real")
+    expect(loadNotes(w)).toHaveLength(2)
+  })
+})
+
+describe("spent-by-index never hits another note's pending guess", () => {
+  const w = wallet("spent-by-index")
+  beforeEach(() => clearNotes(w))
+
+  it("marks only the note with that blinding", () => {
+    const old = note({ index: 4431, blinding: "old", amount: "5" })
+    saveNote(w, old)
+    // another lane's fresh change note guessed the same leaf
+    saveNote(w, note({ index: 4431, blinding: "change", amount: "9", pending: true }))
+    markNoteSpentByIndex(w, SOL, 4431, undefined, "old")
+    const change = loadNotes(w).find((n) => n.blinding === "change")!
+    expect(change.spent).toBe(false)
+    expect(loadNotes(w).find((n) => n.blinding === "old")!.spent).toBe(true)
   })
 })

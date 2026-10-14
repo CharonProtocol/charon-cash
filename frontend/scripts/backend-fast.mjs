@@ -16,6 +16,8 @@ import {
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token"
 import { WasmFactory } from "@lightprotocol/hasher.rs"
+import nacl from "tweetnacl"
+import { createHash } from "node:crypto"
 import { FastIndexer, ROOT_HISTORY } from "./fast-indexer.mjs"
 import { startGrpcSource } from "./grpc-source.mjs"
 
@@ -189,6 +191,8 @@ const pct = (xs, p) => {
 const INFLIGHT_TTL_MS = 90_000
 /** nullifier hex -> { sig, at } */
 const inflight = new Map()
+/** wallet:key -> signed employer UI doc (local dev, in memory) */
+const uiDocs = new Map()
 function spentBy(hex) {
   const indexed = indexer.nullifiers.get(hex)
   if (indexed) {
@@ -310,6 +314,41 @@ Bun.serve({
           proofs: missing.length ? [] : idxs.map((i) => pool.proof(i)), missing })
       }
 
+      // Employer UI docs (run history + team), same contract as the Workers
+      // backend: wallet-signed writes bound to the doc's sha256, signed reads,
+      // 10-minute timestamp window, 256 KiB cap. In memory: local dev only.
+      const ui = p.match(/^\/api\/ui\/([A-Za-z0-9_-]{1,64})(?:\/([^/]+))?$/)
+      if (ui && (method === "PUT" || method === "GET")) {
+        const key = ui[1]
+        const bad = (code, message) => json({ error: { code, message } }, 400)
+        const verify = (prefix, wallet, ts, sigB64, docHash) => {
+          let pk
+          try { pk = new PublicKey(wallet) } catch { return "INVALID_WALLET" }
+          if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > 10 * 60_000) return "STALE_TIMESTAMP"
+          const sig = Buffer.from(String(sigB64 ?? ""), "base64")
+          if (sig.length !== 64) return "INVALID_SIGNATURE"
+          const msg = [prefix, wallet, key, String(ts), ...(docHash ? [docHash] : [])].join("\n")
+          return nacl.sign.detached.verify(new TextEncoder().encode(msg), sig, pk.toBytes()) ? null : "BAD_SIGNATURE"
+        }
+        if (method === "PUT" && !ui[2]) {
+          let body = {}
+          try { const text = await req.text(); if (text.trim()) body = JSON.parse(text) } catch { }
+          const wallet = String(body.wallet ?? "").trim()
+          const doc = String(body.doc ?? "").trim()
+          if (doc.length > 256 * 1024) return bad("DOC_TOO_LARGE", "doc exceeds 256 KiB")
+          const err = verify("charon-ui-v1", wallet, Number(body.ts), body.signature, createHash("sha256").update(doc).digest("hex"))
+          if (err) return bad(err, "signature does not verify for this wallet, key, timestamp and doc")
+          uiDocs.set(`${wallet}:${key}`, doc)
+          return new Response(null, { status: 204, headers: corsHeaders })
+        }
+        if (method === "GET" && ui[2]) {
+          const wallet = decodeURIComponent(ui[2])
+          const err = verify("charon-ui-read-v1", wallet, Number(url.searchParams.get("ts")), url.searchParams.get("signature"))
+          if (err) return bad(err, "signature does not verify for this wallet, key and timestamp")
+          return json({ doc: uiDocs.get(`${wallet}:${key}`) ?? null })
+        }
+      }
+
       const cm = p.match(/^\/api\/commitment\/([^/]+)$/)
       if (cm && method === "GET") {
         const hex = decodeURIComponent(cm[1]).replace(/^0x/i, "").toLowerCase()
@@ -380,7 +419,8 @@ Bun.serve({
           const [p1] = PublicKey.findProgramAddressSync([Buffer.from("nullifier1"), h], PROGRAM)
           spent = !!(await conn.getAccountInfo(p0)) || !!(await conn.getAccountInfo(p1))
         }
-        return json({ nullifier: hex, spent, signature })
+        // in-flight spends are spent, but "pending" is no signature to hand out
+        return json({ nullifier: hex, spent, signature: signature === "pending" ? null : signature, pending: signature === "pending" })
       }
       if (p === "/api/nullifiers/batch" && method === "POST") {
         let body = {}
@@ -389,7 +429,7 @@ Bun.serve({
         return json({ results: hashes.map((raw) => {
           const hex = String(raw).replace(/^0x/i, "")
           const signature = spentBy(hex)
-          return { hash: hex, spent: signature !== null, signature }
+          return { hash: hex, spent: signature !== null, signature: signature === "pending" ? null : signature }
         }) })
       }
       if (p === "/api/indexer/kick" && method === "POST") {
@@ -449,8 +489,12 @@ Bun.serve({
           const hex = String(body.transaction || "").replace(/^0x/i, "")
           const bytes = Buffer.from(hex, "hex")
           const vtx = VersionedTransaction.deserialize(bytes)
-          const sig = await sendRawWithRetry(vtx.serialize(), { skipPreflight: true, maxRetries: 5 })
-          try { await conn.confirmTransaction(sig, "confirmed") } catch { }
+          // Preflight on: a client-signed tx the node rejects (unfunded payer,
+          // stale blockhash) fails this request now instead of after the
+          // ~90s confirm timeout, and a landed-but-failed tx is an error too.
+          const sig = await sendRawWithRetry(vtx.serialize(), { skipPreflight: false, preflightCommitment: "processed", maxRetries: 5 })
+          const conf = await conn.confirmTransaction(sig, "confirmed").catch(() => null)
+          if (conf?.value?.err) return json({ error: { message: `transaction failed on-chain: ${JSON.stringify(conf.value.err)}` } }, 400)
           await indexer.sync()
           return json({ signature: sig, slot: null, status: "submitted" })
         }
@@ -518,7 +562,10 @@ Bun.serve({
 
       return json({ error: { code: "NOT_FOUND", message: `no route ${method} ${p}` } }, 404)
     } catch (e) {
-      if (e?.status) return json({ error: { code: e.code, message: e.message } }, e.status)
+      if (e?.status) {
+        console.warn(`${method} ${p} -> ${e.status} ${e.code}: ${String(e.message).slice(0, 160)}`)
+        return json({ error: { code: e.code, message: e.message } }, e.status)
+      }
       console.error("FAST BACKEND ERROR:", e?.stack || e)
       return json({ error: { code: "INTERNAL", message: e.message } }, 500)
     }

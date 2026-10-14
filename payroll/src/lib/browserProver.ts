@@ -76,6 +76,8 @@ class BrowserProverPool {
   mode: "mt" | "st" = "st"
   threadsPerWorker = 1
   activeThreads = 0
+  /** MT workers loaded the wide-arithmetic build (engine supports i64.mul_wide_u). */
+  wide = false
 
   async start(workers: number, modeOverride?: "mt" | "st"): Promise<void> {
     const zkey = await (await fetch("/circuit/transaction2.zkey")).arrayBuffer()
@@ -107,10 +109,11 @@ class BrowserProverPool {
                 type: "module",
               })
         const onMsg = (m: MessageEvent) => {
-          const d = m.data as { type?: string; threads?: number }
+          const d = m.data as { type?: string; threads?: number; wide?: boolean }
           if (d?.type === "ready") {
             w.removeEventListener("message", onMsg)
             if (d.threads) this.activeThreads += d.threads
+            if (d.wide) this.wide = true
             resolve(w)
           } else if (d?.type === "fatal") {
             reject(new Error((m.data as { error?: string }).error ?? "prover worker died"))
@@ -225,6 +228,8 @@ export interface BrowserProverInfo {
   serviceMs: number
   proves: number
   mode: "mt" | "st" | "native"
+  /** Wide-arithmetic wasm build in use. */
+  wide?: boolean
   threads: number
 }
 
@@ -281,7 +286,7 @@ export function ensureBrowserProver(opts?: { workers?: number; mode?: "mt" | "st
 }
 
 function info(p: BrowserProverPool): BrowserProverInfo {
-  return { workers: p.size(), avgMs: p.avgMs(), serviceMs: p.serviceMs(), proves: p.proveCount, mode: p.mode, threads: p.activeThreads }
+  return { workers: p.size(), avgMs: p.avgMs(), serviceMs: p.serviceMs(), proves: p.proveCount, mode: p.mode, threads: p.activeThreads, wide: p.wide }
 }
 
 export function browserProverInfo(): BrowserProverInfo | null {
@@ -416,7 +421,10 @@ export function proverPlan(
 ): { mode: "mt" | "st"; workers: number } {
   if (lanes <= 1) return { mode: "mt", workers: 1 }
   if (lanes === 2) return { mode: "mt", workers: 2 }
-  if (isolated && cores >= 8) return { mode: "mt", workers: Math.min(8, Math.floor(cores / 2)) }
+  // 2-thread MT teams whenever threads are available: browsers that report
+  // fewer cores than the machine has (Helium said 6 on an 8-core M1) used to
+  // fall to the single-thread pool, which also skips the wide-arithmetic build
+  if (isolated && cores >= 4) return { mode: "mt", workers: Math.min(8, Math.floor(cores / 2)) }
   return { mode: "st", workers: Math.max(2, Math.min(cores >= 8 ? 6 : 4, cores)) }
 }
 

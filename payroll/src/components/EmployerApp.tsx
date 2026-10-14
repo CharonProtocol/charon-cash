@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { useWallet } from "@solana/wallet-adapter-react"
+import { useConnection, useWallet } from "@solana/wallet-adapter-react"
 import { toast } from "sonner"
 import { Copy, Search, Trash2 } from "lucide-react"
 import { fetchRecipientsBatch, getBackendUrl, totalBalance } from "privacy-cash-sdk"
@@ -19,6 +19,7 @@ import { WalletBar } from "@/components/WalletBar"
 import { usePayrollClient } from "@/hooks/usePayrollClient"
 import { browserProverInfo, detectNativeProver, ensureBrowserProver, useNativeProver, proverPlan } from "@/lib/browserProver"
 import { createEngine, type RunSnapshot } from "@/lib/engine"
+import { planRun } from "@/lib/fees"
 import { lamportsToSol, shortHash } from "@/lib/format"
 import { estimateTotals } from "@/lib/estimate"
 import { navigate } from "@/lib/router"
@@ -33,6 +34,7 @@ const LEDGER_PAGE = 8
 
 export function EmployerApp({ page }: { page: Page }) {
   const { publicKey } = useWallet()
+  const { connection } = useConnection()
   useUiSync()
   const { client, ready, busy, error, vaultSolRaw, bps, minTransferFee, refreshVault, unlocked, unlockBusy, unlockNow } =
     usePayrollClient()
@@ -120,7 +122,10 @@ export function EmployerApp({ page }: { page: Page }) {
   // thread spawn) as a blank minute at the start of the run.
   useEffect(() => {
     let alive = true
-    void ensureBrowserProver()
+    // Warm the shape a full run asks for (proverPlan gives the same pool for
+    // every lane count >= 3): warming one all-core worker made the first run
+    // tear it down and cold-start the real pool inside "Sign & deposit" (~5s).
+    void ensureBrowserProver(proverPlan(8, navigator.hardwareConcurrency || 4))
       .then((info) => {
         if (alive)
           toast.success(
@@ -158,6 +163,27 @@ export function EmployerApp({ page }: { page: Page }) {
       lanes = 8,
     ) => {
       if (!client || !entries || !fileHash || bps === null) return
+      // A deposit the wallet can't pay is rejected by the node, and without
+      // this check the run sat on "Sign & deposit" until timeouts gave up
+      // (a reset local chain wipes the demo wallet's SOL). Mirrors the
+      // engine's sizing: full-size runs fund from one fresh deposit.
+      if (publicKey) {
+        const fresh = entries.length >= 10 || asset.kind === "spl"
+        const plan = planRun(entries, asset.kind === "sol" ? 9 : asset.decimals, bps, fresh ? 0n : (vaultSolRaw ?? 0n), {
+          mode,
+          minTransferFee: asset.kind === "sol" ? minTransferFee : 0,
+        })
+        const needLamports = (asset.kind === "sol" ? plan.shortfall : 0n) + 10_000_000n
+        const have = await connection.getBalance(publicKey).catch(() => null)
+        if ((plan.shortfall > 0n || asset.kind === "spl") && have !== null && BigInt(have) < needLamports) {
+          toast.error(
+            `Treasury wallet has ${lamportsToSol(have).toFixed(4)} SOL on this network; this run needs about ${lamportsToSol(needLamports.toString()).toFixed(4)} SOL. ` +
+              `Use Faucet +10 on localnet, or fund the wallet.`,
+            { duration: 12000 },
+          )
+          return
+        }
+      }
       lastRun.current = { asset, mode, fileHash, lanes }
       setReceipt(null)
       setSnapshot({ phase: "funding", rows: entries.map((e) => ({ ...e, status: "queued" as const, attempts: 0 })), startedAt: Date.now() })
@@ -219,6 +245,7 @@ export function EmployerApp({ page }: { page: Page }) {
           finishedAt: r.finishedAt,
           summary: r.summary,
           splits: r.splits,
+          fundingTiming: r.fundingTiming,
           timing: r.timing,
           perRow: r.entries.map((e) => ({
             status: e.status,
@@ -267,7 +294,7 @@ export function EmployerApp({ page }: { page: Page }) {
         setSnapshot((s) => (s ? { ...s, phase: "aborted" } : null))
       }
     },
-    [client, parsed, bps, minTransferFee, vaultSolRaw, refreshVault],
+    [client, parsed, bps, minTransferFee, vaultSolRaw, refreshVault, publicKey, connection],
   )
 
   const dispatch = useCallback(() => {

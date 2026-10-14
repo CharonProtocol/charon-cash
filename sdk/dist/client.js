@@ -17,10 +17,20 @@ import { ensureAlt, envAltAddress, splAltAddresses, } from "./alt";
  * wave. The circuit only checks that the outputs sum to ext − fee, which
  * holds for any split; both halves must be > 0 to be spendable notes.
  */
-export function splitDepositAmounts(extAmount, fee) {
+/** A base58 transaction signature (64 bytes -> 86-88 chars), not a relayer
+ * placeholder such as "pending". */
+export function isTxSignature(s) {
+    return typeof s === "string" && /^[1-9A-HJ-NP-Za-km-z]{80,90}$/.test(s);
+}
+export function splitDepositAmounts(extAmount, fee, first) {
     const total = extAmount.sub(fee);
     if (total.ltn(2))
         throw new Error("split deposit needs a total of at least 2 (ext − fee)");
+    if (first) {
+        if (first.lten(0) || first.gte(total))
+            throw new Error("split deposit first output must leave both outputs > 0");
+        return { half: first, rem: total.sub(first) };
+    }
     const half = total.div(new BN(2));
     return { half, rem: total.sub(half) };
 }
@@ -319,7 +329,7 @@ export class PrivacyCashClient {
                     const flags = await this.spentFlags(hashes);
                     for (let i = 0; i < mine.length; i++) {
                         if (flags[i]) {
-                            markNoteSpentByIndex(this.publicKey, mine[i].mintAddress, mine[i].index);
+                            markNoteSpentByIndex(this.publicKey, mine[i].mintAddress, mine[i].index, undefined, mine[i].blinding);
                             spent++;
                         }
                     }
@@ -433,7 +443,8 @@ export class PrivacyCashClient {
             if (!flags[i])
                 continue;
             const info = await nullifierInfo(hashes[i]).catch(() => null);
-            return info?.signature ?? null;
+            // spent but still in the relayer's in-flight window: no signature yet
+            return isTxSignature(info?.signature) ? info.signature : null;
         }
         return null;
     }
@@ -562,10 +573,21 @@ export class PrivacyCashClient {
             for (let i = 0; i < found.length; i++) {
                 const { row, utxo } = found[i];
                 if (spentFlags[i]) {
-                    markNoteSpentByIndex(wallet, utxo.mintAddress, utxo.index);
+                    markNoteSpentByIndex(wallet, utxo.mintAddress, utxo.index, undefined, utxo.blinding.toString());
                     spent++;
                     continue;
                 }
+                // A note this wallet spent at relay-accept stays spent: its spend can
+                // land between the spentFlags read above and this write, and
+                // upserting `spent: false` resurrected it for a second lane (two
+                // payouts on one note; the loser was reported with a placeholder
+                // signature). Failed spends come back via markNotesUnspent / the
+                // restore recheck, never via the forward scan.
+                const local = loadNotes(wallet).find((n) => n.mintAddress === utxo.mintAddress &&
+                    n.index === utxo.index &&
+                    n.blinding === utxo.blinding.toString());
+                if (local?.spent)
+                    continue;
                 const before = unspentNotes(wallet).some((n) => n.mintAddress === utxo.mintAddress && n.index === utxo.index);
                 removeStaleNote(wallet, utxo.mintAddress, utxo.amount.toString(), utxo.blinding.toString(), utxo.index);
                 upsertNote(wallet, {
@@ -651,7 +673,7 @@ export class PrivacyCashClient {
         // Unsplit: output 0 takes the whole total and output 1 is the empty dummy
         // — amounts identical to the pre-split behavior.
         const { half, rem } = opts?.split === true
-            ? splitDepositAmounts(extAmount, fee)
+            ? splitDepositAmounts(extAmount, fee, opts.firstAmount !== undefined ? new BN(opts.firstAmount) : undefined)
             : { half: extAmount.sub(fee), rem: new BN(0) };
         const inputs = [
             new Utxo({ wasm: this.wasm, keypair: this.utxoKeypair }),
@@ -717,7 +739,7 @@ export class PrivacyCashClient {
                 pending: true,
             });
         }
-        await this.persistNotes().catch(() => { });
+        this.schedulePersist(); // backup off the funding path; the chain scan recovers notes
         await this.waitForLeaves(treeKey, nextLeafIndex + 1);
         const leafIndex = await this.locateNoteLeaf(treeKey, nextLeafIndex, outputs[0]);
         // Un-pend on every confirmed locate, even when the pre-send guess was
@@ -751,7 +773,7 @@ export class PrivacyCashClient {
                     depositTx: signature,
                 });
             }
-            await this.persistNotes().catch(() => { });
+            this.schedulePersist(); // backup off the funding path; the chain scan recovers notes
         }
         return {
             signature,
@@ -815,6 +837,8 @@ export class PrivacyCashClient {
             onSubmitted: opts?.onSubmitted,
             inputNote: opts?.inputNote,
             inputNotes: opts?.inputNotes,
+            fee: opts?.fee,
+            second: opts?.second && { recipient: toPubkey(opts.second.recipient), net: opts.second.net },
         });
     }
     /** SPL twin of transferNoteSOL on a registered mint's tree. */
@@ -833,6 +857,8 @@ export class PrivacyCashClient {
             onSubmitted: opts?.onSubmitted,
             inputNote: opts?.inputNote,
             inputNotes: opts?.inputNotes,
+            fee: opts?.fee,
+            second: opts?.second && { recipient: toPubkey(opts.second.recipient), net: opts.second.net },
         });
     }
     async depositSPL(mint, amountRaw, opts) {
@@ -849,7 +875,7 @@ export class PrivacyCashClient {
         // Unsplit: output 0 takes the whole total and output 1 is the empty dummy
         // — amounts identical to the pre-split behavior.
         const { half, rem } = opts?.split === true
-            ? splitDepositAmounts(extAmount, fee)
+            ? splitDepositAmounts(extAmount, fee, opts.firstAmount !== undefined ? new BN(opts.firstAmount) : undefined)
             : { half: extAmount.sub(fee), rem: new BN(0) };
         const inputs = [
             new Utxo({ wasm: this.wasm, keypair: this.utxoKeypair, mintAddress: mintStr }),
@@ -920,7 +946,7 @@ export class PrivacyCashClient {
                 pending: true,
             });
         }
-        await this.persistNotes().catch(() => { });
+        this.schedulePersist(); // backup off the funding path; the chain scan recovers notes
         await this.waitForLeaves(treeKey, nextLeafIndex + 1);
         const leafIndex = await this.locateNoteLeaf(treeKey, nextLeafIndex, outputs[0]);
         // Un-pend on every confirmed locate, even when the pre-send guess was
@@ -954,7 +980,7 @@ export class PrivacyCashClient {
                     depositTx: signature,
                 });
             }
-            await this.persistNotes().catch(() => { });
+            this.schedulePersist(); // backup off the funding path; the chain scan recovers notes
         }
         return {
             signature,
@@ -1361,14 +1387,23 @@ export class PrivacyCashClient {
         if (!keys) {
             throw new Error(`recipient ${args.recipient.toBase58()} has not enabled private receiving`);
         }
+        const keys2 = args.second ? await fetchRecipientKeys(args.second.recipient) : undefined;
+        if (args.second && !keys2) {
+            throw new Error(`recipient ${args.second.recipient.toBase58()} has not enabled private receiving`);
+        }
+        const net2 = new BN(args.second?.net ?? 0);
         const feeBps = this.info.withdrawalFeeRateBps;
         const wasm = this.wasm;
         const utxoKeypair = this.utxoKeypair;
         // ext=0 SOL relays must clear the relayer's fee floor; SPL fees are token
         // raw units, so the lamports floor never applies to them.
         const feeFloor = args.isSpl ? 0 : (this.info.minTransferFee ?? 0);
-        const fee = new BN(Math.max(Math.ceil((args.netLamports * feeBps) / 10000), feeFloor));
-        const gross = new BN(args.netLamports).add(fee);
+        if (args.fee !== undefined && (!Number.isSafeInteger(args.fee) || args.fee < 0)) {
+            throw new Error(`bad fee ${args.fee}`);
+        }
+        const paid = args.netLamports + net2.toNumber();
+        const fee = new BN(args.fee ?? Math.max(Math.ceil((paid * feeBps) / 10000), feeFloor));
+        const gross = new BN(args.netLamports).add(net2).add(fee);
         const sorted = unspentNotes(this.publicKey)
             .filter((n) => n.mintAddress === args.mintAddress)
             .sort((a, b) => Number(b.amount) - Number(a.amount));
@@ -1433,6 +1468,10 @@ export class PrivacyCashClient {
         }
         const net = new BN(args.netLamports);
         const change = totalInput.sub(gross);
+        // output 2 pays the second recipient, so nothing may be left over
+        if (args.second && !change.isZero()) {
+            throw new Error(`pair payout needs exact inputs: ${change.toString()} left over`);
+        }
         const extAmount = new BN(0);
         // The root and every sibling path must come from the same tree snapshot:
         // concurrent txs append leaves between separate fetches and the circuit
@@ -1446,16 +1485,26 @@ export class PrivacyCashClient {
                 index: nextLeafIndex,
                 mintAddress: args.mintAddress,
             }),
-            new Utxo({
-                wasm,
-                amount: change.toString(),
-                keypair: utxoKeypair,
-                index: nextLeafIndex + 1,
-                mintAddress: args.mintAddress,
-            }),
+            keys2
+                ? new Utxo({
+                    wasm,
+                    amount: net2.toString(),
+                    pubkey: keys2.notePubkey,
+                    index: nextLeafIndex + 1,
+                    mintAddress: args.mintAddress,
+                })
+                : new Utxo({
+                    wasm,
+                    amount: change.toString(),
+                    keypair: utxoKeypair,
+                    index: nextLeafIndex + 1,
+                    mintAddress: args.mintAddress,
+                }),
         ];
         const enc1 = await encryptUtxoTo(Buffer.from(keys.encPubkey, "hex"), outputs[0]);
-        const enc2 = await this.enc.encryptUtxo(outputs[1]);
+        const enc2 = keys2
+            ? await encryptUtxoTo(Buffer.from(keys2.encPubkey, "hex"), outputs[1])
+            : await this.enc.encryptUtxo(outputs[1]);
         if (args.onSubmitted) {
             const pendingNullifiers = await Promise.all(inputs.filter((u) => u.amount.gt(new BN(0))).map((x) => x.getNullifier()));
             await args.onSubmitted({
@@ -1574,6 +1623,9 @@ export class PrivacyCashClient {
             nullifiers,
             leafIndex: change.gt(new BN(0)) ? changeIndex - 1 : nextLeafIndex,
             commitment: fieldToHex32(outputs[0].getCommitment()),
+            second: keys2
+                ? { leafIndex: nextLeafIndex + 1, commitment: fieldToHex32(outputs[1].getCommitment()) }
+                : undefined,
             changeNote: change.gt(new BN(0))
                 ? {
                     amount: outputs[1].amount.toString(),
@@ -1648,7 +1700,7 @@ export class PrivacyCashClient {
             // instead of throwing the caller into a retry that would double-pay.
             for (const nf of nullifierHexes) {
                 const info = await nullifierInfo(nf).catch(() => null);
-                if (info?.spent && info.signature) {
+                if (info?.spent && isTxSignature(info.signature)) {
                     return { signature: info.signature, nullifiers: nullifierHexes };
                 }
             }

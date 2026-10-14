@@ -3,6 +3,7 @@ export type {
   Signer,
   DepositResult,
   WithdrawResult,
+  TransferNoteResult,
   SyncResult,
   PendingTransfer,
   OnSubmitted,
@@ -61,6 +62,7 @@ export {
   getBackendUrl,
   solTreeKey,
   splTreeKey,
+  fetchCommitmentLeaf,
 } from "./merkle"
 export type {
   RelayerInfo,

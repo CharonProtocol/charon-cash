@@ -7,12 +7,14 @@ import nacl from "tweetnacl"
 import { PrivacyCashClient, fetchRelayerInfo, totalBalance, WRAPPED_SOL_MINT } from "privacy-cash-sdk"
 
 import { config } from "@/lib/config"
+import { recommendLanes } from "@/lib/estimate"
 import { createEngine } from "@/lib/engine"
 import { browserProverInfo, detectNativeProver, ensureBrowserProver, proverPlan, useNativeProver } from "@/lib/browserProver"
 
 const q = new URLSearchParams(location.search)
 const rows = Number(q.get("rows") ?? 20)
-const lanes = Number(q.get("lanes") ?? 8)
+// no ?lanes: the app's own recommendation for this machine
+const lanes = q.get("lanes") ? Number(q.get("lanes")) : recommendLanes(Number(q.get("rows") ?? 20), navigator.hardwareConcurrency || 4)
 const amount = q.get("amount") ?? "0.01"
 const backend = q.get("backend") ?? "http://localhost:8080"
 const rpc = q.get("rpc") ?? "http://localhost:8899"
@@ -34,7 +36,9 @@ async function main() {
   const recipients = (await (await fetch(`${collector}/recipients`)).json()) as string[]
   if (recipients.length < rows) throw new Error(`only ${recipients.length} registered recipients, need ${rows}`)
 
-  const kp = Keypair.generate()
+  // --wallet file: reuse one wallet across runs (its note history grows like a real employer's)
+  const saved = (await (await fetch(`${collector}/wallet`)).json()) as number[] | null
+  const kp = saved ? Keypair.fromSecretKey(Uint8Array.from(saved)) : Keypair.generate()
   const conn = new Connection(rpc, "confirmed")
   const lamports = Math.ceil((rows * Number(amount) + 2) * LAMPORTS_PER_SOL)
   await conn.confirmTransaction(await conn.requestAirdrop(kp.publicKey, lamports), "confirmed")
@@ -65,7 +69,8 @@ async function main() {
   const proverStartMs = Math.round(performance.now() - tProver)
   log(`prover ${prover.mode} ${prover.workers}w ${prover.threads}t; paying ${rows} rows on ${lanes} lanes`)
 
-  const entries = recipients.slice(0, rows).map((address) => ({ address, amountHuman: amount }))
+  const csv = (await (await fetch(`${collector}/entries`)).json()) as Array<{ address: string; amountHuman: string }> | null
+  const entries = csv ? csv.slice(0, rows) : recipients.slice(0, rows).map((address) => ({ address, amountHuman: amount }))
   const engine = createEngine(client)
   const t0 = Date.now()
   const receipt = await engine.run(
@@ -78,6 +83,8 @@ async function main() {
       mode: "shielded",
       minTransferFee: Number(info.minTransferFee) || 0,
       lanes,
+      tree: q.get("tree") === "1",
+      exactLanes: q.get("exact") !== "0",
     },
     (s) => {
       const done = s.rows.filter((r) => r.status === "confirmed" || r.status === "relayed").length
@@ -89,12 +96,13 @@ async function main() {
 
   const result = {
     at: new Date().toISOString(),
-    params: { rows, lanes, amount, backend, cores, plan, forcedWorkers, forcedMode },
+    params: { rows, lanes, amount, backend, cores, plan, forcedWorkers, forcedMode, tree: q.get("tree") === "1" },
     prover: { ...browserProverInfo(), startMs: proverStartMs },
     wallMs: t1 - t0,
     fundingMs: receipt.fundedAt && receipt.startedAt ? receipt.fundedAt - receipt.startedAt : null,
     payoutMs: receipt.finishedAt && receipt.fundedAt ? receipt.finishedAt - receipt.fundedAt : null,
     splits: receipt.splits ?? 0,
+    fundingTiming: receipt.fundingTiming,
     merges: receipt.merges ?? 0,
     sent: receipt.entries.filter((e) => e.status === "sent").length,
     failed: receipt.entries.filter((e) => e.status === "failed").length,
@@ -108,6 +116,8 @@ async function main() {
       startedAt: e.startedAt,
       relayedAt: e.relayedAt,
       confirmedAt: e.confirmedAt,
+      leaf: e.noteLeafIndex,
+      commitment: e.noteCommitment,
       timing: e.timing,
     })),
   }

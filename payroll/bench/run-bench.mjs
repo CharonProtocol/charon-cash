@@ -5,29 +5,58 @@
 //
 //   bun payroll/bench/run-bench.mjs --rows 50 --lanes 8 [--workers 4 --mode mt]
 //        [--backend http://localhost:8080] [--label baseline] [--app http://localhost:5174]
-import { mkdirSync, readFileSync, rmSync, writeFileSync, mkdtempSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, mkdtempSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import path from "node:path"
 import { spawn } from "node:child_process"
 
 const here = path.dirname(new URL(import.meta.url).pathname)
 const args = Object.fromEntries(
-  process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1]]] : acc), []),
+  process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") && !(all[i - 1] === "--jsflags") ? [...acc, [a.slice(2), all[i + 1]]] : acc), []),
 )
 const rows = Number(args.rows ?? 20)
-const lanes = Number(args.lanes ?? 8)
+// lanes default to the app's recommendation for this machine (recommendLanes)
+const lanes = args.lanes ? Number(args.lanes) : "auto"
 const app = args.app ?? "http://localhost:5174"
 const label = args.label ?? "run"
 const port = Number(args.port ?? 8978)
 const timeoutMs = Number(args.timeout ?? 30 * 60_000)
+// CHROME, else the newest chrome-headless-shell under ~/.cache/charon-browsers
+// (bunx @puppeteer/browsers install chrome-headless-shell@stable --path ~/.cache/charon-browsers)
 const chrome =
   process.env.CHROME ??
-  path.join(homedir(), ".cache/charon-browsers/chrome-headless-shell/mac_arm-154.0.8037.92/chrome-headless-shell-mac-arm64/chrome-headless-shell")
+  (() => {
+    const base = path.join(homedir(), ".cache/charon-browsers/chrome-headless-shell")
+    const found = (existsSync(base) ? readdirSync(base) : [])
+      .flatMap((v) => (statSync(path.join(base, v)).isDirectory() ? readdirSync(path.join(base, v)).map((d) => path.join(base, v, d, "chrome-headless-shell")) : []))
+      .filter((f) => existsSync(f))
+      .sort()
+    if (!found.length) throw new Error(`no chrome-headless-shell under ${base} (set CHROME=...)`)
+    return found.at(-1)
+  })()
 const recipientsFile = args.recipients ?? path.join(here, "../.local-recipients.json")
 const recipients = Object.keys(JSON.parse(readFileSync(recipientsFile, "utf8")))
+// --wallet path: a throwaway local-chain keypair (JSON byte array), created on first use
+const walletKey = args.wallet
+  ? (() => {
+      try {
+        return JSON.parse(readFileSync(args.wallet, "utf8"))
+      } catch {
+        const k = [...crypto.getRandomValues(new Uint8Array(32))]
+        const { Keypair } = require("@solana/web3.js")
+        const kp = Keypair.fromSeed(Uint8Array.from(k))
+        writeFileSync(args.wallet, JSON.stringify([...kp.secretKey]))
+        return [...kp.secretKey]
+      }
+    })()
+  : null
+const csvEntries = args.csv
+  ? readFileSync(args.csv, "utf8").trim().split("\n").slice(1).map((l) => l.split(",")).map(([address, amountHuman]) => ({ address, amountHuman }))
+  : null
 
-const qs = new URLSearchParams({ rows, lanes, collector: `http://localhost:${port}` })
-for (const k of ["workers", "mode", "backend", "rpc", "amount", "prover", "proverToken"]) if (args[k]) qs.set(k, args[k])
+const qs = new URLSearchParams({ rows, collector: `http://localhost:${port}` })
+if (lanes !== "auto") qs.set("lanes", String(lanes))
+for (const k of ["workers", "mode", "backend", "rpc", "amount", "prover", "proverToken", "tree", "exact"]) if (args[k]) qs.set(k, args[k])
 
 const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*" }
 let resolveResult
@@ -39,6 +68,9 @@ const server = Bun.serve({
     const u = new URL(req.url)
     if (req.method === "OPTIONS") return new Response(null, { headers: cors })
     if (u.pathname === "/recipients") return Response.json(recipients, { headers: cors })
+    // --csv path: pay the file's exact rows (address,amount[,memo]) instead of a flat amount
+    if (u.pathname === "/entries") return Response.json(csvEntries, { headers: cors })
+    if (u.pathname === "/wallet") return Response.json(walletKey, { headers: cors })
     if (u.pathname === "/progress") {
       const line = await req.text()
       if (Date.now() - lastPrint > 5000) {
@@ -56,7 +88,9 @@ const server = Bun.serve({
 })
 
 const profile = mkdtempSync(path.join(tmpdir(), "payroll-bench-"))
-const proc = spawn(chrome, ["--headless", "--disable-gpu", `--user-data-dir=${profile}`, `${app}/bench.html?${qs}`], {
+// --jsflags passes V8 flags, e.g. --jsflags=--experimental-wasm-wide-arithmetic
+const jsFlags = args.jsflags ? [`--js-flags=${args.jsflags}`] : []
+const proc = spawn(chrome, ["--headless", "--disable-gpu", ...jsFlags, `--user-data-dir=${profile}`, `${app}/bench.html?${qs}`], {
   stdio: "ignore",
 })
 const timer = setTimeout(() => resolveResult({ error: `timeout after ${timeoutMs}ms` }), timeoutMs)
@@ -81,7 +115,7 @@ const pct = (xs, p) => {
 }
 const stage = (k) => res.perRow.map((r) => r.timing?.[k])
 const s = (ms) => (ms == null ? "-" : `${(ms / 1000).toFixed(1)}s`)
-console.log(`${label}: ${rows} rows, ${lanes} lanes, prover ${res.prover.mode} ${res.prover.workers}w x${res.prover.threads}t`)
+console.log(`${label}: ${rows} rows, ${res.params?.lanes ?? lanes} lanes, prover ${res.prover.mode} ${res.prover.workers}w x${res.prover.threads}t${res.prover.wide ? " (wide-arithmetic build)" : ""}`)
 console.log(`  wall ${s(res.wallMs)}  funding ${s(res.fundingMs)}  payouts ${s(res.payoutMs)}  ` +
   `(${(rows / (res.payoutMs / 1000)).toFixed(2)} rows/s)  sent ${res.sent} failed ${res.failed} confirming ${res.confirming} splits ${res.splits}`)
 console.log(`  prover service avg ${res.prover.serviceMs}ms, avg incl queue ${res.prover.avgMs}ms, ${res.prover.proves} proofs`)
