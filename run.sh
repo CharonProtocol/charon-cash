@@ -35,19 +35,35 @@ echo "▶ 2/7  Program keypair + declare_id…"
 PROG=$(solana-keygen pubkey target/deploy/privacy-cash-program.json)
 perl -0pi -e 's/declare_id!\("[^"]+"\);/declare_id!("'"$PROG"'");/' programs/privacy-cash/src/lib.rs
 
-echo "▶ 3/7  Program binary (build if missing)…"
-if [ ! -f target/deploy/privacy_cash.so ]; then
+echo "▶ 3/7  Program binary (build when the source changed)…"
+# Fingerprint of the program source (declare_id included): a binary left over
+# from another branch or checkout must never be reused — it decodes a
+# different instruction layout ("invalid instruction data" on every deposit).
+SRC_HASH=$( (cat programs/privacy-cash/Cargo.toml; find programs/privacy-cash/src -name '*.rs' | sort | xargs cat) | shasum -a 256 | cut -d' ' -f1)
+if [ ! -f target/deploy/privacy_cash.so ] || [ "$(cat target/deploy/.privacy_cash.src 2>/dev/null)" != "$SRC_HASH" ]; then
   echo "    building (5-10 min on first run)…"
+  rm -f target/deploy/privacy_cash.so
   cargo build-sbf --manifest-path "$ROOT/programs/privacy-cash/Cargo.toml" 2>&1 | tail -1
-  cp -f target/deploy/privacy_cash.so target/deploy/privacy-cash.so 2>/dev/null || true
+  [ -f target/deploy/privacy_cash.so ] && echo "$SRC_HASH" > target/deploy/.privacy_cash.src
 fi
 [ -f target/deploy/privacy_cash.so ] || { echo "    ✗ build failed — see output above"; exit 1; }
+cp -f target/deploy/privacy_cash.so target/deploy/privacy-cash.so
 
-echo "▶ 4/7  Deploy (skip if already on-chain)…"
+echo "▶ 4/7  Deploy (or upgrade when the chain runs a different build)…"
+deploy() {
+  solana --url localhost --keypair "$PAYER_KEYPAIR" program deploy target/deploy/privacy-cash.so --program-id target/deploy/privacy-cash-program.json 2>&1 | grep "Program Id"
+}
 if solana --url localhost program show "$PROG" >/dev/null 2>&1; then
-  echo "    $PROG already deployed"
+  solana --url localhost program dump "$PROG" "$L-onchain.so" >/dev/null 2>&1
+  N=$(wc -c < target/deploy/privacy-cash.so | tr -d ' ')
+  if head -c "$N" "$L-onchain.so" 2>/dev/null | cmp -s - target/deploy/privacy-cash.so; then
+    echo "    $PROG already deployed (matches this build)"
+  else
+    echo "    on-chain program differs from this build — upgrading…"
+    deploy || { solana --url localhost --keypair "$PAYER_KEYPAIR" program extend "$PROG" "$N" >/dev/null 2>&1; deploy; } || { echo "    ✗ upgrade failed — restart the chain: pkill -f 'surfpool start'; ./run.sh"; exit 1; }
+  fi
 else
-  solana --url localhost --keypair "$PAYER_KEYPAIR" program deploy target/deploy/privacy-cash.so --program-id target/deploy/privacy-cash-program.json 2>&1 | grep "Program Id" || { echo "    ✗ deploy failed"; exit 1; }
+  deploy || { echo "    ✗ deploy failed"; exit 1; }
 fi
 
 echo "▶ 5/7  Payer SOL + tree initialization…"
