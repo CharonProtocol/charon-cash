@@ -3,6 +3,7 @@
 #
 #   bench-kit/run-test.sh          # default browser prover
 #   FAST=1 bench-kit/run-test.sh   # + the wide-arithmetic build (Chrome V8 flag)
+#   (24+ core machines also get a "max plan" run: up to 16 provers, 32 lanes)
 #
 # Sets up a local Solana chain (surfpool), the program, the backend and the
 # payroll app (run.sh), makes 100 local test employees (keys stay on this
@@ -78,6 +79,15 @@ RUNS=("$(run_one kit-default)")
 if [ "${FAST:-0}" = "1" ]; then
   echo "▶ 5b    Payroll run (wide-arithmetic build)"
   RUNS+=("$(run_one kit-fast --jsflags --experimental-wasm-wide-arithmetic)")
+fi
+# Big machines (24+ cores): the default plan caps at 8 provers (x 3-4 threads)
+# and 16 lanes. Also measure the widest plan — up to 16 two-thread provers
+# and two lanes per prover — so the default can follow real data.
+CORES=$( [ "$(uname)" = Darwin ] && sysctl -n hw.ncpu || nproc )
+if [ "$CORES" -ge 24 ]; then
+  W=$(( CORES / 2 )); [ "$W" -gt 16 ] && W=16
+  echo "▶ 5c    Payroll run (max plan: $W provers x 2 threads, $(( W * 2 )) lanes)"
+  RUNS+=("$(run_one kit-max --mode mt --workers "$W" --lanes "$(( W * 2 ))")")
 fi
 
 echo "▶ 6/6  Result file"
