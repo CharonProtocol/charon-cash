@@ -199,7 +199,11 @@ PAIR_LINE=""
 if [ "${NATIVE_PROVER:-0}" = "1" ]; then
   echo "▶ +    Native prover helper (:8790)…"
   PS_BIN="$ROOT/crates/privacy-cash-prover/target/release/prover-server"
-  [ -x "$PS_BIN" ] || cargo +stable build --release --bin prover-server --manifest-path "$ROOT/crates/privacy-cash-prover/Cargo.toml" 2>&1 | tail -1
+  if [ ! -x "$PS_BIN" ]; then
+    echo "    building (2-5 min on first run, log $L-prover-build.log)…"
+    cargo +stable build --release --bin prover-server --manifest-path "$ROOT/crates/privacy-cash-prover/Cargo.toml" > "$L-prover-build.log" 2>&1 \
+      || { echo "    ✗ native helper build failed (log $L-prover-build.log):"; tail -20 "$L-prover-build.log"; exit 1; }
+  fi
   pkill -f '[p]rover-server' >/dev/null 2>&1; sleep 1
   PROVER_CODE="${PROVER_TOKEN:-$(openssl rand -hex 8)}"
   ( PROVER_TOKEN="$PROVER_CODE" nohup "$PS_BIN" > "$L-prover.log" 2>&1 & )
