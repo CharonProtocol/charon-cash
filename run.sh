@@ -4,7 +4,7 @@
 #   deps + SDK build · surfpool (--offline) · program build+deploy · tree init
 #   · backend (with recipient registry) · frontend (:5173) · payroll app (:5174)
 # Safe to re-run any time; each step heals only what is missing/broken.
-# Logs: /tmp/privacy-cash-{install,sdk-build,build,surfpool,backend,frontend,payroll}.log
+# Logs: /tmp/privacy-cash-{install,sdk-build,build,deploy,surfpool,backend,frontend,payroll,prover}.log
 set -u
 cd "$(dirname "$0")"
 ROOT="$PWD"
@@ -62,7 +62,9 @@ if [ ! -f "$PAYER_KEYPAIR" ]; then
   mkdir -p "$(dirname "$PAYER_KEYPAIR")"
   solana-keygen new --no-bip39-passphrase --silent -o "$PAYER_KEYPAIR" && echo "    created local payer keypair $PAYER_KEYPAIR"
 fi
-bun install > "$L-install.log" 2>&1 || { echo "    ✗ bun install failed (log $L-install.log)"; tail -8 "$L-install.log"; exit 1; }
+# Tracked lockfiles stay untouched (a rewritten one blocks `git pull`).
+install_deps() { bun install --frozen-lockfile || bun install; }
+install_deps > "$L-install.log" 2>&1 || { echo "    ✗ bun install failed (log $L-install.log)"; tail -8 "$L-install.log"; exit 1; }
 # payroll links sdk/dist file by file at install time: build the SDK first.
 # Rebuilt only when its source changed; Vite's pre-bundle cache would keep
 # serving the old one, so it goes too.
@@ -73,13 +75,17 @@ if [ ! -f sdk/dist/index.js ] || [ "$(cat node_modules/.charon-sdk.src 2>/dev/nu
   rm -rf payroll/node_modules/.vite frontend/node_modules/.vite
   echo "    SDK built"
 fi
-(cd payroll && bun install) >> "$L-install.log" 2>&1 || { echo "    ✗ payroll install failed (log $L-install.log)"; tail -8 "$L-install.log"; exit 1; }
+(cd payroll && install_deps) >> "$L-install.log" 2>&1 || { echo "    ✗ payroll install failed (log $L-install.log)"; tail -8 "$L-install.log"; exit 1; }
 echo "    ok: bun $(bun --version), $(surfpool --version 2>/dev/null)"
 
 echo "▶ 1/7  Surfpool (local Solana, :8899, --offline)…"
+# surfpool ignores TERM/INT when backgrounded: only -9 stops it.
+# RESET=1 ./run.sh starts a fresh chain (everything is redeployed).
+if [ "${RESET:-0}" = "1" ]; then pkill -9 -f '[s]urfpool' 2>/dev/null; sleep 1; echo "    reset: fresh chain"; fi
 if rpc_up; then echo "    already running"
 else
-  pkill -f '[s]urfpool' 2>/dev/null; sleep 1
+  pkill -9 -f '[s]urfpool' 2>/dev/null; sleep 1
+  free_port 8899 'surfpool|solana-test-validator' || exit 1
   # GEYSER_CONFIG=~/yellowstone/config.json loads the Yellowstone gRPC plugin
   # (:10000) so backend-fast can stream (start it with GRPC_URL)
   nohup surfpool start --offline ${GEYSER_CONFIG:+-g "$GEYSER_CONFIG"} > "$L-surfpool.log" 2>&1 &
@@ -114,11 +120,13 @@ echo "▶ 3/7  Program binary (build when the source changed)…"
 # Poseidon syscall light-hasher 4.0.0 uses no longer exists (build error). The
 # local chain accepts v0; the v3 migration is a separate dependency upgrade.
 SBF_ARCH=v0
+# CLIs without --arch build v0 anyway
+ARCH_FLAG=(); cargo build-sbf --help 2>/dev/null | grep -q -- '--arch' && ARCH_FLAG=(--arch "$SBF_ARCH")
 SRC_HASH=$( (echo "$SBF_ARCH"; cat programs/privacy-cash/Cargo.toml; find programs/privacy-cash/src -name '*.rs' | sort | xargs cat) | $SHA256 | cut -d' ' -f1)
 if [ ! -f target/deploy/privacy_cash.so ] || [ "$(cat target/deploy/.privacy_cash.src 2>/dev/null)" != "$SRC_HASH" ]; then
   echo "    building (5-10 min on first run, log $L-build.log)…"
   rm -f target/deploy/privacy_cash.so
-  cargo build-sbf --arch "$SBF_ARCH" --manifest-path "$ROOT/programs/privacy-cash/Cargo.toml" > "$L-build.log" 2>&1
+  cargo build-sbf ${ARCH_FLAG[@]+"${ARCH_FLAG[@]}"} --manifest-path "$ROOT/programs/privacy-cash/Cargo.toml" > "$L-build.log" 2>&1
   [ -f target/deploy/privacy_cash.so ] && echo "$SRC_HASH" > target/deploy/.privacy_cash.src
 fi
 restore_lib
@@ -127,7 +135,8 @@ cp -f target/deploy/privacy_cash.so target/deploy/privacy-cash.so
 
 echo "▶ 4/7  Deploy (or upgrade when the chain runs a different build)…"
 deploy() {
-  solana --url localhost --keypair "$PAYER_KEYPAIR" program deploy target/deploy/privacy-cash.so --program-id target/deploy/privacy-cash-program.json 2>&1 | grep "Program Id"
+  solana --url localhost --keypair "$PAYER_KEYPAIR" program deploy target/deploy/privacy-cash.so --program-id target/deploy/privacy-cash-program.json > "$L-deploy.log" 2>&1
+  grep "Program Id" "$L-deploy.log"
 }
 if solana --url localhost program show "$PROG" >/dev/null 2>&1; then
   solana --url localhost program dump "$PROG" "$L-onchain.so" >/dev/null 2>&1
@@ -136,10 +145,10 @@ if solana --url localhost program show "$PROG" >/dev/null 2>&1; then
     echo "    $PROG already deployed (matches this build)"
   else
     echo "    on-chain program differs from this build — upgrading…"
-    deploy || { solana --url localhost --keypair "$PAYER_KEYPAIR" program extend "$PROG" "$N" >/dev/null 2>&1; deploy; } || { echo "    ✗ upgrade failed — restart the chain: pkill -f 'surfpool start'; ./run.sh"; exit 1; }
+    deploy || { solana --url localhost --keypair "$PAYER_KEYPAIR" program extend "$PROG" "$N" >/dev/null 2>&1; deploy; } || { tail -5 "$L-deploy.log"; echo "    ✗ upgrade failed — start a fresh chain: RESET=1 ./run.sh"; exit 1; }
   fi
 else
-  deploy || { echo "    ✗ deploy failed"; exit 1; }
+  deploy || { tail -5 "$L-deploy.log"; echo "    ✗ deploy failed (log $L-deploy.log)"; exit 1; }
 fi
 
 echo "▶ 5/7  Payer SOL + tree initialization…"
@@ -157,7 +166,7 @@ fi
 pkill -f '[b]ackend-(fast|shim).mjs' >/dev/null 2>&1; sleep 1
 free_port 8080 'backend-(fast|shim)\.mjs|privacy-cash-backend|fast-indexer' || exit 1
 ( cd frontend && PROGRAM_ID="$PROG" RECIPIENTS_FILE="$RECIPIENTS_FILE" nohup env ${GEYSER_CONFIG:+GRPC_URL=http://127.0.0.1:10000 GRPC_COMMITMENT=processed} bun "scripts/backend-${BACKEND:-fast}.mjs" > "$L-backend.log" 2>&1 & )
-wait_http http://localhost:8080/health || { echo "    ✗ shim failed (log $L-backend.log)"; exit 1; }
+wait_http http://localhost:8080/health || { tail -10 "$L-backend.log"; echo "    ✗ backend failed (log $L-backend.log)"; exit 1; }
 # The app's "Local simnet" uses 127.0.0.1, scripts use localhost: both must
 # reach this backend (::1 is skipped where IPv6 is off).
 for H in 127.0.0.1 localhost '[::1]'; do
@@ -186,12 +195,16 @@ fi
 
 echo "▶ 7/7  Apps: frontend (:5173) + payroll (:5174)…"
 free_port 5174 'vite' || exit 1
-# strictPort: if :5173 is taken the demo app fails alone instead of taking :5174
-free_port 5173 'vite' || echo "    ⚠ demo app skipped (:5173 busy); payroll is unaffected"
-( cd frontend && nohup bun run dev -- --port 5173 --strictPort > "$L-frontend.log" 2>&1 & )
 ( cd payroll && nohup bun run dev -- --port 5174 --strictPort > "$L-payroll.log" 2>&1 & )
-wait_http http://localhost:5173 && echo "    frontend up" || echo "    ⚠ frontend failed (log $L-frontend.log)"
-wait_http http://localhost:5174 && echo "    payroll up" || echo "    ⚠ payroll failed (log $L-payroll.log)"
+# The demo app is optional: a busy :5173 skips it (strictPort: never :5174)
+FRONTEND=1
+free_port 5173 'vite' || { echo "    ⚠ demo app skipped (:5173 busy); payroll is unaffected"; FRONTEND=0; }
+[ "$FRONTEND" = 1 ] && ( cd frontend && nohup bun run dev -- --port 5173 --strictPort > "$L-frontend.log" 2>&1 & )
+wait_http http://localhost:5174 || { tail -10 "$L-payroll.log"; echo "    ✗ payroll app failed (log $L-payroll.log)"; exit 1; }
+echo "    payroll up"
+if [ "$FRONTEND" = 1 ]; then
+  wait_http http://localhost:5173 && echo "    frontend up" || echo "    ⚠ demo app failed (log $L-frontend.log); payroll is unaffected"
+fi
 
 # Optional native prover helper (NATIVE_PROVER=1): proves on this machine
 # ~3x faster than the browser; pair it in the app's Settings with the code.
@@ -199,15 +212,17 @@ PAIR_LINE=""
 if [ "${NATIVE_PROVER:-0}" = "1" ]; then
   echo "▶ +    Native prover helper (:8790)…"
   PS_BIN="$ROOT/crates/privacy-cash-prover/target/release/prover-server"
-  if [ ! -x "$PS_BIN" ]; then
-    echo "    building (2-5 min on first run, log $L-prover-build.log)…"
-    cargo +stable build --release --bin prover-server --manifest-path "$ROOT/crates/privacy-cash-prover/Cargo.toml" > "$L-prover-build.log" 2>&1 \
-      || { echo "    ✗ native helper build failed (log $L-prover-build.log):"; tail -20 "$L-prover-build.log"; exit 1; }
-  fi
+  # Always through cargo: a no-op when current, a rebuild when the source changed
+  CARGO_STABLE=(cargo); command -v rustup >/dev/null 2>&1 && CARGO_STABLE=(cargo +stable)
+  [ -x "$PS_BIN" ] || echo "    building (2-5 min on first run, log $L-prover-build.log)…"
+  "${CARGO_STABLE[@]}" build --release --bin prover-server --manifest-path "$ROOT/crates/privacy-cash-prover/Cargo.toml" > "$L-prover-build.log" 2>&1 \
+    || { tail -20 "$L-prover-build.log"; echo "    ✗ native helper build failed (log $L-prover-build.log)"; exit 1; }
   pkill -f '[p]rover-server' >/dev/null 2>&1; sleep 1
-  PROVER_CODE="${PROVER_TOKEN:-$(openssl rand -hex 8)}"
+  free_port 8790 'prover-server' || exit 1
+  PROVER_CODE="${PROVER_TOKEN:-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')}"
   ( PROVER_TOKEN="$PROVER_CODE" nohup "$PS_BIN" > "$L-prover.log" 2>&1 & )
-  wait_http http://127.0.0.1:8790/health && echo "    up" || echo "    ⚠ prover-server failed (log $L-prover.log)"
+  wait_http http://127.0.0.1:8790/health || { tail -10 "$L-prover.log"; echo "    ✗ native helper failed (log $L-prover.log)"; exit 1; }
+  echo "    up"
   PAIR_LINE="    native    paste this pairing code in Settings → Native prover pairing code: $PROVER_CODE"
 fi
 
@@ -216,9 +231,10 @@ cat <<EOF
 ✅  all up — payroll: http://localhost:5174  (demo app: http://localhost:5173)
     Settings → "Local simnet" preset points the payroll app here.
     backend   http://localhost:8080   (program $PROG)
-    rpc       http://localhost:8899   (surfpool --offline — resets on restart,
+    rpc       http://localhost:8899   (surfpool --offline — fresh chain: RESET=1 ./run.sh,
                                        run.sh redeploys/re-inits automatically)
     logs      /tmp/privacy-cash-{surfpool,backend,frontend,payroll,prover}.log
+              (setup: /tmp/privacy-cash-{install,sdk-build,build,deploy}.log)
 $PAIR_LINE
 
     fund your Phantom on surfpool:
