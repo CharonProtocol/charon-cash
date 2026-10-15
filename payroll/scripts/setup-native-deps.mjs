@@ -21,14 +21,21 @@ if (hasherDist) {
   }
 }
 
-const circuitSrc = path.join("..", "frontend", "public", "circuit")
+// public/circuit is tracked in git: only fill a missing file, never overwrite
+// (a partial ../frontend/public/circuit used to crash the install).
 const publicCircuit = path.join("public", "circuit")
-if (existsSync(circuitSrc)) {
-  mkdirSync(publicCircuit, { recursive: true })
-  for (const f of ["transaction2.wasm", "transaction2.zkey"]) {
-    copyFileSync(path.join(circuitSrc, f), path.join(publicCircuit, f))
-    console.log(`[setup] copied ${f}`)
+const circuitSrcs = [
+  path.join("..", "frontend", "public", "circuit"),
+  path.join("..", "programs", "privacy-cash", "artifacts", "circuits"),
+]
+mkdirSync(publicCircuit, { recursive: true })
+for (const f of ["transaction2.wasm", "transaction2.zkey"]) {
+  if (existsSync(path.join(publicCircuit, f))) continue
+  const src = circuitSrcs.find((d) => existsSync(path.join(d, f)))
+  if (src) {
+    copyFileSync(path.join(src, f), path.join(publicCircuit, f))
+    console.log(`[setup] copied ${f} from ${src}`)
+  } else {
+    console.warn(`[setup] ${f} not found — restore it with: git checkout -- payroll/public/circuit`)
   }
-} else {
-  console.warn("[setup] ../frontend/public/circuit not found — skipping circuit copy.")
 }

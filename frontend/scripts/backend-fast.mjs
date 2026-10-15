@@ -3,7 +3,7 @@
 // own sends) and ordered exactly as the chain executed (fast-indexer.mjs).
 // Paths, roots, commitments and nullifiers are answered from memory; the
 // relay answers the moment the tx is broadcast. Run: bun scripts/backend-fast.mjs
-import { readFileSync, writeFileSync, existsSync } from "node:fs"
+import { readFileSync, writeFileSync, existsSync, renameSync } from "node:fs"
 import path from "node:path"
 import { homedir } from "node:os"
 
@@ -50,20 +50,46 @@ const ALT_ADDRESS = process.env.ALT_ADDRESS ?? readDotEnv().VITE_ALT_ADDRESS ?? 
 const conn = new Connection(RPC, "confirmed")
 const payer = Keypair.fromSecretKey(Buffer.from(JSON.parse(readFileSync(idJson, "utf8"))))
 
-// Recipient registry: in-memory, optionally seeded from a JSON file
-// (wallet -> {note_pubkey, enc_pubkey}) so test employees can be enrolled
-// without running the employee app. Enrollments via PUT are additive.
+// Recipient registry: in-memory, seeded from a JSON file (wallet ->
+// {note_pubkey, enc_pubkey}) so test employees can be enrolled without running
+// the employee app. Enrollments via PUT are additive and written back to the
+// file (public keys only), so a restart never turns enrolled wallets into
+// "not enrolled".
 const recipients = new Map()
+const RECIPIENTS_FILE = process.env.RECIPIENTS_FILE
 try {
-  const rf = process.env.RECIPIENTS_FILE
-  if (rf && existsSync(rf)) {
-    for (const [w, k] of Object.entries(JSON.parse(readFileSync(rf, "utf8")))) {
+  if (RECIPIENTS_FILE && existsSync(RECIPIENTS_FILE)) {
+    for (const [w, k] of Object.entries(JSON.parse(readFileSync(RECIPIENTS_FILE, "utf8")))) {
       recipients.set(w, k)
     }
-    console.log(`loaded ${recipients.size} recipients from ${rf}`)
+    console.log(`loaded ${recipients.size} recipients from ${RECIPIENTS_FILE}`)
   }
 } catch (e) {
   console.error("recipients seed load failed:", e.message)
+}
+function saveRecipients() {
+  if (!RECIPIENTS_FILE) return
+  try {
+    const tmp = `${RECIPIENTS_FILE}.tmp`
+    writeFileSync(tmp, JSON.stringify(Object.fromEntries(recipients), null, 1))
+    renameSync(tmp, RECIPIENTS_FILE)
+  } catch (e) {
+    console.error("recipients save failed:", e.message)
+  }
+}
+// Same checks as the deployed relayer: the wallet signed this exact key set.
+const RECIPIENT_PUT_PREFIX = "privacy-cash-recipients-v1"
+const BN254_R = 21888242871839275222246405745257275088548364400416034343698204186575808495617n
+function recipientPutError(wallet, note, enc, signature) {
+  let walletBytes
+  try { walletBytes = new PublicKey(wallet).toBytes() } catch { return "wallet must be a 32-byte base58 pubkey" }
+  if (!/^(0|[1-9][0-9]{0,77})$/.test(note) || BigInt(note) >= BN254_R) return "note_pubkey must be a canonical decimal field element"
+  if (!/^[0-9a-f]{64}$/i.test(enc)) return "enc_pubkey must be 64 hex chars (32 bytes)"
+  const sig = Buffer.from(signature, "base64")
+  if (sig.length !== 64) return "signature must be 64 bytes (base64)"
+  const msg = new TextEncoder().encode(`${RECIPIENT_PUT_PREFIX}\n${wallet}\n${note}\n${enc}`)
+  if (!nacl.sign.detached.verify(msg, sig, walletBytes)) return "signature does not verify for this wallet and key set"
+  return null
 }
 const wasm = await WasmFactory.getInstance()
 
@@ -223,7 +249,7 @@ Bun.serve({
       return new Response(null, { status: 204, headers: corsHeaders })
     }
     try {
-      if (p === "/health") return json({ status: "ok" })
+      if (p === "/health") return json({ status: "ok", program: PROGRAM.toBase58() })
 
       // Local prover telemetry: failing circuit inputs land in
       // /tmp/prover-failures.json for offline diagnosis.
@@ -448,13 +474,13 @@ Bun.serve({
       if (p === "/api/recipients" && method === "PUT") {
         let body = {}
         try { const text = await req.text(); if (text.trim()) body = JSON.parse(text) } catch { }
-        const wallet = String(body.wallet || "")
-        const note = String(body.note_pubkey || "")
-        const enc = String(body.enc_pubkey || "")
-        if (!wallet || !note || !enc) {
-          return json({ error: { code: "BAD_REQUEST", message: "wallet, note_pubkey, enc_pubkey required" } }, 400)
-        }
+        const wallet = String(body.wallet || "").trim()
+        const note = String(body.note_pubkey || "").trim()
+        const enc = String(body.enc_pubkey || "").trim()
+        const bad = recipientPutError(wallet, note, enc, String(body.signature || "").trim())
+        if (bad) return json({ error: { code: "BAD_REQUEST", message: bad } }, 400)
         recipients.set(wallet, { note_pubkey: note, enc_pubkey: enc })
+        saveRecipients()
         return json({ ok: true })
       }
 

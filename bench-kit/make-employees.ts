@@ -50,8 +50,29 @@ for (const kp of employees) {
   registry[kp.publicKey.toBase58()] = { note_pubkey: keys.notePubkey, enc_pubkey: keys.encPubkey }
 }
 
-// The backend keeps API registrations in memory; also merge them (public keys
-// only) into the seed file run.sh loads, so the employees survive a restart.
+// The app's "Local simnet" asks 127.0.0.1, this kit asks localhost: both must
+// see every employee, or the browser shows them "not enrolled".
+const wallets = employees.map((kp: { publicKey: { toBase58(): string } }) => kp.publicKey.toBase58())
+for (const base of new Set([backend, backend.replace("://localhost", "://127.0.0.1")])) {
+  let seen = 0
+  for (let i = 0; i < wallets.length; i += 90) {
+    const res = await fetch(`${base}/api/recipients/batch`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ wallets: wallets.slice(i, i + 90) }),
+    }).catch(() => null)
+    const body = await res?.json().catch(() => null)
+    seen += Array.isArray(body?.results) ? body.results.length : 0
+  }
+  if (seen !== wallets.length) {
+    console.error(`✗ ${base} sees ${seen}/${wallets.length} test employees enrolled: another server answers there.`)
+    console.error("  check: lsof -nP -iTCP:8080 -sTCP:LISTEN   (then stop it and re-run)")
+    process.exit(1)
+  }
+}
+
+// backend-fast saves registrations to the seed file run.sh loads; merge them
+// (public keys only) here too, so they survive a restart on the shim backend.
 const seedFile = path.join(import.meta.dir, "../payroll/.local-recipients.json")
 const seed = existsSync(seedFile) ? JSON.parse(readFileSync(seedFile, "utf8")) : {}
 writeFileSync(seedFile, JSON.stringify({ ...seed, ...registry }, null, 1))

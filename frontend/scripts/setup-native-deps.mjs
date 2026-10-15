@@ -24,20 +24,21 @@ if (hasherDist) {
   }
 }
 
-const sdkCircuit = path.join("..", "privacy-cash-sdk", "circuit2")
+// Circuit: the sibling privacy-cash-sdk clone when present, else the copy
+// tracked in this repo (same files) — a fresh clone works without the sibling.
+const circuitSrcs = [
+  path.join("..", "..", "privacy-cash-sdk", "circuit2"),
+  path.join("..", "privacy-cash-sdk", "circuit2"),
+  path.join("..", "programs", "privacy-cash", "artifacts", "circuits"),
+]
 const publicCircuit = path.join("public", "circuit")
-if (existsSync(sdkCircuit)) {
-  mkdirSync(publicCircuit, { recursive: true })
-  for (const f of ["transaction2.wasm", "transaction2.zkey"]) {
-    const from = path.join(sdkCircuit, f)
-    if (existsSync(from)) {
-      copyFileSync(from, path.join(publicCircuit, f))
-      console.log(`[setup] copied ${f} -> public/circuit/`)
-    }
+mkdirSync(publicCircuit, { recursive: true })
+for (const f of ["transaction2.wasm", "transaction2.zkey"]) {
+  const src = circuitSrcs.find((d) => existsSync(path.join(d, f)))
+  if (src) {
+    copyFileSync(path.join(src, f), path.join(publicCircuit, f))
+    console.log(`[setup] copied ${f} from ${src} -> public/circuit/`)
+  } else {
+    console.warn(`[setup] ${f} not found in ${circuitSrcs.join(", ")} — skipping`)
   }
-} else {
-  console.warn(
-    "[setup] privacy-cash-sdk/ not found as a sibling — skipping circuit copy.\n" +
-      "        Clone https://github.com/Privacy-Cash/privacy-cash-sdk next to this repo and re-run.",
-  )
 }

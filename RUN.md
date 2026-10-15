@@ -1,5 +1,18 @@
 # How to run / test
 
+## Quick start (one command)
+```bash
+./run.sh       # surfpool + program + backend + apps; safe to re-run, heals what's missing
+```
+Then open http://localhost:5174 → Settings → **Local simnet** → Demo Wallet → Faucet → upload a CSV → Run.
+Speed test on a new machine: `FAST=1 bench-kit/run-test.sh` (sends back `bench-kit/results/<host>-<time>.json`).
+
+`run.sh` serves its own backend on :8080 (`frontend/scripts/backend-fast.mjs`). Don't also start the
+Rust backend from step 3 below: two servers on :8080 split the app's requests (enrolled wallets show
+"not enrolled", payouts look missing). `run.sh` stops a leftover one and refuses unknown programs on the port.
+
+## Manual setup (Rust backend: Postgres + Yellowstone)
+
 Run from the repo root. Install once: `surfpool`, `solana`, `cargo`, `bun`.
 The upstream SDK must be cloned next to this repo (for the circuit files):
 `git clone https://github.com/Privacy-Cash/privacy-cash-sdk` (one-time, not repeated below).

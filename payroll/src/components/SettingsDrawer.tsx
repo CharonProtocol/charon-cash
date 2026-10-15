@@ -145,7 +145,7 @@ export function SettingsDrawer({ onClose }: { onClose: () => void }) {
           <p className="text-xs text-muted-foreground">
             Saving reloads the app so the SDK re-points at the new backend. For the local simnet,
             start the stack with{" "}
-            <code className="mono">zsh payroll/rust-prover-bench/bench/reset-env.sh</code>.
+            <code className="mono">./run.sh</code> in the repo root.
           </p>
           <div className="flex gap-2">
             <Button className="btn-glow" onClick={save}>

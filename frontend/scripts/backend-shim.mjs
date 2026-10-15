@@ -314,7 +314,7 @@ Bun.serve({
       return new Response(null, { status: 204, headers: corsHeaders })
     }
     try {
-      if (p === "/health") return json({ status: "ok" })
+      if (p === "/health") return json({ status: "ok", program: PROGRAM.toBase58() })
 
       // Local prover telemetry: failing circuit inputs land in
       // /tmp/prover-failures.json for offline diagnosis.

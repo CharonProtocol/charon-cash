@@ -20,6 +20,21 @@ export PATH="$HOME/.bun/bin:$HOME/.cargo/bin:$HOME/.local/bin:$HOME/.local/share
 ROWS="${ROWS:-100}"
 BACKEND=http://localhost:8080
 
+# write_log <file>: tool versions, who serves the stack's ports, and the
+# run.sh/backend/app/chain log tails — enough to tell why a run failed.
+write_log() {
+  {
+    echo "== versions"; echo "bun $(bun --version)"; echo "$SOLANA_V"; surfpool --version; uname -a
+    for P in 8899 8080 5174; do echo; echo "== listening on :$P"; lsof -nP -iTCP:$P -sTCP:LISTEN 2>/dev/null || true; done
+    echo; echo "== stack log (run.sh)"; cat "$LOCAL/stack.log" 2>/dev/null || true
+    for F in install sdk-build build; do echo; echo "== $F log (tail)"; tail -15 "/tmp/privacy-cash-$F.log" 2>/dev/null || true; done
+    echo; echo "== backend log (tail)"; tail -80 /tmp/privacy-cash-backend.log 2>/dev/null || true
+    echo; echo "== payroll app log (tail)"; tail -20 /tmp/privacy-cash-payroll.log 2>/dev/null || true
+    echo; echo "== surfpool log (tail)"; tail -20 /tmp/privacy-cash-surfpool.log 2>/dev/null || true
+  } > "$1"
+}
+HOST=$(hostname -s 2>/dev/null || hostname)
+STAMP=$(date +%Y%m%d-%H%M%S)
 ask() { local a; read -r -p "$1 [y/N] " a </dev/tty || true; [[ "$a" == y || "$a" == Y ]]; }
 need() {
   # need <command> <what> <install command>
@@ -41,10 +56,7 @@ need surfpool "Surfpool (local Solana)" "curl -sL https://run.surfpool.run/ | ba
 SOLANA_V=$(solana --version 2>/dev/null || true)   # read whole: cutting the pipe makes solana panic
 echo "    ok: bun $(bun --version), ${SOLANA_V%% (*}, $(surfpool --version)"
 
-echo "▶ 2/6  Dependencies + SDK build"
-bun install --silent >/dev/null
-(cd payroll && bun install --silent >/dev/null)
-(cd sdk && bun run build >/dev/null)
+echo "▶ 2/6  Headless Chrome (dependencies + SDK build are run.sh's job)"
 CHROME_DIR="$HOME/.cache/charon-browsers"
 if ! ls "$CHROME_DIR"/chrome-headless-shell/*/*/chrome-headless-shell >/dev/null 2>&1; then
   echo "    downloading headless Chrome (one time)…"
@@ -52,14 +64,20 @@ if ! ls "$CHROME_DIR"/chrome-headless-shell/*/*/chrome-headless-shell >/dev/null
 fi
 
 echo "▶ 3/6  Local chain + program + backend + app (first run builds the program: 5-10 min)"
-./run.sh > "$LOCAL/stack.log" 2>&1 || { echo "    ✗ stack failed — see $LOCAL/stack.log"; tail -20 "$LOCAL/stack.log"; exit 1; }
+./run.sh > "$LOCAL/stack.log" 2>&1 || {
+  tail -20 "$LOCAL/stack.log"
+  write_log "$KIT/results/$HOST-$STAMP-setup-failed.log"
+  echo "    ✗ setup failed — send back: $KIT/results/$HOST-$STAMP-setup-failed.log"
+  exit 1
+}
 echo "    up (log $LOCAL/stack.log)"
 
 echo "▶ 4/6  $ROWS test employees"
 bun "$KIT/make-employees.ts" "$LOCAL" "$ROWS" "$BACKEND"
 CSV="$LOCAL/employees-$ROWS.csv"
 
-leaves() { curl -s "$BACKEND/api/merkle/sol" | bun -e 'console.log(JSON.parse(await Bun.stdin.text()).next_leaf_index)'; }
+# "?" when the backend gives no tree: verify-notes then names the problem
+leaves() { curl -s "$BACKEND/api/merkle/sol" | bun -e 'console.log(JSON.parse(await Bun.stdin.text()).next_leaf_index ?? "?")' 2>/dev/null || echo "?"; }
 run_one() {
   # run_one <label> [extra run-bench args…] -> prints the result file path
   local label="$1"; shift
@@ -92,8 +110,7 @@ if [ "$CORES" -ge 24 ]; then
 fi
 
 echo "▶ 6/6  Result file"
-HOST=$(hostname -s 2>/dev/null || hostname)
-OUT="$KIT/results/$HOST-$(date +%Y%m%d-%H%M%S).json"
+OUT="$KIT/results/$HOST-$STAMP.json"
 if [ "$(uname)" = Darwin ]; then
   MACHINE=$(printf '{"os":"macOS %s","model":"%s","cpu":"%s","cores":%s,"pCores":"%s","eCores":"%s","memGB":%s}' \
     "$(sw_vers -productVersion)" "$(sysctl -n hw.model)" "$(sysctl -n machdep.cpu.brand_string)" "$(sysctl -n hw.ncpu)" \
@@ -105,19 +122,21 @@ else
     "$(( $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1048576 ))")
 fi
 bun "$KIT/summarize.ts" "$OUT" "$MACHINE" "${RUNS[@]}"
-# a failed run ships its evidence: tool versions + backend/chain log tails next to the result
-if grep -q '"failed": [1-9]' "$OUT"; then
-  LOG="${OUT%.json}.log"
-  {
-    echo "== versions"; echo "bun $(bun --version)"; echo "$SOLANA_V"; surfpool --version; uname -a
-    echo; echo "== backend log (tail)"; tail -60 /tmp/privacy-cash-backend.log 2>/dev/null
-    echo; echo "== stack log (tail)"; tail -40 "$LOCAL/stack.log" 2>/dev/null
-  } > "$LOG"
-  echo "    ✗ some payouts failed — reasons above; also send $LOG"
+# Every run ships its evidence next to the result: tool versions, who serves
+# the stack's ports, backend/chain/app log tails. Failures say so up front.
+LOG="${OUT%.json}.log"
+write_log "$LOG"
+if grep -Eq '"failed": [1-9]|"problems": \[$' "$OUT"; then
+  STATUS="✗ some payouts failed or did not verify — reasons above"
+else
+  STATUS="✅ all payouts sent and every note verified on-chain"
 fi
 echo
 cat <<EOF
-✅ done — send this file back: $OUT
+$STATUS
+send back both files:
+  $OUT
+  $LOG
 
 Everything is still running locally, so you can try it yourself in the browser:
   1. Open http://localhost:5174 in Chrome (or any Chromium browser).
