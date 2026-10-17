@@ -31,12 +31,24 @@ export const FEE_RECIPIENT = new PublicKey(
     "5kHwyJA15XjiHYxUTGif8NoH25h1dTxjqhscTnf4V1Ua",
 );
 
-export const SUPPORTED_SPL_MINTS = [
+const defaultSplMints = [
   "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
   "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
 ];
 
-export const API_URL = "http://127.0.0.1:8080";
+export const SUPPORTED_SPL_MINTS = (
+  (typeof process !== "undefined" && process.env.SUPPORTED_SPL_MINTS) ||
+  getEnv().VITE_SUPPORTED_SPL_MINTS ||
+  defaultSplMints.join(",")
+).split(",").map((mint) => new PublicKey(mint.trim()).toBase58());
+
+export const API_URL = backendUrl();
+
+// Keep devnet notes and scan cursors separate from a local validator's history.
+export const STORAGE_NAMESPACE =
+  (typeof process !== "undefined" && process.env.STORAGE_NAMESPACE) ||
+  getEnv().VITE_STORAGE_NAMESPACE ||
+  "CHARONPROTOCOL_DB";
 
 export const SEED = {
   TREE_ACCOUNT: "merkle_tree",
@@ -63,7 +75,8 @@ function getEnv(): Record<string, string | undefined> {
 
 export function backendUrl(): string {
   const env = getEnv();
-  return (env.VITE_BACKEND_URL ?? "http://localhost:8080").replace(/\/$/, "");
+  const nodeUrl = typeof process !== "undefined" ? process.env.BACKEND_URL : undefined;
+  return (nodeUrl ?? env.VITE_BACKEND_URL ?? "http://localhost:8080").replace(/\/$/, "");
 }
 
 export function envProgramId(): PublicKey | null {

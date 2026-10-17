@@ -1,6 +1,6 @@
-use anyhow::Result;
+use anyhow::{ensure, Result};
 use rocksdb::{DBWithThreadMode, Options, SingleThreaded, DB};
-use rs_merkle_tree::{hasher::PoseidonHasher, stores::RocksDbStoreV2, MerkleTree};
+use rs_merkle_tree::{hasher::PoseidonHasher, stores::RocksDbStoreV2, MerkleTree, Node};
 use std::{collections::HashMap, sync::Arc};
 
 const MERKLE_STORE_PATH: &'static str = "silent_pay_merkle_store.db";
@@ -17,8 +17,40 @@ pub struct MerkleManager {
 }
 
 impl MerkleManager {
+    /// RocksDB is a derived cache. Restore canonical, ordered leaves from Postgres
+    /// before the API or indexer can use it, including after an interrupted write.
+    pub async fn restore_from_db(&mut self, db: &crate::db::Db) -> Result<()> {
+        for tree_key in db.tree_keys().await? {
+            let expected = db.next_index(&tree_key).await? as u64;
+            let mut next = 0;
+            loop {
+                let leaves = db.fetch_commitments(next, 1000, &tree_key).await?;
+                if leaves.is_empty() { break; }
+                next += leaves.len() as u64;
+                self.restore_batch(&tree_key, leaves)?;
+            }
+            ensure!(next == expected, "stored tree {tree_key} has {next} leaves, expected {expected}");
+        }
+        Ok(())
+    }
+
+    fn restore_batch(&mut self, tree_key: &String, leaves: Vec<(u64, Vec<u8>)>) -> Result<()> {
+        let tree = self.get_or_create_pool(tree_key);
+        let start = tree.num_leaves();
+        let mut nodes = Vec::with_capacity(leaves.len());
+        for (offset, (index, commitment)) in leaves.into_iter().enumerate() {
+            ensure!(index == start + offset as u64, "gap in stored tree {tree_key} at leaf {index}");
+            ensure!(commitment.len() == 32, "invalid commitment length at leaf {index}");
+            let mut bytes = [0u8; 32];
+            bytes.copy_from_slice(&commitment);
+            nodes.push(Node::from(bytes));
+        }
+        tree.add_leaves(&nodes)?;
+        Ok(())
+    }
+
     pub async fn new() -> Result<Self> {
-        // WARNING : Wipes all the data on boot , only for development for now
+        // Rebuild this derived cache from Postgres at startup (see main).
         if let Err(e) = tokio::fs::remove_dir_all(MERKLE_STORE_PATH).await {
             if e.kind() != std::io::ErrorKind::NotFound {
                 return Err(e.into());
@@ -110,6 +142,32 @@ mod tests {
             bytes[31] = i as u8 + 1;
             Node::from(bytes)
         })
+    }
+
+    #[tokio::test]
+    async fn restores_ordered_batches_to_the_same_root() -> Result<(), Error> {
+        let (_expected_dir, mut expected) = test_manager()?;
+        let (_restored_dir, mut restored) = test_manager()?;
+        let key = sol_address();
+        let nodes = field_leaves();
+        expected.get_or_create_pool(&key).add_leaves(&nodes)?;
+        let leaves: Vec<_> = nodes.iter().enumerate()
+            .map(|(i, node)| (i as u64, node.as_ref().to_vec())).collect();
+        restored.restore_batch(&key, leaves[..40].to_vec())?;
+        restored.restore_batch(&key, leaves[40..].to_vec())?;
+        assert_eq!(restored.get_pool(&key).unwrap().num_leaves(), 100);
+        assert_eq!(restored.get_pool(&key).unwrap().root()?, expected.get_pool(&key).unwrap().root()?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rejects_missing_or_malformed_stored_leaves() -> Result<(), Error> {
+        let (_dir, mut manager) = test_manager()?;
+        let key = sol_address();
+        assert!(manager.restore_batch(&key, vec![(1, vec![0; 32])]).is_err());
+        assert!(manager.restore_batch(&key, vec![(0, vec![0; 31])]).is_err());
+        assert_eq!(manager.get_pool(&key).unwrap().num_leaves(), 0);
+        Ok(())
     }
 
     #[tokio::test]

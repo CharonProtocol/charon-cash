@@ -10,7 +10,7 @@ pub struct Config {
     pub yellowstone_grpc_url: String,
     pub yellowstone_x_token: Option<String>,
     pub indexer_reconnect_secs: u64,
-    /// Enable RPC polling for local validators that do not stream transactions.
+    /// Use RPC polling instead of Yellowstone (also useful for local devnet tests).
     pub indexer_rpc_fallback: bool,
     pub supported_mints: Vec<Pubkey>,
     /// Operator password for the admin/operator endpoints (`ADMIN_PASSWORD` env).
@@ -20,6 +20,9 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self> {
+        let indexer_rpc_fallback = std::env::var("INDEXER_RPC_FALLBACK")
+            .ok().map(|value| value.parse::<bool>()).transpose()
+            .context("INDEXER_RPC_FALLBACK must be true or false")?.unwrap_or(false);
         let program_id = std::env::var("PROGRAM_ID")
             .unwrap_or_else(|_| "6MyU66azgzrp6eioGxmKrGZSxv7FB9nb1oXSrd1Qkwmn".to_string());
 
@@ -33,20 +36,17 @@ impl Config {
             )?,
             program_id: Pubkey::from_str(&program_id)
                 .with_context(|| format!("invalid PROGRAM_ID: {program_id}"))?,
-            yellowstone_grpc_url: std::env::var("YELLOWSTONE_GRPC_URL").context(
-                "YELLOWSTONE_GRPC_URL is required (e.g. https://your-yellowstone-endpoint)",
-            )?,
+            yellowstone_grpc_url: match std::env::var("YELLOWSTONE_GRPC_URL") {
+                Ok(url) if !url.is_empty() => url,
+                _ if indexer_rpc_fallback => String::new(),
+                _ => anyhow::bail!("YELLOWSTONE_GRPC_URL is required unless INDEXER_RPC_FALLBACK=true"),
+            },
             yellowstone_x_token,
             indexer_reconnect_secs: std::env::var("INDEXER_RECONNECT_SECS")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(3),
-            indexer_rpc_fallback: std::env::var("INDEXER_RPC_FALLBACK")
-                .ok()
-                .map(|value| value.parse::<bool>())
-                .transpose()
-                .context("INDEXER_RPC_FALLBACK must be true or false")?
-                .unwrap_or(false),
+            indexer_rpc_fallback,
 
             supported_mints: parse_supported_mints(),
             admin_password: std::env::var("ADMIN_PASSWORD")

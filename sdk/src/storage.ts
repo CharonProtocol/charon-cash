@@ -10,6 +10,7 @@
 
 import { openDB, type IDBPDatabase } from "idb";
 import { CharonProtocolError, CharonProtocolErrorCode } from "./error";
+import { STORAGE_NAMESPACE } from "./constants";
 
 const CURRENTDBVERSION = 1;
 
@@ -52,7 +53,7 @@ export class StorageService {
 
   static async start() {
     try {
-      const db = await openDB("CHARONPROTOCOL_DB", CURRENTDBVERSION, {
+      const db = await openDB(STORAGE_NAMESPACE, CURRENTDBVERSION, {
         upgrade(db) {
           // schema for this is
           // StoredUtxoSchema = {

@@ -1,6 +1,7 @@
 import { useId } from "react";
 
-export type Token = "SOL" | "USDC" | "USDT";
+import type { Token } from "../../lib/config";
+export type { Token } from "../../lib/config";
 
 export function TokenIcon({
   token = "SOL",
@@ -10,6 +11,14 @@ export function TokenIcon({
   className?: string;
 }) {
   const uid = useId().replace(/:/g, "");
+  if (token === "TEST") {
+    return (
+      <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+        <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" />
+        <text x="12" y="16" textAnchor="middle" fill="currentColor" fontSize="12">T</text>
+      </svg>
+    );
+  }
   if (token === "USDC") {
     return (
       <UsdcIcon

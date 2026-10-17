@@ -47,23 +47,18 @@ impl Indexer {
     pub async fn run(&self) -> Result<()> {
         info!(
             program_id = %self.config.program_id,
-            grpc = %self.config.yellowstone_grpc_url,
             "indexer starting (yellowstone gRPC)"
         );
 
-        // Surfpool's geyser stream stays connected but does not deliver local
-        // program transactions. Pull the same transactions from RPC so a
-        // deposit's notes reach the client.
+        // Use one ordered source at a time. Concurrent polling and streaming
+        // could append a newer transaction before older replayed leaves.
         if self.config.indexer_rpc_fallback {
-            let catch_up = self.clone();
-            tokio::spawn(async move {
-                loop {
-                    if let Err(err) = catch_up.catch_up_from_rpc().await {
-                        warn!(error = %err, "rpc note catch-up failed");
-                    }
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            loop {
+                if let Err(err) = self.catch_up_from_rpc().await {
+                    warn!(error = %err, "rpc note catch-up failed; will retry without skipping history");
                 }
-            });
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            }
         }
 
         loop {
@@ -121,6 +116,9 @@ impl Indexer {
             .await
             .context("send subscribe request")?;
 
+        // Subscribe first so incoming updates queue while RPC fills any gap
+        // since startup or the previous connection. Already replayed txs dedupe.
+        self.catch_up_from_rpc().await?;
         info!("yellowstone subscription active");
 
         while let Some(message) = stream.next().await {
@@ -348,50 +346,48 @@ impl Indexer {
         )))
     }
 
-    /// Yellowstone on this local validator does not deliver program transactions.
-    /// Read them from RPC and store the same notes the live stream would.
-    async fn catch_up_from_rpc(&self) -> Result<()> {
+    /// Replay from the persisted cursor, across every RPC page, oldest first.
+    /// A failed fetch aborts replay so no later leaf can overtake a missing one.
+    pub async fn catch_up_from_rpc(&self) -> Result<()> {
         let rpc = std::env::var("SOLANA_RPC_URL")
             .unwrap_or_else(|_| "http://127.0.0.1:8899".to_string());
-        info!(%rpc, "catching up notes from rpc");
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .build()
-            .context("rpc http client")?;
-        let program = self.config.program_id.to_string();
-        let signatures: serde_json::Value = client
-            .post(&rpc)
-            .json(&serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "getSignaturesForAddress",
-                "params": [program, {"limit": 1000, "commitment": "confirmed"}]
-            }))
-            .send()
-            .await
-            .context("getSignaturesForAddress")?
-            .json()
-            .await
-            .context("parse signature list")?;
-
-        let Some(list) = signatures["result"].as_array() else {
-            return Ok(());
-        };
-
-        for entry in list.iter().rev() {
-            if entry.get("err").is_some_and(|err| !err.is_null()) {
-                continue;
+            .timeout(std::time::Duration::from_secs(30)).build()?;
+        let (cursor, _) = self.db.get_cursor().await?;
+        let pending = signature_history(&client, &rpc, &self.config.program_id.to_string(), cursor.as_deref()).await?;
+        for entry in &pending {
+            let signature = entry["signature"].as_str().context("RPC signature missing")?;
+            let slot = entry["slot"].as_u64().context("RPC signature slot missing")?;
+            if entry["err"].is_null() && !self.db.has_tx(signature).await? {
+                self.index_rpc_transaction(&client, &rpc, signature, slot).await?;
             }
-            let Some(signature) = entry["signature"].as_str() else {
-                continue;
+            self.db.set_cursor(signature, slot).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn verify_roots(&self) -> Result<()> {
+        use crate::relayer::chain::{derive_spl_tree_account, parse_tree_account};
+        let rpc = crate::relayer::rpc::RpcClient::new(std::env::var("SOLANA_RPC_URL")?);
+        for mint in &self.config.supported_mints {
+            let tree_address = if mint.to_string() == sol_address() {
+                Pubkey::find_program_address(&[TREE_ACCOUNT_SEED], &self.config.program_id).0
+            } else {
+                derive_spl_tree_account(&self.config.program_id, mint)
             };
-            if self.db.has_tx(signature).await? {
-                continue;
-            }
-            let slot = entry["slot"].as_u64().unwrap_or(0);
-            if let Err(err) = self.index_rpc_transaction(&client, &rpc, signature, slot).await {
-                warn!(%signature, error = %err, "rpc transaction was not indexed");
-            }
+            let bytes = rpc.get_account_data(&tree_address).await
+                .map_err(|error| anyhow::anyhow!("{}", error.message))?
+                .context("configured pool is not initialized on-chain")?;
+            let snapshot = parse_tree_account(&bytes)
+                .map_err(|error| anyhow::anyhow!("{}", error.message))?;
+            let manager = self.merkle_manager.read().await;
+            let tree = manager.get_pool(&mint.to_string()).context("indexed pool missing")?;
+            anyhow::ensure!(tree.num_leaves() == snapshot.next_index as u64,
+                "pool {mint}: indexed {} leaves but chain has {}; history is incomplete", tree.num_leaves(), snapshot.next_index);
+            let root = tree.root()?;
+            anyhow::ensure!(snapshot.roots.iter().any(|known| known.as_slice() == root.as_ref()),
+                "pool {mint}: indexed root is absent from on-chain history");
+            info!(mint = %mint, leaves = tree.num_leaves(), "indexed pool verified against chain");
         }
         Ok(())
     }
@@ -403,28 +399,10 @@ impl Indexer {
         signature: &str,
         slot: u64,
     ) -> Result<()> {
-        let tx: serde_json::Value = client
-            .post(rpc)
-            .json(&serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "getTransaction",
-                "params": [signature, {
-                    "encoding": "json",
-                    "commitment": "confirmed",
-                    "maxSupportedTransactionVersion": 0
-                }]
-            }))
-            .send()
-            .await
-            .context("getTransaction")?
-            .json()
-            .await
-            .context("parse transaction")?;
-
-        let Some(result) = tx.get("result").filter(|value| !value.is_null()) else {
-            return Ok(());
-        };
+        let result = rpc_result(client, rpc, "getTransaction", serde_json::json!([signature, {
+            "encoding": "json", "commitment": "confirmed", "maxSupportedTransactionVersion": 0
+        }])).await?;
+        anyhow::ensure!(!result.is_null(), "transaction {signature} is not yet available from RPC");
         if !result["meta"]["err"].is_null() {
             return Ok(());
         }
@@ -566,6 +544,46 @@ impl Indexer {
     }
 }
 
+async fn signature_history(client: &reqwest::Client, rpc: &str, program: &str, cursor: Option<&str>) -> Result<Vec<serde_json::Value>> {
+        let mut before: Option<String> = None;
+        let mut pending = Vec::new();
+        loop {
+            let mut options = serde_json::json!({"limit": 1000, "commitment": "confirmed"});
+            if let Some(signature) = cursor { options["until"] = signature.into(); }
+            if let Some(ref signature) = before { options["before"] = signature.clone().into(); }
+            let page = rpc_result(client, rpc, "getSignaturesForAddress",
+                serde_json::json!([program, options])).await?;
+            let entries = page.as_array().context("RPC signature list is not an array")?;
+            if entries.is_empty() { break; }
+            let last = entries.last().and_then(|entry| entry["signature"].as_str())
+                .context("RPC signature entry is missing its signature")?.to_owned();
+            anyhow::ensure!(before.as_ref() != Some(&last), "RPC pagination did not advance");
+            pending.extend(entries.iter().cloned());
+            before = Some(last);
+            if entries.len() < 1000 { break; }
+        }
+        pending.reverse();
+        Ok(pending)
+}
+
+async fn rpc_result(client: &reqwest::Client, rpc: &str, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
+    for attempt in 0..5 {
+        let response = client.post(rpc)
+            .json(&serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}))
+            .send().await.map_err(|error| anyhow::anyhow!("{method}: {}", error.without_url()))?;
+        if (response.status().as_u16() == 429 || response.status().is_server_error()) && attempt < 4 {
+            tokio::time::sleep(std::time::Duration::from_millis(500 * (1 << attempt))).await;
+            continue;
+        }
+        let body: serde_json::Value = response.error_for_status()
+            .map_err(|error| anyhow::anyhow!("{method}: {}", error.without_url()))?
+            .json().await.context("RPC response is not JSON")?;
+        if let Some(error) = body.get("error") { anyhow::bail!("{method}: {error}"); }
+        return body.get("result").cloned().context("RPC response is missing result");
+    }
+    unreachable!()
+}
+
 fn program_instructions(
     message: &Message,
     account_keys: &[String],
@@ -595,5 +613,44 @@ pub async fn spawn_indexer(config: Config, db: Db, merkle_manager: Arc<RwLock<Me
     let indexer = Indexer::new(config, db, merkle_manager);
     if let Err(err) = indexer.run().await {
         warn!(error = %err, "indexer exited");
+    }
+}
+
+#[cfg(test)]
+mod replay_tests {
+    use super::*;
+    use axum::{routing::post, Json, Router};
+    use serde_json::{json, Value};
+
+    #[tokio::test]
+    async fn paginates_history_and_returns_oldest_first() {
+        let app = Router::new().route("/", post(|Json(request): Json<Value>| async move {
+            assert_eq!(request["params"][1]["until"], "cursor");
+            let entries: Vec<Value> = if request["params"][1]["before"].is_null() {
+                (2..1002).rev().map(|i| json!({"signature": format!("s{i}"), "slot": i, "err": null})).collect()
+            } else {
+                assert_eq!(request["params"][1]["before"], "s2");
+                (0..2).rev().map(|i| json!({"signature": format!("s{i}"), "slot": i, "err": null})).collect()
+            };
+            Json(json!({"jsonrpc": "2.0", "id": 1, "result": entries}))
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async { axum::serve(listener, app).await.unwrap() });
+        let history = signature_history(&reqwest::Client::new(), &url, "program", Some("cursor")).await.unwrap();
+        assert_eq!(history.len(), 1002);
+        assert_eq!(history.first().unwrap()["signature"], "s0");
+        assert_eq!(history.last().unwrap()["signature"], "s1001");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn rpc_errors_do_not_become_an_empty_history() {
+        let app = Router::new().route("/", post(|| async { Json(json!({"error": {"code": -32000, "message": "unavailable"}})) }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async { axum::serve(listener, app).await.unwrap() });
+        assert!(signature_history(&reqwest::Client::new(), &url, "program", None).await.is_err());
+        server.abort();
     }
 }

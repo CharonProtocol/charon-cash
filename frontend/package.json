@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "bun run --cwd ../sdk build && node scripts/prepare-circuits.mjs && vite",
+    "dev:devnet": "node scripts/devnet.mjs dev",
     "build": "bun run --cwd ../sdk build && node scripts/prepare-circuits.mjs && tsc -b && vite build",
+    "build:devnet": "node scripts/devnet.mjs build",
+    "check:devnet": "node scripts/check-devnet.mjs",
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run"

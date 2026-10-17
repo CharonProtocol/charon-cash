@@ -5,7 +5,8 @@ import type { CharonProtocol } from "charonprotocol-sdk";
 import { RPC_URL } from "../lib/config";
 import { describePaymentError, SOL_POOL_MINT } from "../lib/payment";
 import { sessionSignMessage } from "../lib/sessionSeed";
-import { SUPPORTED_SPL_MINTS } from "./usePaymentTransaction";
+import { SPL_MINTS, IS_DEVNET } from "../lib/config";
+import { checkDevnetBackend } from "../lib/devnet";
 import type { TransactionStage } from "../components/dashboard/types";
 
 const NATIVE_SOL_MINT = "11111111111111111111111111111111";
@@ -70,7 +71,7 @@ export function useCharon(enabled: boolean) {
     }
     const sol = (rawFor(instance, SOL_POOL_MINT) + rawFor(instance, NATIVE_SOL_MINT)).toString();
     const next: Record<string, string> = { [SOL_POOL_MINT]: sol };
-    for (const mint of Object.values(SUPPORTED_SPL_MINTS)) {
+    for (const mint of Object.values(SPL_MINTS)) {
       next[mint] = rawFor(instance, mint).toString();
     }
     const summary = instance.utxoByMint.get(SOL_POOL_MINT);
@@ -115,6 +116,8 @@ export function useCharon(enabled: boolean) {
     setInitializingClient(true);
     const version = generation.current;
     try {
+      // Refuse a leftover localnet backend before asking the wallet to sign in.
+      if (IS_DEVNET) await checkDevnetBackend();
       const { CharonProtocol } = await import("charonprotocol-sdk");
       if (version !== generation.current) return;
       const instance = await CharonProtocol.generateClient({

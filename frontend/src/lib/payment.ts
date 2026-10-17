@@ -4,6 +4,7 @@ export const TOKEN_DECIMALS: Record<Token, number> = {
   SOL: 9,
   USDC: 6,
   USDT: 6,
+  TEST: 6,
 };
 export const SOL_POOL_MINT = "11111111111111111111111111111112";
 export function formatTokenAmount(raw: string, token: Token): string {

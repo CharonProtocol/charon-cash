@@ -17,7 +17,7 @@ pub mod merkle_tree;
 pub mod state;
 pub mod utils;
 
-declare_id!("36xGVBG86254oWi7dHJb9dstzarx1gk1pTvQ9Gmn598j");
+declare_id!("7CsXQpehxTrhuX53zNgFLNdRiRLKfkkUcCX6Uy8DxzJ5");
 
 entrypoint!(process_instructions, 64);
 

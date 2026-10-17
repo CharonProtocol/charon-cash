@@ -47,7 +47,7 @@ impl RpcClient {
             .json(&body)
             .send()
             .await
-            .map_err(|e| RelayerError::upstream(format!("{method} request failed: {e}")))?;
+            .map_err(|e| RelayerError::upstream(format!("{method} request failed: {}", e.without_url())))?;
         let json: Value = response
             .json()
             .await

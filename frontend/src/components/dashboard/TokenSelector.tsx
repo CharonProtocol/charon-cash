@@ -1,6 +1,5 @@
 import { TokenIcon, type Token } from "./TokenIcon";
-
-const TOKENS: Token[] = ["SOL", "USDC", "USDT"];
+import { AVAILABLE_TOKENS } from "../../lib/config";
 
 export function TokenSelector({
   value,
@@ -11,7 +10,7 @@ export function TokenSelector({
   onChange: (token: Token) => void;
   locked?: boolean;
 }) {
-  const next = TOKENS[(TOKENS.indexOf(value) + 1) % TOKENS.length];
+  const next = AVAILABLE_TOKENS[(AVAILABLE_TOKENS.indexOf(value) + 1) % AVAILABLE_TOKENS.length];
   return (
     <button
       type="button"

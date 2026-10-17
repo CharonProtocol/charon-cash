@@ -11,7 +11,8 @@ export declare const PROGRAM_ID: PublicKey;
 export declare const ALT_ADDRESS: PublicKey;
 export declare const FEE_RECIPIENT: PublicKey;
 export declare const SUPPORTED_SPL_MINTS: string[];
-export declare const API_URL = "http://127.0.0.1:8080";
+export declare const API_URL: string;
+export declare const STORAGE_NAMESPACE: string;
 export declare const SEED: {
     readonly TREE_ACCOUNT: "merkle_tree";
     readonly TREE_TOKEN: "tree_token";

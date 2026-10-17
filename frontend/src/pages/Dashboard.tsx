@@ -17,8 +17,8 @@ import type {
   DashboardOperation,
   PaymentContext,
 } from "../components/dashboard/types";
-import { formatTokenAmount, SOL_POOL_MINT } from "../lib/payment";
-import { SUPPORTED_SPL_MINTS } from "@/hooks/usePaymentTransaction";
+import { formatTokenAmount } from "../lib/payment";
+import { IS_DEVNET, mintForToken } from "../lib/config";
 import {
   persistDashboardTheme,
   readDashboardTheme,
@@ -58,10 +58,7 @@ export function Dashboard() {
   const charon = useCharon(true);
   const infrastructure = useInfrastructureStatus();
   const { connected, signMessage, signTransaction } = useWallet();
-  const mint =
-    token === "SOL"
-      ? SOL_POOL_MINT
-      : SUPPORTED_SPL_MINTS[token.toLowerCase() as "usdc" | "usdt"];
+  const mint = mintForToken(token);
   const available = formatTokenAmount(charon.holdings[mint] ?? "0", token);
   const paymentsBlocked =
     infrastructure.ready && infrastructure.tone === "down";
@@ -119,6 +116,9 @@ export function Dashboard() {
               <span>CHARON</span>
             </a>
             <div className="dashboard-wallet-stack">
+              {IS_DEVNET && (
+                <p className="dashboard-wallet-note">Devnet · test assets only</p>
+              )}
               <BaseWalletMultiButton
                 labels={WALLET_LABELS}
                 disabled={busy}
@@ -157,6 +157,9 @@ export function Dashboard() {
                   </strong>
                   <span className="dashboard-balance-unit">{token}</span>
                 </p>
+                {IS_DEVNET && token === "TEST" && (
+                  <p className="dashboard-wallet-note">Charon test token · no monetary value</p>
+                )}
                 <div className="dashboard-card">
                   <h1 className="dashboard-title">{TITLES[operation]}</h1>
                   <section

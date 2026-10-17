@@ -7,6 +7,7 @@ import {
 import { m } from "motion/react";
 import { ShieldIcon } from "./ShieldIcon";
 import type { DashboardOperation } from "./types";
+import { IS_DEVNET } from "../../lib/config";
 
 const ITEMS = [
   { id: "send", label: "Send", short: "Send", icon: ArrowUpRight },
@@ -59,7 +60,9 @@ export function OperationDock({
               aria-controls="pay-panel"
               disabled={busy || unavailable}
               aria-label={item.label}
-              title={unavailable ? `${item.label} is coming soon` : undefined}
+              title={item.id === "swap" && IS_DEVNET
+                ? "Jupiter swaps are unavailable on devnet"
+                : unavailable ? `${item.label} is coming soon` : undefined}
               key={item.id}
               onClick={() => select(item.id)}
               onKeyDown={(event) => {

@@ -1,4 +1,5 @@
 import { bytesToHex } from "@/lib/format"
+import { BACKEND_URL } from "./config"
 import type {
   HealthStatus,
   IndexerStatus,
@@ -10,7 +11,7 @@ import type {
   UtxoRangeResponse,
 } from "@/lib/types"
 
-const BASE = ((import.meta as any).env?.VITE_BACKEND_URL ?? process.env.VITE_BACKEND_URL ?? "").replace(/\/$/, "")
+const BASE = BACKEND_URL
 
 export class BackendError extends Error {
   code: string

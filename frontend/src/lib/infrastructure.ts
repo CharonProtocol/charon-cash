@@ -1,3 +1,5 @@
+import { BACKEND_URL } from "./config";
+
 export type ProbeState = "up" | "down";
 export type InfrastructureTone = "up" | "degraded" | "down";
 
@@ -17,13 +19,6 @@ export function aggregateInfrastructure(probes: {
   if (probes.backend === "down") return "down";
   if (probes.yellowstone === "down" || probes.rpc === "down") return "degraded";
   return "up";
-}
-
-function backendBase() {
-  return String(
-    (import.meta as { env?: { VITE_BACKEND_URL?: string } }).env
-      ?.VITE_BACKEND_URL ?? "",
-  ).replace(/\/$/, "");
 }
 
 async function reachable(url: string, init?: RequestInit): Promise<boolean> {
@@ -48,7 +43,7 @@ async function reachable(url: string, init?: RequestInit): Promise<boolean> {
 }
 
 export async function probeInfrastructure(rpcUrl: string) {
-  const base = backendBase();
+  const base = BACKEND_URL;
   const [backend, yellowstone, rpc] = await Promise.all([
     reachable(`${base}/health`),
     reachable(`${base}/indexer/status`),

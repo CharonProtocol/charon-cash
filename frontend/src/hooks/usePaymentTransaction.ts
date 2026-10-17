@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { RPC_URL } from "../lib/config";
+import { IS_DEVNET, mintForToken, transactionExplorerUrl } from "../lib/config";
 import { PublicKey } from "@solana/web3.js";
 import {
   describePaymentError,
   isSoftPaymentError,
   parseTokenAmount,
-  SOL_POOL_MINT,
 } from "../lib/payment";
 import type { Token } from "../components/dashboard/TokenIcon";
 import type {
@@ -13,11 +12,6 @@ import type {
   PaymentKind,
   PaymentStatus,
 } from "../components/dashboard/types";
-
-export const SUPPORTED_SPL_MINTS = {
-  usdc: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-  usdt: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
-};
 
 const NOTE_SYNC_MS = 1000;
 const NOTE_SYNC_ATTEMPTS = 20;
@@ -76,14 +70,8 @@ export function usePaymentTransaction(
       };
       context.observeProgress(onProgress);
 
-      const mintOf = (asset: Token) =>
-        asset === "SOL"
-          ? SOL_POOL_MINT
-          : SUPPORTED_SPL_MINTS[
-              asset.toLowerCase() as keyof typeof SUPPORTED_SPL_MINTS
-            ];
-
       if (kind === "swap") {
+        if (IS_DEVNET) throw new Error("Jupiter swaps are unavailable on devnet.");
         if (!outToken || outToken === token) {
           throw new Error("Choose a different output asset.");
         }
@@ -94,36 +82,28 @@ export function usePaymentTransaction(
 
       const result =
         kind === "swap"
-          ? await context.client.swap(mintOf(token), mintOf(outToken!), lamports)
+          ? await context.client.swap(mintForToken(token), mintForToken(outToken!), lamports)
           : kind === "send"
           ? token === "SOL"
             ? await context.client.sendSol(lamports, destination)
             : await context.client.sendSpl(
                 lamports,
                 destination,
-                SUPPORTED_SPL_MINTS[
-                  token.toLowerCase() as keyof typeof SUPPORTED_SPL_MINTS
-                ],
+                mintForToken(token),
               )
           : kind === "withdraw"
             ? token === "SOL"
               ? await context.client.withdrawSol(lamports)
               : await context.client.withdrawSpl(
                   lamports,
-                  SUPPORTED_SPL_MINTS[
-                    token.toLowerCase() as keyof typeof SUPPORTED_SPL_MINTS
-                  ],
+                  mintForToken(token),
                 )
             : token === "SOL"
               ? await context.client.shieldedTransferSol(lamports, recipient)
               : await context.client.shieldedTransferSpl(
                   lamports,
-                  SUPPORTED_SPL_MINTS[
-                    token.toLowerCase() as keyof typeof SUPPORTED_SPL_MINTS
-                  ],
+                  mintForToken(token),
                   recipient,
-                  // Note: The SDK currently hardcodes WRAPPED_SOL_MINT for shieldedTransferSpl
-                  // but we call it as it is defined.
                 );
       if (mounted.current) {
         setSignature(result.signature);
@@ -163,17 +143,13 @@ export function usePaymentTransaction(
     setSignature("");
     setError("");
   };
-  const query = new URLSearchParams({
-    cluster: "custom",
-    customUrl: RPC_URL,
-  });
   return {
     status,
     error,
     submit,
     reset,
     explorerUrl: signature
-      ? `https://explorer.solana.com/tx/${signature}?${query}`
+      ? transactionExplorerUrl(signature)
       : undefined,
   };
 }

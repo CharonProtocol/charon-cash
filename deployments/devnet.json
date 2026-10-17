@@ -1,0 +1,156 @@
+{
+  "cluster": "devnet",
+  "rpcUrl": "https://api.devnet.solana.com",
+  "programId": "7CsXQpehxTrhuX53zNgFLNdRiRLKfkkUcCX6Uy8DxzJ5",
+  "authority": "GAn8V81NM8Qkmyds8RNDM6GVwruEW31dDoVDpC9CWJz1",
+  "transactions": {
+    "initializeSol": "3Z8MGVhXkNEPT71EpHB3qcDCmqwTK9UZhTVuubDkEyNwe7i2xWHRzV1mA2zSh7ZJwT2F6TAjRr734wnodjEVauPz",
+    "initializeSpl": "oxfBMyTHyPkqudqaoybYM82UCvDhjgmG98WYM8hmYaVrfcpEcVVkgjuSPuW5GAQ3qHN6HmP1PCsQAVNKdWgDJKU",
+    "mintTestTokens": "2HEUm4C2i9nyuGPcWRgziM7Gah6c5oaUzH7A2WdCqiPnuKmD4HA6xjLMpy3UJHZ6SBQ3NiyQ9wRZNFbfyDpwMyw9",
+    "createAlt": "2oeoxyt18wgm9QHQPu2CuUqowsPjN1rd2ara2BFTq1Xi78G2UCDAEFDdMw1fnMaT7Pwt2vfC2AL7tBwsMVy6AGrP"
+  },
+  "tree": "226ryKAyU83wGQsBNENwfS94XVrj6krxUcsq819jKK7a",
+  "vault": "Z3dyvJSZT6w41xLn8azdy438KkkWqNmqWcgpLjEURjb",
+  "globalConfig": "H7u4opLpz6CVHwgkFpt88tYJZKczbybqxsoCTFcq9kRg",
+  "feeRecipient": "GAn8V81NM8Qkmyds8RNDM6GVwruEW31dDoVDpC9CWJz1",
+  "testMint": "3ZFLKuGzHRKtd5WyfBkrP3jtcK4jTGYoHQ4KVUtfLZKT",
+  "testMintLabel": "Charon devnet test token (6 decimals; not real USDC)",
+  "splTree": "GKawQ6u5LKM2wJMV5AS1p6LQ7HUxvHa28tG8qmqh2JHR",
+  "altAddress": "7aPvfLCDc1XL4CzEstrDazYDupmmMPyLA2ttbnfFY27r",
+  "deploymentSignature": "tmSrUazZ5cPWGNo351juBUNRZYWTCukUa3n6x49Nb3kC5HnfBaFQC2a1TMa5sSzBR16TMHuPWeH1mLKgpvE8UzB",
+  "programDataAddress": "CeCPP3Xtn8s3gw3nRAgxKaSZmz4sohxMAkwuKeJWS1Je",
+  "lastDeploySlot": 511472536,
+  "binarySha256": "4e63297f1b9f08eb69847c6f30624803cf04e2a22869fbada5044f7f413b57ae",
+  "binaryBytes": 91064,
+  "allocatedBytes": 182128,
+  "onchainBinaryMatches": true,
+  "sourceBaseCommit": "b5c72d3cebee9a9dad7cbb1550b1ad97738e2a40",
+  "sourceChanges": [
+    "programs/privacy-cash/src/lib.rs: devnet program ID",
+    "programs/privacy-cash/src/constants.rs: canonical singleton PDA bumps"
+  ],
+  "verifiedAt": "2026-10-15T20:46:35.074Z",
+  "verification": {
+    "programTestsPassed": 65,
+    "sdkTestsPassed": 28,
+    "devnetSmoke": [
+      {
+        "label": "SOL:invalid-proof",
+        "rejected": true,
+        "error": {
+          "InstructionError": [
+            1,
+            {
+              "Custom": 14
+            }
+          ]
+        },
+        "logs": [
+          "Program 7CsXQpehxTrhuX53zNgFLNdRiRLKfkkUcCX6Uy8DxzJ5 invoke [1]",
+          "Program 7CsXQpehxTrhuX53zNgFLNdRiRLKfkkUcCX6Uy8DxzJ5 consumed 4594 of 499850 compute units",
+          "Program 7CsXQpehxTrhuX53zNgFLNdRiRLKfkkUcCX6Uy8DxzJ5 failed: custom program error: 0xe"
+        ]
+      },
+      {
+        "label": "SOL:deposit",
+        "signature": "2yvc5vqgKMmYauXurZLGZJKNH5BqCwrAhtqKtvQCMumwxdkq5PwJ8gRBh1kEwtKAGDAqm5abtK4UogvwvvUKG61y",
+        "nextIndex": 8,
+        "root": "2377924495355682559145431463831737039902417048970710627889591830875288688437"
+      },
+      {
+        "label": "SOL:double-spend",
+        "rejected": true,
+        "error": {
+          "InstructionError": [
+            1,
+            "AccountAlreadyInitialized"
+          ]
+        },
+        "logs": [
+          "Program 7CsXQpehxTrhuX53zNgFLNdRiRLKfkkUcCX6Uy8DxzJ5 invoke [1]",
+          "Program 7CsXQpehxTrhuX53zNgFLNdRiRLKfkkUcCX6Uy8DxzJ5 consumed 124068 of 499850 compute units",
+          "Program 7CsXQpehxTrhuX53zNgFLNdRiRLKfkkUcCX6Uy8DxzJ5 failed: instruction requires an uninitialized account"
+        ]
+      },
+      {
+        "label": "SOL:transfer",
+        "signature": "4sHpFbK2XQy5uMaEfZzxjF5EUNjHzqs8oJBP7TaXP3o38KL2ybunJuX8AVpC9x65MKZKJbwbs6DKDy7sivtCR9kQ",
+        "nextIndex": 10,
+        "root": "16410696545950423265247613722645062068452798995712945793421434492126742593865"
+      },
+      {
+        "label": "SOL:withdraw",
+        "signature": "5hs8mPN8PkZaWuS2ZENjNLQXWsJwFjBXEfHqD2E6QkZs7gY4vWniQQ9nPDZ8gPjMtxefi3ifoi8LCK4J8ZnYHg7g",
+        "nextIndex": 12,
+        "root": "8092039526331232362447063759754223415358959025110659214654597798116150592296"
+      },
+      {
+        "label": "SOL:recipient-balance",
+        "received": "10000000",
+        "passed": true
+      },
+      {
+        "label": "SPL:invalid-proof",
+        "rejected": true,
+        "error": {
+          "InstructionError": [
+            1,
+            {
+              "Custom": 14
+            }
+          ]
+        },
+        "logs": [
+          "Program 7CsXQpehxTrhuX53zNgFLNdRiRLKfkkUcCX6Uy8DxzJ5 invoke [1]",
+          "Program 7CsXQpehxTrhuX53zNgFLNdRiRLKfkkUcCX6Uy8DxzJ5 consumed 122280 of 499850 compute units",
+          "Program 7CsXQpehxTrhuX53zNgFLNdRiRLKfkkUcCX6Uy8DxzJ5 failed: custom program error: 0xe"
+        ]
+      },
+      {
+        "label": "SPL:deposit",
+        "signature": "3ZqCDRdfry6wod4GYjsn9oSjo7drxZU1c964avbTghunRxfPkEDC8TX1AQ2SEkCB72Yb9VeehRCJLfpVY3wyLb5d",
+        "nextIndex": 2,
+        "root": "9115093818731679880635131578173614325254565737222048102653095136938315890704"
+      },
+      {
+        "label": "SPL:double-spend",
+        "rejected": true,
+        "error": {
+          "InstructionError": [
+            1,
+            "AccountAlreadyInitialized"
+          ]
+        },
+        "logs": [
+          "Program 7CsXQpehxTrhuX53zNgFLNdRiRLKfkkUcCX6Uy8DxzJ5 invoke [1]",
+          "Program 7CsXQpehxTrhuX53zNgFLNdRiRLKfkkUcCX6Uy8DxzJ5 consumed 122462 of 499850 compute units",
+          "Program 7CsXQpehxTrhuX53zNgFLNdRiRLKfkkUcCX6Uy8DxzJ5 failed: instruction requires an uninitialized account"
+        ]
+      },
+      {
+        "label": "SPL:transfer",
+        "signature": "5g6jyQKsL9MAsr9oKM6hAA4wVT4QsYTf8xTWopLQaMyVg8o9PvDLUwU2YFctvCP3yRmXjYjwLtbjvo1RDn9RuaC8",
+        "nextIndex": 4,
+        "root": "12094393890490097149616999515938695527667051678598365058922076297444850800499"
+      },
+      {
+        "label": "SPL:withdraw",
+        "signature": "4qNSX8c33C48gx7viZ58Cm2p7wsFitjVf3FD3gXd1TgBK7AqFER5vGPozGcx148xEtU1ecCfgLueHZP9q4M2xQyo",
+        "nextIndex": 6,
+        "root": "6769036862976447509406318424702312536237966523271140511463925364626552124601"
+      },
+      {
+        "label": "SPL:recipient-balance",
+        "received": "10000000",
+        "passed": true
+      },
+      {
+        "label": "complete",
+        "passed": true
+      }
+    ],
+    "finalizedTransactions": 7,
+    "solVaultContainsOnlyRent": true,
+    "splVaultEmpty": true
+  }
+}

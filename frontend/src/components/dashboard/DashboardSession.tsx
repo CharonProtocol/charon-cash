@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useCharon } from "../../hooks/useCharon";
-import { formatTokenAmount, SOL_POOL_MINT } from "../../lib/payment";
-import { SUPPORTED_SPL_MINTS } from "../../hooks/usePaymentTransaction";
+import { formatTokenAmount } from "../../lib/payment";
+import { mintForToken } from "../../lib/config";
 import { UserAgreement } from "./UserAgreement";
 import type { Token } from "./TokenIcon";
 import type { PaymentContext } from "./types";
@@ -32,10 +32,7 @@ function WalletSession({ children }: Props) {
   });
   const account = useCharon(accepted);
   const [token, setToken] = useState<Token>("SOL");
-  const mint =
-    token === "SOL"
-      ? SOL_POOL_MINT
-      : SUPPORTED_SPL_MINTS[token.toLowerCase() as "usdc" | "usdt"];
+  const mint = mintForToken(token);
   const available = formatTokenAmount(account.holdings[mint] ?? "0", token);
   const unsupported = connected && (!signMessage || !signTransaction);
   const pending = accepted && connected && !account.client;

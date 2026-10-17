@@ -48,6 +48,13 @@ async fn main() -> anyhow::Result<()> {
     for mint in config.supported_mints.iter() {
         merkle_manager.write().await.get_or_create_pool(&mint.to_string());
     }
+    merkle_manager.write().await.restore_from_db(&db).await?;
+
+    // Existing devnet leaves must be present before serving proofs or streaming
+    // newer transactions. Fail startup on a gap rather than serving a wrong root.
+    let bootstrap = indexer::sync::Indexer::new(config.clone(), db.clone(), merkle_manager.clone());
+    bootstrap.catch_up_from_rpc().await?;
+    bootstrap.verify_roots().await?;
 
     tokio::spawn(spawn_indexer(
         config.clone(),
@@ -103,7 +110,8 @@ async fn main() -> anyhow::Result<()> {
         .layer(from_fn(add_req_id_middleware))
         .layer(tower_http::cors::CorsLayer::permissive());
 
-    let addr: SocketAddr = ([0, 0, 0, 0], 8080).into();
+    let addr: SocketAddr = std::env::var("BACKEND_BIND_ADDR")
+        .unwrap_or_else(|_| "0.0.0.0:8080".to_string()).parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!("privacy-cash backend listening on {addr}");
 

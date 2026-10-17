@@ -33,6 +33,11 @@ impl Db {
         &self.pool
     }
 
+    pub async fn tree_keys(&self) -> Result<Vec<String>, DbError> {
+        Ok(sqlx::query_scalar("SELECT tree_key FROM trees ORDER BY tree_key")
+            .fetch_all(&self.pool).await?)
+    }
+
     pub async fn get_cursor(&self) -> Result<(Option<String>, u64), DbError> {
         let row: (Option<String>, i64) =
             sqlx::query_as("SELECT last_signature, last_slot FROM indexer_cursor WHERE id = 1")
