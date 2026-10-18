@@ -293,7 +293,12 @@ pub fn process_swap(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
                 &global_seeds,
             )?;
 
-            if token_amount(pool_wsol_account)? >= wsol_before {
+            // Exactly amount_in may leave the pool's wSOL: the route spends
+            // what this swap's proof released, never other users' funds.
+            let wsol_spent = wsol_before
+                .checked_sub(token_amount(pool_wsol_account)?)
+                .ok_or(PrivacyCashError::SwapInputNotConsumed)?;
+            if wsol_spent != amount_in {
                 return Err(PrivacyCashError::SwapInputNotConsumed.into());
             }
             let received = token_amount(pool_spl_account)?
@@ -326,7 +331,8 @@ pub fn process_swap(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
             let consumed = spl_before
                 .checked_sub(spl_after)
                 .ok_or(PrivacyCashError::SwapInputNotConsumed)?;
-            if consumed < amount_in {
+            // exactly amount_in, as for SOL -> SPL
+            if consumed != amount_in {
                 return Err(PrivacyCashError::SwapInputNotConsumed.into());
             }
 

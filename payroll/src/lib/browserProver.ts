@@ -182,13 +182,13 @@ class BrowserProverPool {
         e.resolve(shaped)
       }
       else {
-        // Local telemetry: dump the failing witness input to the shim so
-        // multi-lane proof failures can be diagnosed offline.
-        if (d.input) {
+        // Local dev telemetry only: the error text, never the witness input
+        // (it holds the note's private key, blinding and amounts).
+        if (import.meta.env.DEV) {
           fetch(`${getBackendUrl()}/api/debug/prover-failure`, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ error: d.error ?? "", input: d.input, at: new Date().toISOString() }),
+            body: JSON.stringify({ error: d.error ?? "", at: new Date().toISOString() }),
           }).catch(() => {})
         }
         e.reject(new Error(`wasm prover: ${d.error ?? "unknown"}`))

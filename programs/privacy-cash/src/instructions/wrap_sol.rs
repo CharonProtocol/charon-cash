@@ -1,12 +1,12 @@
 use crate::{
-    constants::{GLOBAL_CONFIG_ADDRESS, TREE_TOKEN_ACCOUNT_ADDRESS, WSOL_MINT},
+    constants::{GLOBAL_CONFIG_ADDRESS, TREE_ACCOUNT_ADDRESS, TREE_TOKEN_ACCOUNT_ADDRESS, WSOL_MINT},
     error::PrivacyCashError,
     helper::{verify_address, verify_program_id, verify_signer},
     state::TreeTokenAccount,
 };
 use pinocchio::{
     error::ProgramError,
-    sysvars::{rent::Rent, Sysvar},
+    sysvars::{instructions::Instructions, rent::Rent, Sysvar},
     AccountView, ProgramResult,
 };
 use pinocchio_log::log;
@@ -20,12 +20,18 @@ use pinocchio_token::state::TokenAccount;
 /// `UnbalancedInstruction`. A later instruction (Token `SyncNative`, then
 /// Swap) runs after this commit so Jupiter sees the token amount.
 ///
+/// Only as the first step of a SOL -> SPL swap: the next instruction must be
+/// Token `SyncNative` on this wSOL account and the one after it this
+/// program's Swap spending exactly `amount` from the SOL tree. A standalone
+/// wrap (or a wrap bigger than its swap) is rejected, so vault SOL can only
+/// move into wSOL for a swap whose proof released it.
+///
 /// Accounts:
 /// 0 sol_vault, 1 pool_wsol, 2 wsol_mint, 3 signer,
-/// 4 token_program, 5 system_program.
+/// 4 token_program, 5 system_program, 6 instructions sysvar.
 #[inline(never)]
 pub fn process_wrap_sol(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
-    let [sol_vault, pool_wsol, wsol_mint, signer, token_program, system_program] = accounts else {
+    let [sol_vault, pool_wsol, wsol_mint, signer, token_program, system_program, instructions] = accounts else {
         return Err(ProgramError::NotEnoughAccountKeys);
     };
 
@@ -52,6 +58,7 @@ pub fn process_wrap_sol(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
     }
 
     verify_address(sol_vault, &TREE_TOKEN_ACCOUNT_ADDRESS)?;
+    verify_paired_swap(instructions, pool_wsol, amount)?;
 
     let rent_exempt_minimum = Rent::get()?.try_minimum_balance(TreeTokenAccount::LEN)?;
     let required = amount
@@ -90,5 +97,46 @@ pub fn process_wrap_sol(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
     pool_wsol.set_lamports(wsol_after);
     log!("wrap_sol done");
 
+    Ok(())
+}
+
+/// Swap data: discriminator, proof_in (352), proof_out (352), ext_amount_in.
+const SWAP_DISCRIMINATOR: u8 = 7;
+const SWAP_EXT_AMOUNT_IN_OFFSET: usize = 1 + 352 + 352;
+/// Token program SyncNative.
+const SYNC_NATIVE_DISCRIMINATOR: u8 = 17;
+
+fn verify_paired_swap(instructions: &AccountView, pool_wsol: &AccountView, amount: u64) -> ProgramResult {
+    let ixs = Instructions::try_from(instructions)?;
+    let bad = || ProgramError::from(PrivacyCashError::InvalidSwapAmount);
+
+    let sync = ixs.get_instruction_relative(1).map_err(|_| bad())?;
+    if sync.get_program_id() != &pinocchio_token::ID
+        || sync.get_instruction_data() != [SYNC_NATIVE_DISCRIMINATOR]
+        || &sync.get_instruction_account_at(0)?.key != pool_wsol.address()
+    {
+        return Err(bad());
+    }
+
+    let swap = ixs.get_instruction_relative(2).map_err(|_| bad())?;
+    let data = swap.get_instruction_data();
+    if swap.get_program_id().as_array() != &crate::ID
+        || data.first() != Some(&SWAP_DISCRIMINATOR)
+        || data.len() < SWAP_EXT_AMOUNT_IN_OFFSET + 8
+    {
+        return Err(bad());
+    }
+    // SOL -> SPL only: the swap spends from the SOL tree
+    if swap.get_instruction_account_at(0)?.key.as_array() != &TREE_ACCOUNT_ADDRESS {
+        return Err(bad());
+    }
+    let ext_in = i64::from_le_bytes(
+        data[SWAP_EXT_AMOUNT_IN_OFFSET..SWAP_EXT_AMOUNT_IN_OFFSET + 8]
+            .try_into()
+            .map_err(|_| ProgramError::InvalidInstructionData)?,
+    );
+    if ext_in.checked_neg() != Some(amount as i64) || amount > i64::MAX as u64 {
+        return Err(bad());
+    }
     Ok(())
 }

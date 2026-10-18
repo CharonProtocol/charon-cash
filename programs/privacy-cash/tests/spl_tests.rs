@@ -7961,3 +7961,57 @@ fn raw_proof(proof: &privacy_cash::state::Proof) -> privacy_cash::state::RawProo
         output_commitments: proof.output_commitments,
     }
 }
+
+// wrap_sol moves pool SOL into the pool's wSOL account. It must only run as
+// the first step of the SOL -> SPL swap that releases exactly that amount:
+// standalone, before anything but SyncNative, or before a swap of another
+// amount, it is rejected and the vault keeps its SOL.
+#[test]
+fn wrap_sol_only_runs_as_the_first_step_of_its_swap() {
+    let mut ctx = setup();
+    let native = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap();
+    // LiteSVM has no native mint account: add it as the token program would
+    let mut mint_data = vec![0u8; spl_token::state::Mint::LEN];
+    spl_token::state::Mint { decimals: 9, is_initialized: true, ..Default::default() }.pack_into_slice(&mut mint_data);
+    let mut native_mint = ctx.svm.get_account(&ctx.spl_token_mint).unwrap(); // a token-program mint account
+    native_mint.data = mint_data;
+    ctx.svm.set_account(native, native_mint).unwrap();
+    let pool_wsol = CreateAssociatedTokenAccountIdempotent::new(&mut ctx.svm, &ctx.authority, &native)
+        .owner(&ctx.global_config)
+        .send()
+        .expect("pool wSOL account");
+    ctx.svm.airdrop(&ctx.tree_token_account, 10 * LAMPORTS_PER_SOL).unwrap();
+    let vault_before = ctx.svm.get_balance(&ctx.tree_token_account).unwrap();
+
+    let amount: u64 = LAMPORTS_PER_SOL;
+    let instructions_sysvar = Pubkey::from_str("Sysvar1nstructions1111111111111111111111111").unwrap();
+    let wrap = Instruction {
+        program_id: PROGRAM_ID,
+        accounts: vec![
+            AccountMeta::new(ctx.tree_token_account, false),
+            AccountMeta::new(pool_wsol, false),
+            AccountMeta::new_readonly(native, false),
+            AccountMeta::new(ctx.attacker.pubkey(), true),
+            AccountMeta::new_readonly(TOKEN_ID, false),
+            AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
+            AccountMeta::new_readonly(instructions_sysvar, false),
+        ],
+        data: [&[8u8][..], &amount.to_le_bytes()].concat(),
+    };
+    let sync = Instruction { program_id: TOKEN_ID, accounts: vec![AccountMeta::new(pool_wsol, false)], data: vec![17] };
+    // swap-shaped, from the SOL tree, but spending twice the wrapped amount
+    let mut other_amount = vec![7u8; 705 + 8];
+    other_amount[705..].copy_from_slice(&(-(2 * amount as i64)).to_le_bytes());
+    let mismatched_swap = Instruction {
+        program_id: PROGRAM_ID,
+        accounts: vec![AccountMeta::new(ctx.tree_account, false)],
+        data: other_amount,
+    };
+
+    for ixs in [vec![wrap.clone()], vec![wrap.clone(), sync.clone()], vec![wrap.clone(), sync.clone(), mismatched_swap]] {
+        let tx = Transaction::new_signed_with_payer(&ixs, Some(&ctx.attacker.pubkey()), &[&ctx.attacker], ctx.svm.latest_blockhash());
+        assert!(ctx.svm.send_transaction(tx).is_err(), "unpaired wrap_sol ({} ixs) was accepted", ixs.len());
+        assert_eq!(ctx.svm.get_balance(&ctx.tree_token_account).unwrap(), vault_before, "vault SOL moved");
+        ctx.svm.expire_blockhash();
+    }
+}

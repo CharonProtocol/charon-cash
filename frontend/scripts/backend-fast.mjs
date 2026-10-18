@@ -9,7 +9,7 @@ import { homedir } from "node:os"
 
 import {
   AddressLookupTableProgram, Connection, Keypair, PublicKey, SystemProgram, TransactionInstruction,
-  TransactionMessage, VersionedTransaction, ComputeBudgetProgram,
+  TransactionMessage, VersionedTransaction, ComputeBudgetProgram, SYSVAR_INSTRUCTIONS_PUBKEY,
 } from "@solana/web3.js"
 import {
   createAssociatedTokenAccountIdempotentInstruction,
@@ -1371,7 +1371,8 @@ async function relaySwap(body) {
   const instructions = [createAtaIdem(nativeMint, poolWsol), createAtaIdem(splMint, poolSpl)]
   if (solToSpl) {
     const amt = Buffer.alloc(8); amt.writeBigUInt64LE(-extIn)
-    instructions.push(ix(PROGRAM, [[treeToken, W], [poolWsol, W], [nativeMint, RO], [payer.publicKey, WS], [TOKEN_PROGRAM, RO], [SystemProgram.programId, RO]], Buffer.concat([Buffer.from([8]), amt])))
+    // wrap_sol checks (instructions sysvar) that SyncNative + this swap follow, for this amount
+    instructions.push(ix(PROGRAM, [[treeToken, W], [poolWsol, W], [nativeMint, RO], [payer.publicKey, WS], [TOKEN_PROGRAM, RO], [SystemProgram.programId, RO], [SYSVAR_INSTRUCTIONS_PUBKEY, RO]], Buffer.concat([Buffer.from([8]), amt])))
     instructions.push(ix(TOKEN_PROGRAM, [[poolWsol, W]], Buffer.from([17]))) // SyncNative
   }
   instructions.push({ programId: PROGRAM, accounts: keys.map((k) => ({ address: k.pk, role: k.role })), data })

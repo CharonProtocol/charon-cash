@@ -1006,6 +1006,17 @@ fn native_token_account(owner: Pubkey) -> Account {
     }
 }
 
+/// Instructions sysvar for a real SOL -> SPL swap tx: wrap, SyncNative on the
+/// pool wSOL, then Swap from the SOL tree spending exactly `amount`.
+fn paired_swap_sysvar(ctx: &BenchContext, wrap: &Instruction, pool_wsol: Pubkey, amount: u64) -> (Pubkey, Account) {
+    let sync = Instruction { program_id: spl_token::ID, accounts: vec![AccountMeta::new(pool_wsol, false)], data: vec![17] };
+    let mut swap_data = vec![PrivacyCashInstructions::Swap as u8];
+    swap_data.extend_from_slice(&[0u8; 352 + 352]);
+    swap_data.extend_from_slice(&(-(amount as i64)).to_le_bytes());
+    let swap = Instruction { program_id: ctx.program_id, accounts: vec![AccountMeta::new(ctx.tree_account, false)], data: swap_data };
+    mollusk_svm::instructions_sysvar::keyed_account([wrap, &sync, &swap].into_iter())
+}
+
 #[test]
 fn wrap_sol_set_lamports_balances() {
     let ctx = setup();
@@ -1033,6 +1044,7 @@ fn wrap_sol_set_lamports_balances() {
             AccountMeta::new(ctx.random_user.pubkey(), true),
             AccountMeta::new_readonly(spl_token::ID, false),
             AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
+            AccountMeta::new_readonly(solana_sdk_ids::sysvar::instructions::ID, false),
         ],
         data,
     };
@@ -1044,6 +1056,7 @@ fn wrap_sol_set_lamports_balances() {
         (ctx.random_user.pubkey(), funded_account(10 * LAMPORTS_PER_SOL)),
         mollusk_svm_programs_token::token::keyed_account(),
         system_program_keyed_account(),
+        paired_swap_sysvar(&ctx, &instruction, pool_wsol_key, wrap_amount),
     ];
 
     let amount_le = wrap_amount.to_le_bytes();
@@ -1111,6 +1124,7 @@ fn wrap_sol_rejects_attacker_owned_wsol() {
             AccountMeta::new(ctx.random_user.pubkey(), true),
             AccountMeta::new_readonly(spl_token::ID, false),
             AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
+            AccountMeta::new_readonly(solana_sdk_ids::sysvar::instructions::ID, false),
         ],
         data,
     };
@@ -1122,6 +1136,7 @@ fn wrap_sol_rejects_attacker_owned_wsol() {
         (ctx.random_user.pubkey(), funded_account(10 * LAMPORTS_PER_SOL)),
         mollusk_svm_programs_token::token::keyed_account(),
         system_program_keyed_account(),
+        paired_swap_sysvar(&ctx, &instruction, pool_wsol_key, wrap_amount),
     ];
 
     ctx.mollusk.process_and_validate_instruction(
