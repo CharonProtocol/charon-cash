@@ -1,0 +1,11 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "charon-protocol",
+  // Kartik's account (skartik1706) — frontend hosting only
+  "account_id": "f0e764736adeeb0386febbb6d14da493",
+  "compatibility_date": "2026-09-26",
+  "assets": {
+    "directory": "dist",
+    "not_found_handling": "single-page-application"
+  }
+}

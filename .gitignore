@@ -51,3 +51,12 @@ crates/*/target/
 # bench kit: local test keys + results stay on this machine
 bench-kit/.local/
 bench-kit/results/
+
+# local scratch + tool state (never shipped)
+NOTES.md
+HANDOFF.md
+.cargo/
+.superstack/
+*.tsbuildinfo
+workers/.cache/
+**/.tmp-*
