@@ -1,0 +1,751 @@
+@font-face {
+  font-family: "Charon Inter";
+  src: url("/fonts/Inter.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  --charon-header-height: clamp(62px, 12dvh, 150px);
+}
+
+.landing-page {
+  --charon-header-height: 64px;
+  background: #fbf7ef;
+}
+
+.landing-page .landing-dashboard-navbar {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--charon-header-height);
+  background: rgba(251, 250, 247, 0.5);
+  transition: background-color 1.8s ease, border-color 1.8s ease;
+}
+
+.landing-page .landing-dashboard-navbar[data-private="true"] {
+  border-color: #ffffff1f;
+  background: rgba(12, 13, 15, 0.5);
+}
+
+/* light page: the dashboard's muted brand colour is near-white here */
+.landing-page .landing-dashboard-navbar .dashboard-brand {
+  color: #1c1d21;
+}
+
+.landing-page .landing-dashboard-navbar[data-private="true"] .dashboard-brand {
+  color: #fff;
+}
+
+.landing-launch-button {
+  display: inline-flex;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 18px;
+  border-radius: 10px;
+  background: #303030;
+  color: #fff;
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+.landing-page .landing-dashboard-navbar[data-private="true"] .landing-launch-button {
+  background: #f8f4eb;
+  color: #111;
+}
+
+.charon-landing {
+
+  height: 100svh;
+  height: 100dvh;
+  overflow: hidden;
+  color: #272727;
+  background: #faf8f2;
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+  transition:
+    color 1.8s ease,
+    background-color 1.8s ease;
+}
+
+.charon-landing[data-private="true"] {
+  color: #ffffff;
+  background: #0c0d0f;
+}
+
+.charon-landing button:focus-visible,
+.charon-landing a:focus-visible {
+  outline: 2px solid #977242;
+  outline-offset: 7px;
+}
+
+.charon-header {
+  height: var(--charon-header-height);
+  display: grid;
+  place-items: center;
+  background: rgba(251, 250, 247, 0.5);
+  transition: background-color 1.8s ease;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+}
+
+.charon-landing[data-private="true"] .charon-header,
+.charon-header[data-private="true"] {
+  background: rgba(12, 13, 15, 0.5);
+}
+
+@keyframes floaty {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.charon-header a {
+  display: block;
+}
+
+.charon-header img {
+  display: block;
+  width: clamp(50px, 8dvh, 100px);
+  height: auto;
+}
+
+.charon-hero {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  align-items: center;
+  justify-items: center;
+  height: 100%;
+  padding: calc(12px + var(--charon-header-height)) 20px 62px;
+  overflow: hidden;
+}
+
+.charon-scene,
+.charon-scene-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.charon-scene {
+  z-index: -1;
+  background: #f8f4eb;
+}
+
+.charon-panel {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  /* grows with wide screens; every size inside is in cqw of this width */
+  width: min(clamp(520px, 40vw, 760px), calc(100% - 32px));
+  margin-top: 0;
+  border: none;
+  box-shadow: none;
+  text-align: center;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(8px);
+  pointer-events: none;
+  position: relative;
+  transition:
+    opacity 200ms ease,
+    transform 200ms ease,
+    visibility 200ms;
+}
+
+.charon-panel::before {
+  content: "";
+  position: absolute;
+  /* page colour, near-opaque: the cards fade out behind the text */
+  inset: -30% -12% -14%;
+  border-radius: 50%;
+  background-color: rgb(248 244 235 / 86%);
+  filter: blur(36px);
+  z-index: -1;
+  pointer-events: none;
+  transition: background-color 1.8s ease;
+}
+
+.charon-panel[data-visible="true"] {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.charon-panel a,
+.charon-panel button {
+  pointer-events: auto;
+}
+
+.charon-landing[data-private="true"] .charon-panel::before {
+  background-color: rgb(12 13 15 / 82%);
+}
+
+.charon-wordmark {
+  margin: 0 0 1.7cqw;
+  font-family: "Hubballi", "Charon Inter", sans-serif;
+  font-size: 7cqw;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  color: #090909;
+  transition: color 1.8s ease;
+}
+
+.charon-landing[data-private="true"] .charon-wordmark {
+  color: #ffffff;
+}
+
+.charon-heading {
+  margin: 0;
+  font-size: 6.7cqw;
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: -0.055em;
+}
+
+.charon-heading-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.2em;
+  white-space: nowrap;
+}
+
+.charon-heading strong {
+  font-weight: 500;
+}
+
+.charon-soft {
+  color: #a4a2a7;
+  font-size: 0.64em;
+  font-weight: 300;
+  letter-spacing: -0.045em;
+  transition: color 1.8s ease;
+}
+
+.charon-landing[data-private="true"] .charon-soft {
+  color: #c4c2c7;
+}
+
+.charon-layer {
+  font-size: 0.65em;
+  font-weight: 300;
+  letter-spacing: -0.045em;
+}
+
+.charon-solana-line {
+  align-items: center;
+  gap: 0.32em;
+  margin-top: 0.12em;
+}
+
+.charon-solana {
+  display: inline-flex;
+  align-items: center;
+  font-size: 1.02em;
+}
+
+.charon-solana img {
+  height: 0.8em;
+  width: auto;
+  margin-right: 0.035em;
+  transition: filter 1.8s ease;
+}
+
+.charon-landing[data-private="true"] .charon-solana img {
+  filter: invert(1);
+}
+
+.charon-description {
+  margin: 0.75cqw 0 0;
+  font-size: 1.75cqw;
+  line-height: 1.3;
+  letter-spacing: -0.035em;
+}
+
+.charon-waitlist {
+  position: relative;
+  isolation: isolate;
+  margin-top: 2.5cqw;
+  padding: 1.69cqw 3.56cqw;
+  border: 0;
+  background: transparent;
+  color: #f8f8f6;
+  font-size: 2.06cqw;
+  line-height: 1.25;
+  transition: transform 180ms ease;
+}
+
+.charon-waitlist::before {
+  content: "";
+  position: absolute;
+  inset: -0.6cqw -1cqw;
+  z-index: -1;
+  background: url("/waitlist-brush.svg") center / 100% 100% no-repeat;
+  filter: drop-shadow(0 5px 3px rgb(0 0 0 / 16%));
+}
+
+.charon-waitlist:hover {
+  transform: translateY(-2px) rotate(-1deg);
+}
+
+.charon-waitlist:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+.charon-hero-actions {
+  display: flex;
+  width: max-content;
+  max-width: 100%;
+  gap: clamp(8px, 1.5cqw, 16px);
+  margin-top: 2.5cqw;
+}
+
+.charon-action-button {
+  display: grid;
+  min-width: 0;
+  height: clamp(44px, 5.8cqw, 58px);
+  place-items: center;
+  padding-inline: clamp(14px, 2.5cqw, 28px);
+  border: 0;
+  border-radius: clamp(7px, 0.8cqw, 10px);
+  background: #000;
+  color: #fff;
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+  font-size: clamp(13px, 2.1cqw, 21px);
+  font-weight: 400;
+  line-height: 1;
+  opacity: 0.8;
+  white-space: nowrap;
+  transition: transform 180ms ease, background-color 1.8s ease, color 1.8s ease;
+}
+
+.charon-action-button:hover {
+  transform: translateY(-2px);
+}
+
+.charon-action-button:active {
+  transform: translateY(1px);
+}
+
+.charon-landing[data-private="true"] .charon-action-button {
+  background: #f8f4eb;
+  color: #111;
+}
+
+@media (max-width: 400px) {
+  .charon-hero-actions {
+    gap: 6px;
+  }
+
+  .charon-action-button {
+    padding-inline: 10px;
+    font-size: 11px;
+  }
+}
+
+.charon-ferryman {
+  display: block;
+  padding: 0;
+  margin-top: 1.4cqw;
+  border: 0;
+  background: transparent;
+  animation: floaty 4s ease-in-out infinite;
+}
+
+.charon-ferryman img {
+  display: block;
+  width: 12.5cqw;
+  height: auto;
+  transition:
+    transform 220ms ease,
+    filter 220ms ease;
+}
+
+.charon-ferryman:hover img {
+  transform: translateY(-4px) rotate(-3deg);
+  filter: drop-shadow(0 5px 10px #be8a392e);
+}
+
+.charon-ferryman:active img {
+  transform: translateY(1px) scale(0.97);
+}
+
+.landing-sheet {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  background: #fbf7ef;
+}
+
+.landing-footer {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 10px;
+  padding: 22px 20px max(22px, env(safe-area-inset-bottom));
+  border: 0;
+  background: #fbf7ef;
+  color: #6e7168;
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.landing-footer a {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 78px;
+  padding: 8px 10px 10px;
+  border-radius: 16px;
+  color: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 180ms ease;
+}
+
+.landing-footer-mark {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 12px;
+  background: #efe8da;
+  color: #2c2e2a;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease,
+    transform 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.landing-footer-mark svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.landing-footer a:hover {
+  color: #1c1e1a;
+}
+
+.landing-footer a:hover .landing-footer-mark {
+  background: #222622;
+  color: #fbf7ef;
+  transform: translateY(-3px);
+  box-shadow: 0 8px 16px #2a241814;
+}
+
+.landing-footer a:active .landing-footer-mark {
+  transform: translateY(-1px);
+}
+
+.landing-footer a:focus-visible {
+  outline: 2px solid #977242;
+  outline-offset: 3px;
+}
+
+.charon-ferryman:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.charon-scene-controls {
+  position: absolute;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  left: 24px;
+  right: 24px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  color: #706b62;
+  font-size: 10px;
+  pointer-events: none;
+}
+
+.charon-scene-controls p {
+  margin: 0;
+  padding: 6px 10px;
+  background: #faf7f0b3;
+  border-radius: 3px;
+}
+
+.charon-scene-controls p span {
+  margin: 0 5px;
+}
+
+.charon-scene-controls button {
+  pointer-events: auto;
+  border: 0;
+  padding: 6px 10px;
+  background: #faf7f0db;
+  border-radius: 3px;
+}
+
+.charon-scene-controls button:hover {
+  color: #131313;
+}
+
+/* Also covers slow loading and unavailable WebGL. */
+.charon-still-grid {
+  position: absolute;
+  top: -75px;
+  left: 50%;
+  display: grid;
+  grid-template-columns: repeat(5, 580px);
+  gap: 60px 54px;
+  width: max-content;
+  transform: translateX(-50%);
+  font-family: "Charon Inter", sans-serif;
+}
+
+.charon-still-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 128px;
+  padding: 28px 24px 15px;
+  background: #fdfbf6;
+  border-radius: 19px;
+  box-shadow: 0 9px 16px #2e24171c;
+  color: #394957;
+  font-size: 14px;
+}
+
+.charon-still-card:nth-child(10n + 6),
+.charon-still-card:nth-child(10n + 7),
+.charon-still-card:nth-child(10n + 8),
+.charon-still-card:nth-child(10n + 9),
+.charon-still-card:nth-child(10n + 10) {
+  transform: translateX(270px);
+}
+
+.charon-still-hash {
+  position: absolute;
+  top: 12px;
+  left: 24px;
+  color: #989b9e;
+  font-size: 11px;
+}
+
+.charon-still-card>div {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.charon-still-card>div:last-child {
+  text-align: right;
+}
+
+.charon-still-card small {
+  display: block;
+  color: #9a9c9f;
+  font-size: 11px;
+  margin: 5px 0 10px;
+}
+
+.charon-still-card b {
+  color: #f57360;
+  font-weight: 500;
+}
+
+.charon-still-card>div:last-child b {
+  color: #54b890;
+}
+
+.charon-still-card i {
+  width: 42px;
+  height: 42px;
+  border: 7px solid #e8dac1;
+  border-radius: 50%;
+  background: repeating-conic-gradient(#b99c78 0% 25%, #fffaf1 0% 50%) 50% / 12px 12px;
+}
+
+@media (max-width: 900px) and (min-height: 600px) {
+  .charon-panel {
+    width: min(440px, calc(100% - 32px));
+  }
+
+  .charon-wordmark {
+    font-size: 8.5cqw;
+    margin-bottom: 3cqw;
+  }
+
+  .charon-heading {
+    font-size: 7.5cqw;
+  }
+
+  .charon-description {
+    font-size: 2.1cqw;
+  }
+
+  .charon-waitlist {
+    font-size: 2.62cqw;
+    padding: 2.25cqw 4.38cqw;
+  }
+
+  .charon-ferryman img {
+    width: 16cqw;
+  }
+}
+
+@media (max-width: 540px) and (min-height: 500px) {
+  .charon-hero {
+    padding: calc(8px + var(--charon-header-height)) 16px 72px;
+  }
+
+  .charon-panel {
+    width: min(300px, calc(100% - 36px));
+    margin-top: 18px;
+  }
+
+  .charon-panel::before {
+    inset: -18% -12%;
+    background-color: rgb(250 248 242 / 0.82);
+    filter: blur(16px);
+  }
+
+  .charon-landing[data-private="true"] .charon-panel::before {
+    background-color: rgb(12 13 15 / 0.78);
+  }
+
+  .charon-wordmark {
+    font-size: 28px;
+    margin-bottom: 10px;
+  }
+
+  .charon-heading {
+    font-size: 26px;
+    line-height: 1.25;
+  }
+
+  .charon-solana-line {
+    margin-top: 0.15em;
+  }
+
+  .charon-solana {
+    font-size: 1em;
+  }
+
+  .charon-description {
+    font-size: 13px;
+    line-height: 1.45;
+    margin-top: 12px;
+  }
+
+  .charon-hero-actions {
+    margin-top: 16px;
+    gap: 8px;
+  }
+
+  .charon-action-button {
+    font-size: 12px;
+    padding-inline: 12px;
+  }
+
+  .charon-waitlist {
+    margin-top: 16px;
+    padding: 12px 18px;
+    font-size: 14px;
+  }
+
+  .charon-waitlist::before {
+    inset: -8px -10px;
+  }
+
+  .charon-ferryman {
+    margin-top: 12px;
+  }
+
+  .charon-ferryman img {
+    width: 64px;
+  }
+
+  .charon-scene-controls {
+    left: 10px;
+    right: 10px;
+    gap: 8px;
+    font-size: 8px;
+  }
+
+  .charon-scene-controls p {
+    max-width: 215px;
+  }
+}
+
+@media (max-height: 500px) {
+  :root {
+    --charon-header-height: 50px;
+  }
+
+  .charon-header img {
+    width: 48px;
+  }
+
+  .charon-hero {
+    padding: 8px 18px 42px;
+  }
+
+  .charon-panel {
+    width: min(420px, 70vw);
+    margin-top: 0;
+  }
+
+  .charon-description {
+    font-size: max(10px, 1.75cqw);
+  }
+
+  .charon-waitlist {
+    font-size: max(13.75px, 2.06cqw);
+    padding-block: 1.25cqw;
+  }
+
+  .charon-scene-controls {
+    bottom: 8px;
+    font-size: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .charon-panel {
+    transform: none;
+  }
+
+  .charon-waitlist:hover,
+  .charon-waitlist:active,
+  .charon-action-button:hover,
+  .charon-action-button:active,
+  .charon-ferryman:hover img,
+  .charon-ferryman:active img {
+    transform: none;
+  }
+}
