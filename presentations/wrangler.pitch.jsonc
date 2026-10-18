@@ -1,0 +1,9 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "charon-pitch",
+  "compatibility_date": "2026-09-26",
+  "assets": {
+    "directory": "site-pitch"
+  },
+  // separate worker for the pitch deck: user will host this one long-term
+}

@@ -1,0 +1,530 @@
+<title>Charon Relayer Schematic</title>
+<style>
+  :root {
+    --bg: #0C0E12;
+    --panel: #11141B;
+    --surface: #171B25;
+    --fg: #E7EAF3;
+    --muted: #9298AC;
+    --line: #272D3B;
+    --accent: #8B85F0;
+    --accent-dim: rgba(139, 133, 240, 0.13);
+    --warn: #E3B25E;
+    --sans: 'Archivo', system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #F4F5F9;
+      --panel: #FFFFFF;
+      --surface: #F0F1F7;
+      --fg: #181B24;
+      --muted: #5B6173;
+      --line: #D9DDE8;
+      --accent: #5F58D6;
+      --accent-dim: rgba(95, 88, 214, 0.09);
+      --warn: #96650D;
+      color-scheme: light;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #F4F5F9;
+    --panel: #FFFFFF;
+    --surface: #F0F1F7;
+    --fg: #181B24;
+    --muted: #5B6173;
+    --line: #D9DDE8;
+    --accent: #5F58D6;
+    --accent-dim: rgba(95, 88, 214, 0.09);
+    --warn: #96650D;
+    color-scheme: light;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    margin: 0;
+    padding: 36px 20px 72px;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; }
+
+  /* title block — schematic sheet header */
+  .tb {
+    display: grid;
+    grid-template-columns: minmax(220px, 1.6fr) repeat(3, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 30px;
+  }
+  .tb > div { background: var(--bg); padding: 14px 18px; min-width: 0; }
+  .tb .name { grid-row: span 2; display: flex; flex-direction: column; justify-content: center; }
+  .tb .name b { font-size: 27px; font-weight: 800; letter-spacing: 0.02em; line-height: 1.15; text-transform: uppercase; }
+  .tb .name span { color: var(--muted); font-family: var(--mono); font-size: 11px; margin-top: 8px; }
+  .tb .k { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); display: block; margin-bottom: 4px; }
+  .tb .v { font-family: var(--mono); font-size: 11.5px; overflow-wrap: anywhere; }
+  .tb .v.hi { color: var(--accent); }
+
+  .lede { max-width: 76ch; color: var(--muted); margin: 0 0 40px; }
+  .lede b { color: var(--fg); font-weight: 600; }
+
+  section > h2 { font-size: 20px; font-weight: 700; margin: 0 0 4px; }
+  .eb { font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); }
+
+  figure { margin: 18px 0 42px; }
+  .fig {
+    border: 1px solid var(--line);
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 16px 16px 12px;
+  }
+  .fig-scroll { overflow-x: auto; }
+  .fig-scroll svg { display: block; width: 100%; min-width: 860px; height: auto; }
+  figcaption { color: var(--muted); font-size: 13.5px; margin-top: 10px; max-width: 90ch; }
+
+  /* svg diagram primitives */
+  svg text { font-family: var(--mono); fill: var(--fg); }
+  svg .frame { fill: var(--surface); stroke: var(--line); }
+  svg .frame-t { fill: none; stroke: var(--line); }
+  svg .chip  { fill: var(--bg); stroke: var(--line); }
+  svg .check { fill: var(--accent-dim); stroke: var(--accent); }
+  svg .warnbox { fill: none; stroke: var(--warn); stroke-dasharray: 4 3; }
+  svg .accentbox { fill: var(--accent-dim); stroke: var(--accent); }
+  svg .wire  { stroke: var(--accent); stroke-width: 1.5; fill: none; }
+  svg .wire2 { stroke: var(--muted); stroke-width: 1.2; fill: none; stroke-dasharray: 4 3; }
+  svg .head  { fill: var(--accent); stroke: none; }
+  svg .head2 { fill: var(--muted); stroke: none; }
+  svg .tt { font-size: 12px; font-weight: 600; }
+  svg .tm { font-size: 11px; font-weight: 600; }
+  svg .ti { font-size: 11px; }
+  svg .ts { font-size: 9.5px; fill: var(--muted); }
+  svg .tl { font-size: 10.5px; fill: var(--muted); }
+  svg .tl-a { font-size: 10.5px; fill: var(--accent); }
+  svg .tw { font-size: 10px; fill: var(--warn); }
+  svg .eyebrow { font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; fill: var(--accent); }
+
+  /* route table */
+  .tbl-wrap { border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; background: var(--panel); }
+  table { border-collapse: collapse; width: 100%; min-width: 780px; }
+  th {
+    font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted); text-align: left;
+    padding: 12px 16px 8px; border-bottom: 1px solid var(--line);
+  }
+  td { font-size: 13px; padding: 9px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td.path { font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+  td.meth { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+  td.back { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+  tr.grp td {
+    font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--accent); background: var(--accent-dim);
+    padding: 7px 16px;
+  }
+
+  /* constraint notes */
+  .notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; margin-top: 18px; }
+  .note { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 14px 16px; }
+  .note h3 { font-size: 14px; font-weight: 700; margin: 0 0 6px; }
+  .note h3 code { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+  .note p { margin: 0; color: var(--muted); font-size: 13px; }
+  .note p b { color: var(--fg); font-weight: 600; }
+
+  /* file map footer */
+  .files { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .files span {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px;
+  }
+  .files span b { color: var(--fg); font-weight: 600; }
+
+  @media (max-width: 760px) {
+    .tb { grid-template-columns: 1fr 1fr; }
+    .tb .name { grid-row: auto; grid-column: 1 / -1; }
+    body { padding: 24px 16px 56px; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="tb">
+    <div class="name">
+      <b>Charon<br>Relayer</b>
+      <span>implementation schematic</span>
+    </div>
+    <div><span class="k">Module</span><span class="v">workers/src &middot; workers-rs &rarr; wasm</span></div>
+    <div><span class="k">Deploy</span><span class="v hi">privacy-cash-relayer.theman-ai-1716.workers.dev</span></div>
+    <div><span class="k">State</span><span class="v">Cloudflare D1 &mdash; the mirror</span></div>
+    <div><span class="k">RPC</span><span class="v">SOLANA_RPC_URL &middot; Helius</span></div>
+    <div><span class="k">Tree</span><span class="v">26 levels &middot; 100-root history</span></div>
+    <div><span class="k">Rev</span><span class="v">payroll-standard-circuit @ 324fba5 &middot; 2026-09-29</span></div>
+  </header>
+
+  <p class="lede">
+    The relayer is a Rust worker on Cloudflare's edge that <b>holds the relayer keypair and the D1 mirror
+    &mdash; and never a user key</b>. Every read is answered from the mirror; the chain is touched only through
+    one paid RPC; and indexing is lazy, a signature walk on demand instead of an always-on stream.
+    Drawn from <b>workers/src @ 324fba5</b>.
+  </p>
+
+  <section>
+    <span class="eb">Fig. 1 &mdash; system map</span>
+    <h2>One worker, one mirror, one RPC</h2>
+    <figure>
+      <div class="fig">
+        <div class="fig-scroll">
+        <svg viewBox="0 0 960 560" role="img" aria-label="System map: clients relay signed transactions and proofs to the worker; the worker reads and writes the D1 mirror and reaches Solana only through the Helius RPC.">
+          <!-- wires: top channel -->
+          <path class="wire"  d="M 110 140 V 68 H 440 V 131" />
+          <polygon class="head" points="440,140 435.5,131 444.5,131" />
+          <path class="wire2" d="M 470 140 V 96 H 140 V 131" />
+          <polygon class="head2" points="140,140 135.5,131 144.5,131" />
+          <text class="tl-a" x="275" y="58" text-anchor="middle">POST /submit &#183; /transact &#183; /merkle &#183; /utxos</text>
+          <text class="tl" x="305" y="114" text-anchor="middle">blockhash &#183; ALT bytes &#183; proofs &#183; notes</text>
+          <!-- legend -->
+          <line class="wire"  x1="620" y1="58" x2="656" y2="58" />
+          <text class="tl" x="663" y="62">request</text>
+          <line class="wire2" x1="740" y1="58" x2="776" y2="58" />
+          <text class="tl" x="783" y="62">response</text>
+
+          <!-- clients -->
+          <rect class="frame" x="20" y="140" width="180" height="380" rx="10" />
+          <text class="tt" x="110" y="166" text-anchor="middle">CLIENTS</text>
+          <text class="ts" x="110" y="181" text-anchor="middle">keys never leave the device</text>
+          <rect class="chip" x="35" y="196" width="150" height="48" rx="7" />
+          <text class="ti" x="110" y="224" text-anchor="middle">web app</text>
+          <rect class="chip" x="35" y="256" width="150" height="48" rx="7" />
+          <text class="ti" x="110" y="284" text-anchor="middle">mobile app</text>
+          <rect class="chip" x="35" y="316" width="150" height="48" rx="7" />
+          <text class="ti" x="110" y="344" text-anchor="middle">payroll app</text>
+          <rect class="chip" x="35" y="376" width="150" height="48" rx="7" />
+          <text class="ti" x="110" y="404" text-anchor="middle">SDK / agents</text>
+          <text class="ts" x="110" y="462" text-anchor="middle">sign client-side,</text>
+          <text class="ts" x="110" y="476" text-anchor="middle">then relay</text>
+
+          <!-- worker -->
+          <rect class="frame" x="280" y="140" width="320" height="380" rx="10" />
+          <text class="tt" x="440" y="166" text-anchor="middle">WORKER &#8212; workers/src (Rust &#8594; wasm)</text>
+          <rect class="chip" x="296" y="184" width="136" height="40" rx="7" />
+          <text class="tm" x="364" y="201" text-anchor="middle">routes.rs</text>
+          <text class="ts" x="364" y="215" text-anchor="middle">router &#183; CORS</text>
+          <rect class="chip" x="448" y="184" width="136" height="40" rx="7" />
+          <text class="tm" x="516" y="201" text-anchor="middle">relayer.rs</text>
+          <text class="ts" x="516" y="215" text-anchor="middle">two tx paths</text>
+          <rect class="chip" x="296" y="236" width="136" height="40" rx="7" />
+          <text class="tm" x="364" y="253" text-anchor="middle">validate.rs</text>
+          <text class="ts" x="364" y="267" text-anchor="middle">proof chain</text>
+          <rect class="chip" x="448" y="236" width="136" height="40" rx="7" />
+          <text class="tm" x="516" y="253" text-anchor="middle">sync.rs</text>
+          <text class="ts" x="516" y="267" text-anchor="middle">lazy indexer</text>
+          <rect class="chip" x="296" y="288" width="136" height="40" rx="7" />
+          <text class="tm" x="364" y="305" text-anchor="middle">merkle.rs</text>
+          <text class="ts" x="364" y="319" text-anchor="middle">mirror proofs</text>
+          <rect class="chip" x="448" y="288" width="136" height="40" rx="7" />
+          <text class="tm" x="516" y="305" text-anchor="middle">store.rs</text>
+          <text class="ts" x="516" y="319" text-anchor="middle">D1 access</text>
+          <rect class="chip" x="296" y="340" width="136" height="40" rx="7" />
+          <text class="tm" x="364" y="357" text-anchor="middle">rpc.rs</text>
+          <text class="ts" x="364" y="371" text-anchor="middle">JSON-RPC</text>
+          <rect class="chip" x="448" y="340" width="136" height="40" rx="7" />
+          <text class="tm" x="516" y="357" text-anchor="middle">solana/</text>
+          <text class="ts" x="516" y="371" text-anchor="middle">wire &#183; sign</text>
+          <rect class="frame-t" x="296" y="396" width="288" height="58" rx="7" />
+          <text class="ts" x="440" y="414" text-anchor="middle">AppState &#183; OnceLock per isolate</text>
+          <text class="ts" x="440" y="429" text-anchor="middle">SOLANA_RPC_URL &#183; RELAYER_KEYPAIR_JSON</text>
+          <text class="ts" x="440" y="444" text-anchor="middle">PROGRAM_ID &#183; fee config &#183; ADMIN_PASSWORD</text>
+          <rect class="warnbox" x="296" y="466" width="288" height="40" rx="7" />
+          <text class="tw" x="440" y="483" text-anchor="middle">in-flight nullifier map</text>
+          <text class="ts" x="440" y="498" text-anchor="middle">isolate-local &#183; 60 s TTL</text>
+
+          <!-- D1 -->
+          <rect class="frame" x="680" y="140" width="260" height="180" rx="10" />
+          <text class="tt" x="810" y="166" text-anchor="middle">D1 &#8212; the mirror</text>
+          <text class="ti" x="700" y="196">trees</text>
+          <text class="ti" x="700" y="220">tree_levels</text>
+          <text class="ti" x="700" y="244">utxos</text>
+          <text class="ti" x="700" y="268">nullifiers</text>
+          <text class="ti" x="700" y="292">indexed_txs</text>
+          <text class="ti" x="820" y="196">indexer_cursor</text>
+          <text class="ti" x="820" y="220">sync_lock</text>
+          <text class="ti" x="820" y="244">encrypted_notes</text>
+          <text class="ti" x="820" y="268">recipient_keys</text>
+
+          <!-- chain -->
+          <rect class="frame" x="680" y="350" width="260" height="170" rx="10" />
+          <text class="tt" x="810" y="376" text-anchor="middle">SOLANA (devnet)</text>
+          <text class="ti" x="700" y="404">privacy-cash program</text>
+          <text class="ti" x="700" y="428">tree PDA &#183; 26 levels</text>
+          <text class="ti" x="700" y="452">root history &#183; 100 ring</text>
+          <text class="ti" x="700" y="476">ALT &#183; global_config</text>
+          <text class="ti" x="700" y="500">fee_recipient ATA</text>
+
+          <!-- worker <-> D1 -->
+          <path class="wire" d="M 600 200 H 671" />
+          <polygon class="head" points="680,200 671,195.5 671,204.5" />
+          <text class="tl" x="640" y="190" text-anchor="middle">batch</text>
+          <path class="wire2" d="M 680 250 H 609" />
+          <polygon class="head2" points="600,250 609,245.5 609,254.5" />
+          <text class="tl" x="640" y="240" text-anchor="middle">reads</text>
+
+          <!-- worker <-> chain -->
+          <path class="wire" d="M 600 400 H 671" />
+          <polygon class="head" points="680,400 671,395.5 671,404.5" />
+          <text class="tl" x="640" y="390" text-anchor="middle">Helius RPC</text>
+          <path class="wire2" d="M 680 450 H 609" />
+          <polygon class="head2" points="600,450 609,445.5 609,454.5" />
+          <text class="tl" x="640" y="440" text-anchor="middle">sigs &#183; blocks</text>
+        </svg>
+        </div>
+        <figcaption>
+          Everything funnels through one worker: clients relay signed bytes or proofs, the D1 mirror answers
+          every read, and the chain is touched only through the paid RPC. Clients never need an RPC endpoint of
+          their own &mdash; they get the blockhash and ALT bytes from the relayer itself.
+        </figcaption>
+      </div>
+    </figure>
+  </section>
+
+  <section>
+    <span class="eb">Fig. 2 &mdash; the two submit paths</span>
+    <h2>Forward their bytes, or spend your own lamports</h2>
+    <figure>
+      <div class="fig">
+        <div class="fig-scroll">
+        <svg viewBox="0 0 960 410" role="img" aria-label="Two lanes: path A forwards a client-signed transaction after checking it targets the program; path B validates a proof, reserves the nullifiers, builds and signs a relayer transaction, then simulates and sends.">
+          <!-- lane A -->
+          <text class="eyebrow" x="20" y="40">PATH A &#8212; CLIENT-SIGNED &#183; POST /api/relayer/submit</text>
+          <rect class="chip" x="20" y="56" width="150" height="80" rx="8" />
+          <text class="ti" x="95" y="90" text-anchor="middle">SDK builds tx</text>
+          <text class="ti" x="95" y="106" text-anchor="middle">wallet signs</text>
+          <rect class="chip" x="210" y="56" width="150" height="80" rx="8" />
+          <text class="ti" x="285" y="90" text-anchor="middle">hex wire bytes</text>
+          <text class="ts" x="285" y="106" text-anchor="middle">legacy or v0</text>
+          <rect class="chip" x="400" y="56" width="150" height="80" rx="8" />
+          <text class="ti" x="475" y="90" text-anchor="middle">parse tx</text>
+          <text class="ti" x="475" y="106" text-anchor="middle">resolve ALTs</text>
+          <rect class="check" x="590" y="56" width="160" height="80" rx="8" />
+          <text class="ti" x="670" y="90" text-anchor="middle">ix targets</text>
+          <text class="ti" x="670" y="106" text-anchor="middle">program or ALT?</text>
+          <rect class="chip" x="790" y="56" width="150" height="80" rx="8" />
+          <text class="ti" x="865" y="90" text-anchor="middle">sendTransaction</text>
+          <text class="ti" x="865" y="106" text-anchor="middle">&#8594; signature</text>
+          <path class="wire" d="M 170 96 H 201" /><polygon class="head" points="210,96 201,91.5 201,100.5" />
+          <path class="wire" d="M 360 96 H 391" /><polygon class="head" points="400,96 391,91.5 391,100.5" />
+          <path class="wire" d="M 550 96 H 581" /><polygon class="head" points="590,96 581,91.5 581,100.5" />
+          <path class="wire" d="M 750 96 H 781" /><polygon class="head" points="790,96 781,91.5 781,100.5" />
+          <text class="tw" x="670" y="156" text-anchor="middle">else 400 PROGRAM_NOT_ALLOWED</text>
+          <rect x="20" y="172" width="8" height="8" class="head" />
+          <text class="tl" x="36" y="180">relayer holds no user key &#8212; it verifies targeting and forwards the bytes untouched.</text>
+
+          <!-- lane B -->
+          <text class="eyebrow" x="20" y="216">PATH B &#8212; GASLESS &#183; RELAYER-SIGNED &#183; POST /api/relayer/transact</text>
+          <rect class="chip" x="20" y="232" width="170" height="114" rx="8" />
+          <text class="ts" x="105" y="254" text-anchor="middle">proof_a/b/c &#183; root</text>
+          <text class="ts" x="105" y="270" text-anchor="middle">2 nullifiers</text>
+          <text class="ts" x="105" y="286" text-anchor="middle">2 commitments</text>
+          <text class="ts" x="105" y="302" text-anchor="middle">ext_data_hash</text>
+          <text class="ts" x="105" y="318" text-anchor="middle">ext_amount &#183; fee</text>
+          <rect class="check" x="230" y="232" width="250" height="114" rx="8" />
+          <text class="tm" x="355" y="250" text-anchor="middle">validation chain</text>
+          <text class="ts" x="246" y="268">1. sync_tree_forced</text>
+          <text class="ts" x="246" y="284">2. nullifiers unspent (D1)</text>
+          <text class="ts" x="246" y="300">3. ext_data_hash binds outputs</text>
+          <text class="ts" x="246" y="316">4. public amount &#183; fee (global_config)</text>
+          <text class="ts" x="246" y="332">5. root in 100-history (D1)</text>
+          <rect class="chip" x="520" y="232" width="150" height="114" rx="8" />
+          <text class="ti" x="595" y="274" text-anchor="middle">reserve nullifiers</text>
+          <text class="ts" x="595" y="292" text-anchor="middle">in-flight map</text>
+          <text class="ts" x="595" y="308" text-anchor="middle">60 s TTL</text>
+          <rect class="chip" x="710" y="232" width="230" height="114" rx="8" />
+          <text class="ti" x="825" y="264" text-anchor="middle">build transact + CU ixs</text>
+          <text class="ti" x="825" y="282" text-anchor="middle">relayer keypair signs</text>
+          <text class="ti" x="825" y="300" text-anchor="middle">simulate &#8594; send</text>
+          <text class="ts" x="825" y="326" text-anchor="middle">CU 1M &#183; price 5 000 &#183; SPL &#8594; v0 + ALT</text>
+          <path class="wire" d="M 190 288 H 221" /><polygon class="head" points="230,288 221,283.5 221,292.5" />
+          <path class="wire" d="M 480 288 H 511" /><polygon class="head" points="520,288 511,283.5 511,292.5" />
+          <path class="wire" d="M 670 288 H 701" /><polygon class="head" points="710,288 701,283.5 701,292.5" />
+          <text class="tw" x="20" y="372">any check fails &#8594; 400 / 409 &#183; send fails &#8594; reservation released</text>
+          <text class="tl" x="20" y="394">responds {signature, status:"submitted"} &#8212; no confirmation wait; only the admin ops poll (15 s)</text>
+        </svg>
+        </div>
+        <figcaption>
+          Two ways in. Path A never holds a user key; path B spends the relayer's own lamports behind a
+          five-step validation chain &mdash; and step 1 is a forced mirror sync, so a root proof built seconds ago
+          still validates.
+        </figcaption>
+      </div>
+    </figure>
+  </section>
+
+  <section>
+    <span class="eb">Fig. 3 &mdash; lazy indexing</span>
+    <h2>The mirror catches up on demand</h2>
+    <figure>
+      <div class="fig">
+        <div class="fig-scroll">
+        <svg viewBox="0 0 960 450" role="img" aria-label="Lazy sync: triggers fan into a D1 lock, one isolate walks signatures newest to oldest, reorders same-slot transactions by block position, then writes utxos, nullifiers, indexed transactions, the tree and its levels in one atomic batch and advances the cursor.">
+          <rect class="chip" x="20" y="28" width="220" height="36" rx="8" />
+          <text class="ti" x="130" y="50" text-anchor="middle">any mirror read &#183; 2 s throttle</text>
+          <rect class="chip" x="280" y="28" width="220" height="36" rx="8" />
+          <text class="ti" x="390" y="50" text-anchor="middle">pre-withdraw &#183; forced</text>
+          <rect class="chip" x="540" y="28" width="220" height="36" rx="8" />
+          <text class="ti" x="650" y="50" text-anchor="middle">POST /api/admin/sync</text>
+          <path class="wire" d="M 130 64 V 87" /><polygon class="head" points="130,96 125.5,87 134.5,87" />
+          <path class="wire" d="M 390 64 V 87" /><polygon class="head" points="390,96 385.5,87 394.5,87" />
+          <path class="wire" d="M 650 64 V 87" /><polygon class="head" points="650,96 645.5,87 654.5,87" />
+          <rect class="check" x="20" y="96" width="740" height="40" rx="8" />
+          <text class="tm" x="390" y="113" text-anchor="middle">D1 sync_lock &#8212; CAS row</text>
+          <text class="ts" x="390" y="128" text-anchor="middle">one isolate walks to completion &#183; losers return immediately</text>
+          <path class="wire" d="M 390 136 V 157" /><polygon class="head" points="390,166 385.5,157 394.5,157" />
+
+          <rect class="chip" x="20" y="166" width="220" height="80" rx="8" />
+          <text class="ti" x="130" y="192" text-anchor="middle">getSignaturesForAddress</text>
+          <text class="ts" x="130" y="210" text-anchor="middle">newest &#8594; oldest, until cursor</text>
+          <text class="ts" x="130" y="226" text-anchor="middle">(pages of 1 000)</text>
+          <rect class="chip" x="280" y="166" width="220" height="80" rx="8" />
+          <text class="ti" x="390" y="192" text-anchor="middle">reverse &#183; sort by slot</text>
+          <text class="ts" x="390" y="210" text-anchor="middle">same-slot &#8594; getBlock</text>
+          <text class="ts" x="390" y="226" text-anchor="middle">execution order = leaf order</text>
+          <rect class="chip" x="540" y="166" width="230" height="80" rx="8" />
+          <text class="ti" x="655" y="192" text-anchor="middle">getTransaction</text>
+          <text class="ts" x="655" y="210" text-anchor="middle">dedup: indexed_txs</text>
+          <text class="ts" x="655" y="226" text-anchor="middle">decode transact ix</text>
+          <path class="wire" d="M 240 206 H 271" /><polygon class="head" points="280,206 271,201.5 271,210.5" />
+          <path class="wire" d="M 500 206 H 531" /><polygon class="head" points="540,206 531,201.5 531,210.5" />
+          <path class="wire" d="M 655 246 V 267" /><polygon class="head" points="655,276 650.5,267 659.5,267" />
+
+          <rect class="check" x="20" y="276" width="920" height="80" rx="8" />
+          <text class="tm" x="36" y="298">one atomic D1 batch &#8212; insert_transact()</text>
+          <rect class="chip" x="36" y="312" width="169" height="32" rx="6" />
+          <text class="ts" x="120" y="325" text-anchor="middle">utxos &#215; 2</text>
+          <text class="ts" x="120" y="338" text-anchor="middle">+ encrypted outputs</text>
+          <rect class="chip" x="215" y="312" width="169" height="32" rx="6" />
+          <text class="ts" x="299" y="332" text-anchor="middle">nullifiers &#215; 2</text>
+          <rect class="chip" x="394" y="312" width="169" height="32" rx="6" />
+          <text class="ts" x="478" y="332" text-anchor="middle">indexed_txs</text>
+          <rect class="chip" x="573" y="312" width="169" height="32" rx="6" />
+          <text class="ts" x="657" y="325" text-anchor="middle">trees &#183; next_index</text>
+          <text class="ts" x="657" y="338" text-anchor="middle">root_index &#183; 100 ring</text>
+          <rect class="chip" x="752" y="312" width="169" height="32" rx="6" />
+          <text class="ts" x="836" y="325" text-anchor="middle">tree_levels</text>
+          <text class="ts" x="836" y="338" text-anchor="middle">27 rows</text>
+
+          <path class="wire" d="M 190 356 V 371" /><polygon class="head" points="190,380 185.5,371 194.5,371" />
+          <rect class="chip" x="20" y="380" width="340" height="44" rx="8" />
+          <text class="ti" x="190" y="406" text-anchor="middle">cursor &#8592; newest signature</text>
+          <rect class="accentbox" x="400" y="380" width="540" height="44" rx="8" />
+          <text class="tl-a" x="670" y="398" text-anchor="middle">merkle proofs, tree state and is_known_root</text>
+          <text class="tl-a" x="670" y="414" text-anchor="middle">are served from this mirror &#8212; never re-walked per request</text>
+        </svg>
+        </div>
+        <figcaption>
+          There is no indexer stream. A read that finds the mirror stale pays for a walk &mdash; throttled to one
+          per 2 s per isolate, serialized across isolates by a CAS lock row, and committed as a single atomic
+          batch, so a reader never sees half a transaction.
+        </figcaption>
+      </div>
+    </figure>
+  </section>
+
+  <section>
+    <span class="eb">Route table</span>
+    <h2>Every endpoint and what backs it</h2>
+    <div class="tbl-wrap" style="margin-top:18px">
+      <table>
+        <thead>
+          <tr><th>Method</th><th>Route</th><th>Purpose</th><th>Backed by</th></tr>
+        </thead>
+        <tbody>
+          <tr class="grp"><td colspan="4">Read &mdash; scanning and proof building</td></tr>
+          <tr><td class="meth">GET</td><td class="path">/api/merkle/:tree_key</td><td>tree state: next_index, current root, root_index</td><td class="back">sync &rarr; D1</td></tr>
+          <tr><td class="meth">GET</td><td class="path">/api/merkle/:tree_key/proof/:leaf_index</td><td>26-sibling proof, full-layer path</td><td class="back">D1 tree_levels</td></tr>
+          <tr><td class="meth">GET</td><td class="path">/api/nullifier/:hash</td><td>spent check &mdash; the payroll gate polls this</td><td class="back">D1 nullifiers</td></tr>
+          <tr><td class="meth">GET</td><td class="path">/api/utxos/range &middot; /api/utxos/check/:hex</td><td>note scan by leaf range or ciphertext</td><td class="back">D1 utxos</td></tr>
+          <tr><td class="meth">GET</td><td class="path">/api/relayer/blockhash &middot; /api/relayer/alt/:address</td><td>build transactions without an own RPC</td><td class="back">Helius</td></tr>
+
+          <tr class="grp"><td colspan="4">Relay &mdash; the two paths</td></tr>
+          <tr><td class="meth">POST</td><td class="path">/api/relayer/submit</td><td>broadcast a client-signed tx (path A)</td><td class="back">Helius</td></tr>
+          <tr><td class="meth">POST</td><td class="path">/api/relayer &middot; /api/relayer/transact</td><td>gasless withdraw / transfer (path B)</td><td class="back">D1 + Helius</td></tr>
+          <tr><td class="meth">GET</td><td class="path">/api/relayer/info</td><td>program id, fee rates, supported mints</td><td class="back">env + fee cache</td></tr>
+
+          <tr class="grp"><td colspan="4">Registry &mdash; per-wallet state</td></tr>
+          <tr><td class="meth">PUT &middot; GET</td><td class="path">/api/notes</td><td>encrypted note backup per wallet</td><td class="back">D1 encrypted_notes</td></tr>
+          <tr><td class="meth">PUT &middot; GET</td><td class="path">/api/recipients</td><td>note / encryption pubkeys; PUT is ed25519-signed</td><td class="back">D1 recipient_keys</td></tr>
+
+          <tr class="grp"><td colspan="4">Admin &mdash; x-admin-password</td></tr>
+          <tr><td class="meth">POST</td><td class="path">/api/relayer/initialize &middot; -initialize-spl</td><td>create tree / config, relayer-signed, polls 15 s</td><td class="back">Helius</td></tr>
+          <tr><td class="meth">POST</td><td class="path">/api/relayer/update-config &middot; update-deposit-limit(-spl)</td><td>fee and limit operations</td><td class="back">Helius</td></tr>
+          <tr><td class="meth">POST</td><td class="path">/api/admin/sync &middot; /api/admin/verify</td><td>forced backfill walk / password check</td><td class="back">D1 + Helius</td></tr>
+          <tr><td class="meth">GET</td><td class="path">/health &middot; /indexer/status</td><td>liveness &middot; cursor + leaf count</td><td class="back">D1</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section style="margin-top:44px">
+    <span class="eb">Encoded constraints</span>
+    <h2>What the code bakes in</h2>
+    <div class="notes">
+      <div class="note">
+        <h3>The in-flight map is best-effort</h3>
+        <p>A per-isolate <code>Mutex</code> with a 60 s TTL. <b>Two isolates can race the same note.</b>
+        The durable backstops are the D1 spent-check and the on-chain nullifier constraint.</p>
+      </div>
+      <div class="note">
+        <h3>"submitted" is not "confirmed"</h3>
+        <p>Path B returns right after <code>sendTransaction</code>. Only the admin ops poll
+        (5 &times; 3 s). <b>Clients confirm via /indexer/status or their own scan</b> &mdash;
+        the payroll flow polls /api/nullifier/:hash instead of trusting the response.</p>
+      </div>
+      <div class="note">
+        <h3>Reads degrade to stale</h3>
+        <p>A failed sync on a read is warn-and-continue, so the mirror can lag.
+        The <b>forced pre-withdraw sync plus the 100-root history</b> is what keeps
+        freshly built proofs valid anyway.</p>
+      </div>
+      <div class="note">
+        <h3>Paid RPC is load-bearing</h3>
+        <p>Public devnet RPC 403s Worker egress. <b>SOLANA_RPC_URL must be Helius</b> or
+        equivalent &mdash; the whole worker is one <code>fetch</code> away from that secret.</p>
+      </div>
+      <div class="note">
+        <h3>Proofs come from the mirror</h3>
+        <p><code>merkle.rs</code> walks <code>tree_levels</code> as a full-layer path.
+        Insertion-time shortcuts once produced stale proofs that failed
+        <b>ForceEqualIfEnabled</b> on-chain &mdash; that is why step 5 of the validation
+        chain checks the root against history, not against a recomputation.</p>
+      </div>
+      <div class="note">
+        <h3>Leaf order is execution order</h3>
+        <p>The signature feed only guarantees slot granularity, so same-slot
+        transactions are <b>re-sorted by their position in the block</b> (getBlock)
+        before leaves are assigned &mdash; mirror indexes must match the program's
+        append order exactly.</p>
+      </div>
+    </div>
+  </section>
+
+  <section style="margin-top:44px">
+    <span class="eb">Source map</span>
+    <h2>Where each behavior lives</h2>
+    <div class="files">
+      <span><b>routes.rs</b> 620 &middot; router + request validation</span>
+      <span><b>relayer.rs</b> 613 &middot; both tx paths</span>
+      <span><b>sync.rs</b> 283 &middot; lazy indexer</span>
+      <span><b>merkle.rs</b> 242 &middot; mirror tree</span>
+      <span><b>store.rs</b> 362 &middot; D1 access</span>
+      <span><b>rpc.rs</b> 279 &middot; JSON-RPC client</span>
+      <span><b>validate.rs</b> 113 &middot; proof chain</span>
+      <span><b>solana/</b> &middot; wire build + sign (no solana-sdk on wasm)</span>
+    </div>
+  </section>
+
+</div>

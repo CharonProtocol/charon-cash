@@ -1,0 +1,599 @@
+<title>Payroll vs App-v2</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #F4F4F8;
+    --surface: #FFFFFF;
+    --surface-2: #ECECF3;
+    --line: #D8D8E4;
+    --fg: #17181F;
+    --fg-dim: #5C5E70;
+    --fg-faint: #8A8CA0;
+    --accent: #6A63D8;
+    --accent-soft: rgba(106, 99, 216, 0.10);
+    --good: #1E7F4F;
+    --good-soft: rgba(30, 127, 79, 0.10);
+    --bad: #B3384E;
+    --bad-soft: rgba(179, 56, 78, 0.08);
+    --warn: #8A6116;
+    --warn-soft: rgba(138, 97, 22, 0.10);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0C0E12;
+      --surface: #12151C;
+      --surface-2: #181C25;
+      --line: #262B37;
+      --fg: #E8EAF2;
+      --fg-dim: #9AA0B4;
+      --fg-faint: #676D82;
+      --accent: #8B85F0;
+      --accent-soft: rgba(139, 133, 240, 0.13);
+      --good: #4CC38A;
+      --good-soft: rgba(76, 195, 138, 0.12);
+      --bad: #E5647E;
+      --bad-soft: rgba(229, 100, 126, 0.10);
+      --warn: #D9A54A;
+      --warn-soft: rgba(217, 165, 74, 0.12);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0C0E12;
+    --surface: #12151C;
+    --surface-2: #181C25;
+    --line: #262B37;
+    --fg: #E8EAF2;
+    --fg-dim: #9AA0B4;
+    --fg-faint: #676D82;
+    --accent: #8B85F0;
+    --accent-soft: rgba(139, 133, 240, 0.13);
+    --good: #4CC38A;
+    --good-soft: rgba(76, 195, 138, 0.12);
+    --bad: #E5647E;
+    --bad-soft: rgba(229, 100, 126, 0.10);
+    --warn: #D9A54A;
+    --warn-soft: rgba(217, 165, 74, 0.12);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "Archivo", -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    padding: 40px 20px 72px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+
+  .kicker {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 10px;
+  }
+  h1 {
+    font-size: clamp(28px, 5vw, 40px);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    margin: 0 0 12px;
+    text-wrap: balance;
+  }
+  .meta {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: var(--fg-faint);
+    margin: 0;
+  }
+  .meta b { color: var(--fg-dim); font-weight: 500; }
+
+  section { margin-top: 44px; }
+  h2 {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+    margin: 0 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  h2 .num { color: var(--accent); font-family: "IBM Plex Mono", monospace; margin-right: 8px; }
+
+  /* verdict cards */
+  .verdicts { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+  .verdict {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px 18px 16px;
+  }
+  .verdict .q {
+    font-size: 13px;
+    color: var(--fg-dim);
+    margin: 0 0 10px;
+    line-height: 1.45;
+  }
+  .verdict .ans {
+    display: inline-block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--good);
+    background: var(--good-soft);
+    border-radius: 6px;
+    padding: 2px 12px;
+    margin: 0 0 10px;
+  }
+  .verdict .ev {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    color: var(--fg-faint);
+    line-height: 1.6;
+    margin: 0;
+  }
+  .verdict .ev b { color: var(--fg-dim); font-weight: 500; }
+
+  .prose { max-width: 70ch; color: var(--fg-dim); }
+  .prose b, .prose strong { color: var(--fg); font-weight: 600; }
+  .prose code, .inline-code {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.88em;
+    background: var(--surface-2);
+    border-radius: 4px;
+    padding: 1px 5px;
+    color: var(--fg);
+  }
+
+  /* flow figure */
+  figure { margin: 0; }
+  .figbox {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px 14px 10px;
+  }
+  .figbox svg { display: block; width: 100%; height: auto; max-width: 100%; }
+  figcaption {
+    font-size: 12.5px;
+    color: var(--fg-faint);
+    padding: 10px 6px 6px;
+    line-height: 1.5;
+  }
+
+  /* coverage table */
+  .table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 13.5px; }
+  th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  thead th {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  thead th:nth-child(2), thead th:nth-child(3) { width: 27%; }
+  td.cap { font-weight: 600; color: var(--fg); min-width: 180px; }
+  td .note { display: block; font-size: 11.5px; font-weight: 400; color: var(--fg-faint); margin-top: 2px; line-height: 1.45; }
+  .mark { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+  .mark.yes { color: var(--good); }
+  .mark.no { color: var(--bad); }
+  .mark.part { color: var(--warn); }
+  .rowflag td { background: var(--accent-soft); }
+
+  /* gap cards */
+  .gaps { display: grid; gap: 10px; }
+  .gap {
+    display: grid;
+    grid-template-columns: 74px 1fr;
+    gap: 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+    align-items: start;
+  }
+  .gap .tag {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-align: center;
+    border-radius: 5px;
+    padding: 4px 6px;
+    margin-top: 2px;
+  }
+  .tag.blocker { color: var(--bad); background: var(--bad-soft); }
+  .tag.build { color: var(--warn); background: var(--warn-soft); }
+  .tag.polish { color: var(--accent); background: var(--accent-soft); }
+  .gap h3 { margin: 0 0 4px; font-size: 14.5px; font-weight: 700; }
+  .gap p { margin: 0; font-size: 13px; color: var(--fg-dim); line-height: 1.55; }
+  .gap p code { font-size: 0.88em; }
+
+  /* run card */
+  .run { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .run-row { padding: 13px 16px; border-bottom: 1px solid var(--line); }
+  .run-row:last-child { border-bottom: none; }
+  .run-row .what {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--fg-faint);
+    margin: 0 0 6px;
+  }
+  .run-row pre {
+    margin: 0;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: var(--fg);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .run-row pre .c { color: var(--fg-faint); }
+
+  .footnote {
+    margin-top: 40px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: var(--fg-faint);
+    line-height: 1.7;
+  }
+
+  @media (max-width: 560px) {
+    .gap { grid-template-columns: 1fr; gap: 8px; }
+    .gap .tag { justify-self: start; }
+    body { padding: 28px 16px 56px; }
+  }
+</style>
+
+<div class="wrap">
+
+  <p class="kicker">privacy-cash · gap analysis</p>
+  <h1>Payroll vs App-v2</h1>
+  <p class="meta">
+    branch <b>payroll-standard-circuit</b> · vs <b>integration/app-v2</b> ·
+    143 commits ahead of main · build ✓ (6.99s) · tests ✓ 43/43 ·
+    verified <b>2026-09-29</b>
+  </p>
+
+  <section>
+    <h2><span class="num">01</span>Your two questions, answered</h2>
+    <div class="verdicts">
+      <div class="verdict">
+        <p class="q">Does the current payroll need only <b>one tx from the person initializing it</b> — and then the backend distributes the amounts?</p>
+        <span class="ans">YES</span>
+        <p class="ev">
+          The employer signs <b>exactly one transaction</b>: the funding deposit
+          (<b>sdk/src/client.ts:1568</b> → <b>/api/relayer/submit</b>). Every payout after that is
+          signed by the <b>relayer's own keypair</b> — gasless, via
+          <b>/api/relayer/transact</b> (<b>workers/src/relayer.rs:115</b>). The vault unlock is a
+          free message signature, not a tx. Second run = zero popups.
+        </p>
+      </div>
+      <div class="verdict">
+        <p class="q">Is a <b>note generated for the user, for each employee</b>?</p>
+        <span class="ans">YES</span>
+        <p class="ev">
+          In <b>shielded mode</b>: one encrypted note per employee per payout —
+          <b>transferNoteInternal</b> (<b>sdk/src/client.ts:1188–1206</b>), encrypted to the
+          employee's x25519 key from the recipients registry. In <b>public mode</b> the row sends
+          plain SOL instead — no note.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">02</span>Why this branch exists</h2>
+    <p class="prose">
+      This branch is the <b>full payroll product direction</b>: a real employer console, an
+      employee app, and a gasless relayer backend — all running on the <b>standard (stock)
+      circuit</b>, the same protocol the rest of privacy-cash uses. Its thesis, proven in
+      <code>STANDARD-CIRCUIT.md</code>: payroll does <b>not</b> need custom batch circuits to
+      ship. The batch3/batch5 work is a <b>5.6× speed optimization</b> (11–13s vs 63–81s per
+      210 employees), not a prerequisite. That is why it matters: it decouples "we can launch"
+      from "we finished the fast prover."
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="num">03</span>One payroll run — who signs what</h2>
+    <figure>
+      <div class="figbox">
+        <svg viewBox="0 0 940 300" role="img" aria-label="Flow: employer signs one funding tx; SDK builds payout proofs; relayer signs and broadcasts each payout; each employee receives an encrypted note and claims gasless.">
+          <defs>
+            <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <polygon points="0 0, 10 5, 0 10" fill="currentColor"></polygon>
+            </marker>
+          </defs>
+          <g font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">
+            <!-- Employer box -->
+            <rect x="16" y="46" width="168" height="64" rx="8" fill="none" stroke="currentColor" stroke-width="1.4"></rect>
+            <text x="100" y="72" text-anchor="middle" font-weight="600">EMPLOYER</text>
+            <text x="100" y="92" text-anchor="middle" opacity="0.65">wallet + vault unlock</text>
+
+            <!-- SDK box -->
+            <rect x="252" y="46" width="180" height="64" rx="8" fill="none" stroke="currentColor" stroke-width="1.4"></rect>
+            <text x="342" y="66" text-anchor="middle" font-weight="600">SDK (browser)</text>
+            <text x="342" y="84" text-anchor="middle" opacity="0.65">deposit → snarkjs proofs</text>
+            <text x="342" y="100" text-anchor="middle" opacity="0.65">1 note per employee</text>
+
+            <!-- Relayer box (accent) -->
+            <rect x="500" y="46" width="200" height="64" rx="8" fill="none" stroke="var(--accent)" stroke-width="2"></rect>
+            <text x="600" y="66" text-anchor="middle" font-weight="600" fill="var(--accent)">RELAYER (Workers)</text>
+            <text x="600" y="84" text-anchor="middle" opacity="0.75">validates + signs payouts</text>
+            <text x="600" y="100" text-anchor="middle" opacity="0.75">D1 mirror · gasless</text>
+
+            <!-- Employees box -->
+            <rect x="768" y="46" width="156" height="64" rx="8" fill="none" stroke="currentColor" stroke-width="1.4"></rect>
+            <text x="846" y="66" text-anchor="middle" font-weight="600">EMPLOYEES</text>
+            <text x="846" y="84" text-anchor="middle" opacity="0.65">1 encrypted note each</text>
+            <text x="846" y="100" text-anchor="middle" opacity="0.65">+ change note</text>
+
+            <!-- arrows row 1 -->
+            <line x1="184" y1="70" x2="248" y2="70" stroke="currentColor" stroke-width="1.4" marker-end="url(#ar)"></line>
+            <text x="216" y="60" text-anchor="middle" font-size="10.5" opacity="0.75">signs 1 tx</text>
+
+            <line x1="432" y1="70" x2="496" y2="70" stroke="currentColor" stroke-width="1.4" marker-end="url(#ar)"></line>
+            <text x="464" y="60" text-anchor="middle" font-size="10.5" opacity="0.75">proofs</text>
+
+            <line x1="700" y1="70" x2="764" y2="70" stroke="currentColor" stroke-width="1.4" marker-end="url(#ar)"></line>
+            <text x="732" y="60" text-anchor="middle" font-size="10.5" opacity="0.75">N txs</text>
+
+            <!-- divider -->
+            <line x1="16" y1="146" x2="924" y2="146" stroke="currentColor" stroke-width="1" stroke-dasharray="3 5" opacity="0.4"></line>
+            <text x="16" y="170" font-size="10.5" opacity="0.75" letter-spacing="1.5">THEN, ON PAYDAY — EACH EMPLOYEE CLAIMS (NO EMPLOYER INVOLVEMENT)</text>
+
+            <!-- Employee claim row -->
+            <rect x="768" y="196" width="156" height="58" rx="8" fill="none" stroke="currentColor" stroke-width="1.4"></rect>
+            <text x="846" y="220" text-anchor="middle" font-weight="600">EMPLOYEE APP</text>
+            <text x="846" y="238" text-anchor="middle" opacity="0.65">scan → withdrawSOL</text>
+
+            <rect x="500" y="196" width="200" height="58" rx="8" fill="none" stroke="var(--accent)" stroke-width="2"></rect>
+            <text x="600" y="220" text-anchor="middle" font-weight="600" fill="var(--accent)">RELAYER SIGNS</text>
+            <text x="600" y="238" text-anchor="middle" opacity="0.75">relay: true · fees paid</text>
+
+            <rect x="252" y="196" width="180" height="58" rx="8" fill="none" stroke="currentColor" stroke-width="1.4"></rect>
+            <text x="342" y="216" text-anchor="middle" font-weight="600">SOLANA</text>
+            <text x="342" y="234" text-anchor="middle" opacity="0.65">payout lands ~13–18s</text>
+
+            <!-- claim arrows (right to left) -->
+            <line x1="768" y1="225" x2="704" y2="225" stroke="currentColor" stroke-width="1.4" marker-end="url(#ar)"></line>
+            <line x1="500" y1="225" x2="436" y2="225" stroke="currentColor" stroke-width="1.4" marker-end="url(#ar)"></line>
+          </g>
+        </svg>
+      </div>
+      <figcaption>
+        FIG — signatures per payroll run. Accent boxes act without any user key: the relayer
+        proves, validates (ext-data hash, root history, fee, double-spend) and signs every payout
+        with its own keypair. The employer's wallet is touched once.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2><span class="num">04</span>Content coverage — what each app has</h2>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Capability</th>
+            <th>integration/app-v2</th>
+            <th>payroll-standard-circuit</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="cap">Wallet connect + vault unlock</td>
+            <td><span class="mark yes">✓</span> connect + manual note import</td>
+            <td><span class="mark yes">✓</span> one-signature unlock<span class="note">then zero popups for the whole session</span></td>
+          </tr>
+          <tr>
+            <td class="cap">SOL deposit / funding</td>
+            <td><span class="mark yes">✓</span></td>
+            <td><span class="mark yes">✓</span> employer funding tx (the only signed tx)</td>
+          </tr>
+          <tr>
+            <td class="cap">Withdraw to self</td>
+            <td><span class="mark yes">✓</span></td>
+            <td><span class="mark yes">✓</span> employee claim path, gasless</td>
+          </tr>
+          <tr class="rowflag">
+            <td class="cap">Private transfer to another person</td>
+            <td><span class="mark no">✗ broken</span><span class="note">WithdrawCard ignores the recipient field — always sends to self</span></td>
+            <td><span class="mark yes">✓</span> recipients registry<span class="note">employee notePubkey + encPubkey, used by every payout</span></td>
+          </tr>
+          <tr>
+            <td class="cap">Direct (public) send</td>
+            <td><span class="mark yes">✓</span></td>
+            <td><span class="mark yes">✓</span> per-row public/shielded toggle</td>
+          </tr>
+          <tr class="rowflag">
+            <td class="cap">Gasless (relayer pays fees)</td>
+            <td><span class="mark no">✗</span><span class="note">UI copy says gasless; code has no relayer — client signs, direct RPC</span></td>
+            <td><span class="mark yes">✓</span> real, in production<span class="note">/api/relayer/transact → relayer keypair signs (relayer.rs:115)</span></td>
+          </tr>
+          <tr>
+            <td class="cap">SPL tokens</td>
+            <td><span class="mark part">partial</span><span class="note">UI toggle only; SDK has no SPL client methods</span></td>
+            <td><span class="mark yes">✓</span> works + asserted e2e (e2e-spl-v2)</td>
+          </tr>
+          <tr>
+            <td class="cap">Backend</td>
+            <td><span class="mark yes">✓</span> axum + Postgres + Yellowstone gRPC<span class="note">always-on indexer, runs on a VM</span></td>
+            <td><span class="mark yes">✓</span> Cloudflare Workers + D1<span class="note">lazy indexer, no VM, prod default (relayer.theman-ai-1716.workers.dev)</span></td>
+          </tr>
+          <tr>
+            <td class="cap">Employee mobile app</td>
+            <td><span class="mark no">✗</span></td>
+            <td><span class="mark yes">✓</span> employee-app (Expo) + web employee view</td>
+          </tr>
+          <tr>
+            <td class="cap">Notes backup</td>
+            <td><span class="mark no">✗</span></td>
+            <td><span class="mark yes">✓</span> /api/notes store</td>
+          </tr>
+          <tr>
+            <td class="cap">Fee preview · retries · receipts</td>
+            <td><span class="mark no">✗</span></td>
+            <td><span class="mark yes">✓</span> per-row, in the console</td>
+          </tr>
+          <tr>
+            <td class="cap">Transaction history UI</td>
+            <td><span class="mark no">✗</span> (dead Explorer nav link)</td>
+            <td><span class="mark part">partial</span><span class="note">receipts + explorer links per row; no standalone history page (localStorage only)</span></td>
+          </tr>
+          <tr>
+            <td class="cap">E2E tests</td>
+            <td><span class="mark part">stale</span><span class="note">scripts call SDK exports that no longer exist</span></td>
+            <td><span class="mark yes">✓</span> asserted: e2e-v2, e2e-spl-v2, employee E2E</td>
+          </tr>
+          <tr>
+            <td class="cap">Formal verification (Lean/Kani)</td>
+            <td><span class="mark yes">✓</span> verification/ setup</td>
+            <td><span class="mark no">✗</span> not ported</td>
+          </tr>
+          <tr>
+            <td class="cap">Batch circuits (scale)</td>
+            <td><span class="mark no">✗</span></td>
+            <td><span class="mark part">bench-only</span><span class="note">batch3/batch5 + arkworks: 210 emp in 11–13s vs 63–81s stock — not yet in the app path</span></td>
+          </tr>
+          <tr>
+            <td class="cap">Landing / marketing polish</td>
+            <td><span class="mark yes">✓</span></td>
+            <td><span class="mark no">✗</span> utilitarian console only</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="prose" style="margin-top:12px; font-size:13.5px;">
+      <b>Read:</b> payroll covers essentially every real feature app-v2 has, and is strictly
+      ahead on the ones that matter (working private transfer, real gasless relayer, working SPL,
+      employee app, tests). The only app-v2 assets payroll lacks are the Lean/Kani verification
+      setup and the marketing polish — and app-v2's own backend architecture (always-on
+      Yellowstone + Postgres on a VM) is the thing payroll's Workers + D1 design deliberately
+      replaces, not something to copy back.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="num">05</span>What we have to do — making payroll the primary app</h2>
+    <div class="gaps">
+      <div class="gap">
+        <span class="tag blocker">blocker</span>
+        <div>
+          <h3>Nothing is merged</h3>
+          <p>This branch is <b>143 commits ahead of main</b> and now verified (build + 43 tests
+          green). Becoming "the primary app" starts with the merge decision — a PR from
+          <code>payroll-standard-circuit</code> into <code>main</code>.</p>
+        </div>
+      </div>
+      <div class="gap">
+        <span class="tag build">build</span>
+        <div>
+          <h3>Move the fast path into the app</h3>
+          <p>The batch3/batch5 circuits and the 0.28s arkworks prover live only under
+          <code>payroll/rust-prover-bench/</code>. The shipped app still proves the stock circuit
+          client-side (~63–81s per 210 employees). Wiring batched proofs into the SDK/UI is the
+          one real engineering gap — and it's an optimization, not a launch requirement.</p>
+        </div>
+      </div>
+      <div class="gap">
+        <span class="tag build">build</span>
+        <div>
+          <h3>Transaction history page</h3>
+          <p>Neither app has one. Payroll has per-row receipts + explorer links but they're
+          localStorage-only. A server-backed history (the D1 mirror already indexes every tx)
+          would close the biggest shared gap.</p>
+        </div>
+      </div>
+      <div class="gap">
+        <span class="tag polish">polish</span>
+        <div>
+          <h3>Port the verification setup</h3>
+          <p>app-v2's <code>verification/</code> (Lean/Kani) and its architecture doc are worth
+          carrying over so the primary app keeps the formal-verification story.</p>
+        </div>
+      </div>
+      <div class="gap">
+        <span class="tag polish">polish</span>
+        <div>
+          <h3>Onboarding safety rails</h3>
+          <p>Defaults point at the <b>production</b> backend and mainnet program — a fresh
+          machine must switch Settings → Local simnet (covered in <code>DEMO.md</code>). Also
+          pin the SDK's dependency install: today's build break was <code>sdk/node_modules</code>
+          drifting to <code>@noble/curves@2.4.0</code> against its own <code>^1.9.7</code>
+          manifest; a reinstall fixed it.</p>
+        </div>
+      </div>
+      <div class="gap">
+        <span class="tag polish">polish</span>
+        <div>
+          <h3>Employee app install</h3>
+          <p><code>payroll/employee-app/</code> has no node_modules on this machine yet — one
+          <code>bun install</code> away from running. Its SDK copy also needs a refresh whenever
+          <code>sdk/</code> changes (file: dependency).</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">06</span>Run it</h2>
+    <div class="run">
+      <div class="run-row">
+        <p class="what">quick run — the branch, right now</p>
+        <pre>cd payroll
+bun install
+bun run dev        <span class="c"># → http://localhost:5174 (talks to the prod backend by default)</span></pre>
+      </div>
+      <div class="run-row">
+        <p class="what">full local demo — no prod touched</p>
+        <pre>zsh payroll/rust-prover-bench/bench/reset-env.sh   <span class="c"># surfpool + local backend</span>
+<span class="c"># app → Settings → Local simnet, then follow payroll/DEMO.md</span>
+bun scripts/watch-demo.mjs                          <span class="c"># live tx watcher</span></pre>
+      </div>
+      <div class="run-row">
+        <p class="what">e2e + bench</p>
+        <pre>PROGRAM_ID=721TvnSURopg7FCsP5ZL9WzWMWXxUutehPGJ81bhwQbr bun scripts/e2e-v2.mjs
+bun scripts/e2e-spl-v2.mjs
+payroll/rust-prover-bench/bench/run-210.sh          <span class="c"># 210-employee bench</span></pre>
+      </div>
+      <div class="run-row">
+        <p class="what">employee app</p>
+        <pre>cd payroll/employee-app
+bun install
+bun run build:bridge
+bun android</pre>
+      </div>
+    </div>
+  </section>
+
+  <p class="footnote">
+    verified 2026-09-29 · payroll: bun run build ✓ 6.99s · bun run test ✓ 43 passed / 1 skipped ·
+    git tree clean (sdk/bun.lock unchanged by the fix) ·
+    evidence: sdk/src/client.ts:1188–1206, :1568 · workers/src/relayer.rs:115 ·
+    workers/src/state.rs · payroll/STANDARD-CIRCUIT.md · payroll/DEMO.md
+  </p>
+
+</div>

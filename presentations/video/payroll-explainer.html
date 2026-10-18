@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Charon Payroll Explainer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=block" rel="stylesheet" />
+<style>
+:root{
+  --paper:#fef9f0; --card:#f8f3ea; --card2:#f3ecdf; --line:#ded8ca; --ink:#1d1c16; --body:#4a463b; --mute:#8a8473;
+  --gold:#857338; --gold-d:#6b5b21; --gold-l:#a38f51; --gold-soft:#efe2c0; --lantern:#f0a53a; --band:#1c1a15; --band-ink:#f3ecdf;
+  --red:#b42318; --red-soft:#fbe4e1; --green:#2f6f4f; --green-soft:#e3f1e8;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;background:#0d0c0a;overflow:hidden}
+body{display:grid;place-items:center;font-family:Geist,system-ui,sans-serif;color:var(--ink)}
+#stage{position:relative;width:1920px;height:1080px;background:var(--paper);overflow:hidden;transform-origin:center}
+.render #stage{transform:none!important}
+.grid{position:absolute;inset:0;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:64px 64px;opacity:.35;mask-image:radial-gradient(ellipse at 60% 40%,#000 20%,transparent 75%)}
+.glow{position:absolute;width:1100px;height:1100px;border-radius:50%;background:radial-gradient(circle,rgba(240,165,58,.18),transparent 60%);left:900px;top:-300px}
+.mono{font-family:"JetBrains Mono",monospace}
+.scene{position:absolute;inset:0;opacity:0}
+.left{position:absolute;left:150px;top:0;bottom:0;width:680px;display:flex;flex-direction:column;justify-content:center}
+.right{position:absolute;left:920px;right:140px;top:0;bottom:0;display:flex;flex-direction:column;justify-content:center}
+.kicker{font-family:"JetBrains Mono",monospace;font-size:20px;letter-spacing:.22em;color:var(--gold);text-transform:uppercase;font-weight:600}
+.h{font-size:76px;line-height:1.02;letter-spacing:-.035em;font-weight:650;margin-top:22px}
+.sub{font-size:28px;line-height:1.45;color:var(--body);margin-top:28px;max-width:640px}
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:28px;box-shadow:0 30px 60px -30px rgba(60,45,10,.25)}
+.pill{display:inline-flex;align-items:center;gap:10px;border-radius:999px;padding:8px 18px;font-family:"JetBrains Mono",monospace;font-size:17px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.row{display:flex;align-items:center;justify-content:space-between}
+
+/* keyframes (seeked, never free-running) */
+@keyframes up{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:none}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes pop{0%{opacity:0;transform:scale(.6)}70%{opacity:1;transform:scale(1.06)}100%{opacity:1;transform:scale(1)}}
+@keyframes leftIn{from{opacity:0;transform:translateX(-60px)}to{opacity:1;transform:none}}
+@keyframes rightIn{from{opacity:0;transform:translateX(80px)}to{opacity:1;transform:none}}
+@keyframes drop{0%{opacity:0;transform:translateY(-260px) rotate(-8deg)}60%{opacity:1;transform:translateY(12px) rotate(2deg)}100%{opacity:1;transform:none}}
+@keyframes press{0%,100%{transform:scale(1)}50%{transform:scale(.92)}}
+@keyframes redden{to{background:var(--red-soft);color:var(--red);border-color:#f2b8b0}}
+@keyframes greenen{to{background:var(--green-soft);color:var(--green);border-color:#b9dcc6}}
+@keyframes out{to{opacity:0;transform:scale(.96)}}
+@keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+
+/* title */
+.title{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.logo{width:330px;height:auto;filter:drop-shadow(0 30px 50px rgba(240,165,58,.35))}
+.brand{font-size:132px;font-weight:700;letter-spacing:-.05em;margin-top:18px}
+.tag{font-size:40px;color:var(--body);margin-top:6px}
+
+/* explorer */
+.xp{padding:36px 40px}
+.xp .tx{border:1.5px solid var(--line);background:#fffdf8;border-radius:16px;padding:20px 24px;margin-top:14px;font-size:24px}
+.who{font-size:16px;border-radius:8px;padding:4px 10px;background:var(--red-soft);color:var(--red);margin-left:14px;font-family:Geist;font-weight:600;letter-spacing:0;text-transform:none}
+
+/* registry */
+.emp{display:flex;align-items:center;gap:18px;padding:18px 22px;border:1.5px solid var(--line);border-radius:18px;background:#fffdf8;margin-top:14px;font-size:24px}
+.av{width:52px;height:52px;border-radius:50%;background:var(--gold-soft);display:grid;place-items:center;font-weight:700;color:var(--gold-d);font-size:22px}
+.state{margin-left:auto;font-family:"JetBrains Mono";font-size:16px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;border:1.5px solid var(--line);color:var(--mute);background:var(--card)}
+
+/* csv */
+.drop{border:2.5px dashed var(--gold-l);border-radius:24px;height:170px;display:flex;align-items:center;justify-content:center;gap:22px;background:rgba(239,226,192,.35);font-size:26px;color:var(--gold-d);font-weight:600}
+.file{width:84px;height:104px;border-radius:12px;background:#fff;border:2px solid var(--gold);display:grid;place-items:center;font-family:"JetBrains Mono";font-weight:700;color:var(--gold-d);font-size:20px;box-shadow:0 12px 24px -10px rgba(0,0,0,.25)}
+table{width:100%;border-collapse:collapse;margin-top:22px;font-family:"JetBrains Mono";font-size:21px}
+td{padding:12px 16px;border-bottom:1px solid var(--line)}
+td:last-child{text-align:right;color:var(--gold-d);font-weight:600}
+.bar{margin-top:24px;background:var(--band);color:var(--band-ink);border-radius:22px;padding:26px 30px;display:flex;align-items:center;justify-content:space-between}
+.bar .lbl{font-family:"JetBrains Mono";font-size:15px;letter-spacing:.18em;opacity:.65}
+.bar .val{font-size:30px;font-weight:600;margin-top:6px}
+.btn{background:var(--gold);color:#fff8e6;border-radius:16px;padding:18px 30px;font-size:24px;font-weight:600}
+
+/* wallet */
+.wallet{width:620px;margin:0 auto;padding:40px;text-align:center}
+.wallet .app{display:flex;align-items:center;gap:16px;justify-content:center;font-size:26px;font-weight:600}
+.wallet .msg{margin-top:26px;font-family:"JetBrains Mono";font-size:20px;background:#fffdf8;border:1.5px solid var(--line);border-radius:14px;padding:22px;text-align:left;line-height:1.6;color:var(--body)}
+.wallet .btns{display:flex;gap:18px;margin-top:28px}
+.wallet .btns div{flex:1;border-radius:16px;padding:20px;font-size:24px;font-weight:600}
+.check{width:150px;height:150px;border-radius:50%;background:var(--green);display:grid;place-items:center;margin:0 auto}
+.big1{font-size:56px;font-weight:700;letter-spacing:-.03em;text-align:center;margin-top:24px}
+
+/* prover */
+.pgrid{display:grid;grid-template-columns:repeat(20,1fr);gap:8px}
+.cell{aspect-ratio:1;border-radius:6px;background:var(--card2);border:1.5px solid var(--line)}
+.cell.on{background:var(--gold);border-color:var(--gold-d)}
+.cell.hot{background:var(--lantern);border-color:var(--lantern);box-shadow:0 0 14px var(--lantern)}
+.stats{display:flex;gap:22px;margin-top:30px}
+.stat{flex:1;padding:22px 26px}
+.stat .k{font-family:"JetBrains Mono";font-size:15px;letter-spacing:.18em;color:var(--mute);text-transform:uppercase}
+.stat .v{font-size:52px;font-weight:700;letter-spacing:-.03em;margin-top:6px;font-variant-numeric:tabular-nums}
+.flow{position:relative;height:120px;margin-top:34px}
+.node{position:absolute;z-index:2;top:20px;width:220px;height:80px;border-radius:18px;display:flex;align-items:center;justify-content:center;gap:12px;font-size:23px;font-weight:600;background:var(--card);border:1.5px solid var(--line)}
+.wire{position:absolute;top:59px;height:3px;background:var(--line)}
+.pkt{position:absolute;top:52px;width:18px;height:18px;border-radius:5px;background:var(--lantern);box-shadow:0 0 12px var(--lantern)}
+.nokey{position:absolute;top:104px;font-family:"JetBrains Mono";font-size:15px;color:var(--mute);letter-spacing:.08em;width:220px;text-align:center}
+
+/* tree */
+.tree{width:100%;height:330px}
+.tree line{stroke:var(--line);stroke-width:3}
+.tree circle{fill:var(--card2);stroke:var(--line);stroke-width:3}
+.ledger{padding:28px 32px;margin-top:20px}
+.ledger .tx{border:1.5px solid #b9dcc6;background:var(--green-soft);border-radius:14px;padding:16px 22px;margin-top:12px;font-family:"JetBrains Mono";font-size:21px;color:var(--green)}
+
+/* portal */
+.portal{padding:36px 40px}
+.scan{height:14px;border-radius:999px;background:var(--card2);overflow:hidden;margin-top:18px;border:1.5px solid var(--line)}
+.scan i{display:block;height:100%;background:linear-gradient(90deg,var(--gold-l),var(--lantern));transform-origin:left}
+.note{margin-top:24px;border:1.5px solid var(--gold-l);background:rgba(239,226,192,.45);border-radius:18px;padding:22px 26px;font-size:24px}
+.amt{font-size:44px;font-weight:700;color:var(--gold-d);letter-spacing:-.02em}
+
+/* result */
+.res{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.nums{display:flex;gap:28px;margin-top:56px}
+.num{width:330px;padding:36px 20px}
+.num .v{font-size:84px;font-weight:700;letter-spacing:-.04em;color:var(--ink)}
+.num .k{font-size:24px;color:var(--body);margin-top:8px}
+
+/* stepper */
+#steps{position:absolute;left:150px;right:140px;bottom:56px;display:flex;gap:14px;opacity:0}
+#steps div{flex:1;font-family:"JetBrains Mono";font-size:16px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);padding-top:14px;border-top:4px solid var(--line);transition:none}
+#steps div.on{color:var(--gold-d);border-color:var(--gold)}
+#steps div.done{color:var(--body);border-color:var(--gold-l)}
+#ctl{position:fixed;left:12px;bottom:12px;color:#aaa;font:12px "JetBrains Mono";z-index:9}
+.render #ctl{display:none}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="grid"></div><div class="glow"></div>
+
+  <!-- 0 · title -->
+  <section class="scene" data-s="0" data-e="5">
+    <div class="title">
+      <img class="logo a" data-a="pop" data-d="0.2" data-t="1" src="LogoOn.png" alt="" />
+      <div class="brand a" data-a="up" data-d="0.9">Charon Cash</div>
+      <div class="tag a" data-a="up" data-d="1.3">Private payroll on Solana, end to end.</div>
+      <div class="a" data-a="fade" data-d="2" style="margin-top:40px"><span class="pill" style="background:var(--gold-soft);color:var(--gold-d)"><span class="dot" style="background:var(--gold)"></span>live on devnet</span></div>
+    </div>
+  </section>
+
+  <!-- 1 · problem -->
+  <section class="scene" data-s="5" data-e="13">
+    <div class="left">
+      <div class="kicker a" data-a="up" data-d="0.1">The problem</div>
+      <div class="h a" data-a="up" data-d="0.3">Pay your team on-chain and everyone sees it.</div>
+      <div class="sub a" data-a="up" data-d="0.6">Who you paid, how much, and when. On a public explorer, forever.</div>
+    </div>
+    <div class="right">
+      <div class="card xp a" data-a="rightIn" data-d="0.5">
+        <div class="row"><span style="font-size:28px;font-weight:600">Public explorer</span><span class="pill" style="background:var(--red-soft);color:var(--red)">exposed</span></div>
+        <div class="tx mono a" data-a="up" data-d="1.4"><span>Treasury_Alpha.sol</span><span style="float:right;font-weight:600">-4.40 SOL</span></div>
+        <div class="tx mono row a" data-a="up" data-d="2.0"><span>→ 7xKp…3fQa<span class="who a" data-a="pop" data-d="3.6">VP Engineering</span></span><b style="color:var(--red)">+2.10 SOL</b></div>
+        <div class="tx mono row a" data-a="up" data-d="2.4"><span>→ 9mRt…aa1c<span class="who a" data-a="pop" data-d="4.0">Principal Dev</span></span><b style="color:var(--red)">+1.40 SOL</b></div>
+        <div class="tx mono row a" data-a="up" data-d="2.8"><span>→ 4Hq2…Lz8e<span class="who a" data-a="pop" data-d="4.4">Contractor</span></span><b style="color:var(--red)">+0.90 SOL</b></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 · enroll -->
+  <section class="scene" data-s="13" data-e="21">
+    <div class="left">
+      <div class="kicker a" data-a="up" data-d="0.1">Step 1 · Enroll</div>
+      <div class="h a" data-a="up" data-d="0.3">Employees turn on private receiving.</div>
+      <div class="sub a" data-a="up" data-d="0.6">Each person connects once. Their wallet derives a receiving key and publishes it to your team registry.</div>
+    </div>
+    <div class="right">
+      <div class="card a" data-a="rightIn" data-d="0.5" style="padding:36px 40px">
+        <div class="row"><span style="font-size:28px;font-weight:600">Team registry</span><span class="mono" style="font-size:18px;color:var(--mute)">receiving keys</span></div>
+        <div class="emp a" data-a="up" data-d="1.0"><div class="av">AR</div><span class="mono">7xKp…3fQa</span><span class="state a" data-a="greenen" data-dur="0.4" data-d="2.4">enrolled</span></div>
+        <div class="emp a" data-a="up" data-d="1.2"><div class="av">ES</div><span class="mono">9mRt…aa1c</span><span class="state a" data-a="greenen" data-dur="0.4" data-d="3.4">enrolled</span></div>
+        <div class="emp a" data-a="up" data-d="1.4"><div class="av">DL</div><span class="mono">4Hq2…Lz8e</span><span class="state a" data-a="greenen" data-dur="0.4" data-d="4.4">enrolled</span></div>
+        <div class="a mono" data-a="fade" data-d="5" style="margin-top:22px;font-size:18px;color:var(--body)">no seed phrase leaves the device</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 · upload -->
+  <section class="scene" data-s="21" data-e="29">
+    <div class="left">
+      <div class="kicker a" data-a="up" data-d="0.1">Step 2 · Upload</div>
+      <div class="h a" data-a="up" data-d="0.3">Drop in a CSV.</div>
+      <div class="sub a" data-a="up" data-d="0.6">Address, amount, memo. The app checks every row and shows the plan and fees before anything moves.</div>
+    </div>
+    <div class="right">
+      <div class="drop a" data-a="fade" data-d="0.4"><div class="file a" data-a="drop" data-dur="0.9" data-d="0.8">CSV</div><span>payroll-october.csv</span></div>
+      <table class="a" data-a="fade" data-d="2">
+        <tr class="a" data-a="leftIn" data-d="2.1"><td>7xKp…3fQa</td><td style="color:var(--mute)">salary</td><td>2.10 SOL</td></tr>
+        <tr class="a" data-a="leftIn" data-d="2.3"><td>9mRt…aa1c</td><td style="color:var(--mute)">salary</td><td>1.40 SOL</td></tr>
+        <tr class="a" data-a="leftIn" data-d="2.5"><td>4Hq2…Lz8e</td><td style="color:var(--mute)">contract</td><td>0.90 SOL</td></tr>
+        <tr class="a" data-a="fade" data-d="2.8"><td style="color:var(--mute)">+ 97 more rows</td><td></td><td style="color:var(--mute)">validated ✓</td></tr>
+      </table>
+      <div class="bar a" data-a="up" data-d="3.6">
+        <div><div class="lbl">PAYOUTS</div><div class="val">100</div></div>
+        <div><div class="lbl">FEES</div><div class="val">shown up front</div></div>
+        <div class="btn">Authorize &amp; Dispatch</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 · sign -->
+  <section class="scene" data-s="29" data-e="36">
+    <div class="left">
+      <div class="kicker a" data-a="up" data-d="0.1">Step 3 · Sign once</div>
+      <div class="h a" data-a="up" data-d="0.3">One signature. The whole batch.</div>
+      <div class="sub a" data-a="up" data-d="0.6">No popup per employee. Your wallet approves the run once and the app takes it from there.</div>
+    </div>
+    <div class="right">
+      <div id="wallet"><div class="card wallet a" data-a="pop" data-d="0.6">
+        <div class="app"><img src="charon-mark.png" style="width:48px;border-radius:50%" alt="" />Charon Cash</div>
+        <div class="msg">Authorize payroll run<br/>100 private payouts<br/>signer: your treasury wallet</div>
+        <div class="btns"><div style="border:1.5px solid var(--line)">Cancel</div><div class="a" data-a="press" data-dur="0.35" data-d="2.4" style="background:var(--gold);color:#fff8e6">Approve</div></div>
+      </div></div>
+      <div class="a" data-a="pop" data-d="3.2" style="position:absolute;left:0;right:0;top:50%;margin-top:-150px">
+        <div class="check"><svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+        <div class="big1">1 signature</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · prove + relay -->
+  <section class="scene" data-s="36" data-e="48">
+    <div class="left">
+      <div class="kicker a" data-a="up" data-d="0.1">Step 4 · Prove &amp; send</div>
+      <div class="h a" data-a="up" data-d="0.3">Proofs are built in your browser.</div>
+      <div class="sub a" data-a="up" data-d="0.6">Every payout gets its own zero-knowledge proof on this device. The relayer only broadcasts signed transactions. It holds no keys.</div>
+    </div>
+    <div class="right">
+      <div class="pgrid a" data-a="fade" data-d="0.5" id="pgrid"></div>
+      <div class="stats">
+        <div class="card stat a" data-a="up" data-d="0.8"><div class="k">payouts</div><div class="v" id="cnt">0/100</div></div>
+        <div class="card stat a" data-a="up" data-d="1.0"><div class="k">elapsed</div><div class="v" id="clk">0s</div></div>
+      </div>
+      <div class="flow a" data-a="fade" data-d="1.2" id="flow">
+        <div class="wire" style="left:220px;width:100%;max-width:calc(100% - 440px)"></div>
+        <div class="node" style="left:0">Your browser</div>
+        <div class="node" style="left:calc(50% - 110px)">Relayer</div>
+        <div class="nokey" style="left:calc(50% - 110px)">holds no keys</div>
+        <div class="node" style="right:0;background:var(--band);color:var(--band-ink);border-color:var(--band)">Solana</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 · settle -->
+  <section class="scene" data-s="48" data-e="56">
+    <div class="left">
+      <div class="kicker a" data-a="up" data-d="0.1">Step 5 · Settle</div>
+      <div class="h a" data-a="up" data-d="0.3">Solana verifies. Nothing leaks.</div>
+      <div class="sub a" data-a="up" data-d="0.6">A Groth16 verifier checks each proof on-chain. Each salary lands as an encrypted note in the shielded pool, and nullifiers block double spends.</div>
+    </div>
+    <div class="right">
+      <svg class="tree a" data-a="fade" data-d="0.4" id="tree" viewBox="0 0 860 330"></svg>
+      <div class="card ledger a" data-a="up" data-d="2.6">
+        <div class="row"><span style="font-size:26px;font-weight:600">What the explorer sees</span><span class="pill" style="background:var(--green-soft);color:var(--green)">private</span></div>
+        <div class="tx row a" data-a="up" data-d="3.2"><span>Shielded pool · note 0x9c4…f1</span><span>•••••• SOL</span></div>
+        <div class="tx row a" data-a="up" data-d="3.5"><span>Shielded pool · note 0x2ab…7d</span><span>•••••• SOL</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 · claim -->
+  <section class="scene" data-s="56" data-e="65">
+    <div class="left">
+      <div class="kicker a" data-a="up" data-d="0.1">Step 6 · Claim</div>
+      <div class="h a" data-a="up" data-d="0.3">Employees see and claim their pay.</div>
+      <div class="sub a" data-a="up" data-d="0.6">The employee portal scans the pool with their key, decrypts only their notes, and withdraws with a proof built in their own browser.</div>
+    </div>
+    <div class="right">
+      <div class="card portal a" data-a="rightIn" data-d="0.5">
+        <div class="row"><span style="font-size:28px;font-weight:600">Employee portal</span><span class="mono" style="font-size:18px;color:var(--mute)" id="scanTxt">scanning pool…</span></div>
+        <div class="scan"><i class="a" data-a="grow" data-dur="2.2" data-d="1.0"></i></div>
+        <div class="note a" data-a="up" data-d="3.3">
+          <div class="row"><span>1 private note found</span><span class="pill" style="background:var(--gold-soft);color:var(--gold-d)">only you can read it</span></div>
+          <div class="row" style="margin-top:14px"><span class="amt">+2.10 SOL</span><span class="btn a" data-a="press" data-dur="0.35" data-d="5.0">Claim</span></div>
+        </div>
+        <div class="a row" data-a="up" data-d="5.8" style="margin-top:22px;font-size:24px;color:var(--green);font-weight:600;justify-content:flex-start;gap:14px">
+          <span class="dot" style="width:14px;height:14px;background:var(--green)"></span>Sent to your wallet
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 · result -->
+  <section class="scene" data-s="65" data-e="74">
+    <div class="res">
+      <div class="kicker a" data-a="up" data-d="0.1">One run, end to end</div>
+      <div class="h a" data-a="up" data-d="0.3" style="font-size:88px">Payroll, without the public record.</div>
+      <div class="nums">
+        <div class="card num a" data-a="up" data-d="0.9"><div class="v">100</div><div class="k">private payouts</div></div>
+        <div class="card num a" data-a="up" data-d="1.1"><div class="v">≈80s</div><div class="k">for the whole run</div></div>
+        <div class="card num a" data-a="up" data-d="1.3"><div class="v">1</div><div class="k">wallet signature</div></div>
+        <div class="card num a" data-a="up" data-d="1.5"><div class="v">0</div><div class="k">salaries on the explorer</div></div>
+      </div>
+      <div class="a" data-a="up" data-d="2.6" style="margin-top:70px;display:flex;align-items:center;gap:22px;font-size:36px;font-weight:600">
+        <img src="charon-mark.png" style="width:64px;border-radius:50%" alt="" />Charon Cash<span style="color:var(--mute);font-weight:400">· charon.cash · live on devnet</span>
+      </div>
+    </div>
+  </section>
+
+  <div id="steps"><div>1 · Enroll</div><div>2 · Upload</div><div>3 · Sign</div><div>4 · Prove</div><div>5 · Settle</div><div>6 · Claim</div></div>
+</div>
+<div id="ctl">space: play/pause · ←/→: seek · click: restart</div>
+
+<script>
+const DURATION = 74
+const FADE = 0.5
+const scenes = [...document.querySelectorAll(".scene")].map((el) => ({ el, s: +el.dataset.s, e: +el.dataset.e }))
+const ease = "cubic-bezier(.2,.8,.2,1)"
+for (const sc of scenes) {
+  for (const a of sc.el.querySelectorAll(".a")) {
+    const dur = a.dataset.dur ? +a.dataset.dur : a.dataset.a === "fade" ? 0.6 : 0.7
+    a.style.animation = `${a.dataset.a} ${dur}s ${ease} ${sc.s + +a.dataset.d}s both`
+  }
+}
+
+// prover grid
+const grid = document.getElementById("pgrid")
+const cells = []
+for (let i = 0; i < 100; i++) { const c = document.createElement("div"); c.className = "cell"; grid.appendChild(c); cells.push(c) }
+
+// packets on the browser -> relayer -> solana wire
+const flow = document.getElementById("flow")
+const pkts = []
+for (let i = 0; i < 6; i++) { const p = document.createElement("div"); p.className = "pkt"; flow.appendChild(p); pkts.push(p) }
+
+// merkle tree: 16 leaves
+const tree = document.getElementById("tree")
+const NS = "http://www.w3.org/2000/svg"
+const levels = [1, 2, 4, 8, 16]
+const pos = levels.map((n, li) => Array.from({ length: n }, (_, i) => ({ x: 30 + (800 / n) * (i + 0.5), y: 30 + li * 70 })))
+const leaves = []
+for (let li = 1; li < levels.length; li++) pos[li].forEach((p, i) => {
+  const q = pos[li - 1][i >> 1]
+  const l = document.createElementNS(NS, "line"); l.setAttribute("x1", q.x); l.setAttribute("y1", q.y); l.setAttribute("x2", p.x); l.setAttribute("y2", p.y); tree.appendChild(l)
+})
+pos.forEach((lv, li) => lv.forEach((p) => {
+  const c = document.createElementNS(NS, "circle"); c.setAttribute("cx", p.x); c.setAttribute("cy", p.y); c.setAttribute("r", li === 4 ? 16 : 13); tree.appendChild(c)
+  if (li === 4) leaves.push(c)
+  if (li === 0) tree.root = c
+}))
+
+const steps = [...document.querySelectorAll("#steps div")]
+const stepEl = document.getElementById("steps")
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v))
+
+function render(t) {
+  for (const a of document.getAnimations()) { a.pause(); a.currentTime = t * 1000 }
+
+  for (const { el, s, e } of scenes) {
+    const last = e >= DURATION
+    let o = clamp((t - s) / FADE)
+    if (!last) o = Math.min(o, clamp((e - t) / FADE))
+    el.style.opacity = o
+    el.style.visibility = o > 0 ? "visible" : "hidden"
+  }
+
+  // stepper (steps 1..6 = scenes 2..7)
+  stepEl.style.opacity = clamp((t - 13) / FADE) * clamp((65 - t) / FADE)
+  steps.forEach((d, i) => {
+    const sc = scenes[i + 2]
+    d.className = t >= sc.e ? "done" : t >= sc.s ? "on" : ""
+  })
+
+  // wallet card fades once approved
+  const w = document.getElementById("wallet")
+  const wf = clamp((t - 32.0) / 0.4)
+  w.style.opacity = t > 29.6 ? 1 - wf : ""
+  if (t > 29.6) w.style.transform = `scale(${1 - wf * 0.08})`
+
+  // prover: 100 payouts across 9s of screen time, mapped to the real ~80s run
+  const p = clamp((t - 37.5) / 9)
+  const done = Math.floor(p * 100)
+  cells.forEach((c, i) => { c.className = i < done ? "cell on" : i < done + 4 && p > 0 && p < 1 ? "cell hot" : "cell" })
+  document.getElementById("cnt").textContent = `${done}/100`
+  document.getElementById("clk").textContent = `${Math.round(p * 80)}s`
+  const fw = flow.clientWidth || 860
+  pkts.forEach((k, i) => {
+    const ph = ((t - 37.5) * 0.55 + i / pkts.length) % 1
+    const on = t > 37.5 && t < 47
+    k.style.opacity = on ? 1 : 0
+    k.style.left = `${110 + ph * (fw - 220) - 9}px`
+  })
+
+  // tree leaves fill, then root glows
+  const lp = clamp((t - 49) / 2.2)
+  leaves.forEach((c, i) => {
+    const on = i < Math.floor(lp * 16)
+    c.style.fill = on ? "var(--gold)" : "var(--card2)"
+    c.style.stroke = on ? "var(--gold-d)" : "var(--line)"
+  })
+  const rootOn = t > 51.4
+  tree.root.style.fill = rootOn ? "var(--lantern)" : "var(--card2)"
+  tree.root.style.filter = rootOn ? "drop-shadow(0 0 10px #f0a53a)" : ""
+
+  document.getElementById("scanTxt").textContent = t > 59.2 ? "scan complete" : "scanning pool…"
+}
+
+// fit to window in preview mode
+function fit() {
+  const s = Math.min(innerWidth / 1920, innerHeight / 1080)
+  document.getElementById("stage").style.transform = `scale(${s})`
+}
+addEventListener("resize", fit); fit()
+
+let playing = !location.search.includes("render")
+let t0 = performance.now(), tNow = 0
+if (!playing) document.documentElement.classList.add("render")
+window.seek = (t) => { tNow = t; render(t) }
+window.DURATION = DURATION
+function loop(now) {
+  if (playing) { tNow = (now - t0) / 1000; if (tNow > DURATION) { tNow = DURATION; playing = false } render(tNow) }
+  requestAnimationFrame(loop)
+}
+document.fonts.ready.then(() => { render(0); t0 = performance.now(); requestAnimationFrame(loop) })
+addEventListener("keydown", (e) => {
+  if (e.code === "Space") { playing = !playing; t0 = performance.now() - tNow * 1000 }
+  if (e.code === "ArrowRight") { tNow = Math.min(DURATION, tNow + 3); t0 = performance.now() - tNow * 1000; render(tNow) }
+  if (e.code === "ArrowLeft") { tNow = Math.max(0, tNow - 3); t0 = performance.now() - tNow * 1000; render(tNow) }
+})
+addEventListener("click", () => { tNow = 0; t0 = performance.now(); playing = true })
+</script>
+</body>
+</html>

@@ -1,0 +1,2068 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    />
+    <title>Charon — Pitch</title>
+    <link
+      rel="preconnect"
+      href="https://fonts.googleapis.com"
+    />
+    <link
+      rel="preconnect"
+      href="https://fonts.gstatic.com"
+      crossorigin
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Hubballi&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --paper: #f7f3ea;
+        --ink: #1c1b18;
+        --body: #4a4840;
+        --mute: #8a8578;
+        --line: #ddd6c6;
+        --bronze: #8f6b43;
+        --bronze-soft: #e8dcc8;
+        --f-display: "Hubballi", ui-serif, Georgia, serif;
+        --f-body: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+        --f-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: var(--f-body);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 0;
+        background-color: transparent;
+        background-image:
+          radial-gradient(
+            130% 90% at -10% -20%,
+            rgba(255, 252, 246, 0.9),
+            transparent 48%
+          ),
+          radial-gradient(
+            70% 55% at 108% 8%,
+            rgba(160, 132, 96, 0.28),
+            transparent 40%
+          ),
+          radial-gradient(
+            55% 40% at 18% 100%,
+            rgba(120, 90, 55, 0.16),
+            transparent 46%
+          ),
+          radial-gradient(
+            30% 22% at 62% 38%,
+            rgba(90, 70, 45, 0.07),
+            transparent 70%
+          ),
+          repeating-linear-gradient(
+            112deg,
+            transparent 0 72px,
+            rgba(90, 68, 40, 0.045) 72px 73px,
+            transparent 73px 140px
+          ),
+          url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='5' seed='7'/><feColorMatrix values='0 0 0 0 .38  0 0 0 0 .32  0 0 0 0 .24  0 0 0 .45 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+        background-size:
+          auto,
+          auto,
+          auto,
+          auto,
+          auto,
+          180px 180px;
+        mix-blend-mode: multiply;
+        opacity: 0.72;
+      }
+
+      .deck {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+      }
+
+      .slide {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: clamp(48px, 8vh, 96px) clamp(36px, 8vw, 120px)
+          clamp(72px, 10vh, 110px);
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        z-index: 0;
+        overflow-y: auto;
+      }
+
+      .slide.is-active {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        z-index: 1;
+      }
+
+      .inner {
+        width: 100%;
+        max-width: 1080px;
+      }
+
+      .eyebrow {
+        font-family: var(--f-mono);
+        font-size: 0.72rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--mute);
+        margin: 0 0 1.15rem;
+      }
+
+      .h1 {
+        font-family: var(--f-display);
+        font-weight: 400;
+        font-size: clamp(2.6rem, 6.4vw, 4.6rem);
+        line-height: 0.98;
+        letter-spacing: -0.02em;
+        margin: 0;
+      }
+
+      .lead {
+        margin: 1.15rem 0 0;
+        max-width: 42ch;
+        font-size: clamp(1.05rem, 1.7vw, 1.28rem);
+        line-height: 1.4;
+        color: var(--body);
+      }
+
+      .h1 + .lead {
+        margin-top: 1.4rem;
+      }
+
+      .title-slide .inner {
+        text-align: center;
+      }
+
+      .title-name {
+        font-size: clamp(4.8rem, 16vw, 10rem);
+        letter-spacing: 0.02em;
+        line-height: 0.86;
+      }
+
+      .title-line {
+        margin-left: auto;
+        margin-right: auto;
+        max-width: 22ch;
+        font-size: clamp(1.2rem, 2vw, 1.55rem);
+      }
+
+      body.is-title .brand {
+        visibility: hidden;
+      }
+
+      .grid-3 {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: clamp(16px, 3vw, 36px);
+        margin-top: 2.4rem;
+      }
+
+      .item h3 {
+        font-family: var(--f-mono);
+        font-size: 0.72rem;
+        font-weight: 500;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--bronze);
+        margin: 0 0 0.45rem;
+      }
+
+      .item p {
+        margin: 0;
+        font-size: clamp(0.95rem, 1.3vw, 1.12rem);
+        line-height: 1.45;
+        color: var(--body);
+        max-width: 28ch;
+      }
+
+      .flow {
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        flex-wrap: wrap;
+        margin-top: 2.2rem;
+      }
+
+      .flow b {
+        font-family: var(--f-display);
+        font-size: clamp(1.5rem, 2.6vw, 2rem);
+        font-weight: 400;
+      }
+
+      .flow .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--bronze);
+        flex-shrink: 0;
+      }
+
+      .nums {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: clamp(20px, 4vw, 48px) clamp(24px, 5vw, 72px);
+        margin-top: 1.6rem;
+      }
+
+      .market .inner {
+        max-width: 1160px;
+      }
+
+      .market .h1 {
+        font-size: clamp(2.2rem, 4.8vw, 3.5rem);
+      }
+
+      .market .lead {
+        max-width: 58ch;
+        margin-top: 0.95rem;
+      }
+
+      .market {
+        align-items: flex-start;
+        padding-top: clamp(48px, 7vh, 80px);
+        padding-bottom: clamp(48px, 7vh, 72px);
+      }
+
+      .market .nums {
+        align-items: start;
+        margin-top: 1.35rem;
+        gap: clamp(20px, 3vw, 40px);
+      }
+
+      .market .num .v {
+        font-size: clamp(2.1rem, 4.4vw, 3.35rem);
+        white-space: nowrap;
+      }
+
+      .market .num p {
+        max-width: none;
+      }
+
+      .proofs {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: clamp(28px, 5vw, 72px);
+        margin-top: 1.15rem;
+      }
+
+      .proofs figure {
+        flex: 1 1 260px;
+        max-width: 460px;
+      }
+
+      .proofs .bars div {
+        flex: 0 0 76px;
+      }
+
+      .proofs figure {
+        margin: 0;
+      }
+
+      .proofs figcaption {
+        font-family: var(--f-mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.04em;
+        color: var(--mute);
+        margin: 0 0 0.55rem;
+      }
+
+      .chart-svg {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      .chart-svg text {
+        font-family: var(--f-mono);
+        font-size: 9px;
+        fill: var(--mute);
+      }
+
+      .chart-svg .grid {
+        stroke: var(--line);
+        stroke-width: 1;
+      }
+
+      .chart-svg .series {
+        fill: none;
+        stroke: var(--ink);
+        stroke-width: 1.6;
+      }
+
+      .chart-svg .dot {
+        fill: var(--bronze);
+        stroke: var(--paper);
+        stroke-width: 1.5;
+      }
+
+      .src {
+        margin: 0.45rem 0 0;
+        font-family: var(--f-mono);
+        font-size: 0.66rem;
+      }
+
+      .src a {
+        color: var(--bronze);
+      }
+
+      .roadmap {
+        align-items: center;
+        justify-content: center;
+        padding-top: clamp(36px, 6vh, 64px);
+        padding-bottom: clamp(44px, 6vh, 68px);
+      }
+
+      .roadmap .inner {
+        max-width: clamp(1000px, 92vw, 1200px);
+      }
+
+      .roadmap .h1 {
+        font-size: clamp(2.2rem, 4.4vw, 3.4rem);
+      }
+
+      .roadmap-track {
+        margin-top: clamp(20px, 2.8vh, 32px);
+        position: relative;
+        width: 100%;
+      }
+
+      .roadmap-grid {
+        position: relative;
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: clamp(10px, 1.4vw, 18px);
+        align-items: stretch;
+      }
+
+      /* Horizontal spine connecting the 5 nodes */
+      .roadmap-grid::before {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 10%;
+        right: 10%;
+        height: 2px;
+        background: var(--line);
+        transform: translateY(-50%);
+        z-index: 1;
+      }
+
+      /* Active progress segment on the rail from Node 1 to Node 2 */
+      .roadmap-grid::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 10%;
+        width: 20%;
+        height: 2px;
+        background: var(--bronze);
+        transform: translateY(-50%);
+        z-index: 2;
+      }
+
+      .step-col {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .col-slot-top {
+        min-height: 140px;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        align-items: center;
+      }
+
+      .col-node-slot {
+        height: 38px;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .col-slot-bottom {
+        min-height: 140px;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        align-items: center;
+      }
+
+      /* Stem connecting top card down to the node */
+      .node-stem.stem-up {
+        position: absolute;
+        top: 0;
+        bottom: 50%;
+        left: 50%;
+        width: 2px;
+        background: var(--line);
+        transform: translateX(-50%);
+        z-index: 1;
+      }
+
+      /* Stem connecting bottom card up to the node */
+      .node-stem.stem-down {
+        position: absolute;
+        top: 50%;
+        bottom: 0;
+        left: 50%;
+        width: 2px;
+        background: var(--line);
+        transform: translateX(-50%);
+        z-index: 1;
+      }
+
+      .step-col.is-live .node-stem.stem-down {
+        background: var(--bronze);
+      }
+
+      /* Node dots on the rail */
+      .node-dot {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: var(--paper);
+        border: 2px solid var(--ink);
+        position: relative;
+        z-index: 3;
+        box-sizing: border-box;
+      }
+
+      .step-col.is-live .node-dot {
+        width: 16px;
+        height: 16px;
+        background: var(--bronze);
+        border: 2.5px solid var(--paper);
+        box-shadow: 0 0 0 2.5px var(--bronze), 0 0 14px rgba(143, 107, 67, 0.4);
+      }
+
+      .step-col.is-live .node-dot::after {
+        content: "";
+        position: absolute;
+        inset: -6px;
+        border-radius: 50%;
+        border: 1.5px solid var(--bronze);
+        animation: live-pulse 2.2s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+        pointer-events: none;
+      }
+
+      @keyframes live-pulse {
+        0% { transform: scale(1); opacity: 0.85; }
+        50% { transform: scale(1.6); opacity: 0.25; }
+        100% { transform: scale(2.1); opacity: 0; }
+      }
+
+      /* Date and phase timing badges */
+      .step-timing {
+        text-align: center;
+        padding: 4px 6px;
+      }
+
+      .col-slot-top .step-timing {
+        margin-bottom: 6px;
+      }
+
+      .col-slot-bottom .step-timing {
+        margin-top: 6px;
+      }
+
+      .timing-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-family: var(--f-mono);
+        font-size: 0.68rem;
+        font-weight: 500;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--ink);
+      }
+
+      .timing-badge.is-live-badge {
+        color: var(--bronze);
+      }
+
+      .badge-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--bronze);
+        display: inline-block;
+      }
+
+      .timing-sub {
+        display: block;
+        font-family: var(--f-body);
+        font-size: 0.7rem;
+        color: var(--mute);
+        margin-top: 1px;
+      }
+
+      /* Milestone cards */
+      .roadmap-card {
+        width: 100%;
+        background: rgba(255, 252, 246, 0.88);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px 12px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        box-shadow: 0 2px 8px rgba(28, 27, 24, 0.03);
+        transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+        position: relative;
+        text-align: left;
+      }
+
+      .roadmap-card:hover {
+        transform: translateY(-2px);
+        border-color: var(--bronze);
+        box-shadow: 0 8px 20px rgba(143, 107, 67, 0.08);
+      }
+
+      .step-col.is-live .roadmap-card {
+        border-color: var(--bronze);
+        background: rgba(255, 252, 246, 0.98);
+        box-shadow: 0 4px 16px rgba(143, 107, 67, 0.1);
+      }
+
+      .step-col.is-live .roadmap-card .card-bar {
+        position: absolute;
+        top: 0;
+        left: 12px;
+        right: 12px;
+        height: 2.5px;
+        background: var(--bronze);
+        border-radius: 2px 2px 0 0;
+      }
+
+      .card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+      }
+
+      .card-stage {
+        font-family: var(--f-mono);
+        font-size: 0.6rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--mute);
+      }
+
+      .card-status {
+        font-family: var(--f-mono);
+        font-size: 0.58rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 1.5px 5px;
+        border-radius: 3px;
+      }
+
+      .card-status.live-status {
+        background: var(--bronze-soft);
+        color: var(--bronze);
+        font-weight: 500;
+      }
+
+      .card-status.upcoming-status {
+        background: rgba(28, 27, 24, 0.04);
+        color: var(--mute);
+      }
+
+      .card-title {
+        font-family: var(--f-display);
+        font-size: clamp(1.1rem, 1.35vw, 1.3rem);
+        line-height: 1.12;
+        font-weight: 400;
+        letter-spacing: -0.01em;
+        color: var(--ink);
+        margin: 0;
+      }
+
+      /* Card highlights and metrics */
+      .card-stat {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        background: rgba(143, 107, 67, 0.08);
+        border: 1px solid rgba(143, 107, 67, 0.2);
+        border-radius: 5px;
+        padding: 4px 7px;
+        margin-top: auto;
+      }
+
+      .stat-highlight {
+        font-family: var(--f-mono);
+        font-weight: 600;
+        font-size: 0.92rem;
+        color: var(--bronze);
+        line-height: 1;
+      }
+
+      .stat-label {
+        font-family: var(--f-body);
+        font-size: 0.68rem;
+        color: var(--body);
+        line-height: 1;
+      }
+
+      .card-pill {
+        font-family: var(--f-mono);
+        font-size: 0.64rem;
+        letter-spacing: 0.02em;
+        color: var(--body);
+        background: rgba(28, 27, 24, 0.035);
+        border: 1px solid rgba(221, 214, 198, 0.7);
+        border-radius: 5px;
+        padding: 3.5px 6px;
+        margin-top: auto;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      @media (max-width: 900px) {
+        .roadmap-grid {
+          grid-template-columns: 1fr;
+          gap: 16px;
+        }
+        .roadmap-grid::before,
+        .roadmap-grid::after {
+          display: none;
+        }
+        .col-slot-top,
+        .col-node-slot,
+        .col-slot-bottom {
+          min-height: auto;
+        }
+        .col-node-slot {
+          display: none;
+        }
+        .step-col.is-top .col-slot-top { order: 2; }
+        .step-col.is-top .col-slot-bottom { order: 1; margin: 0 0 4px; }
+        .step-col.is-bottom .col-slot-top { order: 1; margin: 0 0 4px; }
+        .step-col.is-bottom .col-slot-bottom { order: 2; }
+      }
+
+      .team .h1 {
+        font-size: clamp(2.2rem, 4.6vw, 3.4rem);
+      }
+
+      .team-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: clamp(14px, 2vw, 22px) clamp(28px, 4vw, 48px);
+        margin-top: 1.5rem;
+      }
+
+      .person {
+        display: grid;
+        grid-template-columns: 76px 1fr;
+        gap: 14px;
+        align-items: start;
+      }
+
+      .portrait {
+        width: 76px;
+        height: 76px;
+        border: 1px dashed var(--line);
+        background: rgba(255, 252, 246, 0.65);
+        overflow: hidden;
+        display: grid;
+        place-items: center;
+        font-family: var(--f-mono);
+        font-size: 0.62rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--mute);
+      }
+
+      .portrait img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+
+      .portrait:not(:has(img[src]))::before,
+      .portrait:has(img[src=""])::before {
+        content: "Photo";
+      }
+
+      .portrait:has(img[src=""]) img,
+      .portrait:not(:has(img[src])) img {
+        display: none;
+      }
+
+      .person h2 {
+        font-family: var(--f-display);
+        font-weight: 400;
+        font-size: clamp(1.6rem, 2.4vw, 2rem);
+        line-height: 1;
+        margin: 0;
+      }
+
+      .person .role {
+        margin: 0.3rem 0 0.4rem;
+        font-family: var(--f-mono);
+        font-size: 0.66rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--bronze);
+      }
+
+      .person p {
+        margin: 0;
+        font-size: clamp(0.88rem, 1.15vw, 1rem);
+        line-height: 1.4;
+        color: var(--body);
+      }
+
+      .num .v {
+        font-family: var(--f-body);
+        font-weight: 500;
+        font-size: clamp(2.6rem, 6.4vw, 4.8rem);
+        line-height: 0.9;
+        letter-spacing: -0.04em;
+        color: var(--ink);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .num p {
+        margin: 0.45rem 0 0;
+        font-size: clamp(0.9rem, 1.2vw, 1.05rem);
+        color: var(--body);
+        max-width: 28ch;
+      }
+
+      .note {
+        margin-top: 2rem;
+        font-family: var(--f-mono);
+        font-size: 0.72rem;
+        color: var(--mute);
+        letter-spacing: 0.04em;
+      }
+
+      .fees {
+        display: flex;
+        gap: clamp(28px, 6vw, 80px);
+        flex-wrap: wrap;
+        margin-top: 2.2rem;
+      }
+
+      .fee .v {
+        font-family: var(--f-body);
+        font-weight: 500;
+        font-size: clamp(2.8rem, 6.6vw, 5rem);
+        line-height: 0.9;
+        letter-spacing: -0.04em;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .fee p {
+        margin: 0.4rem 0 0;
+        color: var(--body);
+        font-size: 1.05rem;
+      }
+
+      .brand {
+        position: fixed;
+        top: 22px;
+        left: clamp(22px, 4vw, 40px);
+        z-index: 15;
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        font-family: var(--f-display);
+        font-size: 1.15rem;
+        letter-spacing: 0.12em;
+        color: var(--ink);
+      }
+
+      .brand img {
+        width: 28px;
+        height: 27px;
+      }
+
+      .progress {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 3px;
+        background: var(--bronze);
+        z-index: 20;
+        transition: width 0.35s ease;
+      }
+
+      .counter {
+        position: fixed;
+        bottom: 20px;
+        right: clamp(22px, 4vw, 40px);
+        z-index: 15;
+        font-family: var(--f-mono);
+        font-size: 0.74rem;
+        color: var(--mute);
+        letter-spacing: 0.06em;
+      }
+
+      .counter b {
+        color: var(--ink);
+        font-weight: 500;
+      }
+
+      .hint {
+        position: fixed;
+        bottom: 20px;
+        left: clamp(22px, 4vw, 40px);
+        z-index: 15;
+        font-family: var(--f-mono);
+        font-size: 0.7rem;
+        color: var(--mute);
+      }
+
+      .nav {
+        position: fixed;
+        bottom: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 15;
+        display: flex;
+        gap: 6px;
+        background: rgba(247, 243, 234, 0.88);
+        border: 1px solid var(--line);
+        padding: 5px;
+        border-radius: 999px;
+      }
+
+      .nav button {
+        border: 0;
+        background: transparent;
+        width: 34px;
+        height: 30px;
+        border-radius: 999px;
+        cursor: pointer;
+        color: var(--body);
+        font-family: var(--f-mono);
+        font-size: 0.9rem;
+      }
+
+      .nav button:hover {
+        background: var(--bronze-soft);
+        color: var(--ink);
+      }
+
+      .nav .dots {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 0 8px;
+      }
+
+      .nav .dots i {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--line);
+        cursor: pointer;
+        display: block;
+      }
+
+      .nav .dots i.on {
+        background: var(--bronze);
+        transform: scale(1.25);
+      }
+
+      @media (max-width: 780px) {
+        .grid-3,
+        .nums,
+        .proofs,
+        .team-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .market {
+          padding-top: 56px;
+        }
+
+        .brand,
+        .hint {
+          display: none;
+        }
+
+        .h1 {
+          font-size: clamp(2.1rem, 11vw, 3.2rem);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          animation: none !important;
+          transition: none !important;
+        }
+      }
+
+      /* ===== v2: main-app background, logos, centering, team ===== */
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 0;
+        background-image:
+          radial-gradient(
+            60% 55% at 78% 8%,
+            rgba(240, 165, 58, 0.2),
+            transparent 62%
+          ),
+          linear-gradient(rgba(143, 107, 67, 0.11) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(143, 107, 67, 0.11) 1px, transparent 1px);
+        background-size: auto, 64px 64px, 64px 64px;
+        -webkit-mask-image: radial-gradient(
+          ellipse at 60% 40%,
+          #000 30%,
+          transparent 82%
+        );
+        mask-image: radial-gradient(ellipse at 60% 40%, #000 30%, transparent 82%);
+      }
+
+      /* true vertical centring on every slide, safe when content is tall */
+      .slide,
+      .market,
+      .roadmap {
+        align-items: center;
+        padding-top: clamp(56px, 9vh, 100px);
+        padding-bottom: clamp(76px, 11vh, 116px);
+      }
+      .inner {
+        margin: auto;
+      }
+      .nums,
+      .proofs,
+      .grid-3,
+      .flow {
+        align-items: start;
+      }
+
+      .hero-logo {
+        display: block;
+        width: clamp(120px, 20vh, 210px);
+        height: auto;
+        margin: 0 auto clamp(14px, 3vh, 30px);
+        filter: drop-shadow(0 18px 30px rgba(240, 165, 58, 0.35));
+      }
+      .mid-logo {
+        display: block;
+        width: clamp(64px, 11vh, 104px);
+        height: auto;
+        margin: 0 0 clamp(14px, 2.4vh, 24px);
+        filter: drop-shadow(0 10px 18px rgba(240, 165, 58, 0.3));
+      }
+      .brand img {
+        width: 30px;
+        height: auto;
+      }
+
+      /* more air on the chart slides */
+      .market .nums {
+        margin-top: clamp(28px, 5vh, 52px);
+      }
+      .market .proofs {
+        margin-top: clamp(30px, 5.5vh, 58px);
+      }
+      .market .num p {
+        margin-top: 0.7rem;
+      }
+      .market .h1 + .nums {
+        margin-top: clamp(32px, 5.5vh, 56px);
+      }
+
+      /* title: bolder display face + highlighted words */
+      .title-font {
+        font-family: "Fraunces", var(--f-display);
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+      .hl {
+        font-weight: 500;
+        color: var(--ink);
+        background-image: linear-gradient(var(--bronze), var(--bronze));
+        background-repeat: no-repeat;
+        background-size: 100% 2px;
+        background-position: 0 100%;
+        padding-bottom: 3px;
+      }
+
+      /* slide 4: big logo, keeps the small top one */
+      .inner.sol {
+        position: relative;
+      }
+      .sol-logo {
+        position: absolute;
+        right: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: clamp(200px, 34vh, 360px);
+        height: auto;
+        filter: drop-shadow(0 24px 40px rgba(240, 165, 58, 0.38));
+        pointer-events: none;
+      }
+      @media (max-width: 900px) {
+        .sol-logo { display: none; }
+      }
+
+      /* team: round portraits + X handles */
+      .portrait {
+        border-radius: 50%;
+        border: 2px solid var(--bronze-soft);
+        border-style: solid;
+        background: var(--bronze-soft);
+      }
+      .portrait img {
+        object-position: center 22%;
+      }
+      .person h2 {
+        display: flex;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: 0.2rem 0.7rem;
+      }
+      .xh {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-family: var(--f-mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.02em;
+        color: var(--bronze);
+        text-decoration: none;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 2px 8px;
+        background: rgba(255, 252, 246, 0.7);
+      }
+      .xh:hover {
+        border-color: var(--bronze);
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="brand">
+      <img
+        src="LogoOn.png"
+        alt=""
+      />
+      CHARON
+    </div>
+    <div
+      class="progress"
+      id="progress"
+    ></div>
+
+    <main
+      class="deck"
+      id="deck"
+    >
+      <section
+        class="slide is-active title-slide"
+        aria-label="Title"
+      >
+        <div class="inner">
+          <img class="hero-logo" src="LogoOn.png" alt="Charon" />
+          <h1 class="h1 title-name">Charon</h1>
+          <p class="lead title-line" style="max-width: none; white-space: nowrap"><span class="hl">Private Balance</span> On a <span class="hl">Public Chain.</span></p>
+        </div>
+      </section>
+
+      <section
+        class="slide"
+        aria-label="Problem"
+      >
+        <div class="inner">
+          <p class="eyebrow">02 &nbsp; Problem</p>
+          <h1 class="h1">Every Solana payment<br />is a public record.</h1>
+          <p class="lead">
+            Who paid whom. How much. A salary, an invesment and even a gift
+            payment can be reconstructed by anyone with a block explorer.
+          </p>
+        </div>
+      </section>
+
+      <section
+        class="slide market"
+        aria-label="Market"
+      >
+        <div class="inner">
+          <p class="eyebrow">03 &nbsp; Market</p>
+          <h1 class="h1">The payments are already on Solana.</h1>
+          <div class="nums">
+            <div class="num">
+              <div class="v">1.12B</div>
+              <p>+10.3% week/week txs on Solana.</p>
+            </div>
+            <div class="num">
+              <div class="v">$1.6B</div>
+              <p>Salary related Payments in the week of June.</p>
+            </div>
+            <div class="num">
+              <div class="v">$803.1M</div>
+              <p>Peer to peer figure across 1.38 million txs.</p>
+            </div>
+          </div>
+          <div class="proofs">
+            <figure>
+              <figcaption>Weekly txs, Millions.</figcaption>
+              <svg
+                class="chart-svg"
+                viewBox="0 0 340 128"
+                role="img"
+                aria-label="Weekly non-vote transactions, late June through 9 August 2026"
+              >
+                <line
+                  class="grid"
+                  x1="46"
+                  y1="16"
+                  x2="328"
+                  y2="16"
+                />
+                <line
+                  class="grid"
+                  x1="46"
+                  y1="46"
+                  x2="328"
+                  y2="46"
+                />
+                <line
+                  class="grid"
+                  x1="46"
+                  y1="76"
+                  x2="328"
+                  y2="76"
+                />
+                <line
+                  class="grid"
+                  x1="46"
+                  y1="106"
+                  x2="328"
+                  y2="106"
+                />
+                <text
+                  x="4"
+                  y="19"
+                >
+                  1,200
+                </text>
+                <text
+                  x="4"
+                  y="49"
+                >
+                  1,100
+                </text>
+                <text
+                  x="8"
+                  y="79"
+                >
+                  1,000
+                </text>
+                <text
+                  x="16"
+                  y="109"
+                >
+                  900
+                </text>
+                <polyline
+                  class="series"
+                  points="78,88.9 148,75.5 218,73.6 288,41.6"
+                />
+                <circle
+                  class="dot"
+                  cx="78"
+                  cy="88.9"
+                  r="3.2"
+                />
+                <circle
+                  class="dot"
+                  cx="148"
+                  cy="75.5"
+                  r="3.2"
+                />
+                <circle
+                  class="dot"
+                  cx="218"
+                  cy="73.6"
+                  r="3.2"
+                />
+                <circle
+                  class="dot"
+                  cx="288"
+                  cy="41.6"
+                  r="3.2"
+                />
+                <text
+                  x="78"
+                  y="124"
+                  text-anchor="middle"
+                >
+                  962
+                </text>
+                <text
+                  x="148"
+                  y="124"
+                  text-anchor="middle"
+                >
+                  1,006
+                </text>
+                <text
+                  x="218"
+                  y="124"
+                  text-anchor="middle"
+                >
+                  1,012
+                </text>
+                <text
+                  x="288"
+                  y="124"
+                  text-anchor="middle"
+                >
+                  1,117
+                </text>
+              </svg>
+              <p class="src">
+                <a
+                  href="https://ourcryptotalk.com/news/solana-non-vote-transactions-record"
+                  >Blockworks</a
+                >
+              </p>
+            </figure>
+            <figure>
+              <figcaption>Weekly Stats, Billions(USDC).</figcaption>
+              <svg
+                class="chart-svg"
+                viewBox="0 0 240 128"
+                role="img"
+                aria-label="Salary payments 1.6 billion and person-to-person 0.803 billion"
+              >
+                <line
+                  class="grid"
+                  x1="36"
+                  y1="16"
+                  x2="228"
+                  y2="16"
+                />
+                <line
+                  class="grid"
+                  x1="36"
+                  y1="46"
+                  x2="228"
+                  y2="46"
+                />
+                <line
+                  class="grid"
+                  x1="36"
+                  y1="76"
+                  x2="228"
+                  y2="76"
+                />
+                <line
+                  class="grid"
+                  x1="36"
+                  y1="106"
+                  x2="228"
+                  y2="106"
+                />
+                <text
+                  x="8"
+                  y="19"
+                >
+                  1.6
+                </text>
+                <text
+                  x="8"
+                  y="49"
+                >
+                  1.1
+                </text>
+                <text
+                  x="12"
+                  y="79"
+                >
+                  0.5
+                </text>
+                <text
+                  x="16"
+                  y="109"
+                >
+                  0
+                </text>
+                <rect
+                  x="62"
+                  y="16"
+                  width="28"
+                  height="90"
+                  fill="var(--bronze)"
+                />
+                <rect
+                  x="142"
+                  y="60.8"
+                  width="28"
+                  height="45.2"
+                  fill="var(--ink)"
+                />
+                <text
+                  x="76"
+                  y="124"
+                  text-anchor="middle"
+                >
+                  Salary
+                </text>
+                <text
+                  x="156"
+                  y="124"
+                  text-anchor="middle"
+                >
+                  Person to person
+                </text>
+              </svg>
+              <p class="src">
+                <a
+                  href="https://solanacompass.com/news/solana-holds-1-spot-for-usdc-transactions-for-7-straight-weeks-as-salary-and-retail-payments-near-records"
+                  >Visa, Allium</a
+                >
+                ·
+                <a href="https://x.com/SolanaFloor/status/2069220647285473536"
+                  >Solana Floor</a
+                >
+              </p>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="slide"
+        aria-label="Solution"
+      >
+        <div class="inner sol">
+          <img class="sol-logo" src="LogoOn.png" alt="" />
+          <p class="eyebrow">04 &nbsp; Solution</p>
+          <h1 class="h1">A private balance<br />on a public chain.</h1>
+
+          <div class="flow">
+            <b>Send</b
+            ><span
+              class="dot"
+              aria-hidden="true"
+            ></span>
+            <b>Shielded Transfer</b
+            ><span
+              class="dot"
+              aria-hidden="true"
+            ></span>
+            <b>Swap</b
+            ><span
+              class="dot"
+              aria-hidden="true"
+            ></span>
+            <b>Payroll</b
+            ><span
+              class="dot"
+              aria-hidden="true"
+            ></span>
+            <b>Withdraw</b>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="slide"
+        aria-label="Protocol"
+      >
+        <div class="inner">
+          <p class="eyebrow">05 &nbsp; Protocol Numbers</p>
+          <h1 class="h1">What that volume asks<br />of a protocol.</h1>
+          <p class="lead">A shielded spend doesn't show who paid whom.</p>
+          <div class="nums">
+            <div class="num">
+              <div class="v">136k</div>
+              <p>CU's for one spend.</p>
+            </div>
+            <div class="num">
+              <div class="v">0.8s</div>
+              <p>Fast Client side proof generation.</p>
+            </div>
+            <div class="num">
+              <div class="v">0</div>
+              <p>Zero point of trust on prover or protocol.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="slide market"
+        aria-label="Market Growth"
+      >
+        <div class="inner">
+          <p class="eyebrow">06 &nbsp; Market Growth</p>
+          <h1 class="h1">Privacy is compounding into the default rail.</h1>
+          <div class="nums">
+            <div class="num">
+              <div class="v">25.3%</div>
+              <p>
+                Projected 2024–2030 CAGR for privacy-enhancing technologies.
+              </p>
+            </div>
+            <div class="num">
+              <div class="v">$550–800B</div>
+              <p>
+                Illustrative crypto privacy sector value at 5% capture of
+                offshore wealth.
+              </p>
+            </div>
+            <div class="num">
+              <div class="v">~5x</div>
+              <p>
+                Growth in privacy-token market capitalization over the year to
+                September 2026.
+              </p>
+            </div>
+          </div>
+          <div class="proofs">
+            <figure>
+              <figcaption>
+                Privacy-Enhancing Technologies Market, Billions ($).
+              </figcaption>
+              <svg
+                class="chart-svg"
+                viewBox="0 0 340 128"
+                role="img"
+                aria-label="Privacy-enhancing technologies market: 2.6 billion dollars in 2023, 4.6 billion in 2026, and 12.1 billion projected for 2030"
+              >
+                <line
+                  class="grid"
+                  x1="46"
+                  y1="16"
+                  x2="328"
+                  y2="16"
+                />
+                <line
+                  class="grid"
+                  x1="46"
+                  y1="46"
+                  x2="328"
+                  y2="46"
+                />
+                <line
+                  class="grid"
+                  x1="46"
+                  y1="76"
+                  x2="328"
+                  y2="76"
+                />
+                <line
+                  class="grid"
+                  x1="46"
+                  y1="106"
+                  x2="328"
+                  y2="106"
+                />
+                <text
+                  x="4"
+                  y="19"
+                >
+                  $14B
+                </text>
+                <text
+                  x="4"
+                  y="49"
+                >
+                  $10B
+                </text>
+                <text
+                  x="8"
+                  y="79"
+                >
+                  $6B
+                </text>
+                <text
+                  x="8"
+                  y="109"
+                >
+                  $2B
+                </text>
+                <polyline
+                  class="series"
+                  points="78,101.5 183,86.5 288,30.3"
+                />
+                <circle
+                  class="dot"
+                  cx="78"
+                  cy="101.5"
+                  r="3.2"
+                />
+                <circle
+                  class="dot"
+                  cx="183"
+                  cy="86.5"
+                  r="3.2"
+                />
+                <circle
+                  class="dot"
+                  cx="288"
+                  cy="30.3"
+                  r="3.2"
+                />
+                <text
+                  x="78"
+                  y="93"
+                  text-anchor="middle"
+                  fill="var(--ink)"
+                >
+                  $2.6B
+                </text>
+                <text
+                  x="183"
+                  y="78"
+                  text-anchor="middle"
+                  fill="var(--ink)"
+                >
+                  $4.6B
+                </text>
+                <text
+                  x="288"
+                  y="22"
+                  text-anchor="middle"
+                  fill="var(--ink)"
+                >
+                  $12.1B
+                </text>
+                <text
+                  x="78"
+                  y="124"
+                  text-anchor="middle"
+                >
+                  2023
+                </text>
+                <text
+                  x="183"
+                  y="124"
+                  text-anchor="middle"
+                >
+                  2026
+                </text>
+                <text
+                  x="288"
+                  y="124"
+                  text-anchor="middle"
+                >
+                  2030
+                </text>
+              </svg>
+              <p class="src">
+                <a
+                  href="https://www.grandviewresearch.com/industry-analysis/privacy-enhancing-technologies-market-report"
+                  >Grand View Research</a
+                >
+              </p>
+            </figure>
+            <figure>
+              <figcaption>
+                Privacy-Token Market Capitalization, Billions ($).
+              </figcaption>
+              <svg
+                class="chart-svg"
+                viewBox="0 0 240 128"
+                role="img"
+                aria-label="Privacy-token market capitalization grew from approximately 6.2 billion dollars a year earlier to 30 billion in September 2026"
+              >
+                <line
+                  class="grid"
+                  x1="36"
+                  y1="20"
+                  x2="228"
+                  y2="20"
+                />
+                <line
+                  class="grid"
+                  x1="36"
+                  y1="48.7"
+                  x2="228"
+                  y2="48.7"
+                />
+                <line
+                  class="grid"
+                  x1="36"
+                  y1="77.3"
+                  x2="228"
+                  y2="77.3"
+                />
+                <line
+                  class="grid"
+                  x1="36"
+                  y1="106"
+                  x2="228"
+                  y2="106"
+                />
+                <text
+                  x="8"
+                  y="19"
+                >
+                  $30B
+                </text>
+                <text
+                  x="8"
+                  y="52"
+                >
+                  $20B
+                </text>
+                <text
+                  x="8"
+                  y="81"
+                >
+                  $10B
+                </text>
+                <text
+                  x="16"
+                  y="109"
+                >
+                  $0B
+                </text>
+                <rect
+                  x="62"
+                  y="88.2"
+                  width="28"
+                  height="17.8"
+                  fill="var(--bronze)"
+                />
+                <rect
+                  x="142"
+                  y="20"
+                  width="28"
+                  height="86"
+                  fill="var(--ink)"
+                />
+                <text
+                  x="76"
+                  y="82"
+                  text-anchor="middle"
+                  fill="var(--ink)"
+                >
+                  $6.2B
+                </text>
+                <text
+                  x="156"
+                  y="14"
+                  text-anchor="middle"
+                  fill="var(--ink)"
+                >
+                  ~$30B
+                </text>
+                <text
+                  x="76"
+                  y="124"
+                  text-anchor="middle"
+                >
+                  A year ago
+                </text>
+                <text
+                  x="156"
+                  y="124"
+                  text-anchor="middle"
+                >
+                  Sep 2026
+                </text>
+              </svg>
+              <p class="src">
+                <a
+                  href="https://www.21shares.com/en-eu/insights/crypto-privacy-tokens-sector-outlook-2026"
+                  >21Shares, September 2026</a
+                >
+              </p>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="slide roadmap"
+        aria-label="Roadmap"
+      >
+        <div class="inner">
+          <p class="eyebrow">07 &nbsp; Roadmap</p>
+          <h1 class="h1">What is live today,<br />and what ships next.</h1>
+
+          <div class="roadmap-track">
+            <div class="roadmap-grid">
+              <!-- Step 01: Send, Shielded Transfer & Withdraw (Live) -->
+              <div class="step-col is-bottom is-live">
+                <div class="col-slot-top">
+                  <div class="step-timing">
+                    <span class="timing-badge is-live-badge"><span class="badge-dot"></span>Live Now</span>
+                    <span class="timing-sub">Devnet</span>
+                  </div>
+                </div>
+                <div class="col-node-slot">
+                  <div class="node-stem stem-down"></div>
+                  <div class="node-dot"></div>
+                </div>
+                <div class="col-slot-bottom">
+                  <div class="roadmap-card">
+                    <div class="card-bar"></div>
+                    <div class="card-head">
+                      <span class="card-stage">Stage 01</span>
+                      <span class="card-status live-status">Live</span>
+                    </div>
+                    <h3 class="card-title">Send, Shielded Transfer &amp; Withdraw</h3>
+                    <div class="card-stat">
+                      <span class="stat-highlight">80–100</span>
+                      <span class="stat-label">Active test users</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Step 02: Shielded Swap (In 2 Weeks) -->
+              <div class="step-col is-top">
+                <div class="col-slot-top">
+                  <div class="roadmap-card">
+                    <div class="card-bar"></div>
+                    <div class="card-head">
+                      <span class="card-stage">Stage 02</span>
+                      <span class="card-status upcoming-status">Next 2 Wks</span>
+                    </div>
+                    <h3 class="card-title">Shielded Swap</h3>
+                    <div class="card-pill">Finalizing Beta release</div>
+                  </div>
+                </div>
+                <div class="col-node-slot">
+                  <div class="node-stem stem-up"></div>
+                  <div class="node-dot"></div>
+                </div>
+                <div class="col-slot-bottom">
+                  <div class="step-timing">
+                    <span class="timing-badge">Oct End</span>
+                    <span class="timing-sub">Beta Release</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Step 03: Auditability & Compliance (November) -->
+              <div class="step-col is-bottom">
+                <div class="col-slot-top">
+                  <div class="step-timing">
+                    <span class="timing-badge">Nov Start</span>
+                    <span class="timing-sub">Audit Prep</span>
+                  </div>
+                </div>
+                <div class="col-node-slot">
+                  <div class="node-stem stem-down"></div>
+                  <div class="node-dot"></div>
+                </div>
+                <div class="col-slot-bottom">
+                  <div class="roadmap-card">
+                    <div class="card-bar"></div>
+                    <div class="card-head">
+                      <span class="card-stage">Stage 03</span>
+                      <span class="card-status upcoming-status">November</span>
+                    </div>
+                    <h3 class="card-title">Auditability &amp; Compliance</h3>
+                    <div class="card-pill">Viewing keys &amp; disclosures</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Step 04: Confidential Payroll (November End) -->
+              <div class="step-col is-top">
+                <div class="col-slot-top">
+                  <div class="roadmap-card">
+                    <div class="card-bar"></div>
+                    <div class="card-head">
+                      <span class="card-stage">Stage 04</span>
+                      <span class="card-status upcoming-status">Nov End</span>
+                    </div>
+                    <h3 class="card-title">Confidential Payroll</h3>
+                    <div class="card-pill">Private B2B beta rollout</div>
+                  </div>
+                </div>
+                <div class="col-node-slot">
+                  <div class="node-stem stem-up"></div>
+                  <div class="node-dot"></div>
+                </div>
+                <div class="col-slot-bottom">
+                  <div class="step-timing">
+                    <span class="timing-badge">Nov End</span>
+                    <span class="timing-sub">Beta Release</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Step 05: Devnet to Mainnet (Next 6 Months) -->
+              <div class="step-col is-bottom">
+                <div class="col-slot-top">
+                  <div class="step-timing">
+                    <span class="timing-badge">Next 6 Mos</span>
+                    <span class="timing-sub">Scale Phase</span>
+                  </div>
+                </div>
+                <div class="col-node-slot">
+                  <div class="node-stem stem-down"></div>
+                  <div class="node-dot"></div>
+                </div>
+                <div class="col-slot-bottom">
+                  <div class="roadmap-card">
+                    <div class="card-bar"></div>
+                    <div class="card-head">
+                      <span class="card-stage">Stage 05</span>
+                      <span class="card-status upcoming-status">Horizon</span>
+                    </div>
+                    <h3 class="card-title">Devnet to Mainnet</h3>
+                    <div class="card-pill">Production scale on Solana</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="slide team"
+        aria-label="Team"
+      >
+        <div class="inner">
+          <p class="eyebrow">08 &nbsp; Team</p>
+          <h1 class="h1">Four of us.</h1>
+          <div class="team-grid">
+            <article class="person">
+              <div class="portrait">
+                <img alt="Kartik" src="team/kartik.jpg" />
+              </div>
+              <div>
+                <h2>Kartik <a class="xh" href="https://x.com/skartik_sk" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>@skartik_sk</a></h2>
+                <p class="role">Technical co-founder</p>
+                <p>
+                  6+ Web3 Hack winner. Grad: Rektoff, Turbine, Ack3AI, Superteam.
+                </p>
+              </div>
+            </article>
+            <article class="person">
+              <div class="portrait">
+                <img alt="Namay" src="team/namay.jpg" />
+              </div>
+              <div>
+                <h2>Namay <a class="xh" href="https://x.com/GuptaNamay" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>@GuptaNamay</a></h2>
+                <p class="role">Technical co-founder</p>
+                <p>Accel+ builder, Turbine. Full-stack developer.</p>
+              </div>
+            </article>
+            <article class="person">
+              <div class="portrait">
+                <img alt="Vedansh" src="team/vedansh.jpg" />
+              </div>
+              <div>
+                <h2>Vedansh <a class="xh" href="https://x.com/Vedansh_S1" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>@Vedansh_S1</a></h2>
+                <p class="role">Technical co-founder</p>
+                <p>
+                  Turbine accelerated-builder grad. Certified auditor, Rektoff.
+                </p>
+              </div>
+            </article>
+            <article class="person">
+              <div class="portrait">
+                <img alt="Prasang" src="team/prasang.jpg" />
+              </div>
+              <div>
+                <h2>Prasang <a class="xh" href="https://x.com/prx_xng" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>@prx_xng</a></h2>
+                <p class="role">Technical co-founder</p>
+                <p>
+                  Certified auditor, Rektoff. Turbine Accel+ builder.
+                </p>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+          <section
+        class="slide title-slide"
+        aria-label="Thank you"
+      >
+        <div class="inner">
+          <img class="hero-logo" src="LogoOn.png" alt="Charon" />
+          <h1 class="h1 title-name" style="font-size: clamp(3.6rem, 11vw, 7.5rem)">Thank you</h1>
+          <p class="lead title-line" style="max-width: none; white-space: nowrap">charon.cash &nbsp;·&nbsp; @Charon_cash</p>
+        </div>
+      </section>
+    </main>
+
+    <nav
+      class="nav"
+      id="nav"
+      aria-label="Slide navigation"
+    >
+      <button
+        id="prev"
+        title="Previous (←)"
+        aria-label="Previous"
+      >
+        ‹
+      </button>
+      <div
+        class="dots"
+        id="dots"
+      ></div>
+      <button
+        id="next"
+        title="Next (→)"
+        aria-label="Next"
+      >
+        ›
+      </button>
+    </nav>
+    <div
+      class="counter"
+      id="counter"
+    >
+      <b id="cur">1</b> / <span id="tot">5</span>
+    </div>
+    <div class="hint">← → &nbsp; F fullscreen</div>
+
+    <script>
+      (function () {
+        var slides = Array.prototype.slice.call(
+          document.querySelectorAll(".slide"),
+        );
+        var total = slides.length;
+        var idx = 0;
+        var dotsEl = document.getElementById("dots");
+        var curEl = document.getElementById("cur");
+        var totEl = document.getElementById("tot");
+        var progress = document.getElementById("progress");
+        totEl.textContent = total;
+        slides.forEach(function (s, i) {
+          var d = document.createElement("i");
+          d.setAttribute("role", "button");
+          d.setAttribute("tabindex", "0");
+          d.setAttribute("aria-label", "Slide " + (i + 1));
+          d.addEventListener("click", function () {
+            go(i);
+          });
+          dotsEl.appendChild(d);
+        });
+        var dots = Array.prototype.slice.call(dotsEl.children);
+        function render() {
+          document.body.classList.toggle("is-title", idx === 0 || idx === total - 1);
+          document.body.classList.toggle("is-roadmap", slides[idx].classList.contains("roadmap"));
+          slides.forEach(function (s, i) {
+            s.classList.toggle("is-active", i === idx);
+          });
+          dots.forEach(function (d, i) {
+            d.classList.toggle("on", i === idx);
+          });
+          curEl.textContent = idx + 1;
+          progress.style.width = ((idx + 1) / total) * 100 + "%";
+          history.replaceState(null, "", "#" + (idx + 1));
+        }
+        function go(i) {
+          idx = Math.max(0, Math.min(total - 1, i));
+          render();
+        }
+        function next() {
+          go(idx + 1);
+        }
+        function prev() {
+          go(idx - 1);
+        }
+        document.getElementById("next").addEventListener("click", next);
+        document.getElementById("prev").addEventListener("click", prev);
+        document.addEventListener("keydown", function (e) {
+          var k = e.key;
+          if (k === "ArrowRight" || k === "PageDown" || k === " ") {
+            e.preventDefault();
+            next();
+          } else if (k === "ArrowLeft" || k === "PageUp") {
+            e.preventDefault();
+            prev();
+          } else if (k === "Home") {
+            e.preventDefault();
+            go(0);
+          } else if (k === "End") {
+            e.preventDefault();
+            go(total - 1);
+          } else if (k === "f" || k === "F") {
+            if (!document.fullscreenElement) {
+              document.documentElement.requestFullscreen();
+            } else {
+              document.exitFullscreen();
+            }
+          }
+        });
+        var sx = 0,
+          sy = 0;
+        document.addEventListener(
+          "touchstart",
+          function (e) {
+            sx = e.touches[0].clientX;
+            sy = e.touches[0].clientY;
+          },
+          { passive: true },
+        );
+        document.addEventListener(
+          "touchend",
+          function (e) {
+            var dx = e.changedTouches[0].clientX - sx,
+              dy = e.changedTouches[0].clientY - sy;
+            if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+              dx < 0 ? next() : prev();
+            }
+          },
+          { passive: true },
+        );
+        function fromHash() {
+          var h = parseInt((location.hash || "").replace("#", ""), 10);
+          if (!isNaN(h) && h >= 1 && h <= total) go(h - 1);
+        }
+        window.addEventListener("hashchange", fromHash);
+        fromHash();
+        render();
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,888 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Charon — Pitch</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    rel="stylesheet" />
+  <style>
+    :root {
+      /* Charon app theme (light) */
+      --paper: #fef9f0;
+      --card: #f8f3ea;
+      --border: #ded8ca;
+      --line: #e7e2d9;
+      --ink: #1d1c16;
+      --body: #4b463a;
+      --mute: #8a8270;
+      --gold: #6b5b21;
+      --gold-2: #857338;
+      --gold-3: #a38f51;
+      --gold-soft: #efe2c0;
+      --gold-line: #d2c6a5;
+      --lantern: #f0a53a;
+      /* app dark band */
+      --band: #1c1a15;
+      --band-2: #26231c;
+      --band-line: #37342b;
+      --band-ink: #f5f0e7;
+      --band-mute: #a89f8c;
+      --band-gold: #dbc581;
+      --f-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    * {
+      box-sizing: border-box
+    }
+
+    html,
+    body {
+      height: 100%
+    }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--f-sans);
+      letter-spacing: -.005em;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    .deck {
+      position: fixed;
+      inset: 0;
+      overflow: hidden
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: clamp(56px, 9vh, 100px) clamp(36px, 8vw, 120px) clamp(76px, 11vh, 116px);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      z-index: 0;
+      background:
+        radial-gradient(ellipse 60% 50% at 88% 0%, rgba(239, 226, 192, .75), transparent 70%),
+        linear-gradient(color-mix(in srgb, var(--line) 55%, transparent) 1px, transparent 1px) 0 0 / 56px 56px,
+        linear-gradient(90deg, color-mix(in srgb, var(--line) 55%, transparent) 1px, transparent 1px) 0 0 / 56px 56px,
+        var(--paper);
+    }
+
+    .slide.is-active {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      z-index: 1
+    }
+
+    .inner {
+      width: 100%;
+      max-width: 1080px
+    }
+
+    /* section chip */
+    .eyebrow {
+      display: inline-block;
+      font-family: var(--f-mono);
+      font-size: .7rem;
+      font-weight: 500;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--gold);
+      background: var(--gold-soft);
+      border: 1px solid var(--gold-line);
+      padding: .38rem .8rem;
+      border-radius: 999px;
+      margin: 0 0 1.3rem;
+    }
+
+    .h1 {
+      font-family: var(--f-sans);
+      font-weight: 600;
+      font-size: clamp(2.3rem, 5.2vw, 3.9rem);
+      line-height: 1.03;
+      letter-spacing: -.035em;
+      margin: 0;
+    }
+
+    .h1.xl {
+      font-weight: 700;
+      font-size: clamp(3.4rem, 9vw, 7rem);
+      letter-spacing: -.045em
+    }
+
+    .hl {
+      background: linear-gradient(100deg, var(--gold) 0%, var(--gold-2) 45%, var(--gold-3) 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .lead {
+      margin: 1.2rem 0 0;
+      max-width: 44ch;
+      font-size: clamp(1.05rem, 1.6vw, 1.25rem);
+      line-height: 1.5;
+      color: var(--body);
+    }
+
+    .grid-3,
+    .grid-4 {
+      display: grid;
+      gap: clamp(12px, 1.8vw, 20px);
+      margin-top: 2.2rem
+    }
+
+    .grid-3 {
+      grid-template-columns: repeat(3, 1fr)
+    }
+
+    .grid-4 {
+      grid-template-columns: repeat(4, 1fr)
+    }
+
+    /* card surface */
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.35rem 1.3rem 1.45rem;
+      box-shadow: 0 1px 2px rgba(29, 28, 22, .04), 0 18px 40px -26px rgba(29, 28, 22, .22);
+    }
+
+    .panel .tag {
+      font-family: var(--f-mono);
+      font-size: .66rem;
+      font-weight: 500;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin: 0 0 .7rem;
+      display: flex;
+      align-items: center;
+      gap: .55rem
+    }
+
+    .panel .tag i {
+      font-style: normal;
+      display: inline-grid;
+      place-items: center;
+      min-width: 1.6rem;
+      height: 1.6rem;
+      padding: 0 .3rem;
+      border-radius: 8px;
+      background: var(--gold-soft);
+      border: 1px solid var(--gold-line);
+      color: var(--gold);
+      letter-spacing: 0
+    }
+
+    .panel h3 {
+      font-family: var(--f-sans);
+      font-weight: 600;
+      font-size: clamp(1.15rem, 1.9vw, 1.5rem);
+      letter-spacing: -.025em;
+      color: var(--ink);
+      margin: 0 0 .45rem
+    }
+
+    .panel p {
+      margin: 0;
+      font-size: clamp(.9rem, 1.2vw, 1.02rem);
+      line-height: 1.5;
+      color: var(--body)
+    }
+
+    .pill {
+      margin-left: auto;
+      font-size: .6rem;
+      letter-spacing: .1em;
+      color: #196b43;
+      background: color-mix(in srgb, #196b43 12%, transparent);
+      border-radius: 999px;
+      padding: .18rem .55rem
+    }
+
+    /* numbers */
+    .nums {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: clamp(12px, 1.8vw, 20px);
+      margin-top: 1.4rem
+    }
+
+    .num {
+      padding: 1.6rem 1.5rem 1.7rem
+    }
+
+    .num .v {
+      font-weight: 600;
+      font-size: clamp(3rem, 6.6vw, 5rem);
+      line-height: .95;
+      letter-spacing: -.05em;
+      font-variant-numeric: tabular-nums;
+      background: linear-gradient(180deg, var(--gold-3) 0%, var(--gold) 70%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .num p {
+      margin: .7rem 0 0;
+      font-size: clamp(.9rem, 1.2vw, 1.02rem);
+      color: var(--body);
+      line-height: 1.45
+    }
+
+    .note {
+      margin-top: 1.6rem;
+      font-family: var(--f-mono);
+      font-size: .7rem;
+      color: var(--mute);
+      letter-spacing: .02em;
+      line-height: 1.6
+    }
+
+    /* team */
+    .person {
+      text-align: left
+    }
+
+    .person .avatar {
+      position: relative;
+      display: grid;
+      place-items: center;
+      width: 76px;
+      height: 76px;
+      border-radius: 50%;
+      overflow: hidden;
+      margin-bottom: 1rem;
+      background: linear-gradient(145deg, var(--band-2), var(--band));
+      box-shadow: 0 0 0 2px var(--card), 0 0 0 3px var(--gold-line);
+      font-weight: 600;
+      font-size: 1.8rem;
+      color: var(--band-gold);
+    }
+
+    .person .avatar img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover
+    }
+
+    .person h3 {
+      font-size: 1.2rem
+    }
+
+    /* roadmap */
+    .map {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: clamp(12px, 1.8vw, 20px);
+      margin-top: 2.6rem;
+      position: relative
+    }
+
+    .map::before {
+      content: "";
+      position: absolute;
+      top: 5px;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: var(--gold-line)
+    }
+
+    .step {
+      position: relative;
+      padding-top: 1.6rem
+    }
+
+    .step::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 1.2rem;
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: var(--paper);
+      border: 2px solid var(--gold-line)
+    }
+
+    .step.now::before {
+      background: var(--lantern);
+      border-color: var(--lantern);
+      box-shadow: 0 0 0 4px rgba(240, 165, 58, .25)
+    }
+
+    .step .panel {
+      height: 100%
+    }
+
+    .step.now .panel {
+      border-color: var(--gold-line);
+      background: linear-gradient(180deg, var(--gold-soft), var(--card))
+    }
+
+    /* dark band slides */
+    .slide.dark {
+      background:
+        radial-gradient(ellipse 46% 56% at 76% 56%, rgba(240, 165, 58, .24), transparent 70%),
+        linear-gradient(var(--band-line) 1px, transparent 1px) 0 0 / 56px 56px,
+        linear-gradient(90deg, var(--band-line) 1px, transparent 1px) 0 0 / 56px 56px,
+        var(--band);
+    }
+
+    .slide.dark .eyebrow {
+      color: var(--band-gold);
+      background: rgba(219, 197, 129, .1);
+      border-color: rgba(219, 197, 129, .3)
+    }
+
+    .slide.dark .h1 {
+      color: var(--band-ink)
+    }
+
+    .slide.dark .hl {
+      background-image: linear-gradient(100deg, #dbc581, #f8e19a)
+    }
+
+    .slide.dark .lead {
+      color: var(--band-mute)
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.05fr .95fr;
+      align-items: center;
+      gap: 2rem
+    }
+
+    .hero .art {
+      justify-self: end;
+      height: min(64vh, 540px);
+      width: auto;
+      max-width: 100%;
+      filter: drop-shadow(0 0 60px rgba(240, 165, 58, .25))
+    }
+
+    /* chrome */
+    .brand {
+      position: fixed;
+      top: 22px;
+      left: clamp(22px, 4vw, 40px);
+      z-index: 15;
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      font-weight: 600;
+      font-size: .95rem;
+      letter-spacing: .24em;
+      color: var(--ink);
+    }
+
+    .brand img {
+      width: 28px;
+      height: 27px
+    }
+
+    .progress {
+      position: fixed;
+      top: 0;
+      left: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--gold), var(--lantern));
+      z-index: 20;
+      transition: width .35s ease
+    }
+
+    .counter {
+      position: fixed;
+      bottom: 20px;
+      right: clamp(22px, 4vw, 40px);
+      z-index: 15;
+      font-family: var(--f-mono);
+      font-size: .72rem;
+      color: var(--mute);
+      letter-spacing: .06em;
+    }
+
+    .counter b {
+      color: var(--ink);
+      font-weight: 500
+    }
+
+    .hint {
+      position: fixed;
+      bottom: 20px;
+      left: clamp(22px, 4vw, 40px);
+      z-index: 15;
+      font-family: var(--f-mono);
+      font-size: .68rem;
+      color: var(--mute);
+    }
+
+    .nav {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 15;
+      display: flex;
+      gap: 6px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 5px;
+      border-radius: 999px;
+    }
+
+    .nav button {
+      border: 0;
+      background: transparent;
+      width: 34px;
+      height: 30px;
+      border-radius: 999px;
+      cursor: pointer;
+      color: var(--body);
+      font-family: var(--f-mono);
+      font-size: .9rem;
+    }
+
+    .nav button:hover {
+      background: var(--gold-soft);
+      color: var(--ink)
+    }
+
+    .nav .dots {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 0 8px
+    }
+
+    .nav .dots i {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--border);
+      cursor: pointer;
+      display: block
+    }
+
+    .nav .dots i.on {
+      background: var(--lantern);
+      transform: scale(1.25)
+    }
+
+    body.on-dark .brand {
+      color: var(--band-ink)
+    }
+
+    body.on-dark .counter,
+    body.on-dark .hint {
+      color: rgba(245, 240, 231, .5)
+    }
+
+    body.on-dark .counter b {
+      color: var(--band-ink)
+    }
+
+    body.on-dark .nav {
+      background: var(--band-2);
+      border-color: var(--band-line)
+    }
+
+    body.on-dark .nav button {
+      color: var(--band-mute)
+    }
+
+    body.on-dark .nav button:hover {
+      background: rgba(245, 240, 231, .1);
+      color: var(--band-ink)
+    }
+
+    body.on-dark .nav .dots i {
+      background: var(--band-line)
+    }
+
+    body.on-dark .nav .dots i.on {
+      background: var(--lantern)
+    }
+
+    @media (max-width:780px) {
+
+      .grid-3,
+      .grid-4,
+      .nums,
+      .map {
+        grid-template-columns: 1fr
+      }
+
+      .map::before {
+        display: none
+      }
+
+      .hero {
+        grid-template-columns: 1fr
+      }
+
+      .hero .art {
+        display: none
+      }
+
+      .brand,
+      .hint {
+        display: none
+      }
+
+      .h1 {
+        font-size: clamp(2rem, 10vw, 3rem)
+      }
+    }
+
+    @media (prefers-reduced-motion:reduce) {
+      * {
+        animation: none !important;
+        transition: none !important
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="brand">
+    <img src="LogoOn.png" alt="" />
+    CHARON
+  </div>
+  <div class="progress" id="progress"></div>
+
+  <main class="deck" id="deck">
+
+    <!-- 00 · OPENER -->
+    <section class="slide dark is-active" aria-label="Charon">
+      <div class="inner hero">
+        <div>
+          <p class="eyebrow">Private payments on Solana</p>
+          <h1 class="h1 xl">Charon</h1>
+          <p class="lead" style="font-size: clamp(1.3rem, 2.4vw, 1.9rem); color: var(--band-ink);">Privacy with <span class="hl">0 trust.</span></p>
+        </div>
+        <img class="art" src="LogoOn.png" alt="" />
+      </div>
+    </section>
+
+    <!-- 01 · PROBLEM -->
+    <section class="slide" aria-label="Problem">
+      <div class="inner">
+        <p class="eyebrow">01 &nbsp; Problem</p>
+        <h1 class="h1">Every Solana payment<br>is a <span class="hl">public record.</span></h1>
+        <p class="lead">Who paid whom. How much. A salary, an investment and even a gift payment can be reconstructed by
+          anyone with a block explorer.
+        </p>
+        <div class="grid-3">
+          <div class="panel">
+            <p class="tag">Who</p>
+            <p>Sender and receiver, linked to a public address forever.</p>
+          </div>
+          <div class="panel">
+            <p class="tag">How much</p>
+            <p>Every amount, readable by anyone with a browser.</p>
+          </div>
+          <div class="panel">
+            <p class="tag">When</p>
+            <p>A permanent, searchable history of your money.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 02 · SOLUTION -->
+    <section class="slide" aria-label="Solution">
+      <div class="inner">
+        <p class="eyebrow">02 &nbsp; Solution</p>
+        <h1 class="h1">A private balance<br>on a <span class="hl">public chain.</span></h1>
+        <div class="grid-4">
+          <div class="panel">
+            <p class="tag"><i>01</i></p>
+            <h3>Deposit / Send</h3>
+            <p>Funds enter the shielded pool.</p>
+          </div>
+          <div class="panel">
+            <p class="tag"><i>02</i></p>
+            <h3>Shielded Transfer / Swap</h3>
+            <p>Move and swap with nothing visible on-chain.</p>
+          </div>
+          <div class="panel">
+            <p class="tag"><i>03</i></p>
+            <h3>Payroll</h3>
+            <p>Pay a whole team from one balance.</p>
+          </div>
+          <div class="panel">
+            <p class="tag"><i>04</i></p>
+            <h3>Withdraw</h3>
+            <p>Exit to any address when you choose.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 03 · PRODUCT -->
+    <section class="slide" aria-label="Product">
+      <div class="inner">
+        <p class="eyebrow">03 &nbsp; Product</p>
+        <h1 class="h1">One protocol.<br><span class="hl">Three ways in.</span></h1>
+        <div class="grid-3">
+          <div class="panel">
+            <p class="tag">Charon Cash <span class="pill">BETA</span></p>
+            <h3>Send &amp; swap</h3>
+            <p>One shielded balance in an app. Private transfers and swaps. Amounts and recipients never show on-chain.</p>
+          </div>
+          <div class="panel">
+            <p class="tag">Payroll <span class="pill">BETA</span></p>
+            <h3>Pay a team</h3>
+            <p>Upload a CSV, sign once. Every salary lands as a private note. Employees get their own app to see it.</p>
+          </div>
+          <div class="panel">
+            <p class="tag">Protocol &amp; SDK</p>
+            <h3>Build on it</h3>
+            <p>On-chain program, in-browser prover and a relayer that holds no keys. Any app plugs in.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 04 · MARKET -->
+    <section class="slide" aria-label="Market">
+      <div class="inner">
+        <p class="eyebrow">04 &nbsp; Market</p>
+        <h1 class="h1">Private payments infra<br>is <span class="hl">for everyone.</span></h1>
+        <div class="grid-3">
+          <div class="panel">
+            <p class="tag">People</p>
+            <p>Pay someone without handing the whole history to whoever is watching the address.</p>
+          </div>
+          <div class="panel">
+            <p class="tag">Teams</p>
+            <p>Payroll and vendors from the same pool. Each amount lands in a private note.</p>
+          </div>
+          <div class="panel">
+            <p class="tag">Apps</p>
+            <p>Other programs plug in through the SDK. Same pool. Same proofs.</p>
+          </div>
+        </div>
+        <p class="note">Solana privacy field today: Privacy Cash $1.9M TVL · $144k fees (30d) &nbsp;·&nbsp; Umbra $205k TVL &nbsp;·&nbsp; Cloak $500k+ volume in beta</p>
+      </div>
+    </section>
+
+    <!-- 05 · WHY NOW -->
+    <section class="slide" aria-label="Why now">
+      <div class="inner">
+        <p class="eyebrow">05 &nbsp; Why now</p>
+        <h1 class="h1">Privacy isn’t a new problem.<br><span class="hl">We need it now more than ever.</span></h1>
+        <div class="grid-3">
+          <div class="panel">
+            <p class="tag"><i>01</i> Cheaper onchain</p>
+            <p>A private spend costs 136k compute units. Cents, not dollars.</p>
+          </div>
+          <div class="panel">
+            <p class="tag"><i>02</i> Proved on the device</p>
+            <p>A full proof in under a second, in the browser. Your secrets never leave you.</p>
+          </div>
+          <div class="panel">
+            <p class="tag"><i>03</i> Breaking the Link</p>
+            <p>Deposit and spend can’t be tied together. Nobody can trace who paid whom.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 06 · NUMBERS -->
+    <section class="slide" aria-label="Numbers">
+      <div class="inner">
+        <p class="eyebrow">06 &nbsp; Numbers</p>
+        <div class="nums">
+          <div class="panel num">
+            <div class="v">136k</div>
+            <p>CU per spend.</p>
+          </div>
+          <div class="panel num">
+            <div class="v">0.8s</div>
+            <p>Proof in the browser.</p>
+          </div>
+          <div class="panel num">
+            <div class="v">0</div>
+            <p>Zero point of trust. Witness never leaves the Client.</p>
+          </div>
+        </div>
+        <p class="note">Live on devnet · 100 payouts in ≈80s, one signature · 9 beta testers</p>
+      </div>
+    </section>
+
+    <!-- 07 · WHY US -->
+    <section class="slide" aria-label="Why us">
+      <div class="inner">
+        <p class="eyebrow">07 &nbsp; Why us</p>
+        <h1 class="h1">Four builders.<br><span class="hl">One stack.</span></h1>
+        <!-- Photos: drop team/kartik.jpg, team/namay.jpg, team/vedansh.jpg, team/prasang.jpg next to this file.
+             Until then the initial shows. -->
+        <div class="grid-4">
+          <div class="panel person">
+            <span class="avatar">K<img src="team/kartik.jpg" alt="" onerror="this.remove()"></span>
+            <h3>Kartik</h3>
+            <p>6+ hackathon winner. Grad: Turbine · Rektoff · Ack3AI. Built SolStudio with real users.</p>
+          </div>
+          <div class="panel person">
+            <span class="avatar">N<img src="team/namay.jpg" alt="" onerror="this.remove()"></span>
+            <h3>Namay</h3>
+            <p>Turbine grad, full-stack developer.</p>
+          </div>
+          <div class="panel person">
+            <span class="avatar">V<img src="team/vedansh.jpg" alt="" onerror="this.remove()"></span>
+            <h3>Vedansh</h3>
+            <p>Turbine grad, certified auditor.</p>
+          </div>
+          <div class="panel person">
+            <span class="avatar">P<img src="team/prasang.jpg" alt="" onerror="this.remove()"></span>
+            <h3>Prasang</h3>
+            <p>Full-stack Solana &amp; security, certified auditor.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 08 · ROADMAP -->
+    <section class="slide" aria-label="Roadmap">
+      <div class="inner">
+        <p class="eyebrow">08 &nbsp; Roadmap</p>
+        <h1 class="h1">From devnet<br><span class="hl">to the default.</span></h1>
+        <div class="map">
+          <div class="step now">
+            <div class="panel">
+              <p class="tag">NOW</p>
+              <h3>Live on devnet</h3>
+              <p>Send, swap, pay: all in beta, measured, 9 beta testers.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="panel">
+              <p class="tag">NEXT</p>
+              <h3>Closed beta + audit</h3>
+              <p>Real teams in closed beta. Independent security audit.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="panel">
+              <p class="tag">THEN</p>
+              <h3>Mainnet beta</h3>
+              <p>Real teams on mainnet, payroll as the flagship use case.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="panel">
+              <p class="tag">BEYOND</p>
+              <h3>Charon SDK</h3>
+              <p>Any app ships private payments on the protocol: wallets, agents, treasuries.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 09 · THANK YOU -->
+    <section class="slide dark" aria-label="Thank you">
+      <div class="inner hero">
+        <div>
+          <p class="eyebrow">09 &nbsp; Thank you</p>
+          <h1 class="h1 xl" style="font-size: clamp(3rem, 7.5vw, 5.6rem);">Thank <span class="hl">you.</span></h1>
+          <p class="lead">charon.cash &nbsp;·&nbsp; @Charon_cash</p>
+        </div>
+        <img class="art" src="LogoOn.png" alt="" />
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="nav" id="nav" aria-label="Slide navigation">
+    <button id="prev" title="Previous (←)" aria-label="Previous">‹</button>
+    <div class="dots" id="dots"></div>
+    <button id="next" title="Next (→)" aria-label="Next">›</button>
+  </nav>
+  <div class="counter" id="counter"><b id="cur">1</b> / <span id="tot">5</span></div>
+  <div class="hint">← → &nbsp; F fullscreen</div>
+
+  <script>
+    (function () {
+      var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+      var total = slides.length;
+      var idx = 0;
+      var dotsEl = document.getElementById('dots');
+      var curEl = document.getElementById('cur');
+      var totEl = document.getElementById('tot');
+      var progress = document.getElementById('progress');
+      totEl.textContent = total;
+      slides.forEach(function (s, i) {
+        var d = document.createElement('i');
+        d.setAttribute('role', 'button');
+        d.setAttribute('tabindex', '0');
+        d.setAttribute('aria-label', 'Slide ' + (i + 1));
+        d.addEventListener('click', function () { go(i); });
+        dotsEl.appendChild(d);
+      });
+      var dots = Array.prototype.slice.call(dotsEl.children);
+      function render() {
+        slides.forEach(function (s, i) { s.classList.toggle('is-active', i === idx); });
+        dots.forEach(function (d, i) { d.classList.toggle('on', i === idx); });
+        document.body.classList.toggle('on-dark', slides[idx].classList.contains('dark'));
+        curEl.textContent = idx + 1;
+        progress.style.width = ((idx + 1) / total * 100) + '%';
+        history.replaceState(null, '', '#' + (idx + 1));
+      }
+      function go(i) { idx = Math.max(0, Math.min(total - 1, i)); render(); }
+      function next() { go(idx + 1); }
+      function prev() { go(idx - 1); }
+      document.getElementById('next').addEventListener('click', next);
+      document.getElementById('prev').addEventListener('click', prev);
+      document.addEventListener('keydown', function (e) {
+        var k = e.key;
+        if (k === 'ArrowRight' || k === 'PageDown' || k === ' ') { e.preventDefault(); next(); }
+        else if (k === 'ArrowLeft' || k === 'PageUp') { e.preventDefault(); prev(); }
+        else if (k === 'Home') { e.preventDefault(); go(0); }
+        else if (k === 'End') { e.preventDefault(); go(total - 1); }
+        else if (k === 'f' || k === 'F') {
+          if (!document.fullscreenElement) { document.documentElement.requestFullscreen(); }
+          else { document.exitFullscreen(); }
+        }
+      });
+      var sx = 0, sy = 0;
+      document.addEventListener('touchstart', function (e) { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, { passive: true });
+      document.addEventListener('touchend', function (e) {
+        var dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
+        if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? next() : prev(); }
+      }, { passive: true });
+      function fromHash() {
+        var h = parseInt((location.hash || '').replace('#', ''), 10);
+        if (!isNaN(h) && h >= 1 && h <= total) go(h - 1);
+      }
+      window.addEventListener('hashchange', fromHash);
+      fromHash();
+      render();
+    })();
+  </script>
+</body>
+
+</html>

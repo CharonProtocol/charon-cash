@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="40 privacy protocols and shipping products across all of web3, surveyed against Charon Pay — per-product what-they-have / what-we-have, architecture, real proving speeds, harsh verdicts. October 2026.">
+<title>Private Money, Mapped</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    color-scheme: dark;
+    /* Palette: Charon's own dark-water world — app ink #0C0E12, lantern-lit
+       violet accent #8B85F0, deep-water blue for the field data. */
+    --bg: #0B0D12;
+    --surface: #12151E;
+    --surface2: #171B26;
+    --line: #242A3A;
+    --fg: #E9EBF4;
+    --muted: #98A0B6;
+    --accent: #8B85F0;
+    --water: #5B86EC;
+    --good: #3DD68C;
+    --bad: #FF7A93;
+    --warn: #F2C14E;
+    --display: "Instrument Serif", Georgia, serif;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    padding-inline: clamp(16px, 5vw, 40px);
+  }
+  main { max-width: 1000px; margin: 0 auto; padding-block: 40px 72px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--water);
+    margin: 0 0 14px;
+  }
+  h1 {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: clamp(40px, 7vw, 66px);
+    line-height: 1.04;
+    letter-spacing: -0.01em;
+    margin: 0 0 18px;
+    text-wrap: balance;
+  }
+  h1 em { font-style: italic; color: var(--accent); }
+  .standfirst { max-width: 62ch; color: var(--muted); font-size: 16.5px; margin: 0 0 30px; }
+  .standfirst strong { color: var(--fg); font-weight: 600; }
+
+  .heroglow {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--water) 30%, var(--accent) 55%, transparent);
+    margin: 34px 0 0;
+    opacity: 0.55;
+  }
+
+  /* The one subject-specific strip: what a private proof costs each system. */
+  .provebar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+    margin: 30px 0 0;
+  }
+  .provebar div { background: var(--surface); padding: 14px 16px; }
+  .provebar .k {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 6px;
+  }
+  .provebar .v { font-family: var(--mono); font-size: 19px; font-weight: 500; margin: 0; font-variant-numeric: tabular-nums; }
+  .provebar .win .v { color: var(--good); }
+
+  h2 {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 30px;
+    line-height: 1.15;
+    margin: 64px 0 6px;
+    text-wrap: balance;
+  }
+  h2 .n { font-family: var(--mono); font-size: 13px; color: var(--water); vertical-align: super; margin-right: 8px; }
+  .sectionintro { color: var(--muted); max-width: 66ch; margin: 0 0 22px; }
+
+  /* Verdict: two columns, holds vs doesn't */
+  .verdict { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 24px; }
+  @media (max-width: 720px) { .verdict { grid-template-columns: 1fr; } }
+  .vcard { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); padding: 20px 22px; }
+  .vcard.holds { border-top: 2px solid var(--good); }
+  .vcard.fails { border-top: 2px solid var(--bad); }
+  .vcard h3 {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em;
+    text-transform: uppercase; margin: 0 0 14px;
+  }
+  .vcard.holds h3 { color: var(--good); }
+  .vcard.fails h3 { color: var(--bad); }
+  .vcard ul { margin: 0; padding: 0; list-style: none; }
+  .vcard li { padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .vcard li:first-child { border-top: 0; padding-top: 0; }
+  .vcard li b { color: var(--fg); }
+  .vcard li span { color: var(--muted); }
+
+  /* Comparison table */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; margin-top: 24px; }
+  table { border-collapse: collapse; min-width: 1120px; width: 100%; font-size: 12.5px; }
+  thead th {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted); text-align: left; padding: 12px 12px;
+    background: var(--surface2); border-bottom: 1px solid var(--line);
+    position: sticky; top: 0;
+  }
+  tbody td { padding: 11px 12px; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--muted); }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:nth-child(odd) td { background: rgba(255,255,255,0.014); }
+  td.proto { color: var(--fg); font-weight: 600; white-space: nowrap; }
+  td.mono, td .mono { font-family: var(--mono); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+  td .alive { color: var(--good); }
+  td .dead { color: var(--bad); }
+  td .alpha { color: var(--warn); }
+
+  /* Field notes */
+  .group { margin-top: 34px; }
+  .group > h3 {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--water); margin: 0 0 4px;
+  }
+  .proto { border-top: 1px solid var(--line); padding: 16px 0; }
+  .proto .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 12px; margin-bottom: 5px; }
+  .proto .name { font-weight: 600; font-size: 15.5px; }
+  .proto .tag {
+    font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+    border: 1px solid var(--line); border-radius: 99px; padding: 1px 9px; white-space: nowrap;
+  }
+  .proto p { margin: 0; color: var(--muted); font-size: 14px; max-width: 76ch; }
+  .proto p + p { margin-top: 7px; }
+  .proto p b { color: var(--fg); font-weight: 600; }
+
+  /* Reality check */
+  .check { counter-reset: check; margin-top: 22px; }
+  .check li {
+    counter-increment: check;
+    list-style: none; position: relative;
+    padding: 14px 0 14px 44px; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 14.5px; max-width: 78ch;
+  }
+  .check li::before {
+    content: counter(check, decimal-leading-zero);
+    position: absolute; left: 0; top: 16px;
+    font-family: var(--mono); font-size: 12px; color: var(--bad);
+  }
+  .check li b { color: var(--fg); }
+  .quoteblock {
+    margin: 30px 0 0; padding: 22px 26px;
+    border-left: 2px solid var(--accent);
+    background: var(--surface);
+    border-radius: 0 14px 14px 0;
+    font-family: var(--display); font-size: 21px; line-height: 1.45; color: var(--fg);
+    text-wrap: balance;
+  }
+
+  .paths { margin: 22px 0 0; padding: 0; list-style: none; }
+  .paths li { display: flex; gap: 16px; padding: 13px 0; border-top: 1px solid var(--line); font-size: 14.5px; color: var(--muted); max-width: 78ch; }
+  .paths li b { color: var(--fg); font-weight: 600; }
+  .paths .step { font-family: var(--mono); color: var(--accent); font-size: 12px; padding-top: 3px; flex: none; }
+
+  footer { margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12.5px; }
+  footer p { max-width: 76ch; }
+</style>
+
+<main>
+  <p class="eyebrow">Field survey · October 2026 · 40 protocols &amp; products</p>
+  <h1>Private money, <em>mapped.</em></h1>
+  <p class="standfirst">
+    Every privacy protocol and shipping product in web3 — the giants, the 2024–26 wave, the dead —
+    each compared against <strong>Charon Pay</strong>: what they hide, what they prove with, how fast they
+    actually are, and per product <strong>what they have that we don't, what we have that they don't</strong> —
+    ending in a harsh-reality verdict on where a devnet payroll demo genuinely leads and where it is behind.
+  </p>
+
+  <div class="provebar" role="group" aria-label="Client-side proof cost compared">
+    <div class="win"><p class="k">Charon Pay · browser</p><p class="v">0.6–1.4s</p></div>
+    <div><p class="k">Aztec V5 · browser</p><p class="v">~6.8s</p></div>
+    <div><p class="k">Railgun · wallet SDK</p><p class="v">seconds</p></div>
+    <div><p class="k">Zcash Orchard · wallet</p><p class="v">~40s</p></div>
+  </div>
+  <div class="heroglow"></div>
+
+  <h2><span class="n">§1</span>The verdict first</h2>
+  <p class="sectionintro">The market was validated hard in 2026 — Cloak shipped private payroll on Solana mainnet in September. Charon's technology still leads on specific, honest axes. Its trust model and maturity trail the field.</p>
+  <div class="verdict">
+    <div class="vcard holds">
+      <h3>What genuinely holds up</h3>
+      <ul>
+        <li><b>Fastest browser proving, measured.</b> <span>0.6–1.4s per Groth16 proof in-browser. No surveyed project documents faster <em>browser</em> proving: Aztec and Zcash publish no client numbers at all, Railgun's stack is snarkjs (the slow class), Cloak claims ~1.4s, and Penumbra's documented &lt;1.3s (2023) is native Rust, never a browser. The asterisk: per-action Groth16 on a lean circuit — Penumbra's native figure is the near-tie.</span></li>
+        <li><b>Open where the rival is closed.</b> <span>Charon's program, circuits, SDK and relayer are all public. Cloak — the direct Solana competitor — publishes none of its protocol code, has an unpublished audit from an unnamed auditor, and its relay holds a standing key that can decrypt every shielded note ever posted.</span></li>
+        <li><b>Payroll product depth, not just a pool.</b> <span>CSV → per-employee exact notes, recipient enrollment gate, one-signature funding, zero per-payout signatures, crash-safe resume that cannot double-pay. Cloak's payroll is one approval but N separate transactions by its own design choice; the batched multi-recipient circuit (4 employees/proof — bench: 210 employees ≈ 13s of proof math, not a live run) remains Charon's alone.</span></li>
+      </ul>
+    </div>
+    <div class="vcard fails">
+      <h3>What does not — stated plainly</h3>
+      <ul>
+        <li><b>It is a devnet demo.</b> <span>Zero audits, zero production exposure — while Cloak runs the same architecture on Solana mainnet today: tiny (12.49 SOL total pool, ~2,000 lifetime txs) but shipping, with press, a setup ceremony, and multisig governance Charon has neither of.</span></li>
+        <li><b>The trusted setup is worse than the field's.</b> <span>A local single-party ceremony — the whole pool rests on one laptop. Cloak ran a 6-contributor ceremony (self-attested, no published transcript); Privacy Pools ran 514 contributors; Zcash, Monero, Firo need no setup at all.</span></li>
+        <li><b>Centralization everywhere.</b> <span>Single-operator relayer + single mirror is exactly the operator pattern Tornado Cash's founders were convicted for running. Charon's operator at least cannot decrypt anything — Cloak's can, and both can censor.</span></li>
+        <li><b>No compliance story.</b> <span>Now proven table stakes, shipped: Cloak (mandatory viewing keys), Hinkal (KYT + scoped keys), STRK-20 (Elliptic screening), Umbra (viewing grants), Tongo (ex-post audit proofs), Privacy Boost (onchain-logged auditor queries). Charon has none — un-shippable to the regulated employers its UX targets.</span></li>
+        <li><b>The home-turf window is half-shut.</b> <span>Cloak launched private payroll Sep 28, 2026 with the official Solana X account amplifying it; Helius acquired Light Protocol; Arcium's Umbra is live. "Solana's private payroll protocol" is a claim with a shelf life measured in quarters.</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="n">§2</span>The field, one table</h2>
+  <p class="sectionintro">Every major protocol plus the notable minor and 2025–26 launches. Prove time = what a normal user's device spends generating a private transaction, where published.</p>
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Protocol</th><th>Chain</th><th>Architecture</th><th>Proof system</th><th>Trusted setup</th><th>Client prove</th><th>Throughput / latency</th><th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td class="proto">Tornado Cash</td><td>Ethereum L1</td><td>Fixed-denomination mixer, commitments + nullifiers</td><td class="mono">Groth16</td><td>Per-circuit (2020 ceremony)</td><td class="mono">~2–10s (historic)</td><td>2 txs to unlink; minutes</td><td><span class="dead">OFAC-delisted Mar 2025</span>, still used; Storm retrial ~Oct 2026</td></tr>
+        <tr><td class="proto">Railgun</td><td>30+ EVM chains</td><td>Private balances in encrypted contract state</td><td class="mono">Groth16</td><td>Community ceremony (2022)</td><td class="mono">seconds</td><td>Per-tx; gasless relayers</td><td><span class="alive">Alive</span> · ~$4.5B volume, doubling YoY</td></tr>
+        <tr><td class="proto">Privacy Pools</td><td>Ethereum L1</td><td>Shielded pool + association-set compliance</td><td class="mono">Groth16</td><td>Multi-party, 514 contributions</td><td class="mono">seconds (browser)</td><td>573 deposits/30d; 4 relayers</td><td><span class="alive">Mainnet Mar 2025</span> · TVL ~$9.5M</td></tr>
+        <tr><td class="proto">Umbra</td><td>Ethereum L1</td><td>Stealth addresses only — amounts stay public</td><td class="mono">none (ECDH)</td><td>none</td><td class="mono">none</td><td>1 tx; recipient withdraws</td><td><span class="alive">Live since 2021</span> · ERC-5564</td></tr>
+        <tr><td class="proto">Zcash (Orchard)</td><td>Own L1</td><td>Fully shielded notes, all fields hidden</td><td class="mono">Halo 2 (recursive)</td><td><b>none</b></td><td class="mono">~seconds–40s</td><td>~75s blocks</td><td><span class="alive">Resurgent</span> · 4-yr soundness bug disclosed Jun 2026</td></tr>
+        <tr><td class="proto">Monero</td><td>Own L1</td><td>Ring sigs + Pedersen commitments, all txs private</td><td class="mono">FCMP++ (2026) + BP+</td><td>none</td><td class="mono">instant</td><td>~2min blocks</td><td><span class="alive">Alive</span> · whole-chain anonymity set; delistings persist</td></tr>
+        <tr><td class="proto">Aleo</td><td>Own L1</td><td>Private-by-default zk apps, prover market</td><td class="mono">Varuna</td><td>Universal (ASC)</td><td class="mono">delegated, not client</td><td>low activity</td><td><span class="alive">Mainnet 2024</span> · private payroll push with Toku/Paxos</td></tr>
+        <tr><td class="proto">Iron Fish</td><td>Own L1</td><td>Sapling-style shielded pool</td><td class="mono">Groth16</td><td>ceremony</td><td class="mono">n/a</td><td>n/a</td><td><span class="dead">Dead</span> · team → Base (2025), maintenance mode 2026</td></tr>
+        <tr><td class="proto">Penumbra</td><td>Cosmos appchain</td><td>Fully shielded chain + batched private DEX</td><td class="mono">decaf377 R1CS</td><td>none</td><td class="mono">~1–2s desktop</td><td>6s blocks, batched swaps</td><td><span class="alive">Live</span>, small</td></tr>
+        <tr><td class="proto">Firo</td><td>Own L1</td><td>Spark: hidden amounts + recipients, view keys</td><td class="mono">one-of-many</td><td>none</td><td class="mono">seconds, mobile</td><td>~1–5min confirms</td><td><span class="alive">Alive</span>, shrinking to infra vendor</td></tr>
+        <tr><td class="proto">Beam / Grin</td><td>Own L1s</td><td>MimbleWimble: cut-through, amounts hidden</td><td class="mono">Bulletproofs</td><td>none</td><td class="mono">~1s</td><td>~1min blocks</td><td><span class="alive">Alive, niche</span> · interactive tx building</td></tr>
+        <tr><td class="proto">Secret Network</td><td>Cosmos + EVM</td><td>TEE (SGX) encrypted contracts</td><td class="mono">none (hardware)</td><td>TEE trust</td><td class="mono">none</td><td>Cosmos-speed</td><td><span class="alive">Alive</span></td></tr>
+        <tr><td class="proto">Oasis Sapphire</td><td>Own L1 (EVM)</td><td>TEE confidential EVM, encrypted state</td><td class="mono">none (hardware)</td><td>TEE trust</td><td class="mono">none</td><td>EVM-speed</td><td><span class="alive">Live since 2023</span></td></tr>
+        <tr><td class="proto">Aztec</td><td>Ethereum L2</td><td>Private smart contracts, client-proven</td><td class="mono">Honk/UltraPlonk</td><td>none (recursion)</td><td class="mono">2.5s native / 6.8s browser</td><td>&lt;$0.05/private tx</td><td><span class="alpha">Alpha only</span> · V5 critical proving bug Jul 2026; mainnet pending</td></tr>
+        <tr><td class="proto">STRK-20</td><td>Starknet</td><td>Native note pool, any token, in-protocol STARK verify</td><td class="mono">STARK (stwo)</td><td><b>none</b></td><td class="mono">remote service (self-hostable)</td><td>minutes lag; paymaster gas</td><td><span class="alive">Live Jun 2026</span> · $871K TVL · permissioned deposits (Elliptic)</td></tr>
+        <tr><td class="proto">Payy</td><td>Rollup → Ethereum</td><td>UTXO stablecoin rollup, Noir circuits, no nullifiers</td><td class="mono">UltraHonk</td><td>Ignition ceremony</td><td class="mono">client-side, unpublished</td><td>300ms finality, $0 txs</td><td><span class="alive">Live Feb 2026</span> · $1.95M TVL · spend graph public (L2BEAT)</td></tr>
+        <tr><td class="proto">zk.money 2.0</td><td>Ethereum (Aztec L2)</td><td>Consumer private payments on Aztec alpha</td><td class="mono">Honk</td><td>none</td><td class="mono">2.5s native / 6.8s browser</td><td>&lt;$0.05/tx</td><td><span class="alpha">Relaunched Sep 2026</span> on alpha infra</td></tr>
+        <tr><td class="proto">Mina</td><td>Own L1</td><td>Recursive 22KB chain, zkApps</td><td class="mono">Kimchi/Pickles</td><td>none</td><td class="mono">seconds–minutes</td><td>slow L1</td><td><span class="alive">Berkeley live</span> · Mesa upgrade imminent</td></tr>
+        <tr><td class="proto">Light / Helius Privacy</td><td>Solana</td><td>ZK Compression — cost compression; privacy product unshipped</td><td class="mono">Groth16</td><td>ceremony-era</td><td class="mono">sub-second–seconds</td><td>Solana-speed</td><td><span class="alive">Mainnet 2024</span> · Helius acquired Light Jun 2026</td></tr>
+        <tr><td class="proto">Cloak</td><td>Solana mainnet</td><td>UTXO shielded pool (SOL/USDC), 2-in/2-out, per-mint pools</td><td class="mono">Groth16 · 42,672 constraints</td><td>6-contributor ceremony (self-attested)</td><td class="mono">~1.4s browser (claimed)</td><td>instant; 0.3% + fixed fee; gasless relay</td><td><span class="alive">Live Apr 2026</span> · payroll Sep 2026 · <b>closed-source</b>, relay-gated, 12.5 SOL pool</td></tr>
+        <tr><td class="proto">Umbra (Solana)</td><td>Solana (Arcium)</td><td>MPC-encrypted token accounts + stealth pool</td><td class="mono">ZK + MPC</td><td>MPC quorum</td><td class="mono">MPC round-trip, seconds</td><td>dual-tx MPC ops</td><td><span class="alive">Live Mar 2026</span> · viewing grants · alpha-grade infra</td></tr>
+        <tr><td class="proto">SPL Confidential Transfers</td><td>Solana (token-2022)</td><td>Amounts only hidden (ElGamal); parties public</td><td class="mono">ElGamal + zk-SNARK</td><td>none</td><td class="mono">sub-second–seconds</td><td>native Solana</td><td><span class="alive">Re-enabled Jun 2026</span> after 13-month proof-forgery pause</td></tr>
+        <tr><td class="proto">Hinkal</td><td>EVM + Solana + TRON</td><td>Shielded contract; proving in operator enclave</td><td class="mono">Groth16 UTXO</td><td>ceremony</td><td class="mono">server-side (enclave)</td><td>10 bps fee; relayer</td><td><span class="alive">Production 3.5+ yrs</span> · $500M+, 6 audits, payroll flows</td></tr>
+        <tr><td class="proto">Zama (FHE)</td><td>Ethereum + own chain</td><td>FHE confidential tokens (cUSDC/cUSDT)</td><td class="mono">TFHE</td><td>none</td><td class="mono">slow, hidden from user</td><td>6.9M+ txs</td><td><span class="alive">Mainnet Dec 2025</span> · Circle froze cUSDC 72h May 2026</td></tr>
+        <tr><td class="proto">Canton (Toku payroll)</td><td>Canton Network</td><td>Institutional ledger-level privacy (not ZK)</td><td class="mono">none</td><td>n/a</td><td class="mono">n/a</td><td>enterprise</td><td><span class="alive">Live</span> · first institutional private payroll Feb 2026</td></tr>
+        <tr><td class="proto">Midnight / AnomaPay</td><td>Cardano partner / Stable</td><td>Data-protection chain; confidential payments</td><td class="mono">ZK</td><td>ceremony (dust)</td><td class="mono">seconds</td><td>n/a</td><td><span class="alive">Mainnet Mar 2026</span> · AnomaPay live on Stable</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2><span class="n">§3</span>Field notes</h2>
+  <p class="sectionintro">The one-paragraph read on each — why it matters to a private-payroll protocol.</p>
+
+  <div class="group">
+    <h3>Shielded pools &amp; mixers</h3>
+    <div class="proto">
+      <div class="head"><span class="name">Tornado Cash</span><span class="tag">Ethereum · Groth16</span></div>
+      <p>The OG shielded pool: fixed denominations, Groth16, hides sender↔recipient link; amounts trivially known. <b>The operator-liability precedent is the story for Charon:</b> Roman Storm convicted Aug 2025 on an unlicensed-money-transmission count (retrial sought Oct 2026); Pertsev's 64-month conviction on appeal; OFAC delisted the contracts Mar 2025 after <a href="https://ofac.treasury.gov/recent-actions/20250321">the Van Loon ruling</a>. Running a fee-charging relayer is the exact activity that went on trial.</p>
+    </div>
+    <div class="proto">
+      <div class="head"><span class="name">Railgun</span><span class="tag">EVM · Groth16</span></div>
+      <p>Private balances in encrypted contract state across 30+ chains; ~<a href="https://blockeden.xyz/forum/t/railgun-just-hit-5b-volume-why-are-institutions-embracing-privacy-while-retail-users-ignore-it/3905">$4.5B cumulative volume, ~326 daily users</a>, now a first-party module in Ethereum's Kohaku wallet-privacy roadmap. The fees its own docs admit: <b>0.25% on every shield AND unshield</b> (0.5%+ round trip), gasless Broadcasters charging ~10% of gas as premium, a mandatory 1-hour unshield standby on new shields, and Proof-of-Innocence list checks its docs say wallets "will require a default List Provider." Proving is snarkjs WASM — the slow browser class, no timings published.</p>
+    </div>
+    <div class="proto">
+      <div class="head"><span class="name">Privacy Pools</span><span class="tag">Ethereum · Groth16 · 514-contributor setup</span></div>
+      <p><a href="https://l2beat.com/privacy/projects/privacy-pools">Compliance-first shielded pool</a>, mainnet since Mar 2025 with Vitalik an early user. The Association Set Provider can de-whitelist your deposit — the compliance template regulators like, at the cost of a censoring entity. Tiny usage ($9.5M TVL).</p>
+    </div>
+    <div class="proto">
+      <div class="head"><span class="name">Umbra</span><span class="tag">Ethereum · no proofs</span></div>
+      <p>Stealth addresses only: hides the recipient, sender and amounts stay public, recipient pays gas to sweep. The "minimum viable privacy" baseline — and proof that no-anonymity-set privacy can't hide payroll amounts.</p>
+    </div>
+    <div class="proto">
+      <div class="head"><span class="name">Zcash (Orchard)</span><span class="tag">Own L1 · Halo 2 · no setup</span></div>
+      <p>The reference design Charon descends from: note commitments, nullifiers, value commitments, spend/view keys — no trusted setup. 2026 comeback (<a href="https://www.coindesk.com/research/building-the-zcash-machine-tachyon-and-quantum-readiness">Tachyon scaling + quantum readiness</a>), but cautionary on two axes: a <a href="https://blocksec.com/blog/web3-security-zcash-orchard-soundness-bug-analysis">soundness bug sat in Orchard ~4 years through multiple audits</a>, and proving is heavy — <a href="https://profincognito.me/blog/privacy/zcash-protocol/">~40s, ~2M constraints</a>. May 2026 sharpened it: the Orchard bug enabled <b>undetectable counterfeiting</b> (found by Taylor Hornby); ZEC fell ~38% and recovery took an emergency soft fork (NU6.2) — the <b>second</b> undetectable-counterfeiting bug in Zcash's history (BCTV14, 2018). Charon's per-proof cost is dramatically lower.</p>
+    </div>
+  </div>
+
+  <div class="group">
+    <h3>Private L1s</h3>
+    <div class="proto">
+      <div class="head"><span class="name">Monero</span><span class="tag">ring sigs → FCMP++</span></div>
+      <p>Every tx private by default, no user proofs, ~2min confirms. <a href="https://xgram.io/blog/beyond-ring-signatures">FCMP++ (early 2026)</a> replaced decoy rings with full-chain membership (~100M-output anonymity set). No compliance story whatsoever — unusable by any regulated employer.</p>
+    </div>
+    <div class="proto">
+      <div class="head"><span class="name">Aleo</span><span class="tag">zk L1 · prover market</span></div>
+      <p>Proving is delegated to a decentralized market, not done client-side. Strategically important: <b>Aleo + Toku + Paxos launched "fully private stablecoin payroll" in Jan 2026</b> (per <a href="https://hinkal.io/blog/hidden-cost-of-public-crypto-payroll">Hinkal's 2026 report</a>) — private payroll is already a marketed category on a live chain.</p>
+    </div>
+    <div class="proto">
+      <div class="head"><span class="name">Iron Fish</span><span class="tag">dead</span></div>
+      <p><a href="https://www.theblock.co/news/business/2025-03-07-base-acquires-team-at-pow-blockchain-iron-fish-to-develop-privacy-preserving-primitives-345163">Team acquired by Base (Mar 2025)</a>, foundation in maintenance mode Apr 2026. The lesson: shielded-pool L1s with no distribution don't survive.</p>
+    </div>
+    <div class="proto">
+      <div class="head"><span class="name">Penumbra</span><span class="tag">Cosmos · no setup</span></div>
+      <p>Fully shielded appchain with a batched private DEX — architecturally the closest thing to "Zcash with built-in batch operations". Niche. Its batched anonymous-set design is the cousin of Charon's batch circuit — and Penumbra Labs' own 2023 engineering blog documented <b>&lt;1.3s per 3-action Groth16 tx on an M1</b>, the closest documented figure to Charon's speed claim, but native Rust, never demonstrated in a browser.</p>
+    </div>
+    <div class="proto">
+      <div class="head"><span class="name">Firo</span><span class="tag">Lelantus Spark</span></div>
+      <p>Direct private sends, hidden amounts + recipients, no setup, mobile-friendly proving — and <b>view keys</b>, exactly what Charon lacks. The 2021 paper documents sub-second native transaction generation and ~23ms verification — never shipped as a browser prover. Alive but shrinking toward an infra vendor.</p>
+    </div>
+    <div class="proto">
+      <div class="head"><span class="name">Beam / Grin</span><span class="tag">MimbleWimble</span></div>
+      <p>Amounts hidden by Pedersen commitments, no addresses, ~1s proving. Interactive transaction building (sender + recipient co-operate) makes them unusable for payroll. Marginal in 2026.</p>
+    </div>
+    <div class="proto">
+      <div class="head"><span class="name">Secret Network / Oasis Sapphire</span><span class="tag">TEE school</span></div>
+      <p>Privacy from SGX hardware attestation, not ZK: no proving cost, fast, but the trust model is "don't collude with the chip vendor". Alive; irrelevant to payroll-grade auditability.</p>
+    </div>
+  </div>
+
+  <div class="group">
+    <h3>Private smart-contract platforms</h3>
+    <div class="proto">
+      <div class="head"><span class="name">Aztec</span><span class="tag">Ethereum L2 · alpha</span></div>
+      <p>The most direct architectural rival: private smart contracts proven on the user's device. <a href="https://aztec.network/blog/road-to-mainnet">Alpha V5 proves a private transfer in ~2.5s native / ~6.8s browser on an M2</a> at &lt;$0.05 — the exact metric Charon beats per-circuit. But the 2026 record is grim: a V4 theft-class vulnerability (Mar) forced migration, then <b>V5 shipped with a critical proving-system vulnerability (Jul 27) that Aztec admits it "cannot determine whether anyone exploited"</b> — the fix lands only in V6. Its docs warn developers "do not use real, meaningful secrets"; fees ride the public Fee Juice token with the built-in private-fee FPC "deprecated and do not work on mainnet alpha"; and users sign every tx — no gasless payroll pattern exists there.</p>
+    </div>
+    <div class="proto">
+      <div class="head"><span class="name">Mina</span><span class="tag">recursive zk</span></div>
+      <p>The whole chain is a ~22KB recursive proof; Berkeley on mainnet, <a href="https://minaprotocol.com/blog/minas-mesa-upgrade-what-to-expect">Mesa upgrade next</a>. Proof-system inspiration, not competition — no private-payroll ecosystem.</p>
+    </div>
+  </div>
+
+  <div class="group">
+    <h3>Solana-native — Charon's home turf</h3>
+    <div class="proto">
+      <div class="head"><span class="name">Light Protocol / Helius Privacy</span><span class="tag">ZK Compression</span></div>
+      <p>Light shipped Solana's ZK syscalls (sol_poseidon, alt_bn128) and ZK Compression (mainnet 2024); <a href="https://www.helius.dev/blog/light-protocol-acquisition">Helius acquired Light Jun 10, 2026</a> "to build the canonical privacy layer for Solana." But read what's documented rather than marketed: zkcompression.com sells <b>cost compression</b> — 5,000-lamport compressed accounts vs ~2M for SPL — with no encrypted balances, no private transfers, no stealth addresses anywhere in current docs. The <a href="https://www.helius.dev/privacy">privacy marketing page</a> promises shielded balances "with the selective disclosure that institutions require" — a promise, not shipped code. <b>The best-funded would-be competitor Charon will ever face, on Charon's own chain, currently armed with primitives rather than a product.</b></p>
+    </div>
+    <div class="proto">
+      <div class="head"><span class="name">SPL Confidential Transfers</span><span class="tag">token-2022 · ElGamal</span></div>
+      <p>Amount-only privacy natively on Solana; sender/recipient public. The docs are blunt about limits: transfer amounts cap at <b>48 bits</b> (64-bit balances are undecryptable), pending-credit counters cap incoming volume, and a <b>global auditor key on the mint can decrypt every amount</b>. Two ElGamal soundness bugs in ~1 year — the 2025 proof-forgery forced a network-wide disable; after a $203.5k audit + Code4rena it <a href="https://solanacompass.com/news/confidential-transfers-return-to-solana-mainnet-after-year-long-security-pause">returned Jun 17, 2026</a> — and the Foundation concedes usage is "still extremely low." Against CT, Charon's full 2-in/2-out unlinkability is a real advantage.</p>
+    </div>
+    <div class="proto">
+      <div class="head"><span class="name">Arcium (+ Umbra on Solana)</span><span class="tag">MPC encrypted compute</span></div>
+      <p><a href="https://www.theblock.co/news/ecosystems/2026-02-02-arcium-launches-privacy-preserving-mainnet-alpha-on-solana-as-umbra-debuts-shielded-finance-layer-387564">Mainnet Alpha Feb 2, 2026</a>: a privacy wallet called Umbra (unrelated to Ethereum's) doing shielded transfers, plus a Confidential-SPL standard in the works. The Solana Foundation now maintains an <a href="https://solana.com/privacy">official privacy-tools page</a> — privacy is a sanctioned ecosystem vertical, which validates Charon's story and guarantees competition.</p>
+    </div>
+  </div>
+
+  <div class="group">
+    <h3>Private payroll specifically — now a named category</h3>
+    <div class="proto">
+      <div class="head"><span class="name">Canton Network + Toku</span><span class="tag">institutional</span></div>
+      <p><a href="https://www.canton.network/canton-network-press-releases/canton-network-powers-first-ever-private-payroll-for-institutions">First institutional private stablecoin payroll, Feb 10, 2026</a> — Goldman/DTCC-backed, compliance-first. The enterprise incumbent.</p>
+    </div>
+    <div class="proto">
+      <div class="head"><span class="name">Aleo + Toku + Paxos</span><span class="tag">zk L1</span></div>
+      <p>"First fully private stablecoin payroll" on a ZK chain, end of Jan 2026; Request Finance shipping private payroll on it. The market pain is quantified: &lt;1% business adoption of crypto payroll, 43% employee demand, documented phishing losses off public payout patterns.</p>
+    </div>
+    <div class="proto">
+      <div class="head"><span class="name">Hinkal</span><span class="tag">EVM + Solana · enclave-proven</span></div>
+      <p>Purpose-built payroll flows (recipients need no new wallet), gasless relayer broadcast, KYT at entry, on <b>EVM + Solana + TRON</b>. But the docs-grade read is harsher than the pitch: proof generation runs inside a <b>Hinkal-operated GCP Confidential Space enclave</b> — users ship plaintext witnesses to vendor hardware — and their own attestation repo documents <b>wallet mnemonics RSA-encrypted into a Hinkal-run MongoDB</b> (KMS keys Hinkal holds). No audit list or cryptographic spec is published anywhere in their docs; the "3.5+ years, $500M+, 6 audits" figures trace to their own marketing. Trust = attested hardware + operator honesty. Against that, Charon's client-side proving is the entire architectural argument — but Hinkal is live and Charon is a devnet demo.</p>
+    </div>
+    <div class="proto">
+      <div class="head"><span class="name">Helium</span><span class="tag">checked — dismissed</span></div>
+      <p><b>No privacy features exist on Helium</b>, shipping or credibly announced. The name-noise comes from COTI's privacy L2 and — most likely the actual source of the rumor — <b>Helius</b> Privacy on Solana, above.</p>
+    </div>
+  </div>
+
+  <div class="group">
+    <h3>New / upcoming, 2025–26</h3>
+    <div class="proto">
+      <div class="head"><span class="name">Zama (FHE)</span><span class="tag">confidential tokens</span></div>
+      <p>FHE-encrypted cUSDC/cUSDT, mainnet Dec 30 2025, 6.9M+ txs — but <a href="https://www.fereai.xyz/share/5fca4b45-813b-4266-90a3-ab37321e335d/will-zama-s-confidential-defi-vault-make-privacy-t-2026-jun-17-5fca4b48">Circle froze its cUSDC for 72h in May 2026</a> after a court order. Issuer kill switches are the real compliance frontier.</p>
+    </div>
+    <div class="proto">
+      <div class="head"><span class="name">Midnight · AnomaPay · Kohaku</span><span class="tag">launching</span></div>
+      <p>Midnight (Cardano partner chain) mainnet Mar 30, 2026. <a href="https://anoma.net/blog/anomapay-is-now-live-on-stable">AnomaPay live on Stable</a> — confidential payments in exactly the payroll corridor. And Ethereum's <a href="https://ethereum.org/roadmap/privacy/">Kohaku roadmap</a> makes private payments a default wallet capability within 1–2 years. L2BEAT now runs a <a href="https://l2beat.com/privacy/projects/privacy-pools">privacy dashboard scoring trust assumptions</a> — Charon would score poorly on it today.</p>
+    </div>
+  </div>
+
+  <div class="group">
+    <h3>The 2024–26 wave — product by product, vs Charon</h3>
+    <p class="sectionintro" style="margin-top:8px">Everything shipping right now that the previous surveys missed — each with the two lists that matter: what they have that Charon doesn't, and what Charon has that they don't.</p>
+
+    <div class="proto">
+      <div class="head"><span class="name">Cloak</span><span class="tag">Solana mainnet · Groth16</span><span class="tag" style="color:var(--bad);border-color:var(--bad)">the direct competitor</span></div>
+      <p><b>WHAT:</b> Solana mainnet shielded pool — the same architecture class as Charon: 32-height Merkle, 100-root history, fixed 2-in/2-out Groth16 (42,672 constraints), per-mint pools (SOL/USDC), gasless relay, Jupiter swaps, bridge-in. Live since Apr 2026. Private payroll launched Sep 28, 2026: spreadsheet upload, one wallet approval, USDC/USDT — each salary settles as its own transaction by their own design choice.</p>
+      <p><b>THEY HAVE:</b> mainnet production with press (the official Solana X account amplified the payroll launch); a 6-contributor setup ceremony (self-attested, no published transcript); a completed audit (report unpublished, auditor unnamed) and Squads 3-of-4 timelocked governance; mandatory viewing keys + Range sanctions screening + signed withdraw authorizations; a polished npm SDK on @solana/kit; $250K pre-seed from Colosseum (Cypherpunk winners, Turbin3-supported).</p>
+      <p><b>WE HAVE:</b> a fully open protocol — program, circuits, SDK, relayer all public (Cloak publishes none of its protocol code); no operator gate (their relay holds a standing key derived from every sender's note key — it can decrypt all chain notes forever — and maintains a blocklist with a kill switch); batched multi-recipient proving (bench: 210 employees ≈ 13s of proof math — not yet wired into the live app) vs their per-salary transaction spam; measured prover parity (0.6–1.4s vs their 1.4s claim).</p>
+      <p><b>THEIR OWN DOCS ADMIT:</b> sync not implemented, unspendable <em>prepareSend</em> notes, stranded funds on failed <em>fullWithdraw</em>, a lost change note = unrecoverable, the USDT pool never initialized, no bug bounty — and a total pool of <b>12.49 SOL</b> (~2,000 lifetime txs). Verdict: a closed-source, operator-gated privacy service that got to market a year ahead of an open protocol. Beatable on openness, batched proving, and product depth — but only if Charon ships mainnet and a compliance story of its own.</p>
+    </div>
+
+    <div class="proto">
+      <div class="head"><span class="name">Umbra (Solana, on Arcium)</span><span class="tag">Solana · MPC + ZK</span></div>
+      <p><b>WHAT:</b> Solana privacy wallet — MPC-encrypted token accounts plus a stealth pool (indexed Merkle tree, ZK burn-based spends). Public Mar 27, 2026; first app on Arcium mainnet-alpha; $155M ICO commitments on MetaDAO.</p>
+      <p><b>THEY HAVE:</b> encrypted swaps and private yield (Kamino fork), instant local balance decrypt, <b>compliance viewing grants</b>, full SDK + embeddable widget, active org.</p>
+      <p><b>WE HAVE:</b> no MPC-quorum trust (theirs: compromise a majority of Arcium nodes, on alpha-grade infra); single-tx operations vs their dual-tx MPC round-trips; payroll flows; no third-party encrypted-compute network in the critical path.</p>
+      <p><b>VERDICT:</b> the direct Solana threat to watch — but it hides amounts, not payroll flows, and rides alpha infrastructure. Threat if Arcium reaches mainnet maturity.</p>
+    </div>
+
+    <div class="proto">
+      <div class="head"><span class="name">STRK-20 (StarkWare)</span><span class="tag">Starknet · STARK</span></div>
+      <p><b>WHAT:</b> StarkWare's native privacy pool — one contract, note-based balances for any token, STARKs verified in-protocol since v0.14.2. $871K TVL, 16.8K deposits, $385K 30-day volume.</p>
+      <p><b>THEY HAVE:</b> no trusted setup, private DeFi against Ekubo/AVNU, SNIP-44 viewing keys, paymaster gas, open-source prover — and the regulatory template: <b>deposits require StarkWare onboarding + Elliptic sanctions screening</b> (fail-closed).</p>
+      <p><b>WE HAVE:</b> permissionless deposits (their gate is the feature and the flaw), browser-side proving (they mandate a prover service; sends wait minutes on a 10-block lag), payroll UX.</p>
+      <p><b>VERDICT:</b> the most credible "compliant shielded pool" shipping today — study its viewing-key and screening design; regulators will hold everyone to it.</p>
+    </div>
+
+    <div class="proto">
+      <div class="head"><span class="name">Payy</span><span class="tag">Rollup → Ethereum · Noir</span></div>
+      <p><b>WHAT:</b> private stablecoin payments on its own ZK rollup (live Feb 2026): UTXO notes, client-side Noir proofs, 300ms finality, $0 transfers, iOS/Android wallet + Visa card, $6M seed.</p>
+      <p><b>THEY HAVE:</b> consumer distribution (card, ramps, links, guardian recovery), ecosystem apps, $1.95M TVL.</p>
+      <p><b>WE HAVE:</b> real unlinkability — <b>L2BEAT's audit found Payy's circuits have no nullifiers</b>: spends name input commitments, so the spend graph is public (only amounts/owners hidden), and its per-tx proof flavor is documented as non-ZK. Plus no KYC gate, permissionless relayer, payroll depth.</p>
+      <p><b>VERDICT:</b> biggest mindshare in private stablecoin payments, cryptographically weaker where Charon is strong.</p>
+    </div>
+
+    <div class="proto">
+      <div class="head"><span class="name">Tongo</span><span class="tag">Starknet · ElGamal + ZK</span></div>
+      <p><b>WHAT:</b> confidential transfers on Starknet — one encrypted homomorphic balance per account, local ZK proofs, no prover service. Small, shipped, SDK-published.</p>
+      <p><b>THEY HAVE:</b> viewing keys plus <b>ex-post audit proofs</b> — an auditor verifies a specific transaction without decrypting anything else. The best audit design in the sweep.</p>
+      <p><b>WE HAVE:</b> sender↔recipient unlinkability (their fund/withdraw endpoints are visible), gasless relayer UX, payroll flows.</p>
+      <p><b>VERDICT:</b> complementary primitive; copy the ex-post audit-proof design.</p>
+    </div>
+
+    <div class="proto">
+      <div class="head"><span class="name">Privacy Boost (Sunnyside)</span><span class="tag">EVM · Groth16 + TEE</span></div>
+      <p><b>WHAT:</b> ZK + TEE shielded ledger SDK for EVM apps; proofs generated server-side in enclaves (&lt;500ms), epoch-aggregated. OZ-audited, selected for Soneium; tiny ($24K 30-day volume).</p>
+      <p><b>THEY HAVE:</b> the strongest auditor story found — scoped auditor queries <b>logged immutably on-chain</b> — plus a forced-withdrawal self-custody exit if all servers die, and claimable transfers to not-yet-registered wallets.</p>
+      <p><b>WE HAVE:</b> no enclave trust (they concede the TEE sees user data); client-side proofs with nothing to subpoena; Solana-speed finality.</p>
+      <p><b>VERDICT:</b> the enterprise-EVM twin of Charon's pitch; its on-chain audit log and claimable transfers are the two best ideas in the sweep to steal.</p>
+    </div>
+
+    <div class="proto">
+      <div class="head"><span class="name">zk.money 2.0 (Aztec)</span><span class="tag">Ethereum L2 · relaunched Sep 29, 2026</span></div>
+      <p><b>WHAT:</b> Aztec's consumer private-payments wallet, back after three years — hides amounts, balances, recipients; sub-$0.05 txs; ENS payment tags. It inherits everything in the Aztec entry above (alpha infra, V5 vulnerability, public fees).</p>
+      <p><b>THEY HAVE:</b> public-lab legitimacy and consumer gravity on Ethereum for exactly Charon's use case.</p>
+      <p><b>WE HAVE:</b> Solana cost/speed, payroll UX, no L2 bridge entry, no "do not use real secrets" warning.</p>
+      <p><b>VERDICT:</b> expect "private payroll" clones on it; watch, don't chase.</p>
+    </div>
+
+    <div class="proto">
+      <div class="head"><span class="name">Zodl · encrypt.trade · Fluidkey · Kohaku · Renegade</span><span class="tag">the rest of the wave</span></div>
+      <p><b>Zodl</b> (ex-Zashi, Electric Coin Co): shielded ZEC → BTC/stables via NEAR Intents without unshielding. Cross-asset private spending validated; irrelevant to Charon's stack. <b>encrypt.trade</b> (ex-Encifher): private swaps on Solana routed through NEAR Intents — privacy-by-routing, solvers see flow metadata; obfuscation, not cryptography. <b>Fluidkey</b>: EVM stealth-address receiving, zero proofs — complementary; stealth deposit addresses would be a cheap Charon feature. <b>Kohaku</b> (Ethereum Foundation): the privacy wallet SDK — long-term distribution threat to every standalone privacy app, and a channel Charon could target. <b>Renegade</b> (Arbitrum dark pool): exploited $209K in May 2026; a cautionary tale on upgrade-key hygiene.</p>
+    </div>
+
+    <div class="proto">
+      <div class="head"><span class="name">Long tail &amp; the fiat benchmark</span><span class="tag">checked, dismissed or footnoted</span></div>
+      <p><b>zkBob</b> (compliance-capped ZK pool, alive-but-quiet) · <b>Arcane Finance</b> (B2B "compliance-ready privacy", beta, homepage metrics are placeholders) · <b>Railway</b> (open-source Railgun wallet, quiet since Apr 2026) · <b>Encrypt/encrypt.xyz</b> (threshold-FHE on Solana via Ika — whitepaper only, pre-mainnet vaporware) · <b>Inco</b> (FHE L1, no shipping consumer app) · <b>Bitcoin privacy</b>: Samourai seized by DOJ, Wasabi's coordinator closed, community coordinators + PayJoin carry on. <b>Helium</b>: still no privacy features — the rumor was Helius.</p>
+      <p><b>Check (checkhq.com)</b> — the fiat incumbent worth naming: embedded payroll API (tax filing, 401(k), garnishments, $15B+/yr processed). Not a privacy product — the benchmark. Real payroll legally requires withholding, benefits and compliance rails that <em>every</em> web3 private-payroll protocol, Charon included, currently ignores. That gap is the industry's real addressable market.</p>
+    </div>
+  </div>
+
+  <h2><span class="n">§4</span>The system, opened up</h2>
+  <p class="sectionintro">Before any more comparisons: a teardown of what Charon Pay actually is — the machine, not the pitch. The trust-model failures are §5's subject; this is the engineering itself, judged by its own measurements.</p>
+  <div class="provebar" role="group" aria-label="Charon architecture at a glance">
+    <div><p class="k">circuit</p><p class="v">Groth16 · 2-in/2-out</p></div>
+    <div class="win"><p class="k">browser proof</p><p class="v">0.6–1.4s</p></div>
+    <div><p class="k">server proof work</p><p class="v">none</p></div>
+    <div><p class="k">settlement</p><p class="v">Solana · 100-root window</p></div>
+  </div>
+  <div class="verdict">
+    <div class="vcard holds">
+      <h3>Where the engineering is genuinely sound</h3>
+      <ul>
+        <li><b>Note secrets never leave the browser.</b> <span>The witness is built from the spender's nullifier preimages; the server sees only proof + public inputs. A full operator compromise steals fees, not funds — spending still requires each employee's keys.</span></li>
+        <li><b>One signature funds the entire run.</b> <span>Deposit once, then every payout is relayed with zero per-row signatures. Employees receive notes needing no SOL and no wallet action — the pattern no surveyed competitor ships end-to-end for payroll.</span></li>
+        <li><b>The relayer's cut is bound in-circuit.</b> <span>The fee a relayer can take is checked by the proof, so a malicious operator cannot quietly skim more than the quoted rate.</span></li>
+        <li><b>Measured, not claimed.</b> <span>0.6–1.4s per Groth16 proof, multi-threaded wasm in-browser; 100-row live runs land in ~1.5–5 min (best ≈ 1m20s on a hot chain — the wall is devnet landing + mirror indexing, not proving); the batched circuit (4 employees/proof) benches 210 employees ≈ 13s of proof math — bench only, not a live run.</span></li>
+        <li><b>Crashes adjudicate safely.</b> <span>Post-broadcast the run polls nullifiers on-chain, so retry-after-crash can never double-pay — the failure mode that eats naive payroll bots.</span></li>
+      </ul>
+    </div>
+    <div class="vcard fails">
+      <h3>Where it is exposed — stated plainly</h3>
+      <ul>
+        <li><b>Metadata leaks by design.</b> <span>The deposit's amount and wallet are public, deposit→payout timing correlates, and nullifier timing is visible to the operator. Recipient unlinkability is not activity privacy.</span></li>
+        <li><b>The mirror is a linkability surface.</b> <span>Enrolled recipients, encrypted notes and the whole tree live in one operator-run database; whoever holds it can join enrollments to deposit flows and censor relaying.</span></li>
+        <li><b>Proofs expire inside a 100-root window.</b> <span>If the single sync worker stalls past 100 tree updates, every outstanding proof roots to a dropped root and fails — availability is one Worker outage away from zero.</span></li>
+        <li><b>The prover is a supply chain.</b> <span>The .zkey and wasm arrive from our own CDN on every page load; a compromised deploy could serve a doctored circuit that leaks witnesses. No integrity pinning exists yet.</span></li>
+        <li><b>Throughput is architecture-bounded.</b> <span>One tx per employee ≈ 13–17/min on devnet; the batched circuit that breaks the ceiling is benched but not wired into the app.</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="n">§5</span>The reality check</h2>
+  <p class="sectionintro">Judged as it exists today — devnet, unaudited, single operator — against the field above.</p>
+  <ol class="check">
+    <li><b>It is a devnet demo.</b> Zero production exposure, zero external audits — and the field keeps teaching the same lesson: Zcash shipped two undetectable-counterfeiting bugs (2018, 2026), Aztec a theft-class vuln plus an unsound V5 within four months, SPL Confidential Transfers two verifier bugs including a year-long network-wide disable, Renegade lost $209K, and Payy shipped without nullifiers. "It works in tests" is what every one of them believed too. Charon's circuits have never been reviewed by anyone but their author.</li>
+    <li><b>The trusted setup is worse than the field's.</b> A local, single-party .zkey ceremony means the entire pool's soundness rests on one laptop's honesty. Privacy Pools ran a 500+-participant public ceremony anchored to Perpetual Powers of Tau; Zcash (Halo 2), Monero, Firo, Penumbra, Beam and Grin need no setup at all. By the ratings standard L2BEAT now uses, this is a red-flag row.</li>
+    <li><b>Centralization everywhere.</b> Single-operator relayer plus a single Postgres mirror is precisely the "operator who can see and stop everything" pattern that put Tornado Cash's founders on trial, that Hinkal mitigates with audits and KYT, and that Aztec exists to eliminate. One operator outage, compromise, or subpoena is a single point of failure for every employer.</li>
+    <li><b>No compliance story.</b> Viewing keys, scoped auditor access, selective disclosure — now shipped, not proposed: Cloak (mandatory viewing-key registration + Range screening), Hinkal (KYT + scoped keys), STRK-20 (Elliptic screening), Umbra (viewing grants), Tongo (ex-post audit proofs), Privacy Boost (onchain-logged auditor queries), plus Zcash/Firo/SPL-CT keys and Privacy Pools' ASP. Charon has nothing, which makes it un-shippable to the regulated employers its UX targets — and with 100-root history, even retroactive-transparency tooling has nothing to grip.</li>
+    <li><b>The home-turf window is closing.</b> On Solana, Helius/Light has near-unlimited funding, wrote the very ZK syscalls Charon-style programs depend on, and explicitly promises the institutional selective-disclosure layer Charon lacks. Arcium's Umbra is in mainnet alpha; token-2022 CT is audited and live. "Solana's private payroll protocol" is a claim with a shelf life measured in quarters.</li>
+  </ol>
+  <blockquote class="quoteblock">
+    A strong protocol sketch with a best-in-class prover and UX — unvalidated at production scale and untrustworthy under its current trust model. A demo, not yet a competitor.
+  </blockquote>
+
+  <h2><span class="n">§6</span>The fastest paths out</h2>
+  <p class="sectionintro">In order, before Helius ships.</p>
+  <ol class="paths">
+    <li><span class="step">01</span><span><b>A real multi-party setup ceremony.</b> Anchoring the Groth16 .zkey to a public Powers-of-Tau ceremony turns the single worst trust assumption into a standard one. Cheapest credibility win available.</span></li>
+    <li><span class="step">02</span><span><b>An external circuit audit.</b> One third-party review of transaction2 + the batch circuit. Zcash's 4-year bug is the argument for why "it works in tests" is not evidence.</span></li>
+    <li><span class="step">03</span><span><b>Viewing keys / selective disclosure — with the right design.</b> Read-only audit keys per employer, stealing the best shipped patterns: Tongo's ex-post audit proofs, Privacy Boost's on-chain-logged auditor queries, Cloak's viewing-key UX. The caution: Cloak's compliance rail doubles as an operator kill switch — design it trustless. Without this, no regulated employer can ever run payroll on Charon, whatever the speed.</span></li>
+    <li><span class="step">04</span><span><b>A multi-operator relayer/mirror design.</b> Even two independent operators with signed mirror states breaks the single point of failure and the Tornado-operator pattern.</span></li>
+  </ol>
+
+  <footer>
+    <p>Survey executed 2026-10-04 across public sources, competitors' own documentation, and live on-chain data (links inline): 21 established protocols, 12 shipping 2024–26 products, and the long tail. Charon Pay figures are this project's own measurements, taken as given, not independently verified. Speeds for other protocols are published or community-measured figures; treat "~" values as order-of-magnitude. Cloak's on-chain figures (pool balance, tx counts, fee revenue) were pulled from Solana RPC the same day.</p>
+  </footer>
+</main>
+
+</body>
+</html>

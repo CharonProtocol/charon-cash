@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Private Payroll vs the Landscape</title>
+<meta name="description" content="Comparison document: our private payroll protocol (Charon) vs Cloak and the wider Solana privacy and payroll landscape." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    color-scheme: light;
+    --canvas:#ffffff;
+    --z50:#f9fafb;
+    --z100:#f4f4f5;
+    --z200:#e4e4e7;
+    --z300:#d4d4d8;
+    --z900:#09090b;
+    --body:#3f3f46;
+    --mute:#71717a;
+    --emerald:#10b981;
+    --sky:#0284c7;
+    --amber:#f59e0b;
+    --rose:#f43f5e;
+    --shadow:0 14px 36px -16px rgba(9,9,11,0.14);
+    --f:"Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --m:ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--canvas); color:var(--body);
+    font-family:var(--f); font-size:15px; line-height:1.6;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  ::selection{background:rgba(2,132,199,.18)}
+  a{color:var(--sky); text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  /* ---------- sticky mini toc ---------- */
+  .topbar{
+    position:sticky; top:0; z-index:60;
+    background:rgba(255,255,255,.94);
+    -webkit-backdrop-filter:saturate(1.4) blur(10px);
+    backdrop-filter:saturate(1.4) blur(10px);
+    border-bottom:1px solid var(--z200);
+  }
+  .topbar-in{
+    max-width:1100px; margin:0 auto; padding:10px 24px;
+    display:flex; align-items:center; justify-content:space-between; gap:16px;
+  }
+  .brand{display:flex; align-items:center; gap:9px; font-family:var(--m); font-size:11px;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--z900); font-weight:600; white-space:nowrap}
+  .brand .dot{width:9px; height:9px; border-radius:3px; background:var(--sky); flex:none}
+  .brand span{color:var(--mute); font-weight:500}
+  nav.toc{display:flex; gap:2px; overflow-x:auto; scrollbar-width:none}
+  nav.toc::-webkit-scrollbar{display:none}
+  nav.toc a{
+    font-family:var(--m); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--mute); padding:6px 10px; border-radius:8px; white-space:nowrap;
+  }
+  nav.toc a:hover{color:var(--z900); background:var(--z100); text-decoration:none}
+  nav.toc a b{color:var(--sky); font-weight:600; margin-right:4px}
+
+  .wrap{max-width:1100px; margin:0 auto; padding:0 24px 72px}
+
+  /* ---------- hero ---------- */
+  .hero{padding:56px 0 8px}
+  .kicker{display:flex; align-items:center; gap:10px; font-family:var(--m); font-size:11px;
+    letter-spacing:.22em; text-transform:uppercase; color:var(--mute)}
+  .kicker::before{content:""; width:22px; height:1px; background:var(--z300)}
+  h1{font-size:clamp(30px,4.6vw,44px); line-height:1.08; letter-spacing:-.03em;
+    font-weight:800; color:var(--z900); margin:14px 0 14px; text-wrap:balance}
+  h1 em{font-style:normal; color:var(--sky)}
+  .lede{max-width:76ch; color:var(--body); font-size:15.5px}
+  .lede b{color:var(--z900); font-weight:600}
+  .hero-meta{margin-top:16px; font-family:var(--m); font-size:11px; letter-spacing:.06em; color:var(--mute)}
+  .legend{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px}
+  .statband{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:26px}
+  .stat{border:1px solid var(--z200); border-radius:14px; background:var(--z50);
+    padding:14px 16px 12px; box-shadow:var(--shadow)}
+  .stat .n{font-family:var(--m); font-size:24px; font-weight:600; color:var(--z900); letter-spacing:-.02em}
+  .stat .n small{font-size:13px; color:var(--mute); font-weight:500}
+  .stat .l{font-size:12.5px; color:var(--mute); margin-top:3px}
+  .stat.gap .n{color:var(--rose)}
+
+  /* ---------- sections + cards ---------- */
+  section{margin-top:58px; scroll-margin-top:78px}
+  .sec-head{display:flex; align-items:baseline; gap:12px}
+  .sec-num{font-family:var(--m); font-size:11px; letter-spacing:.1em; color:var(--sky);
+    border:1px solid rgba(2,132,199,.35); background:rgba(2,132,199,.06);
+    border-radius:7px; padding:3px 8px; flex:none; transform:translateY(-2px)}
+  h2{font-size:22px; font-weight:700; letter-spacing:-.02em; color:var(--z900)}
+  .sec-sub{color:var(--mute); font-size:14px; margin:8px 0 18px; max-width:78ch}
+  .card{background:#fff; border:1px solid var(--z200); border-radius:16px;
+    box-shadow:var(--shadow); overflow:hidden}
+  .card-pad{padding:22px 24px}
+  .card-head{padding:14px 24px; border-bottom:1px solid var(--z200); background:var(--z50);
+    display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap}
+  .card-head .t{font-family:var(--m); font-size:10.5px; letter-spacing:.18em;
+    text-transform:uppercase; color:var(--mute)}
+
+  /* ---------- pills / badges ---------- */
+  .pill{display:inline-block; font-family:var(--m); font-size:9.5px; font-weight:600;
+    letter-spacing:.1em; text-transform:uppercase; line-height:1;
+    padding:5px 9px; border-radius:999px; border:1px solid; white-space:nowrap;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  .p-live{color:#047857; border-color:rgba(16,185,129,.5); background:rgba(16,185,129,.08)}
+  .p-infra{color:#075985; border-color:rgba(2,132,199,.4); background:rgba(2,132,199,.07)}
+  .p-claim{color:#92400e; border-color:rgba(245,158,11,.5); background:rgba(245,158,11,.09)}
+  .p-gap{color:#9f1239; border-color:rgba(244,63,94,.45); background:rgba(244,63,94,.07)}
+  .p-zinc{color:var(--body); border-color:var(--z300); background:var(--z50)}
+  .tag{display:inline-block; font-family:var(--m); font-size:10px; letter-spacing:.04em;
+    padding:2px 7px; border-radius:6px; border:1px solid; vertical-align:1px; white-space:nowrap;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  .t-claim{color:#92400e; border-color:rgba(245,158,11,.4); background:rgba(245,158,11,.08)}
+  .t-gap{color:#9f1239; border-color:rgba(244,63,94,.4); background:rgba(244,63,94,.07)}
+  .t-meas{color:#047857; border-color:rgba(16,185,129,.45); background:rgba(16,185,129,.08)}
+  .t-cite{color:var(--mute); border-color:var(--z300); background:var(--z50)}
+
+  /* ---------- tables ---------- */
+  .scroll{overflow-x:auto}
+  table{width:100%; border-collapse:separate; border-spacing:0; font-size:13.5px}
+  th{font-family:var(--m); font-size:10px; font-weight:600; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--mute); text-align:left;
+    background:var(--z50); padding:11px 16px; border-bottom:1px solid var(--z200);
+    white-space:nowrap}
+  td{padding:14px 16px; border-bottom:1px solid var(--z100); vertical-align:top;
+    color:var(--body); line-height:1.55}
+  tr:last-child td{border-bottom:none}
+  td.dim{font-weight:600; color:var(--z900); font-size:13.5px; white-space:nowrap}
+  td .name{font-weight:600; color:var(--z900); display:block; margin-bottom:3px}
+  td .url{font-family:var(--m); font-size:11px; color:var(--mute)}
+  td b{color:var(--z900); font-weight:600}
+  td code, p code, li code{
+    font-family:var(--m); font-size:12px; background:var(--z100);
+    border:1px solid var(--z200); border-radius:5px; padding:1px 5px; color:var(--z900)}
+  .t-land th:nth-child(1){width:17%}
+  .t-land th:nth-child(2){width:20%}
+  .t-land th:nth-child(3){width:41%}
+  .t-land th:nth-child(4){width:22%}
+  .t-land{min-width:760px}
+  .t-arch{min-width:680px}
+  .t-arch th:nth-child(1){width:15%}
+  .t-arch th:nth-child(2){width:42.5%}
+  .t-arch th:nth-child(3){width:42.5%}
+  th.h-ours{color:var(--sky)}
+  th.h-theirs{color:var(--mute)}
+  td.col-ours{background:rgba(2,132,199,.035);
+    -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  tr.ours-row td{background:rgba(16,185,129,.05);
+    -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  tr.ours-row td.dim{color:#047857}
+  .mini{list-style:none}
+  .mini li{padding-left:14px; position:relative; margin-bottom:6px}
+  .mini li:last-child{margin-bottom:0}
+  .mini li::before{content:""; position:absolute; left:0; top:8px; width:5px; height:5px;
+    border-radius:2px; background:var(--z300)}
+  .mini.sky li::before{background:rgba(2,132,199,.55)}
+
+  /* ---------- tldr ---------- */
+  .tldr{border-left:3px solid var(--sky)}
+  .tldr-grid{display:grid; grid-template-columns:1fr 1fr 1fr; gap:0}
+  .tldr-cell{padding:20px 22px; border-right:1px solid var(--z100)}
+  .tldr-cell:last-child{border-right:none}
+  .tldr-cell .h{font-family:var(--m); font-size:10px; letter-spacing:.16em;
+    text-transform:uppercase; margin-bottom:9px; display:flex; align-items:center; gap:7px}
+  .tldr-cell .h::before{content:""; width:7px; height:7px; border-radius:2px}
+  .tldr-cell.same .h{color:var(--sky)} .tldr-cell.same .h::before{background:var(--sky)}
+  .tldr-cell.ahead .h{color:#047857} .tldr-cell.ahead .h::before{background:var(--emerald)}
+  .tldr-cell.gaps .h{color:#b45309} .tldr-cell.gaps .h::before{background:var(--amber)}
+  .tldr-cell p{font-size:13.5px}
+
+  /* ---------- duo lists ---------- */
+  .duo{display:grid; grid-template-columns:1fr 1fr; gap:18px}
+  .list-card ul{list-style:none; padding:10px 8px 12px}
+  .list-card li{display:flex; gap:11px; padding:10px 16px; font-size:13.5px;
+    border-bottom:1px solid var(--z100)}
+  .list-card li:last-child{border-bottom:none}
+  .list-card li::before{content:""; flex:none; width:7px; height:7px; border-radius:2px;
+    margin-top:7px}
+  .list-card.win li::before{background:var(--emerald)}
+  .list-card.lose li::before{background:var(--amber)}
+  .list-card.win .card-head .t{color:#047857}
+  .list-card.lose .card-head .t{color:#b45309}
+  .list-card li b{color:var(--z900); font-weight:600}
+
+  /* ---------- steal grid ---------- */
+  .steal{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+  .steal-card{border:1px solid var(--z200); border-radius:14px; background:#fff;
+    box-shadow:var(--shadow); padding:18px 20px 16px}
+  .steal-card .no{font-family:var(--m); font-size:10px; letter-spacing:.16em; color:var(--sky)}
+  .steal-card h3{font-size:15px; font-weight:600; color:var(--z900); margin:6px 0 5px; letter-spacing:-.01em}
+  .steal-card p{font-size:13px; color:var(--mute)}
+  .steal-card{border-top:2px solid rgba(2,132,199,.35)}
+
+  /* ---------- context + sources ---------- */
+  .ctx-grid{display:grid; grid-template-columns:1.15fr .85fr; gap:18px}
+  .ctx h3{font-size:15px; font-weight:600; color:var(--z900); margin-bottom:6px}
+  .ctx h3 .url{font-family:var(--m); font-size:11px; color:var(--mute); font-weight:400; margin-left:6px}
+  .ctx p{font-size:13.5px}
+  .src-list{list-style:none}
+  .src-list li{display:flex; align-items:baseline; justify-content:space-between; gap:14px;
+    padding:12px 24px; border-bottom:1px solid var(--z100); font-size:13.5px; flex-wrap:wrap}
+  .src-list li:last-child{border-bottom:none}
+  .src-list .u{font-family:var(--m); font-size:12px; color:var(--z900)}
+  .src-list .u small{color:var(--mute)}
+  .src-list .d{font-family:var(--m); font-size:10.5px; letter-spacing:.06em; color:var(--mute); white-space:nowrap}
+
+  footer{margin-top:56px; padding-top:18px; border-top:1px solid var(--z200);
+    font-family:var(--m); font-size:10.5px; letter-spacing:.06em; color:var(--mute);
+    display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap}
+
+  /* ---------- responsive ---------- */
+  @media (max-width:860px){
+    .tldr-grid{grid-template-columns:1fr}
+    .tldr-cell{border-right:none; border-bottom:1px solid var(--z100)}
+    .tldr-cell:last-child{border-bottom:none}
+    .duo,.steal,.ctx-grid{grid-template-columns:1fr}
+    .statband{grid-template-columns:1fr}
+    .topbar-in{padding:10px 16px}
+    .wrap{padding:0 16px 56px}
+    .hero{padding-top:40px}
+  }
+
+  /* ---------- print ---------- */
+  @page{size:A4; margin:13mm}
+  @media print{
+    body{font-size:10.5px; -webkit-print-color-adjust:exact; print-color-adjust:exact}
+    .topbar{position:static; background:#fff; -webkit-backdrop-filter:none; backdrop-filter:none}
+    nav.toc{overflow:visible; flex-wrap:wrap}
+    .card,.stat,.steal-card{box-shadow:none; break-inside:avoid}
+    tr{break-inside:avoid}
+    .list-card{break-inside:avoid}
+    section{margin-top:34px}
+    .hero{padding-top:12px}
+    a{color:inherit}
+    #s5,#s7{break-before:page}
+    footer{margin-top:28px}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-in">
+    <div class="brand"><span class="dot"></span>Charon<span>/ payroll vs landscape</span></div>
+    <nav class="toc">
+      <a href="#s1"><b>01</b>TL;DR</a>
+      <a href="#s2"><b>02</b>Landscape</a>
+      <a href="#s3"><b>03</b>Architecture</a>
+      <a href="#s4"><b>04</b>Honest score</a>
+      <a href="#s5"><b>05</b>What to steal</a>
+      <a href="#s6"><b>06</b>Context</a>
+      <a href="#s7"><b>07</b>Sources</a>
+    </nav>
+  </div>
+</div>
+
+<main class="wrap">
+
+  <!-- ================= hero ================= -->
+  <header class="hero">
+    <div class="kicker">Competitive review - private payroll rails on Solana</div>
+    <h1>Our private payroll protocol<br />vs the <em>landscape</em></h1>
+    <p class="lede">
+      Both we and Cloak are Groth16 shielded pools on Solana hiding the links between
+      <b>sender</b>, <b>recipient</b> and <b>amount</b>. Beyond Cloak sit compression
+      infrastructure, native confidential tokens, prior-art payment pools and the incumbent
+      fiat payroll APIs. This document compares the full field, then goes deep on
+      Cloak vs ours across architecture, and closes with an honest score and a roadmap.
+    </p>
+    <div class="hero-meta">Prepared 2026-09-29 - all sources fetched 2026-09-29</div>
+    <div class="legend">
+      <span class="pill t-meas">measured, logged runs (ours)</span>
+      <span class="pill p-claim">claimed on their site (Cloak / CheckHQ)</span>
+      <span class="pill p-infra">live infrastructure / native</span>
+      <span class="pill p-gap">gap or missing</span>
+    </div>
+    <div class="statband">
+      <div class="stat">
+        <div class="n">67.6<small>s</small></div>
+        <div class="l">210 salaries, standard circuit, end to end <span class="tag t-meas">measured</span></div>
+      </div>
+      <div class="stat">
+        <div class="n">11.32<small>s</small></div>
+        <div class="l">full-pipeline batched bench, same 210 <span class="tag t-meas">measured</span></div>
+      </div>
+      <div class="stat gap">
+        <div class="n">0</div>
+        <div class="l">mainnet deployments, audits or public volume <span class="tag t-gap">our gap</span></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= 1 tldr ================= -->
+  <section id="s1" aria-labelledby="h-s1">
+    <div class="sec-head"><span class="sec-num">01</span><h2 id="h-s1">TL;DR</h2></div>
+    <p class="sec-sub">The one-paragraph read before the tables.</p>
+    <div class="card card-pad tldr">
+      <p style="margin-bottom:16px">
+        Both we and Cloak are <b>Groth16 shielded pools on Solana</b> hiding sender/recipient/amount
+        links. <b>Cloak</b> is a general-purpose private finance layer, live on mainnet beta with
+        viewing-key compliance. <b>We</b> are a payroll-specialized system with measured, logged
+        end-to-end benchmarks (<b>210 salaries in 67.6s</b> standard circuit; <b>11.32s</b> batched
+        bench) that Cloak does not publish. Our main gaps: <b>no viewing keys or audit tooling</b>,
+        <b>SOL-only today</b>, and <b>no mainnet audit or volume track record</b>.
+      </p>
+      <div class="tldr-grid" style="border-top:1px solid var(--z200)">
+        <div class="tldr-cell same">
+          <div class="h">Same family</div>
+          <p>Groth16 shielded pools on Solana, gasless via relayer, hiding sender/recipient/amount links.</p>
+        </div>
+        <div class="tldr-cell ahead">
+          <div class="h">Where we lead</div>
+          <p>Payroll focus plus measured, logged end-to-end benchmarks: 210 salaries in 67.6s standard, 11.32s batched. Cloak publishes no payroll numbers.</p>
+        </div>
+        <div class="tldr-cell gaps">
+          <div class="h">Where we trail</div>
+          <p>No viewing keys or audit tooling, SOL-only today, no mainnet audit or volume track record.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 2 landscape ================= -->
+  <section id="s2" aria-labelledby="h-s2">
+    <div class="sec-head"><span class="sec-num">02</span><h2 id="h-s2">The landscape</h2></div>
+    <p class="sec-sub">
+      Six rows, from closest competitor to incumbent UX bar. Provenance is marked inline:
+      competitor marketing numbers are <span class="tag t-claim">claimed on their site</span>,
+      our numbers are <span class="tag t-meas">measured</span>.
+    </p>
+    <div class="card scroll">
+      <table class="t-land">
+        <thead>
+          <tr>
+            <th>Protocol / product</th>
+            <th>Category</th>
+            <th>Model and mechanics</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <span class="name">Cloak</span>
+              <span class="url">cloak.ag</span>
+            </td>
+            <td>General private finance: transfers, swaps, treasury, payroll.</td>
+            <td>
+              UTXO shielded pool, Groth16 in browser, gasless relayer, viewing keys,
+              sanctions screening. 0.3% exit fee plus small fixed fee
+              <span class="tag t-claim">claimed</span>.
+            </td>
+            <td>
+              <span class="pill p-live">LIVE mainnet beta</span><br /><br />
+              Program independently audited (report in prep). Claims $500K+ shielded volume
+              and 1500+ txs <span class="tag t-claim">claimed on their site</span>.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <span class="name">Light Protocol / ZK Compression</span>
+              <span class="url">acquired by Helius, June 2026</span>
+            </td>
+            <td>ZK state compression infrastructure.</td>
+            <td>
+              99% cheaper token accounts and PDAs. Privacy-adjacent infrastructure,
+              <b>not a payment pool</b>.
+            </td>
+            <td><span class="pill p-infra">Live infra</span></td>
+          </tr>
+          <tr>
+            <td>
+              <span class="name">Solana Confidential Token Extensions</span>
+              <span class="url">solana.com/privacy</span>
+            </td>
+            <td>Native token-level privacy.</td>
+            <td>
+              Native SPL token extension encrypting transfer amounts and balances with ZK (AoK).
+              Token-level privacy, <b>no shielded pool</b>, no unlinkability between
+              sender and recipient.
+            </td>
+            <td><span class="pill p-infra">Native protocol feature</span></td>
+          </tr>
+          <tr>
+            <td>
+              <span class="name">Elusiv-style private payment pools</span>
+              <span class="url">prior art</span>
+            </td>
+            <td>Private payment pools.</td>
+            <td>
+              Per Cloak's docs, "other Solana privacy protocols charge a flat 1% on every
+              withdrawal" <span class="tag t-cite">cited via Cloak</span>.
+            </td>
+            <td><span class="pill p-zinc">Elusiv wound down</span><br /><br />Cited as prior art.</td>
+          </tr>
+          <tr>
+            <td>
+              <span class="name">CheckHQ</span>
+              <span class="url">checkhq.com</span>
+            </td>
+            <td>Incumbent fiat embedded payroll API: tax filing, benefits, 401k, workers comp.</td>
+            <td>
+              Not crypto, not private - but the professional payroll <b>UX bar</b>.
+              Claims 1M+ employees paid, 50,000+ businesses, $15B+ processed annually
+              <span class="tag t-claim">claimed on their site</span>.
+            </td>
+            <td><span class="pill p-zinc">Incumbent, off-chain</span><br /><br />The bar for employer-console UX.</td>
+          </tr>
+          <tr class="ours-row">
+            <td>
+              <span class="name">OURS - privacy-cash payroll ("Charon")</span>
+              <span class="url">this document</span>
+            </td>
+            <td>Payroll-specialized shielded pool on Solana.</td>
+            <td>
+              Merkle-tree commitment pool (not UTXO), Groth16, gasless employee claims,
+              employer console.
+            </td>
+            <td>
+              <span class="pill p-gap">Not on mainnet</span><br /><br />
+              Working end-to-end on local validator / surfpool with logged benchmarks
+              <span class="tag t-meas">measured, logged runs</span>.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================= 3 architecture ================= -->
+  <section id="s3" aria-labelledby="h-s3">
+    <div class="sec-head"><span class="sec-num">03</span><h2 id="h-s3">Architecture deep dive: Cloak vs ours</h2></div>
+    <p class="sec-sub">
+      Same proof system, different pool model, different trust and sync story.
+      Cloak figures are <span class="tag t-claim">claimed on their site</span>;
+      ours are <span class="tag t-meas">measured, logged runs</span>.
+    </p>
+    <div class="card scroll">
+      <table class="t-arch">
+        <thead>
+          <tr>
+            <th>Dimension</th>
+            <th class="h-theirs">Cloak</th>
+            <th class="h-ours">Ours (Charon)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="dim">Pool model</td>
+            <td>UTXO shielded pool: notes you hold, the backup file is the money.</td>
+            <td class="col-ours">Merkle-tree commitment pool with spend nullifiers; a note is a
+              169-byte encrypted v2 note.</td>
+          </tr>
+          <tr>
+            <td class="dim">Proof system</td>
+            <td>
+              Groth16, generated client-side in browser. Their site claims "under 3 seconds"
+              proof and a 4.4s total pipeline breakdown (witness 840ms, Groth16 prover 1.4s,
+              relay submission 320ms, chain confirmation 1.8s); on-chain verify &lt; 50ms
+              <span class="tag t-claim">claimed on their site</span>.
+            </td>
+            <td class="col-ours">
+              Groth16 (bn254). Two measured paths: browser snarkjs ~4s/proof, and relayer-side
+              Rust arkworks prover at 0.28s/proof in-process
+              <span class="tag t-meas">measured</span>
+              (bench at <code>payroll/rust-prover-bench</code>).
+            </td>
+          </tr>
+          <tr>
+            <td class="dim">Sync / scanning</td>
+            <td>User scans the chain with viewing key <code>nk</code>; recoverable deposit UTXO
+              rebuilds notes from chain.</td>
+            <td class="col-ours">Relayer keeps a D1 (Cloudflare SQL) mirror of tree plus note index
+              with lazy sync; employees scan via the relayer API so a phone needs no full scan.</td>
+          </tr>
+          <tr>
+            <td class="dim">Gas model</td>
+            <td>Relayer submits; wallet pays no gas and never appears as sender; shield is free.</td>
+            <td class="col-ours">Same shape: relayer broadcasts; employee claims are fully gasless
+              (employees need zero SOL); an employer run needs one signature
+              (zero once the vault is funded).</td>
+          </tr>
+          <tr>
+            <td class="dim">Fees</td>
+            <td>0.3% on exit plus a small fixed fee (0.005 SOL or 0.45 USDC/USDT)
+              <span class="tag t-claim">claimed</span>.</td>
+            <td class="col-ours">Relayer fee in basis points with a configurable minimum,
+              enforced on-chain (<code>ext &gt; fee</code> check).</td>
+          </tr>
+          <tr>
+            <td class="dim">Batch payroll</td>
+            <td>"Payroll (batch private payouts in USDC or USDT) ... build on the same rails" -
+              <b>no public benchmark</b>.</td>
+            <td class="col-ours">
+              Purpose-built batch circuit: 4 salaries per proof (batch5, discriminator 8);
+              SPL-memo pad packs 8 salaries per tx. Measured 210 employees in 12.7s (bench) and
+              11.32s full-pipeline bench; <code>append_many</code> instruction at 195.5k CU per
+              transact <span class="tag t-meas">measured</span>.
+            </td>
+          </tr>
+          <tr>
+            <td class="dim">Compliance</td>
+            <td>Viewing keys (disclose own history only, cannot move funds) plus sanctions
+              screening before broadcast.</td>
+            <td class="col-ours">
+              <span class="tag t-gap">not shipped</span> Deposits and exits are public by design;
+              employer keeps per-run receipts; recipient-scoped viewing keys on roadmap.
+            </td>
+          </tr>
+          <tr>
+            <td class="dim">Tokens</td>
+            <td>SOL, USDC, USDT plus Jupiter swaps plus EVM bridge-in.</td>
+            <td class="col-ours">SOL today; the v2 note format is token-agnostic, SPL stables are next.</td>
+          </tr>
+          <tr>
+            <td class="dim">Ecosystem proof</td>
+            <td>Mainnet beta, audited program, volume marks
+              <span class="tag t-claim">claimed</span>.</td>
+            <td class="col-ours">Local-validator benchmarks, full E2E tests, open program tests;
+              <b>no mainnet deployment yet</b>.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================= 4 honest score ================= -->
+  <section id="s4" aria-labelledby="h-s4">
+    <div class="sec-head"><span class="sec-num">04</span><h2 id="h-s4">Two honest lists</h2></div>
+    <p class="sec-sub">No spin: what we have that they do not, and what they have that we do not.</p>
+    <div class="duo">
+      <div class="card list-card win">
+        <div class="card-head"><span class="t">Where we are ahead</span><span class="pill p-live">measured</span></div>
+        <ul>
+          <li><span><b>Measured and logged end-to-end payroll runs</b> - their payroll has no public numbers.</span></li>
+          <li><span><b>Batch payout circuit + memo packing</b> - 8 salaries per tx.</span></li>
+          <li><span><b>Employer console UX</b> - CSV upload, live run progress, receipts, one-click resume of failed rows.</span></li>
+          <li><span><b>Gasless employee claims</b> with zero-SOL wallets.</span></li>
+          <li><span><b>Recipients registry</b> - notes encrypted to published recipient keys.</span></li>
+          <li><span><b>Serverless relayer</b> on Cloudflare Workers + D1.</span></li>
+        </ul>
+      </div>
+      <div class="card list-card lose">
+        <div class="card-head"><span class="t">Where they are ahead</span><span class="pill p-gap">our gaps</span></div>
+        <ul>
+          <li><span><b>Live on mainnet</b> with an independent audit.</span></li>
+          <li><span><b>Viewing keys + sanctions screening</b>.</span></li>
+          <li><span><b>Stablecoin-first (USDC/USDT)</b> + swaps + cross-chain bridge-in.</span></li>
+          <li><span><b>Payment links</b> and .sol domain support.</span></li>
+          <li><span><b>Public volume / track record</b>.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 5 what to steal ================= -->
+  <section id="s5" aria-labelledby="h-s5">
+    <div class="sec-head"><span class="sec-num">05</span><h2 id="h-s5">What to steal</h2></div>
+    <p class="sec-sub">Roadmap ideas taken straight from the columns where they are ahead.</p>
+    <div class="steal">
+      <div class="steal-card">
+        <div class="no">01</div>
+        <h3>Per-run audit export</h3>
+        <p>A viewing-key-style report an employer can hand an accountant.</p>
+      </div>
+      <div class="steal-card">
+        <div class="no">02</div>
+        <h3>Sanctions / risk screening hook</h3>
+        <p>In the relayer, before broadcast.</p>
+      </div>
+      <div class="steal-card">
+        <div class="no">03</div>
+        <h3>USDC pool</h3>
+        <p>On the existing v2 note format.</p>
+      </div>
+      <div class="steal-card">
+        <div class="no">04</div>
+        <h3>Single-use payment links</h3>
+        <p>For contractors.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 6 context ================= -->
+  <section id="s6" aria-labelledby="h-s6">
+    <div class="sec-head"><span class="sec-num">06</span><h2 id="h-s6">Payroll-rail context</h2></div>
+    <p class="sec-sub">Two reference points outside the crypto-privacy column.</p>
+    <div class="ctx-grid">
+      <div class="card card-pad ctx">
+        <h3>CheckHQ<span class="url">checkhq.com</span></h3>
+        <p>
+          Shows what "professional payroll" means to buyers: embedded API, tax filing,
+          benefits, real-time payments - the <b>UX bar for our employer console</b>.
+          Volume figures on their site are marketing claims, the pattern is what matters.
+        </p>
+      </div>
+      <div class="card card-pad ctx">
+        <h3>Supermission<span class="url">supermission.fun</span></h3>
+        <p>
+          An AI DeFi terminal, relevant only as a <b>UI pattern reference</b>:
+          clear how-it-works steps, stat bands, testimonials.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 7 sources ================= -->
+  <section id="s7" aria-labelledby="h-s7">
+    <div class="sec-head"><span class="sec-num">07</span><h2 id="h-s7">Sources</h2></div>
+    <p class="sec-sub">
+      All sources fetched <b>2026-09-29</b>. Cloak and CheckHQ numbers are marked
+      <span class="tag t-claim">claimed on their site</span>; our numbers are marked
+      <span class="tag t-meas">measured, logged runs</span>.
+    </p>
+    <div class="card">
+      <ul class="src-list">
+        <li>
+          <span class="u">cloak.ag <small>- landing</small>; cloak.ag/company; docs.cloak.ag/guide/what-is-cloak</span>
+          <span class="d">fetched 2026-09-29 - fees, pipeline timings, volume: claimed on their site</span>
+        </li>
+        <li>
+          <span class="u">checkhq.com</span>
+          <span class="d">fetched 2026-09-29 - volume figures: claimed on their site</span>
+        </li>
+        <li>
+          <span class="u">supermission.fun</span>
+          <span class="d">fetched 2026-09-29 - UI pattern reference only</span>
+        </li>
+        <li>
+          <span class="u">helius.dev/blog/light-protocol-acquisition</span>
+          <span class="d">fetched 2026-09-29</span>
+        </li>
+        <li>
+          <span class="u">solana.com/privacy</span>
+          <span class="d">fetched 2026-09-29 - confidential token extensions</span>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    <span>Private payroll vs the landscape - prepared 2026-09-29</span>
+    <span>competitor figures: claimed on their site - our figures: measured, logged runs</span>
+  </footer>
+
+</main>
+
+</body>
+</html>
