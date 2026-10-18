@@ -190,8 +190,6 @@ async function transact({ signerKp, enc, extAmount, fee, inputs, outputs, inputP
       { pubkey: treeAccount, isSigner: false, isWritable: true },
       { pubkey: a.nullifier0, isSigner: false, isWritable: true },
       { pubkey: a.nullifier1, isSigner: false, isWritable: true },
-      { pubkey: a.nullifier2, isSigner: false, isWritable: false },
-      { pubkey: a.nullifier3, isSigner: false, isWritable: false },
       { pubkey: deriveAccounts(PROGRAM, new Uint8Array(32), new Uint8Array(32)).treeTokenAccount, isSigner: false, isWritable: true },
       { pubkey: a.globalConfig, isSigner: false, isWritable: false },
       { pubkey: recipient, isSigner: false, isWritable: true },
@@ -204,19 +202,16 @@ async function transact({ signerKp, enc, extAmount, fee, inputs, outputs, inputP
       { pubkey: treeAccount, isSigner: false, isWritable: true },            // 0 tree_account
       { pubkey: a.nullifier0, isSigner: false, isWritable: true },
       { pubkey: a.nullifier1, isSigner: false, isWritable: true },
-      { pubkey: a.nullifier2, isSigner: false, isWritable: false },
-      { pubkey: a.nullifier3, isSigner: false, isWritable: false },
-      { pubkey: a.globalConfig, isSigner: false, isWritable: false },         // 5 global_config
-      { pubkey: signerKp.publicKey, isSigner: true, isWritable: true },       // 6 signer
-      { pubkey: mint, isSigner: false, isWritable: false },                   // 7 mint
-      { pubkey: signerTokenAccount, isSigner: false, isWritable: true },      // 8 signer_token_account
-      { pubkey: recipient, isSigner: false, isWritable: false },              // 9 _recipient (unused)
-      { pubkey: recipientTokenAccount, isSigner: false, isWritable: true },   // 10 recipient_token_account
-      { pubkey: getAssociatedTokenAddressSync(mint, a.globalConfig, true), isSigner: false, isWritable: true }, // 11 tree_ata
-      { pubkey: feeRecipientAta, isSigner: false, isWritable: true },         // 12 fee_recipient_ata
-      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },       // 13 token_program
-      { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false }, // 14 ata_program
-      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },// 15 system_program
+      { pubkey: a.globalConfig, isSigner: false, isWritable: false },         // 3 global_config
+      { pubkey: signerKp.publicKey, isSigner: true, isWritable: true },       // 4 signer
+      { pubkey: mint, isSigner: false, isWritable: false },                   // 5 mint
+      { pubkey: signerTokenAccount, isSigner: false, isWritable: true },      // 6 signer_token_account
+      { pubkey: recipientTokenAccount, isSigner: false, isWritable: true },   // 7 recipient_token_account
+      { pubkey: getAssociatedTokenAddressSync(mint, a.globalConfig, true), isSigner: false, isWritable: true }, // 8 tree_ata
+      { pubkey: feeRecipientAta, isSigner: false, isWritable: true },         // 9 fee_recipient_ata
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },       // 10 token_program
+      { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false }, // 11 ata_program
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },// 12 system_program
     ]
   }
   const ix = new TransactionInstruction({ programId: PROGRAM, keys, data: ixData })

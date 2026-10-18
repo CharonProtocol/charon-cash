@@ -108,9 +108,20 @@ ORIG_ID=$(id_of < "$LIB")
 # an older run.sh left this machine's key in lib.rs: put the committed one back
 [ "$ORIG_ID" = "$PROG" ] && ORIG_ID=$(git show "HEAD:$LIB" 2>/dev/null | id_of)
 [ -n "$ORIG_ID" ] || ORIG_ID=$PROG
-restore_lib() { set_id "$ORIG_ID"; }
+# The program pins its singleton PDAs (SOL tree, tree vault, global config)
+# at compile time from hard-coded canonical bumps, which only hold for one
+# program id: set them for this key too, else `initialize` is rejected.
+CONSTS=programs/privacy-cash/src/constants.rs
+CONSTS_ORIG=$(mktemp)
+cp "$CONSTS" "$CONSTS_ORIG"
+bump_for() { solana find-program-derived-address "$1" "string:$2" --output json | perl -ne 'print $1 if /"bumpSeed":\s*(\d+)/'; }
+set_bump() { perl -pi -e 's/^pub const '"$1"': u8 = \d+;/pub const '"$1"': u8 = '"$2"';/' "$CONSTS"; }
+restore_lib() { set_id "$ORIG_ID"; cp "$CONSTS_ORIG" "$CONSTS"; rm -f "$CONSTS_ORIG"; }
 trap restore_lib EXIT
 set_id "$PROG"
+set_bump TREE_ACCOUNT_BUMP "$(bump_for "$PROG" merkle_tree)"
+set_bump TREE_TOKEN_ACCOUNT_BUMP "$(bump_for "$PROG" tree_token)"
+set_bump GLOBAL_CONFIG_BUMP "$(bump_for "$PROG" global_config)"
 
 echo "▶ 3/7  Program binary (build when the source changed)…"
 # Fingerprint of the program source (declare_id included): a binary left over
@@ -123,11 +134,15 @@ SBF_ARCH=v0
 # CLIs without --arch build v0 anyway
 ARCH_FLAG=(); cargo build-sbf --help 2>/dev/null | grep -q -- '--arch' && ARCH_FLAG=(--arch "$SBF_ARCH")
 SRC_HASH=$( (echo "$SBF_ARCH"; cat programs/privacy-cash/Cargo.toml; find programs/privacy-cash/src -name '*.rs' | sort | xargs cat) | $SHA256 | cut -d' ' -f1)
-if [ ! -f target/deploy/privacy_cash.so ] || [ "$(cat target/deploy/.privacy_cash.src 2>/dev/null)" != "$SRC_HASH" ]; then
+# The binary's own hash too: another build (e.g. a devnet build for a
+# different program id) can replace the .so without touching the source.
+bin_hash() { $SHA256 target/deploy/privacy_cash.so 2>/dev/null | cut -d' ' -f1; }
+if [ ! -f target/deploy/privacy_cash.so ] || [ "$(cat target/deploy/.privacy_cash.src 2>/dev/null)" != "$SRC_HASH" ] \
+  || [ "$(cat target/deploy/.privacy_cash.bin 2>/dev/null)" != "$(bin_hash)" ]; then
   echo "    building (5-10 min on first run, log $L-build.log)…"
   rm -f target/deploy/privacy_cash.so
   cargo build-sbf ${ARCH_FLAG[@]+"${ARCH_FLAG[@]}"} --manifest-path "$ROOT/programs/privacy-cash/Cargo.toml" > "$L-build.log" 2>&1
-  [ -f target/deploy/privacy_cash.so ] && echo "$SRC_HASH" > target/deploy/.privacy_cash.src
+  [ -f target/deploy/privacy_cash.so ] && { echo "$SRC_HASH" > target/deploy/.privacy_cash.src; bin_hash > target/deploy/.privacy_cash.bin; }
 fi
 restore_lib
 [ -f target/deploy/privacy_cash.so ] || { echo "    ✗ build failed (log $L-build.log):"; tail -20 "$L-build.log"; exit 1; }
@@ -159,13 +174,26 @@ VITE_BACKEND_URL=http://localhost:8080
 VITE_SOLANA_RPC_URL=http://localhost:8899
 VITE_PROGRAM_ID=$PROG
 EOF
+# Payroll's local dev server talks to this stack (dev mode only: deployed
+# builds keep the devnet defaults; there is no Settings screen).
+cat > payroll/.env.development.local <<EOF
+VITE_BACKEND_URL=http://127.0.0.1:8080
+VITE_SOLANA_RPC_URL=http://127.0.0.1:8899
+EOF
 # Preserve any existing ALT address across re-runs
 if [ -f frontend/.env.local ]; then
   grep -E '^VITE_ALT_ADDRESS=' frontend/.env.local >> frontend/.env 2>/dev/null || true
 fi
 pkill -f '[b]ackend-(fast|shim).mjs' >/dev/null 2>&1; sleep 1
 free_port 8080 'backend-(fast|shim)\.mjs|privacy-cash-backend|fast-indexer' || exit 1
-( cd frontend && PROGRAM_ID="$PROG" RECIPIENTS_FILE="$RECIPIENTS_FILE" nohup env ${GEYSER_CONFIG:+GRPC_URL=http://127.0.0.1:10000 GRPC_COMMITMENT=processed} bun "scripts/backend-${BACKEND:-fast}.mjs" > "$L-backend.log" 2>&1 & )
+# Local test USDC: one fixed mint keypair per checkout (local chain only),
+# labeled USDC by the backend so the app offers it next to SOL.
+USDC_KEYPAIR="$ROOT/payroll/.local-usdc-mint.json"
+[ -f "$USDC_KEYPAIR" ] || solana-keygen new --no-bip39-passphrase --silent --outfile "$USDC_KEYPAIR" >/dev/null 2>&1
+USDC_MINT=$(solana-keygen pubkey "$USDC_KEYPAIR" 2>/dev/null)
+# Local stack: operator routes guarded by a local password, telemetry sinks on.
+ADMIN_PASSWORD="${ADMIN_PASSWORD:-local-dev}"
+( cd frontend && PROGRAM_ID="$PROG" RECIPIENTS_FILE="$RECIPIENTS_FILE" ADMIN_PASSWORD="$ADMIN_PASSWORD" DEBUG_ROUTES=1 TOKEN_SYMBOLS="${USDC_MINT:+$USDC_MINT:USDC}" nohup env ${GEYSER_CONFIG:+GRPC_URL=http://127.0.0.1:10000 GRPC_COMMITMENT=processed} bun "scripts/backend-${BACKEND:-fast}.mjs" > "$L-backend.log" 2>&1 & )
 wait_http http://localhost:8080/health || { tail -10 "$L-backend.log"; echo "    ✗ backend failed (log $L-backend.log)"; exit 1; }
 # The app's "Local simnet" uses 127.0.0.1, scripts use localhost: both must
 # reach this backend (::1 is skipped where IPv6 is off).
@@ -178,12 +206,26 @@ for H in 127.0.0.1 localhost '[::1]'; do
 done
 INIT=""
 for i in $(seq 1 10); do
-  INIT=$(curl -s -m 30 -X POST http://localhost:8080/api/relayer/initialize 2>/dev/null | head -c 200)
+  INIT=$(curl -s -m 30 -X POST -H "x-admin-password: $ADMIN_PASSWORD" http://localhost:8080/api/relayer/initialize 2>/dev/null | head -c 200)
   echo "$INIT" | grep -q '"already-initialized"\|signature' && break
   sleep 2
 done
-TREE=$(curl -s -m 10 http://localhost:8080/api/merkle/sol 2>/dev/null)
-echo "$TREE" | grep -q current_root && echo "    tree ready" || { echo "    ✗ tree init failed: $INIT"; exit 1; }
+# Ready means on-chain: the SOL tree and global config accounts exist (the
+# backend's in-memory tree answers even when initialize was rejected).
+pda_of() { solana find-program-derived-address "$PROG" "string:$1" --output json | perl -ne 'print $1 if /"address":\s*"([^"]+)"/'; }
+on_chain() { solana account "$(pda_of "$1")" --url localhost >/dev/null 2>&1; }
+for i in $(seq 1 20); do on_chain merkle_tree && on_chain global_config && break; sleep 1; done
+on_chain merkle_tree && on_chain global_config && echo "    tree ready" || { echo "    ✗ tree init failed on-chain: $INIT"; exit 1; }
+# USDC pool (+ its shared lookup table) on the local test mint
+if [ -n "$USDC_MINT" ] && command -v spl-token >/dev/null 2>&1; then
+  solana account "$USDC_MINT" --url localhost >/dev/null 2>&1 \
+    || spl-token create-token --decimals 6 "$USDC_KEYPAIR" --url localhost --fee-payer "$PAYER_KEYPAIR" --mint-authority "$PAYER_KEYPAIR" >/dev/null 2>&1
+  SPL_INIT=$(curl -s -m 60 -X POST -H "x-admin-password: $ADMIN_PASSWORD" -H 'content-type: application/json' \
+    -d "{\"mint\":\"$USDC_MINT\"}" http://localhost:8080/api/relayer/initialize-spl 2>/dev/null | head -c 300)
+  echo "$SPL_INIT" | grep -q '"alt"' && echo "    USDC pool ready ($USDC_MINT)" || echo "    ⚠ USDC pool not ready: ${SPL_INIT:-no answer} (SOL payroll unaffected)"
+else
+  echo "    ⚠ spl-token CLI missing: local USDC pool skipped (SOL payroll unaffected)"
+fi
 
 echo "▶ 6/7  Recipient registry…"
 if [ -f "$RECIPIENTS_FILE" ]; then
@@ -207,7 +249,7 @@ if [ "$FRONTEND" = 1 ]; then
 fi
 
 # Optional native prover helper (NATIVE_PROVER=1): proves on this machine
-# ~3x faster than the browser; pair it in the app's Settings with the code.
+# ~3x faster than the browser; pair it by opening the printed link once.
 PAIR_LINE=""
 if [ "${NATIVE_PROVER:-0}" = "1" ]; then
   echo "▶ +    Native prover helper (:8790)…"
@@ -223,13 +265,13 @@ if [ "${NATIVE_PROVER:-0}" = "1" ]; then
   ( PROVER_TOKEN="$PROVER_CODE" nohup "$PS_BIN" > "$L-prover.log" 2>&1 & )
   wait_http http://127.0.0.1:8790/health || { tail -10 "$L-prover.log"; echo "    ✗ native helper failed (log $L-prover.log)"; exit 1; }
   echo "    up"
-  PAIR_LINE="    native    paste this pairing code in Settings → Native prover pairing code: $PROVER_CODE"
+  PAIR_LINE="    native    pair it once: open http://localhost:5174/?prover=$PROVER_CODE"
 fi
 
 cat <<EOF
 
 ✅  all up — payroll: http://localhost:5174  (demo app: http://localhost:5173)
-    Settings → "Local simnet" preset points the payroll app here.
+    the payroll dev server points at this stack (payroll/.env.development.local).
     backend   http://localhost:8080   (program $PROG)
     rpc       http://localhost:8899   (surfpool --offline — fresh chain: RESET=1 ./run.sh,
                                        run.sh redeploys/re-inits automatically)
@@ -239,5 +281,6 @@ $PAIR_LINE
 
     fund your Phantom on surfpool:
       solana airdrop 100 <phantom-address> --url localhost
+      spl-token mint $USDC_MINT 1000 --recipient-owner <phantom-address> --fund-recipient --url localhost   (test USDC)
     (Phantom network = http://localhost:8899)
 EOF

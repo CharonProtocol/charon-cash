@@ -456,9 +456,8 @@ Bun.serve({
         let signature = nullifiers.get(hex) ?? null
         if (!spent) {
           const h = Buffer.from(hex, "hex")
-          const [p0] = PublicKey.findProgramAddressSync([Buffer.from("nullifier0"), h], PROGRAM)
-          const [p1] = PublicKey.findProgramAddressSync([Buffer.from("nullifier1"), h], PROGRAM)
-          spent = !!(await conn.getAccountInfo(p0)) || !!(await conn.getAccountInfo(p1))
+          const [marker] = PublicKey.findProgramAddressSync([Buffer.from("nullifier"), h], PROGRAM)
+          spent = !!(await conn.getAccountInfo(marker))
         }
         return json({ nullifier: hex, spent, signature })
       }
@@ -687,8 +686,6 @@ async function relayWithdraw(body) {
         { pubkey: accounts.treeAccount, isSigner: false, isWritable: true },
         { pubkey: accounts.nullifier0, isSigner: false, isWritable: true },
         { pubkey: accounts.nullifier1, isSigner: false, isWritable: true },
-        { pubkey: accounts.nullifier2, isSigner: false, isWritable: false },
-        { pubkey: accounts.nullifier3, isSigner: false, isWritable: false },
         { pubkey: accounts.treeTokenAccount, isSigner: false, isWritable: true },
         { pubkey: accounts.globalConfig, isSigner: false, isWritable: false },
         { pubkey: recipient, isSigner: false, isWritable: true },

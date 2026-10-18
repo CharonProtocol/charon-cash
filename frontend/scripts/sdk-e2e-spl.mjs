@@ -50,7 +50,7 @@ const mint = await createMint(conn, payer, payer.publicKey, null, 6)
 const mintStr = mint.toBase58()
 console.log("mint:", mintStr)
 
-const r = await fetch(BACKEND + "/api/relayer/initialize-spl", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mint: mintStr, max_deposit_amount: 1_000_000_000_000 }) })
+const r = await fetch(BACKEND + "/api/relayer/initialize-spl", { method: "POST", headers: { "content-type": "application/json", "x-admin-password": process.env.ADMIN_PASSWORD ?? "local-dev" }, body: JSON.stringify({ mint: mintStr, max_deposit_amount: 1_000_000_000_000 }) })
 console.log("initialize-spl:", (await r.json()).status ?? (await r.text()))
 await sleep(1500)
 

@@ -4,15 +4,21 @@
 //     gives the execution order inside a slot, so same-slot lanes land in
 //     the exact on-chain leaf order (the old shim guessed and drifted).
 //   - only successful transact txs append leaves (failed txs mint nothing).
-//   - push first: a websocket logs subscription (or the relayer's own send)
-//     triggers a sync pass immediately; a short poll is only the safety net.
+//   - push first: the program emits each transact's leaves as an
+//     Anchor-style event (with its first leaf index), so the websocket logs
+//     subscription alone indexes a tx: no RPC read. RPC catch-up runs only
+//     at start, on websocket reconnect, on a leaf-index gap, and for txs
+//     that carry no event (pre-upgrade program).
 // Reads (paths, roots, commitments, nullifiers) are served from memory.
 import { PublicKey } from "@solana/web3.js"
 import { LocalMirror, MERKLE_TREE_DEPTH } from "privacy-cash-sdk"
 
 export const ROOT_HISTORY = 100
+// transact / transact_spl carry a raw proof (64+128+64 bytes of points), then
+// the public inputs. Swap (7, compressed proofs) is indexed from its events.
 const DISC_TRANSACT_SOL = 2
 const DISC_TRANSACT_SPL = 3
+const PROOF_POINTS = { [DISC_TRANSACT_SOL]: 256, [DISC_TRANSACT_SPL]: 256 }
 
 const be = (b) => {
   let r = 0n
@@ -23,11 +29,14 @@ export const dec2hex = (dec) => BigInt(dec).toString(16).padStart(64, "0")
 
 /** Decode one transact instruction's data (disc + args). Null if not a transact. */
 export function decodeTransact(raw) {
-  if (raw.length < 497) return null
+  const points = PROOF_POINTS[raw[0]]
+  if (points === undefined || raw.length < 1 + points + 224 + 16) return null
   const disc = raw[0]
-  if (disc !== DISC_TRANSACT_SOL && disc !== DISC_TRANSACT_SPL) return null
   const args = raw.subarray(1)
-  let offset = 480 + 16 // proof + ExtDataMinified
+  // public inputs after the points: root, publicAmount, extDataHash, 2 nullifiers, 2 commitments
+  const nul = points + 96
+  const com = nul + 64
+  let offset = com + 64 + 16 // + ExtDataMinified
   const readLenPref = () => {
     const len = args.readUInt32LE(offset)
     offset += 4
@@ -45,9 +54,75 @@ export function decodeTransact(raw) {
   }
   return {
     spl: disc === DISC_TRANSACT_SPL,
-    commitments: [Buffer.from(args.subarray(416, 448)), Buffer.from(args.subarray(448, 480))],
-    nullifiers: [Buffer.from(args.subarray(352, 384)), Buffer.from(args.subarray(384, 416))],
+    commitments: [Buffer.from(args.subarray(com, com + 32)), Buffer.from(args.subarray(com + 32, com + 64))],
+    nullifiers: [Buffer.from(args.subarray(nul, nul + 32)), Buffer.from(args.subarray(nul + 32, nul + 64))],
     encrypted: [Buffer.from(enc1), Buffer.from(enc2)],
+  }
+}
+
+const EVENT_SOL = "59f557fade1e878e"
+const EVENT_SPL = "b894aefac583f888"
+
+/**
+ * Transact events our program emitted, from a logs notification. Only
+ * `Program data:` lines inside the program's own invoke frame count, so a
+ * different program can't forge one.
+ * @returns {{ decoded, treeKey: string, index: number }[]}
+ */
+export function eventsFromLogs(logs, program) {
+  const id = program.toBase58()
+  const frames = []
+  const out = []
+  for (const line of logs ?? []) {
+    const inv = /^Program (\S+) invoke \[\d+\]$/.exec(line)
+    if (inv) {
+      frames.push(inv[1])
+      continue
+    }
+    if (/^Program \S+ (success|failed)/.test(line)) {
+      frames.pop()
+      continue
+    }
+    if (frames[frames.length - 1] !== id || !line.startsWith("Program data: ")) continue
+    const e = decodeEvent(Buffer.from(line.slice(14), "base64"))
+    if (e) out.push(e)
+  }
+  return out
+}
+
+/** Borsh body after the discriminator; null if it isn't a well-formed transact event. */
+function decodeEvent(d) {
+  if (d.length < 8) return null
+  const disc = d.subarray(0, 8).toString("hex")
+  const spl = disc === EVENT_SPL
+  if (!spl && disc !== EVENT_SOL) return null
+  let o = 8
+  const take = (n) => {
+    if (o + n > d.length) throw new Error("short event")
+    const b = d.subarray(o, o + n)
+    o += n
+    return b
+  }
+  try {
+    const index = take(4).readUInt32LE(0)
+    const mint = spl ? take(32) : null
+    const comm = take(64)
+    const nulls = take(64)
+    const enc1 = take(take(4).readUInt32LE(0))
+    const enc2 = take(take(4).readUInt32LE(0))
+    if (o !== d.length) return null
+    return {
+      index,
+      treeKey: spl ? new PublicKey(mint).toBase58() : "sol",
+      decoded: {
+        spl,
+        commitments: [comm.subarray(0, 32), comm.subarray(32, 64)],
+        nullifiers: [nulls.subarray(0, 32), nulls.subarray(32, 64)],
+        encrypted: [enc1, enc2],
+      },
+    }
+  } catch {
+    return null
   }
 }
 
@@ -61,8 +136,14 @@ function accountKeys(tx) {
   return [...statics, ...w, ...r]
 }
 
-/** Transact instructions of a fetched tx as [{decoded, treeKey}], program-checked. */
+/**
+ * Pool appends of a fetched tx as [{decoded, treeKey, index?}]: the program's
+ * events when it logged them (every instruction, swap included, with the
+ * exact leaf index), else decoded transact instruction data (older txs).
+ */
 export function transactsOf(tx, program) {
+  const events = eventsFromLogs(tx.meta?.logMessages, program)
+  if (events.length > 0) return events
   const keys = accountKeys(tx)
   const msg = tx.transaction.message
   const out = []
@@ -74,7 +155,8 @@ export function transactsOf(tx, program) {
     if (!d) continue
     let treeKey = "sol"
     if (d.spl) {
-      const idx = (ix.accountKeyIndexes ?? ix.accounts)?.[7]
+      // transact_spl accounts: tree, nullifier0, nullifier1, global_config, signer, mint, ...
+      const idx = (ix.accountKeyIndexes ?? ix.accounts)?.[5]
       treeKey = idx != null && keys[idx] ? keys[idx].toBase58() : "spl-unknown"
     }
     out.push({ decoded: d, treeKey })
@@ -141,12 +223,15 @@ export class FastIndexer {
    * @param {{ conn: import("@solana/web3.js").Connection, program: PublicKey, wasm: unknown,
    *           pollMs?: number, log?: (s: string) => void }} opts
    */
-  constructor({ conn, program, wasm, pollMs = 1000, log = () => {} }) {
+  constructor({ conn, program, wasm, pollMs = 0, log = () => {}, onOutcome = () => {} }) {
     this.conn = conn
     this.program = program
     this.wasm = wasm
+    /** 0 = no timer: push + reconnect/gap catch-up only */
     this.pollMs = pollMs
     this.log = log
+    /** (sig, "confirmed" | "failed") for every program tx the indexer sees land */
+    this.onOutcome = onOutcome
     /** @type {Map<string, Pool>} */
     this.pools = new Map()
     /** nullifier hex -> spending signature */
@@ -156,7 +241,7 @@ export class FastIndexer {
     this.passes = 0
     this.applied = 0
     /** counters for /indexer/status (grpc source fills grpcTxs/grpcAccounts) */
-    this.stats = {}
+    this.stats = { pushTxs: 0, pushEvents: 0, rpcFallbacks: 0, gapSyncs: 0, reconnectSyncs: 0 }
     this.running = null
     this.again = false
     this.waiters = []
@@ -165,11 +250,92 @@ export class FastIndexer {
     /** every signature ever applied: RPC list order is not monotonic, so a
      *  landed tx can be listed again after the cursor passed it */
     this.appliedSigs = new Set()
+    // `${treeKey}:${sig}`: a swap appends to two pools in one tx, so "applied"
+    // is per pool; appliedSigs only says the tx was indexed somewhere
+    this.appliedLegs = new Set()
     /** treeKey -> Map(sig -> candidate) of landed transacts not yet applied */
     this.pending = new Map()
     /** treeKey -> latest streamed tree account ({txCount, ring}) */
     this.streamTree = new Map()
     this.lastPassAt = 0
+  }
+
+  /** Everything needed to resume without replaying history (JSON-safe). */
+  snapshot() {
+    const pools = {}
+    for (const [k, p] of this.pools) {
+      pools[k] = { leaves: p.leaves.map((l) => [l.commitment, l.encryptedHex, l.signature, l.slot]), roots: p.roots }
+    }
+    return {
+      v: 1,
+      program: this.program.toBase58(),
+      lastSig: this.lastSig,
+      lastSlot: this.lastSlot,
+      applied: this.applied,
+      pools,
+      nullifiers: [...this.nullifiers],
+    }
+  }
+
+  /** Load a snapshot taken by snapshot(); false if it belongs to another program. */
+  restore(snap) {
+    if (snap?.v !== 1 || snap.program !== this.program.toBase58()) return false
+    this.reset()
+    for (const [k, { leaves, roots }] of Object.entries(snap.pools)) {
+      const p = this.pool(k)
+      for (const [commitment, encryptedHex, signature, slot] of leaves) {
+        p.append(Buffer.from(commitment, "hex"), Buffer.from(encryptedHex, "hex"), signature, slot)
+        this.appliedSigs.add(signature)
+        this.appliedLegs.add(`${k}:${signature}`)
+      }
+      p.roots = roots
+    }
+    this.nullifiers = new Map(snap.nullifiers)
+    this.lastSig = snap.lastSig
+    this.lastSlot = snap.lastSlot
+    this.applied = snap.applied
+    return true
+  }
+
+  reset() {
+    this.pools = new Map()
+    this.nullifiers = new Map()
+    this.lastSig = null
+    this.lastSlot = 0
+    this.applied = 0
+    this.seen = new Set()
+    this.appliedSigs = new Set()
+    // `${treeKey}:${sig}`: a swap appends to two pools in one tx, so "applied"
+    // is per pool; appliedSigs only says the tx was indexed somewhere
+    this.appliedLegs = new Set()
+    this.pending = new Map()
+    this.streamTree = new Map()
+  }
+
+  /**
+   * Does every pool end on the chain's current root? A restored snapshot
+   * from another chain (a reset local validator) fails this. Re-syncs and
+   * retries while txs are still landing.
+   */
+  async matchesChain(tries = 3) {
+    for (let i = 0; i < tries; i++) {
+      let ok = true
+      let behind = false
+      for (const [k, p] of this.pools) {
+        const chain = await this.chainTree(k)
+        const count = p.leaves.length / 2
+        if (!chain || chain.txCount < count) return false
+        if (chain.txCount > count) {
+          behind = true
+          continue
+        }
+        if (chain.ring[chain.txCount % ROOT_HISTORY] !== p.root()) ok = false
+      }
+      if (!ok) return false
+      if (!behind) return true
+      await this.sync()
+    }
+    return false
   }
 
   pool(treeKey) {
@@ -194,13 +360,58 @@ export class FastIndexer {
 
   async start() {
     await this.sync()
-    this.subId = this.conn.onLogs(this.program, () => this.sync().catch(() => {}), "confirmed")
-    this.timer = setInterval(() => this.sync().catch(() => {}), this.pollMs)
+    this.subId = this.conn.onLogs(this.program, (l, ctx) => this.ingestLogs(l, ctx.slot), "confirmed")
+    // Notifications sent while the socket was down are lost: catch up over
+    // RPC on every reopen (web3.js reconnects on its own).
+    let opened = false
+    this.conn._rpcWebSocket?.on?.("open", () => {
+      if (!opened) return void (opened = true)
+      this.stats.reconnectSyncs++
+      this.sync().catch(() => {})
+    })
+    if (this.pollMs > 0) this.timer = setInterval(() => this.sync().catch(() => {}), this.pollMs)
   }
 
   stop() {
     clearInterval(this.timer)
+    clearTimeout(this.gapTimer)
     if (this.subId != null) this.conn.removeOnLogsListener(this.subId).catch(() => {})
+  }
+
+  /** Push path (websocket logs): index straight from the program's events. */
+  ingestLogs({ signature, err, logs }, slot) {
+    this.stats.pushTxs++
+    this.onOutcome(signature, err ? "failed" : "confirmed")
+    if (err) return
+    const events = eventsFromLogs(logs, this.program).filter((e) => !this.appliedLegs.has(`${e.treeKey}:${signature}`))
+    if (events.length === 0 && this.appliedSigs.has(signature)) return
+    if (events.length === 0) {
+      // no event: a pre-upgrade transact or a non-transact ix; RPC decides
+      this.stats.rpcFallbacks++
+      this.sync().catch(() => {})
+      return
+    }
+    for (const e of events) {
+      this.stats.pushEvents++
+      this.addPending(e.treeKey, { sig: signature, slot, t: { decoded: e.decoded, treeKey: e.treeKey }, index: e.index })
+      this.drain(e.treeKey, this.streamTree.get(e.treeKey) ?? null, false)
+    }
+    this.flushWaiters()
+  }
+
+  /** A pending event sits past the next leaf: give the stream a moment, then fill the gap over RPC. */
+  scheduleGapSync() {
+    if (this.gapTimer) return
+    this.gapTimer = setTimeout(() => {
+      this.gapTimer = null
+      const behind = [...this.pending.entries()].some(([k, m]) => {
+        const next = this.pool(k).leaves.length
+        return [...m.values()].some((c) => c.index !== undefined && c.index > next)
+      })
+      if (!behind) return
+      this.stats.gapSyncs++
+      this.sync().catch(() => {})
+    }, 750)
   }
 
   /** Single-flight sync; calls during a pass coalesce into one more pass. */
@@ -230,15 +441,17 @@ export class FastIndexer {
   /** Resolve once `pred()` holds: one sync request, then wait on passes. */
   async waitFor(pred, timeoutMs = 10_000) {
     if (pred()) return true
-    const deadline = Date.now() + timeoutMs
-    this.sync().catch(() => {})
+    const start = Date.now()
+    const deadline = start + timeoutMs
+    // Pushed events land on their own; RPC only if they don't within the grace.
+    const graceMs = this.subId != null ? Math.min(1500, timeoutMs / 2) : 0
     while (Date.now() < deadline) {
+      if (Date.now() - start >= graceMs && !this.running) this.sync().catch(() => {})
       await new Promise((r) => {
         this.waiters.push(r)
         setTimeout(r, 250)
       })
       if (pred()) return true
-      if (!this.running) this.sync().catch(() => {})
     }
     return pred()
   }
@@ -266,8 +479,9 @@ export class FastIndexer {
 
   /** Push path (gRPC): a confirmed tx with its full message — no RPC needed. */
   ingestStreamTx(signature, slot, tx) {
-    if (this.appliedSigs.has(signature) || tx.meta?.err) return
+    if (tx.meta?.err) return
     for (const t of transactsOf(tx, this.program)) {
+      if (this.appliedLegs.has(`${t.treeKey}:${signature}`)) continue
       this.addPending(t.treeKey, { sig: signature, slot, t })
       this.drain(t.treeKey, this.streamTree.get(t.treeKey) ?? null, false)
     }
@@ -286,7 +500,7 @@ export class FastIndexer {
   addPending(treeKey, cand) {
     let m = this.pending.get(treeKey)
     if (!m) this.pending.set(treeKey, (m = new Map()))
-    if (!this.appliedSigs.has(cand.sig)) m.set(cand.sig, cand)
+    if (!this.appliedLegs.has(`${treeKey}:${cand.sig}`)) m.set(cand.sig, cand)
   }
 
   async pass() {
@@ -316,6 +530,7 @@ export class FastIndexer {
       for (let i = 0; i < ordered.length; i++) {
         const s = ordered[i]
         if (s.err || (txs[i] && txs[i].meta?.err)) {
+          this.onOutcome(s.signature, "failed")
           this.seen.add(s.signature)
           continue
         }
@@ -326,7 +541,7 @@ export class FastIndexer {
           continue
         }
         for (const t of ts) {
-          this.addPending(t.treeKey, { sig: s.signature, slot: s.slot, t })
+          this.addPending(t.treeKey, { sig: s.signature, slot: s.slot, t: { decoded: t.decoded, treeKey: t.treeKey }, index: t.index })
           touched.add(t.treeKey)
         }
       }
@@ -352,8 +567,20 @@ export class FastIndexer {
     const pool = this.pool(treeKey)
     for (;;) {
       if (pending.size === 0) return
+      // an event names its own first leaf: no ordering guesswork
+      const at = pool.leaves.length
+      let pick = [...pending.values()].find((c) => c.index === at)
+      if (pick) {
+        pending.delete(pick.sig)
+        this.applyTransact(pick.sig, pick.slot, pick.t)
+        this.seen.add(pick.sig)
+        this.appliedSigs.add(pick.sig)
+        this.appliedLegs.add(`${treeKey}:${pick.sig}`)
+        continue
+      }
+      for (const [sig, c] of pending) if (c.index !== undefined && c.index < at) pending.delete(sig) // already indexed via RPC
+      if ([...pending.values()].some((c) => c.index !== undefined)) this.scheduleGapSync()
       const next = pool.leaves.length / 2 + 1
-      let pick
       if (chain && chain.txCount < next) return // the chain hasn't caught up to us: wait
       if (chain && chain.txCount - next < ROOT_HISTORY) {
         const want = chain.ring[next % ROOT_HISTORY]
@@ -374,6 +601,7 @@ export class FastIndexer {
       this.applyTransact(pick.sig, pick.slot, pick.t)
       this.seen.add(pick.sig)
       this.appliedSigs.add(pick.sig)
+      this.appliedLegs.add(`${treeKey}:${pick.sig}`)
     }
   }
 

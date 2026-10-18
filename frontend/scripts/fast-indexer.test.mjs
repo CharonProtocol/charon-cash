@@ -3,7 +3,7 @@ import { Keypair } from "@solana/web3.js"
 import { WasmFactory } from "@lightprotocol/hasher.rs"
 import { LocalMirror } from "privacy-cash-sdk"
 
-import { FastIndexer, dec2hex } from "./fast-indexer.mjs"
+import { FastIndexer, dec2hex, decodeTransact, eventsFromLogs, transactsOf } from "./fast-indexer.mjs"
 import { toTxLike } from "./grpc-source.mjs"
 
 const wasm = await WasmFactory.getInstance()
@@ -15,7 +15,7 @@ const field = (n) => {
   return b
 }
 
-/** transact ix data: disc 2, proof/public inputs, ExtDataMinified, 2 len-prefixed outputs */
+/** transact ix data: disc 2 (raw proof), proof/public inputs, ExtDataMinified, 2 len-prefixed outputs */
 function transactData(c0, c1, n0, n1) {
   const args = Buffer.alloc(480 + 16)
   field(n0).copy(args, 352)
@@ -209,4 +209,145 @@ describe("FastIndexer", () => {
     expect(leafValues(ix)).toEqual([3, 4, 1, 2])
     expect(ix.nullifiers.get(field(71).toString("hex"))).toBe("g1")
   })
+
+  it("indexes logged events with no RPC, in leaf-index order, and fills a gap over RPC", async () => {
+    const c = fakeChain()
+    c.add("e1", 5, [1, 2, 61, 62])
+    c.add("e2", 6, [3, 4, 63, 64])
+    c.add("e3", 7, [5, 6, 65, 66])
+    let rpc = 0
+    const counted = (fn) => (...a) => (rpc++, fn(...a))
+    const conn = {
+      ...c.conn,
+      getSignaturesForAddress: counted(c.conn.getSignaturesForAddress),
+      getTransaction: counted(c.conn.getTransaction),
+      getAccountInfo: counted(c.conn.getAccountInfo),
+    }
+    const ix = new FastIndexer({ conn, program: PROGRAM, wasm })
+    const outcomes = []
+    ix.onOutcome = (sig, o) => outcomes.push([sig, o])
+    ix.subId = 1
+    ix.ingestLogs({ signature: "e1", err: null, logs: eventLogs(0, [1, 2, 61, 62]) }, 5)
+    ix.ingestLogs({ signature: "e3", err: null, logs: eventLogs(4, [5, 6, 65, 66]) }, 7)
+    expect(leafValues(ix)).toEqual([1, 2]) // e3 waits for leaf 2
+    expect(rpc).toBe(0)
+    await new Promise((r) => setTimeout(r, 900)) // gap timer -> RPC catch-up fetches e2
+    await ix.running
+    expect(leafValues(ix)).toEqual([1, 2, 3, 4, 5, 6])
+    expect(ix.stats.gapSyncs).toBe(1)
+    expect(ix.nullifiers.get(field(65).toString("hex"))).toBe("e3")
+    ix.ingestLogs({ signature: "bad", err: { InstructionError: [0, "Custom"] }, logs: [] }, 8)
+    expect(outcomes).toEqual([["e1", "confirmed"], ["e3", "confirmed"], ["bad", "failed"]])
+    ix.stop()
+  })
+
+  it("resumes from a snapshot: same tree, no replay, and spots a reset chain", async () => {
+    const c = fakeChain()
+    c.add("s1", 3, [1, 2, 41, 42])
+    c.add("s2", 4, [3, 4, 43, 44])
+    const a = new FastIndexer({ conn: c.conn, program: PROGRAM, wasm })
+    await a.sync()
+    const snap = JSON.parse(JSON.stringify(a.snapshot()))
+
+    c.add("s3", 5, [5, 6, 45, 46]) // lands while the backend is down
+    let fetched = []
+    const conn = { ...c.conn, getTransaction: async (sig) => (fetched.push(sig), c.conn.getTransaction(sig)) }
+    const b = new FastIndexer({ conn, program: PROGRAM, wasm })
+    expect(b.restore(snap)).toBe(true)
+    expect(leafValues(b)).toEqual([1, 2, 3, 4])
+    expect(b.pools.get("sol").proof(1)).toEqual(a.pools.get("sol").proof(1))
+    await b.sync()
+    expect(fetched).toEqual(["s3"]) // only what is new since the snapshot
+    expect(leafValues(b)).toEqual([1, 2, 3, 4, 5, 6])
+    expect(await b.matchesChain()).toBe(true)
+    expect(b.nullifiers.get(field(41).toString("hex"))).toBe("s1")
+
+    // a different chain under the same program id (reset validator)
+    const other = fakeChain()
+    other.add("x1", 3, [9, 9, 91, 92])
+    other.add("x2", 4, [8, 8, 93, 94])
+    const d = new FastIndexer({ conn: other.conn, program: PROGRAM, wasm })
+    expect(d.restore(snap)).toBe(true)
+    expect(await d.matchesChain()).toBe(false)
+
+    expect(new FastIndexer({ conn: c.conn, program: Keypair.generate().publicKey, wasm }).restore(snap)).toBe(false)
+  })
+
+  it("decodes a raw transact and leaves swap (compressed) to its events", () => {
+    const raw = transactData(1, 2, 31, 32)
+    const a = decodeTransact(raw)
+    expect(a.commitments.map((x) => parseInt(x.toString("hex"), 16))).toEqual([1, 2])
+    expect(a.nullifiers.map((x) => parseInt(x.toString("hex"), 16))).toEqual([31, 32])
+    expect(a.encrypted.map(String)).toEqual(["enc-1", "enc-2"])
+    expect(decodeTransact(Buffer.concat([Buffer.from([7]), raw.subarray(1)]))).toBeNull()
+  })
+
+  it("catch-up prefers the logged event (swap included) over instruction bytes", () => {
+    const tx = {
+      meta: { err: null, logMessages: eventLogs(4, [5, 6, 55, 56]) },
+      transaction: { message: { staticAccountKeys: [PROGRAM], compiledInstructions: [{ programIdIndex: 0, accountKeyIndexes: [], data: Buffer.from([7, 1, 2, 3]) }] } },
+    }
+    const [t] = transactsOf(tx, PROGRAM)
+    expect(t.index).toBe(4)
+    expect(t.treeKey).toBe("sol")
+    expect(parseInt(t.decoded.commitments[0].toString("hex"), 16)).toBe(5)
+  })
+
+  it("only trusts events logged inside the program's own frame", () => {
+    const other = Keypair.generate().publicKey.toBase58()
+    const forged = [`Program ${other} invoke [1]`, ...eventLogs(0, [9, 9, 9, 9]).slice(1, -1), `Program ${other} success`]
+    expect(eventsFromLogs(forged, PROGRAM)).toEqual([])
+    // our program CPI'd by another: still ours
+    const nested = [`Program ${other} invoke [1]`, ...eventLogs(0, [1, 2, 3, 4]).map((l) => l.replace("[1]", "[2]")), `Program ${other} success`]
+    expect(eventsFromLogs(nested, PROGRAM).map((e) => e.index)).toEqual([0])
+    // malformed fields are skipped, not thrown
+    const id = PROGRAM.toBase58()
+    expect(eventsFromLogs([`Program ${id} invoke [1]`, "Program data: WfVX+t4eh44AAA==", `Program ${id} success`], PROGRAM)).toEqual([])
+    // trailing bytes past the body: not ours
+    const extra = eventLogs(0, [1, 2, 3, 4])
+    extra[2] = `Program data: ${Buffer.concat([Buffer.from(extra[2].slice(14), "base64"), Buffer.from([0])]).toString("base64")}`
+    expect(eventsFromLogs(extra, PROGRAM)).toEqual([])
+  })
+
+  it("applies both legs of a swap (one tx, events for two pools)", () => {
+    const c = fakeChain()
+    const ix = new FastIndexer({ conn: c.conn, program: PROGRAM, wasm })
+    ix.subId = 1
+    const mint = Keypair.generate().publicKey
+    const sol = eventLogs(0, [1, 2, 61, 62])
+    const spl = eventLogs(0, [3, 4, 63, 64], mint)
+    // one instruction, two `Program data:` events (swap.rs emits in-pool then out-pool)
+    const logs = [...sol.slice(0, 3), spl[2], ...sol.slice(3)]
+    ix.ingestLogs({ signature: "swap1", err: null, logs }, 5)
+    expect(ix.pool("sol").leaves.map((l) => l.signature)).toEqual(["swap1", "swap1"])
+    expect(ix.pool(mint.toBase58()).leaves.map((l) => l.signature)).toEqual(["swap1", "swap1"])
+    // a re-delivery adds nothing to either pool
+    ix.ingestLogs({ signature: "swap1", err: null, logs }, 5)
+    expect(ix.pool("sol").leaves.length).toBe(2)
+    expect(ix.pool(mint.toBase58()).leaves.length).toBe(2)
+    ix.stop()
+  })
+
+  it("decodes SPL events with their mint as the tree key", () => {
+    const mint = Keypair.generate().publicKey
+    const [e] = eventsFromLogs(eventLogs(6, [1, 2, 3, 4], mint), PROGRAM)
+    expect(e.treeKey).toBe(mint.toBase58())
+    expect(e.index).toBe(6)
+    expect(e.decoded.encrypted.map((b) => b.toString())).toEqual(["enc-1", "enc-2"])
+  })
 })
+
+/** Logs of one transact as the program writes them (helper.rs emit_transact_event). */
+function eventLogs(index, [c0, c1, n0, n1], mint = null) {
+  const id = PROGRAM.toBase58()
+  const head = Buffer.alloc(12)
+  Buffer.from(mint ? "b894aefac583f888" : "59f557fade1e878e", "hex").copy(head)
+  head.writeUInt32LE(index, 8)
+  const vec = (b) => {
+    const len = Buffer.alloc(4)
+    len.writeUInt32LE(b.length)
+    return Buffer.concat([len, b])
+  }
+  const body = Buffer.concat([head, ...(mint ? [mint.toBuffer()] : []), field(c0), field(c1), field(n0), field(n1), vec(Buffer.from(`enc-${c0}`)), vec(Buffer.from(`enc-${c1}`))])
+  return [`Program ${id} invoke [1]`, "Program log: Instruction: Transact", `Program data: ${body.toString("base64")}`, `Program ${id} consumed 135000 of 200000 compute units`, `Program ${id} success`]
+}
