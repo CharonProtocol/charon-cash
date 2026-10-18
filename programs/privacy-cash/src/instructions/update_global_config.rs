@@ -1,6 +1,11 @@
 use crate::{
-    constants::{UPDATE_DEPOSIT_FEE, UPDATE_FEE_ERROR_MARGIN, UPDATE_WITHDRAWAL_FEE, VALID_MASK},
-    helper::{verify_authority, verify_basis_points, verify_initialized, verify_signer},
+    constants::{
+        GLOBAL_CONFIG_ADDRESS, UPDATE_DEPOSIT_FEE, UPDATE_FEE_ERROR_MARGIN, UPDATE_WITHDRAWAL_FEE,
+        VALID_MASK,
+    },
+    helper::{
+        verify_address, verify_authority, verify_basis_points, verify_initialized, verify_signer,
+    },
     state::GlobalConfig,
 };
 
@@ -27,6 +32,7 @@ pub fn process_update_global_config(accounts: &[AccountView], data: &[u8]) -> Pr
 
     verify_signer(authority)?;
     verify_initialized(global_config)?;
+    verify_address(global_config, &GLOBAL_CONFIG_ADDRESS)?;
 
     if !global_config.is_writable() {
         return Err(ProgramError::InvalidAccountData);

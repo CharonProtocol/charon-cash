@@ -1,0 +1,414 @@
+{
+  "address": "CHvKW5fCPNfikvfHA1cxQL8guoyFGqRvwdr1B3NdNVss",
+  "metadata": {
+    "name": "privacy_cash",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Charon shielded pool (Pinocchio). Hand-written Anchor-format IDL for explorers."
+  },
+  "instructions": [
+    {
+      "name": "transact",
+      "discriminator": [
+        2
+      ],
+      "accounts": [
+        {
+          "name": "tree_account",
+          "writable": true
+        },
+        {
+          "name": "nullifier0",
+          "writable": true
+        },
+        {
+          "name": "nullifier1",
+          "writable": true
+        },
+        {
+          "name": "tree_token_account",
+          "writable": true
+        },
+        {
+          "name": "global_config"
+        },
+        {
+          "name": "recipient",
+          "writable": true
+        },
+        {
+          "name": "fee_recipient_account",
+          "writable": true
+        },
+        {
+          "name": "signer",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "proof",
+          "type": {
+            "defined": {
+              "name": "Proof"
+            }
+          }
+        },
+        {
+          "name": "ext_data_minified",
+          "type": {
+            "defined": {
+              "name": "ExtDataMinified"
+            }
+          }
+        },
+        {
+          "name": "encrypted_output1",
+          "type": "bytes"
+        },
+        {
+          "name": "encrypted_output2",
+          "type": "bytes"
+        },
+        {
+          "name": "nullifier_bump0",
+          "type": "u8"
+        },
+        {
+          "name": "nullifier_bump1",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "transact_spl",
+      "discriminator": [
+        3
+      ],
+      "accounts": [
+        {
+          "name": "tree_account",
+          "writable": true
+        },
+        {
+          "name": "nullifier0",
+          "writable": true
+        },
+        {
+          "name": "nullifier1",
+          "writable": true
+        },
+        {
+          "name": "global_config"
+        },
+        {
+          "name": "signer",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "signer_token_account",
+          "writable": true
+        },
+        {
+          "name": "recipient_token_account",
+          "writable": true
+        },
+        {
+          "name": "tree_ata",
+          "writable": true
+        },
+        {
+          "name": "fee_recipient_ata",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "associated_token_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "proof",
+          "type": {
+            "defined": {
+              "name": "Proof"
+            }
+          }
+        },
+        {
+          "name": "ext_data_minified",
+          "type": {
+            "defined": {
+              "name": "ExtDataMinified"
+            }
+          }
+        },
+        {
+          "name": "encrypted_output1",
+          "type": "bytes"
+        },
+        {
+          "name": "encrypted_output2",
+          "type": "bytes"
+        },
+        {
+          "name": "nullifier_bump0",
+          "type": "u8"
+        },
+        {
+          "name": "nullifier_bump1",
+          "type": "u8"
+        }
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "TransactEvent",
+      "discriminator": [
+        89,
+        245,
+        87,
+        250,
+        222,
+        30,
+        135,
+        142
+      ]
+    },
+    {
+      "name": "TransactSplEvent",
+      "discriminator": [
+        184,
+        148,
+        174,
+        250,
+        197,
+        131,
+        248,
+        136
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "Proof",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "proof_a",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          },
+          {
+            "name": "proof_b",
+            "type": {
+              "array": [
+                "u8",
+                128
+              ]
+            }
+          },
+          {
+            "name": "proof_c",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          },
+          {
+            "name": "root",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "public_amount",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "ext_data_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "input_nullifiers",
+            "type": {
+              "array": [
+                {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                },
+                2
+              ]
+            }
+          },
+          {
+            "name": "output_commitments",
+            "type": {
+              "array": [
+                {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ExtDataMinified",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ext_amount",
+            "type": "i64"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TransactEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "first_leaf_index",
+            "type": "u32"
+          },
+          {
+            "name": "commitments",
+            "type": {
+              "array": [
+                {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                },
+                2
+              ]
+            }
+          },
+          {
+            "name": "nullifiers",
+            "type": {
+              "array": [
+                {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                },
+                2
+              ]
+            }
+          },
+          {
+            "name": "encrypted_output1",
+            "type": "bytes"
+          },
+          {
+            "name": "encrypted_output2",
+            "type": "bytes"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TransactSplEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "first_leaf_index",
+            "type": "u32"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "commitments",
+            "type": {
+              "array": [
+                {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                },
+                2
+              ]
+            }
+          },
+          {
+            "name": "nullifiers",
+            "type": {
+              "array": [
+                {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                },
+                2
+              ]
+            }
+          },
+          {
+            "name": "encrypted_output1",
+            "type": "bytes"
+          },
+          {
+            "name": "encrypted_output2",
+            "type": "bytes"
+          }
+        ]
+      }
+    }
+  ]
+}

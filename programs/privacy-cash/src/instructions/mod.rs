@@ -1,20 +1,22 @@
 pub mod initialize;
 pub mod initialize_tree_account_for_spl_token;
+pub mod swap;
 pub mod transact;
-pub mod transact_batch3;
-pub mod transact_batch5;
 pub mod transact_spl;
 pub mod update_deposit_limit;
 pub mod update_deposit_limit_for_spl;
 pub mod update_global_config;
+pub mod wrap_sol;
+pub mod write_idl;
 
 pub use initialize::*;
 pub use initialize_tree_account_for_spl_token::*;
+pub use swap::*;
 pub use transact::*;
-pub use transact_batch3::*;
-pub use transact_batch5::*;
 pub use transact_spl::*;
 pub use update_global_config::*;
+pub use wrap_sol::*;
+pub use write_idl::*;
 
 use pinocchio::error::ProgramError;
 
@@ -26,8 +28,10 @@ pub enum PrivacyCashInstructions {
     UpdateDepositLimit = 4,
     UpdateDepositLimitForSpl = 5,
     UpdateGlobalConfig = 6,
-    TransactBatch3 = 7,
-    TransactBatch5 = 8,
+    Swap = 7,
+    WrapSol = 8,
+    /// Admin: write the program's Anchor IDL account (explorer metadata).
+    WriteIdl = 9,
 }
 
 impl TryFrom<&u8> for PrivacyCashInstructions {
@@ -42,8 +46,9 @@ impl TryFrom<&u8> for PrivacyCashInstructions {
             4 => Ok(PrivacyCashInstructions::UpdateDepositLimit),
             5 => Ok(PrivacyCashInstructions::UpdateDepositLimitForSpl),
             6 => Ok(PrivacyCashInstructions::UpdateGlobalConfig),
-            7 => Ok(PrivacyCashInstructions::TransactBatch3),
-            8 => Ok(PrivacyCashInstructions::TransactBatch5),
+            7 => Ok(PrivacyCashInstructions::Swap),
+            8 => Ok(PrivacyCashInstructions::WrapSol),
+            9 => Ok(PrivacyCashInstructions::WriteIdl),
             _ => Err(ProgramError::InvalidInstructionData),
         }
     }

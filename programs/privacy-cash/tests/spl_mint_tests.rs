@@ -43,7 +43,7 @@ use spl_token::{
 };
 use std::{path::PathBuf, str::FromStr};
 
-const PROGRAM_ID: &str = "HoumtJnPvyaavAdDgoWN78PWLSZYvezghc5FM9sEKEyV";
+const PROGRAM_ID: Pubkey = Pubkey::new_from_array(privacy_cash::ID);
 
 pub fn generate_random_nullifier() -> [u8; 32] {
     let mut nullifier = [0u8; 32];
@@ -101,9 +101,9 @@ pub fn bn_to_bytes(value: u128) -> [u8; 32] {
 // Helper to turn the DepositProofToSubmit struct into the Proof struct we use in next 2 functions
 pub fn format_proof(proof: DepositProofToSubmit) -> Proof {
     Proof {
-        proof_a: proof.proof_a.try_into().expect("proof_a must be 64 bytes"),
-        proof_b: proof.proof_b.try_into().expect("proof_b must be 128 bytes"),
-        proof_c: proof.proof_c.try_into().expect("proof_c must be 64 bytes"),
+        proof_a: proof.proof_a.try_into().expect("proof_a must be 32 bytes"),
+        proof_b: proof.proof_b.try_into().expect("proof_b must be 64 bytes"),
+        proof_c: proof.proof_c.try_into().expect("proof_c must be 32 bytes"),
 
         root: proof.root,
         public_amount: proof.public_amount,
@@ -123,10 +123,10 @@ pub struct NullifierPdas {
 
 pub fn find_nullifier_pdas(program_id: &Pubkey, proof: &Proof) -> NullifierPdas {
     let (nullifier0, bump0) =
-        Pubkey::find_program_address(&[b"nullifier0", &proof.input_nullifiers[0]], program_id);
+        Pubkey::find_program_address(&[b"nullifier", &proof.input_nullifiers[0]], program_id);
 
     let (nullifier1, bump1) =
-        Pubkey::find_program_address(&[b"nullifier1", &proof.input_nullifiers[1]], program_id);
+        Pubkey::find_program_address(&[b"nullifier", &proof.input_nullifiers[1]], program_id);
 
     NullifierPdas {
         nullifier0,
@@ -136,15 +136,6 @@ pub fn find_nullifier_pdas(program_id: &Pubkey, proof: &Proof) -> NullifierPdas 
     }
 }
 
-pub fn find_cross_check_nullifier_pdas(program_id: &Pubkey, proof: &Proof) -> (Pubkey, Pubkey) {
-    let (nullifier2_pda, _) =
-        Pubkey::find_program_address(&[b"nullifier0", &proof.input_nullifiers[1]], program_id);
-
-    let (nullifier3_pda, _) =
-        Pubkey::find_program_address(&[b"nullifier1", &proof.input_nullifiers[0]], program_id);
-
-    (nullifier2_pda, nullifier3_pda)
-}
 
 pub struct TestContext {
     pub svm: LiteSVM,
@@ -217,7 +208,7 @@ pub fn setup() -> TestContext {
     reset_global_test_alt();
     let mut svm = LiteSVM::new();
 
-    let program_id = Pubkey::from_str(PROGRAM_ID).unwrap();
+    let program_id = PROGRAM_ID;
 
     // Load the Anchor program into LiteSVM.
     // Replace the path with your actual built .so.
@@ -503,8 +494,6 @@ pub fn build_transact_spl_ix(
     tree_account: Pubkey,
     nullifier0: Pubkey,
     nullifier1: Pubkey,
-    nullifier2: Pubkey,
-    nullifier3: Pubkey,
     global_config: Pubkey,
     signer: Pubkey,
     recipient: Pubkey,
@@ -516,7 +505,8 @@ pub fn build_transact_spl_ix(
 ) -> Instruction {
     let mut data = Vec::new();
     data.push(PrivacyCashInstructions::TransactSpl as u8);
-    data.extend_from_slice(bytemuck::bytes_of(proof));
+    // 2/3 take the raw (uncompressed) proof: decompress the prover's output.
+    data.extend_from_slice(bytemuck::bytes_of(&raw_proof(proof)));
     data.extend_from_slice(bytemuck::bytes_of(ext_data_minified));
     data.extend_from_slice(&(encrypted_output1.len() as u32).to_le_bytes());
     data.extend_from_slice(encrypted_output1);
@@ -531,13 +521,10 @@ pub fn build_transact_spl_ix(
             AccountMeta::new(tree_account, false),
             AccountMeta::new(nullifier0, false),
             AccountMeta::new(nullifier1, false),
-            AccountMeta::new(nullifier2, false),
-            AccountMeta::new(nullifier3, false),
             AccountMeta::new(global_config, false),
             AccountMeta::new(signer, true),
             AccountMeta::new_readonly(mint, false),
             AccountMeta::new(signer_token_account, false),
-            AccountMeta::new_readonly(recipient, false),
             AccountMeta::new(recipient_token_account, false),
             AccountMeta::new(tree_ata, false),
             AccountMeta::new(fee_recipient_ata, false),
@@ -554,7 +541,7 @@ pub fn build_transact_spl_ix(
 // -----------------------------------------------------------------------------
 
 #[test]
-fn fails_deposit_instruction_for_non_usdc_token_mint() {
+fn rejects_spl_deposit_using_the_sol_tree() {
     let mut ctx = setup();
     let fixtures = create_mint_and_atas(&mut ctx);
 
@@ -667,9 +654,7 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
     let proof_result = prove(&proof_input, &key_base_path).unwrap();
     let proof_to_submit = format_proof(deposit_artifacts_to_submit(&proof_result, false).unwrap());
 
-    let nullifiers = find_nullifier_pdas(&Pubkey::from_str_const(PROGRAM_ID), &proof_to_submit);
-    let cross_check_nullifiers =
-        find_cross_check_nullifier_pdas(&Pubkey::from_str_const(PROGRAM_ID), &proof_to_submit);
+    let nullifiers = find_nullifier_pdas(&PROGRAM_ID, &proof_to_submit);
 
     let tree_ata = get_associated_token_address_with_program_id(
         &ctx.global_config,
@@ -694,7 +679,7 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
     ctx.svm.send_transaction(tx).unwrap();
 
     let test_protocol_addresses = get_test_protocol_addresses_with_mint(
-        &Address::from_str_const(PROGRAM_ID),
+        &Address::new_from_array(privacy_cash::ID),
         &ctx.authority.pubkey(),
         &tree_ata,
         &ctx.fee_recipient.pubkey(),
@@ -719,18 +704,16 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
     advance_one_slot(&mut ctx.svm);
 
     let tx_ix = build_transact_spl_ix(
-        Pubkey::from_str_const(PROGRAM_ID),
+        PROGRAM_ID,
         &proof_to_submit,
         &create_ext_data_minified(&ext_data),
         &ext_data.encrypted_output1,
         &ext_data.encrypted_output2,
         nullifiers.bump0,
         nullifiers.bump1,
-        ctx.tree_account, // This Tree Account is Still Wrong But Since Check Never Reaches till here so we move
+        ctx.tree_account, // SOL tree: not the PDA derived from this SPL mint.
         nullifiers.nullifier0,
         nullifiers.nullifier1,
-        cross_check_nullifiers.0,
-        cross_check_nullifiers.1,
         ctx.global_config,
         ctx.random_user.pubkey(),
         ctx.recipient.pubkey(),
@@ -752,11 +735,11 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
     let err = ctx
         .svm
         .send_transaction(versioned_tx)
-        .expect_err("expected non-USDC SPL deposit to fail, but the transaction succeeded");
+        .expect_err("expected an SPL deposit using the SOL tree to fail");
 
     let logs = err.meta.logs.join("\n");
     assert!(
-        logs.contains("0x1") || logs.contains("InvalidMintAddress"),
+        logs.contains("invalid account data for instruction"),
         "unexpected error: {logs}"
     );
 
@@ -773,4 +756,20 @@ fn fails_deposit_instruction_for_non_usdc_token_mint() {
         fee_recipient_before
     );
     assert_eq!(token_balance(&ctx.svm, &tree_ata), tree_before);
+}
+
+/// Decompress a compressed Groth16 proof with the program's own decompression
+/// (2/3 take raw points; the test prover emits compressed ones). A deliberately
+/// invalid point stays invalid (zeroed) so negative tests still reach the program.
+fn raw_proof(proof: &privacy_cash::state::Proof) -> privacy_cash::state::RawProof {
+    privacy_cash::state::RawProof {
+        proof_a: privacy_cash::groth16::decompress_g1(&proof.proof_a).unwrap_or([0u8; 64]),
+        proof_b: privacy_cash::groth16::decompress_g2(&proof.proof_b).unwrap_or([0u8; 128]),
+        proof_c: privacy_cash::groth16::decompress_g1(&proof.proof_c).unwrap_or([0u8; 64]),
+        root: proof.root,
+        public_amount: proof.public_amount,
+        ext_data_hash: proof.ext_data_hash,
+        input_nullifiers: proof.input_nullifiers,
+        output_commitments: proof.output_commitments,
+    }
 }

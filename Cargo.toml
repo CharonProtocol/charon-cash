@@ -4,6 +4,9 @@ members = [
     "programs/privacy-cash",
     "backend",
 ]
+# The prover crate is a standalone workspace (its own wasm/native builds);
+# the program's host tests use it as a path dependency.
+exclude = ["crates/privacy-cash-prover"]
 
 [profile.dev]
 # Important for wasmer + rust-probestack issues

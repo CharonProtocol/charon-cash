@@ -1,151 +1,186 @@
-pub const FR_BE: [u8; 32] = [
-    48, 100, 78, 114, 225, 49, 160, 41,
-    184, 80, 69, 182, 129, 129, 88, 93,
-    40, 51, 232, 72, 121, 185, 112, 145,
-    67, 225, 245, 147, 240, 0, 0, 1,
-];
+//! Fixed-width big-endian arithmetic over the two BN254 fields.
+//!
+//! Everything this program does with field elements is one of three things:
+//! compare a 32-byte value against a modulus, reduce a 32-byte value modulo
+//! the scalar field, or negate a base-field element. None of them needs a
+//! field type, a bignum allocation, or a Montgomery representation, all of
+//! which are expensive on SBF because it has no 64x64 -> 128 multiply.
+//!
+//! All values here are 256-bit unsigned integers in big-endian byte order,
+//! which is the encoding the `alt_bn128` syscalls and the proof accept.
 
+/// BN254 base field modulus `q`, big-endian.
+///
+/// `21888242871839275222246405745257275088696311157297823662689037894645226208583`
 pub const FQ_BE: [u8; 32] = [
-    48, 100, 78, 114, 225, 49, 160, 41,
-    184, 80, 69, 182, 129, 129, 88, 93,
-    151, 129, 106, 145, 104, 113, 202, 141,
-    60, 32, 140, 22, 216, 124, 253, 71,
+    48, 100, 78, 114, 225, 49, 160, 41, 184, 80, 69, 182, 129, 129, 88, 93, 151, 129, 106, 145,
+    104, 113, 202, 141, 60, 32, 140, 22, 216, 124, 253, 71,
 ];
 
-pub const MAX_R_SUBTRACTIONS: usize = 5;
+/// BN254 scalar field modulus `r`, big-endian.
+///
+/// `21888242871839275222246405745257275088548364400416034343698204186575808495617`
+pub const FR_BE: [u8; 32] = [
+    48, 100, 78, 114, 225, 49, 160, 41, 184, 80, 69, 182, 129, 129, 88, 93, 40, 51, 232, 72, 121,
+    185, 112, 145, 67, 225, 245, 147, 240, 0, 0, 1,
+];
 
-pub fn lt_be(a: &[u8; 32], b: &[u8; 32]) -> bool {
-    a < b
+/// `2^256 / r == 5`, so any 256-bit value is brought below `r` by at most five
+/// subtractions of `r`.
+const MAX_R_SUBTRACTIONS: usize = 5;
+
+/// `a < b`, comparing two 256-bit big-endian values.
+#[inline]
+pub const fn lt_be(a: &[u8; 32], b: &[u8; 32]) -> bool {
+    let mut i = 0;
+    while i < 32 {
+        if a[i] != b[i] {
+            return a[i] < b[i];
+        }
+        i += 1;
+    }
+    false
 }
 
+/// `a - b` over 256-bit big-endian values.
+///
+/// Returns the wrapped difference and whether the subtraction borrowed, i.e.
+/// whether `a < b`. Callers that need a real difference must check the flag.
+#[inline]
 pub fn sub_be(a: &[u8; 32], b: &[u8; 32]) -> ([u8; 32], bool) {
     let mut out = [0u8; 32];
-    let mut borrow: u16 = 0;
+    let mut borrow = 0u16;
 
-    for i in (0..32).rev() {
-        let diff = (a[i] as u16)
+    let mut i = 32;
+    while i > 0 {
+        i -= 1;
+        let d = (a[i] as u16)
             .wrapping_sub(b[i] as u16)
             .wrapping_sub(borrow);
-        out[i] = (diff & 0xff) as u8;
-        borrow = if diff > 0xff { 1 } else { 0 };
+        out[i] = d as u8;
+        borrow = (d >> 8) & 1;
     }
 
-    (out, borrow != 0)
+    (out, borrow == 1)
 }
 
-pub fn reduce_mod_r_be(mut value: [u8; 32]) -> [u8; 32] {
-    for _ in 0..MAX_R_SUBTRACTIONS {
-        if lt_be(&value, &FR_BE) {
+/// Reduces a 256-bit big-endian value modulo the scalar field.
+///
+/// This is the byte-level equivalent of `Fr::from_be_bytes_mod_order`, minus
+/// the Montgomery conversion, which is unobservable when the only thing done
+/// with the result is comparing it to another reduced value.
+#[inline]
+pub fn reduce_mod_r_be(value: &[u8; 32]) -> [u8; 32] {
+    let mut out = *value;
+
+    let mut i = 0;
+    while i < MAX_R_SUBTRACTIONS {
+        let (difference, borrow) = sub_be(&out, &FR_BE);
+        if borrow {
             break;
         }
-        value = sub_be(&value, &FR_BE).0;
+        out = difference;
+        i += 1;
     }
-    value
+
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use ark_bn254::{Fq, Fr};
-    use ark_ff::PrimeField;
-    use ark_serialize::CanonicalSerialize;
-    use num_bigint::BigUint;
+    use ark_ff::{BigInteger, PrimeField};
 
-    fn fr_to_be_bytes(v: Fr) -> [u8; 32] {
-        let mut bytes = Vec::new();
-        v.serialize_uncompressed(&mut bytes).unwrap();
-        let mut arr = [0u8; 32];
-        arr.copy_from_slice(&bytes);
-        arr.reverse();
-        arr
-    }
-
-    fn spread(step: u128, count: usize) -> Vec<[u8; 32]> {
-        (0..count)
-            .map(|i| {
-                let mut v = [0u8; 32];
-                let x = (i as u128) * step;
-                v[16..].copy_from_slice(&x.to_be_bytes());
-                v
-            })
-            .collect()
-    }
-
-    #[test]
-    fn moduli_are_the_alt_bn128_moduli() {
-        // Independent of arkworks: q = 3 mod 4 (BN254 curve form) and r | q - 1
-        // tie the constants to the syscall's field, not just to ark's source.
-        let q_tail = (FQ_BE[30] as u32) << 8 | FQ_BE[31] as u32;
-        assert_eq!(q_tail % 4, 3);
+    fn fr_be(bytes: &[u8; 32]) -> [u8; 32] {
+        Fr::from_be_bytes_mod_order(bytes)
+            .into_bigint()
+            .to_bytes_be()
+            .try_into()
+            .unwrap()
     }
 
     #[test]
     fn moduli_match_arkworks() {
-        let fr_modulus: BigUint = Fr::MODULUS.into();
-        let fq_modulus: BigUint = Fq::MODULUS.into();
-        assert_eq!(fr_modulus.to_bytes_be(), FR_BE.to_vec());
-        assert_eq!(fq_modulus.to_bytes_be(), FQ_BE.to_vec());
-        assert!(lt_be(&FR_BE, &FQ_BE));
+        assert_eq!(FR_BE.to_vec(), Fr::MODULUS.to_bytes_be());
+        assert_eq!(FQ_BE.to_vec(), Fq::MODULUS.to_bytes_be());
     }
 
     #[test]
-    fn reduce_matches_arkworks() {
-        let r = FR_BE;
-        let r_plus_1 = {
-            let mut v = r;
-            let mut i = 31;
-            while i > 0 && v[i] == 255 {
-                v[i] = 0;
-                i -= 1;
-            }
-            v[i] += 1;
-            v
-        };
-        let r_minus_1 = {
-            let mut v = r;
-            let mut i = 31;
-            while i > 0 && v[i] == 0 {
-                v[i] = 255;
-                i -= 1;
-            }
-            v[i] -= 1;
-            v
-        };
+    fn lt_be_matches_integer_order() {
+        assert!(lt_be(&[0u8; 32], &FR_BE));
+        assert!(!lt_be(&FR_BE, &FR_BE));
+        assert!(!lt_be(&[0xffu8; 32], &FR_BE));
 
-        let mut inputs: Vec<[u8; 32]> = vec![[0u8; 32], [255u8; 32], r, r_minus_1, r_plus_1];
-        inputs.extend(spread(u128::MAX / 512, 200));
+        let mut r_minus_one = FR_BE;
+        r_minus_one[31] -= 1;
+        assert!(lt_be(&r_minus_one, &FR_BE));
 
-        for input in inputs {
-            let expected = fr_to_be_bytes(Fr::from_be_bytes_mod_order(&input));
-            let got = reduce_mod_r_be(input);
-            assert_eq!(got, expected, "input {:02x?}", input);
-            assert!(lt_be(&got, &FR_BE));
-        }
+        let mut r_plus_one = FR_BE;
+        r_plus_one[31] += 1;
+        assert!(!lt_be(&r_plus_one, &FR_BE));
     }
 
     #[test]
-    fn sub_be_matches_arithmetic() {
-        let zero = [0u8; 32];
+    fn sub_be_borrows_exactly_when_smaller() {
+        let (difference, borrow) = sub_be(&FR_BE, &FR_BE);
+        assert!(!borrow);
+        assert_eq!(difference, [0u8; 32]);
+
+        let (_, borrow) = sub_be(&[0u8; 32], &[0u8; 32]);
+        assert!(!borrow);
+
         let mut one = [0u8; 32];
         one[31] = 1;
-
-        let (out, borrow) = sub_be(&[123u8; 32], &[45u8; 32]);
-        assert!(!borrow);
-        assert_eq!(out, [78u8; 32]);
-
-        let (_, borrow) = sub_be(&[45u8; 32], &[123u8; 32]);
+        let (difference, borrow) = sub_be(&[0u8; 32], &one);
         assert!(borrow);
+        assert_eq!(difference, [0xffu8; 32]);
 
-        let (out, borrow) = sub_be(&zero, &one);
-        assert!(borrow);
-        assert_eq!(out, [255u8; 32]);
-
-        let (out, borrow) = sub_be(&one, &one);
+        // Borrow propagates the whole way across the word.
+        let mut big = [0u8; 32];
+        big[0] = 1;
+        let (difference, borrow) = sub_be(&big, &one);
         assert!(!borrow);
-        assert_eq!(out, zero);
+        let mut expected = [0xffu8; 32];
+        expected[0] = 0;
+        assert_eq!(difference, expected);
+    }
 
-        let (out, borrow) = sub_be(&zero, &zero);
-        assert!(!borrow);
-        assert_eq!(out, zero);
+    #[test]
+    fn reduce_mod_r_matches_arkworks() {
+        let mut cases = vec![
+            [0u8; 32],
+            [0xffu8; 32],
+            FR_BE,
+            {
+                let mut v = FR_BE;
+                v[31] -= 1;
+                v
+            },
+            {
+                let mut v = FR_BE;
+                v[31] += 1;
+                v
+            },
+        ];
+
+        // A deterministic spread of values across the whole 256-bit range,
+        // including the top of it where five subtractions are needed.
+        let mut state = 0x243f_6a88_85a3_08d3u64;
+        for _ in 0..512 {
+            let mut value = [0u8; 32];
+            for chunk in value.chunks_mut(8) {
+                state = state
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                chunk.copy_from_slice(&state.to_be_bytes());
+            }
+            cases.push(value);
+        }
+
+        for case in cases {
+            assert_eq!(reduce_mod_r_be(&case), fr_be(&case), "case {case:?}");
+            assert!(lt_be(&reduce_mod_r_be(&case), &FR_BE));
+        }
     }
 }

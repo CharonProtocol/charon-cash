@@ -2,16 +2,15 @@ use pinocchio::{entrypoint, error::ProgramError, AccountView, Address, ProgramRe
 use pinocchio_pubkey::declare_id;
 
 use crate::instructions::{
-    process_initialize, process_initialize_tree_account_for_spl_token, process_transact,
-    process_transact_batch3, process_transact_batch5, process_transact_spl,
-    process_update_global_config,
+    process_initialize, process_initialize_tree_account_for_spl_token, process_swap,
+    process_transact, process_transact_spl, process_update_global_config, process_wrap_sol,
+    process_write_idl,
     update_deposit_limit::process_update_deposit_limit,
     update_deposit_limit_for_spl::process_update_deposit_limit_for_spl, PrivacyCashInstructions,
 };
 
 pub mod constants;
 pub mod error;
-pub mod field;
 pub mod groth16;
 pub mod helper;
 pub mod instructions;
@@ -19,10 +18,11 @@ pub mod merkle_tree;
 pub mod state;
 pub mod utils;
 
-declare_id!("CHvKW5fCPNfikvfHA1cxQL8guoyFGqRvwdr1B3NdNVss");
+declare_id!("36xGVBG86254oWi7dHJb9dstzarx1gk1pTvQ9Gmn598j");
 
-entrypoint!(process_instructions, 16);
+entrypoint!(process_instructions, 64);
 
+#[inline(never)]
 fn process_instructions(
     _program_id: &Address,
     accounts: &[AccountView],
@@ -38,8 +38,6 @@ fn process_instructions(
             process_initialize_tree_account_for_spl_token(accounts, data)?
         }
         PrivacyCashInstructions::Transact => process_transact(accounts, data)?,
-        PrivacyCashInstructions::TransactBatch3 => process_transact_batch3(accounts, data)?,
-        PrivacyCashInstructions::TransactBatch5 => process_transact_batch5(accounts, data)?,
         PrivacyCashInstructions::TransactSpl => process_transact_spl(accounts, data)?,
         PrivacyCashInstructions::UpdateDepositLimit => {
             process_update_deposit_limit(accounts, data)?
@@ -50,6 +48,9 @@ fn process_instructions(
         PrivacyCashInstructions::UpdateGlobalConfig => {
             process_update_global_config(accounts, data)?
         }
+        PrivacyCashInstructions::Swap => process_swap(accounts, data)?,
+        PrivacyCashInstructions::WrapSol => process_wrap_sol(accounts, data)?,
+        PrivacyCashInstructions::WriteIdl => process_write_idl(accounts, data)?,
     }
     Ok(())
 }

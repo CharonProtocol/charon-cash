@@ -65,22 +65,34 @@ pub fn verify_pda<const N: usize>(
     Ok(())
 }
 
-pub fn verify_cross_nullifier(account: &AccountView) -> ProgramResult {
-    if account.owned_by(&Address::from(crate::ID)) && !account.is_data_empty() {
+/// Checks an account against a compile-time address.
+///
+/// Used for the program's singleton PDAs, whose seeds have no runtime
+/// component and whose addresses are therefore constants. See
+/// `constants::TREE_ACCOUNT_ADDRESS` and friends.
+pub fn verify_address(account: &AccountView, expected: &[u8; 32]) -> ProgramResult {
+    if account.address().as_array() != expected {
         return Err(ProgramError::InvalidAccountData);
     }
-
     Ok(())
 }
 
-/// The verify_pda below is the only thing binding the created account to
-/// proof.input_nullifiers[i]. It cannot be dropped in favor of the
-/// invoke_signed CPI below it: the runtime unions PDA-derived signers with
-/// the transaction's own signers, so an attacker can pass a keypair they
-/// control as the nullifier account, sign the transaction with it, and
-/// satisfy CreateAccount's signer requirement without the seeds ever
-/// matching — leaving the genuine nullifier PDA unclaimed and the note
-/// spendable twice.
+/// Only the canonical (highest valid) bump may mark a nullifier spent: every
+/// other valid bump derives a different PDA for the same nullifier, which
+/// would let the same note be spent once per bump.
+fn verify_canonical_bump(seeds: &[&[u8]; 2], bump: u8) -> ProgramResult {
+    #[cfg(target_os = "solana")]
+    for higher in (bump as u16 + 1)..=u8::MAX as u16 {
+        let b = [higher as u8];
+        if Address::create_program_address(&[seeds[0], seeds[1], &b], &Address::from(crate::ID)).is_ok() {
+            return Err(ProgramError::InvalidSeeds);
+        }
+    }
+    #[cfg(not(target_os = "solana"))]
+    let _ = (seeds, bump);
+    Ok(())
+}
+
 pub fn init_nullifier_account(
     payer: &AccountView,
     nullifier_account: &AccountView,
@@ -92,11 +104,15 @@ pub fn init_nullifier_account(
     verify_uninitialized(nullifier_account)?;
 
     let bump_seed = [bump];
+    // `CreateAccount` also accepts a transaction signer. Without this
+    // derivation a caller can pass a keypair they control and leave the real
+    // nullifier PDA unclaimed.
     verify_pda(
         nullifier_account,
         &[seed_prefix, nullifier_hash, &bump_seed],
         &crate::ID,
     )?;
+    verify_canonical_bump(&[seed_prefix, nullifier_hash], bump)?;
 
     let space = core::mem::size_of::<NullifierAccount>();
     let lamports = rent.try_minimum_balance(space)?;
@@ -121,4 +137,45 @@ pub fn init_nullifier_account(
     data[0] = bump;
 
     Ok(())
+}
+
+/// Anchor-style event discriminators: sha256("event:<Name>")[..8].
+pub const TRANSACT_EVENT: [u8; 8] = [89, 245, 87, 250, 222, 30, 135, 142];
+pub const TRANSACT_SPL_EVENT: [u8; 8] = [184, 148, 174, 250, 197, 131, 248, 136];
+
+/// Emit a pool append as one Anchor-style event (a single `Program data:`
+/// field: discriminator + Borsh body) so an indexer reads the new leaves from
+/// the logs subscription instead of fetching the tx, and explorers list it
+/// under Events. Every field is already public in the instruction data.
+/// Body: first_leaf_index u32, [mint [u8; 32] for SPL pools], commitments
+/// [[u8; 32]; 2], nullifiers [[u8; 32]; 2], encrypted_output1 Vec<u8>,
+/// encrypted_output2 Vec<u8>.
+pub fn emit_transact_event(
+    first_leaf_index: u32,
+    mint: Option<&[u8; 32]>,
+    commitments: &[[u8; 32]; 2],
+    nullifiers: &[[u8; 32]; 2],
+    encrypted_output1: &[u8],
+    encrypted_output2: &[u8],
+) {
+    let mut data = Vec::with_capacity(8 + 4 + 32 + 128 + 8 + encrypted_output1.len() + encrypted_output2.len());
+    data.extend_from_slice(if mint.is_some() { &TRANSACT_SPL_EVENT } else { &TRANSACT_EVENT });
+    data.extend_from_slice(&first_leaf_index.to_le_bytes());
+    if let Some(m) = mint {
+        data.extend_from_slice(m);
+    }
+    data.extend_from_slice(bytemuck::cast_slice(commitments));
+    data.extend_from_slice(bytemuck::cast_slice(nullifiers));
+    for enc in [encrypted_output1, encrypted_output2] {
+        data.extend_from_slice(&(enc.len() as u32).to_le_bytes());
+        data.extend_from_slice(enc);
+    }
+    let fields: [&[u8]; 1] = [&data];
+    #[cfg(target_os = "solana")]
+    // SAFETY: `fields` is a valid slice of byte slices for the syscall's duration.
+    unsafe {
+        pinocchio::syscalls::sol_log_data(fields.as_ptr() as *const u8, fields.len() as u64)
+    };
+    #[cfg(not(target_os = "solana"))]
+    let _ = fields;
 }
