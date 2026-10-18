@@ -16,6 +16,9 @@ pub mod zkey;
 #[cfg(feature = "wasm")]
 mod wasm;
 
+#[cfg(feature = "android")]
+mod android;
+
 use anyhow::{anyhow, ensure, Result};
 use ark_bn254::{Bn254, Fr};
 use ark_groth16::{Groth16, PreparedVerifyingKey, Proof, ProvingKey};
