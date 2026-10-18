@@ -18,3 +18,7 @@ ios/
 # It embeds a snapshot of sdk/dist (~5MB) — rebuild locally, don't commit.
 bridge/dist/
 bridge/sdk-entry.ts
+
+# Native prover build outputs (modules/charon-prover/build-native.sh)
+modules/charon-prover/android/src/main/jniLibs/
+modules/charon-prover/android/src/main/assets/

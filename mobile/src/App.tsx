@@ -7,14 +7,13 @@ import { WalletProvider, useWallet } from "./wallet/WalletProvider";
 import { BridgeProvider } from "./bridge/BridgeContext";
 import { SdkWebView, type SdkBridgeHandle } from "./bridge/SdkWebView";
 import { ConnectScreen } from "./screens/ConnectScreen";
-import { HomeScreen } from "./screens/HomeScreen";
-import { TransferScreen } from "./screens/TransferScreen";
-import { SendNoteScreen } from "./screens/SendNoteScreen";
-import { SettingsScreen } from "./screens/SettingsScreen";
+import { HomeScreen, type Action } from "./screens/HomeScreen";
+import { ActionScreen } from "./screens/ActionScreen";
 import { theme } from "./ui/theme";
 import type { BridgeMethod } from "./lib/rpc";
+import { CharonProver } from "../modules/charon-prover/src";
 
-type Nav = "home" | "transfer" | "sendnote" | "settings";
+type Nav = "home" | Action;
 
 /** Fade + slide wrapper re-mounted on every nav change, so screens glide. */
 function ScreenTransition({ navKey, children }: { navKey: string; children: React.ReactNode }) {
@@ -42,24 +41,15 @@ function Root() {
   const { connected } = useWallet();
   const insets = useSafeAreaInsets();
   const [nav, setNav] = useState<Nav>("home");
+  const [asset, setAsset] = useState("SOL");
 
   let screen: React.ReactNode;
-  if (nav === "settings") {
-    screen = <SettingsScreen onBack={() => setNav("home")} />;
-  } else if (nav === "transfer") {
-    screen = <TransferScreen onDone={() => setNav("home")} />;
-  } else if (nav === "sendnote") {
-    screen = <SendNoteScreen onDone={() => setNav("home")} />;
-  } else if (connected) {
-    screen = (
-      <HomeScreen
-        onSend={() => setNav("transfer")}
-        onSendNote={() => setNav("sendnote")}
-        onOpenSettings={() => setNav("settings")}
-      />
-    );
+  if (!connected) {
+    screen = <ConnectScreen />;
+  } else if (nav === "home") {
+    screen = <HomeScreen asset={asset} onAsset={setAsset} onAction={setNav} />;
   } else {
-    screen = <ConnectScreen onOpenSettings={() => setNav("settings")} />;
+    screen = <ActionScreen action={nav} initialAsset={asset} onDone={() => setNav("home")} />;
   }
 
   // The root is pinned to the window height explicitly instead of relying on
@@ -89,6 +79,11 @@ function Root() {
 
 export default function App() {
   const bridgeRef = useRef<SdkBridgeHandle>(null);
+
+  // Parse the circuit in the background so the first proof doesn't wait on it.
+  useEffect(() => {
+    CharonProver?.warmup().catch(() => {});
+  }, []);
 
   const call = useCallback(
     <T,>(method: BridgeMethod, args: unknown[] = []): Promise<T> => {

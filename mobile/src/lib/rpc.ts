@@ -3,14 +3,16 @@
 export type BridgeMethod =
   | "status"
   | "diag"
-  | "unlock"
+  | "start"
   | "refresh"
   | "getNotes"
-  | "balance"
-  | "transfer"
-  | "transferSpl"
-  | "send"
-  | "sendSpl"
+  | "balances"
+  | "isRegistered"
+  | "deposit"
+  | "depositTo"
+  | "withdraw"
+  | "transferPrivate"
+  | "swap"
   | "exportNotes"
   | "importNotes";
 
@@ -37,53 +39,71 @@ export interface SignTxResponseMsg {
   error?: string;
 }
 
+// RN -> bridge: one wallet session's signatures (base64), in request order.
+export interface SignBatchResponseMsg {
+  signId: number;
+  type: "signBatchResponse";
+  signaturesB64?: string[];
+  error?: string;
+}
+
+// RN -> bridge: the native prover's `{proof_a, proof_b, proof_c, public_signals}` JSON.
+export interface ProveResponseMsg {
+  proveId: number;
+  type: "proveResponse";
+  rawJson?: string;
+  error?: string;
+}
+
 // bridge -> RN
 export type BridgeInbound =
   | { type: "ready"; webcrypto: boolean; hasSdk: boolean }
   | { id: number; type: "result"; ok: true; data: unknown }
   | { id: number; type: "result"; ok: false; error: string; stack?: string }
   | { type: "signRequest"; signId: number; messageB64: string }
-  | { type: "signTxRequest"; signId: number; txB64: string };
+  | { type: "signTxRequest"; signId: number; txB64: string }
+  | { type: "signBatchRequest"; signId: number; messagesB64: string[] }
+  | { type: "proveRequest"; proveId: number; inputJson: string };
 
 export interface BridgeConfig {
   walletPubkey: string;
   backendUrl: string;
   circuitBase: string;
+  nativeProver: boolean;
 }
 
 // Result shapes (from the SDK, JSON-ified in the bridge)
-export interface BalanceResult {
-  lamports: number;
-  sol: number;
+export interface StartResult {
+  pubkey: string;
+  feeBps: number;
+  mints: { mint: string; symbol: string | null; decimals: number | null }[];
+}
+export interface AssetBalance {
+  /** Raw units, decimal string. */
+  total: string;
+  /** Largest amount one spend can move (two notes). */
+  maxSingle: string;
   noteCount: number;
 }
+/** Keyed by "SOL" or token mint. */
+export type Balances = Record<string, AssetBalance>;
 export interface RefreshResult {
-  scanned: number;
-  added: number;
-  spent: number;
+  scanned?: number;
+  added?: number;
+  spent?: number;
 }
 export interface DiagResult {
   backendUrl: string;
   reachable: boolean;
-  treeNextLeaf: number | null;
   fetchError: string | null;
 }
-export interface TransferResult {
+export interface TxResult {
   signature: string;
-  recipientLamports: number;
-  feeLamports: number;
-  changeLamports: string;
-  nullifiers?: string[];
 }
-// sendPrivateSOL / sendPrivateSPL return the same shape as a transfer.
-export type SendResult = TransferResult;
 export interface NoteLike {
   id: string;
   amount: string;
   mintAddress: string;
   index: number;
   spent: boolean;
-  createdAt?: number;
-  depositTx?: string;
-  spendTx?: string;
 }

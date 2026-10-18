@@ -1,243 +1,166 @@
-import React, { useCallback, useEffect, useRef } from "react";
-import { View, Text, Pressable } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { View, Text, Pressable, ScrollView, RefreshControl } from "react-native";
 import { useWallet } from "../wallet/WalletProvider";
-import { useBridge } from "../bridge/BridgeContext";
 import { useApp } from "../store";
-import { Button, Card, MonoText, Pill, ErrorBanner } from "../ui/components";
+import { useAccount } from "../hooks/useAccount";
+import { Button, Card, ErrorBanner, MonoText } from "../ui/components";
+import { AssetTabs } from "../ui/AssetTabs";
 import { FadeIn } from "../ui/FadeIn";
 import { Logo } from "../ui/Logo";
 import { theme, typography } from "../ui/theme";
-import type { BalanceResult, DiagResult, NoteLike, RefreshResult } from "../lib/rpc";
-import { fetchSolBalance } from "../lib/solana";
+import { formatUnits } from "../lib/assets";
 
-function fmtSol(lamports: number): string {
-  return (lamports / 1e9).toLocaleString(undefined, {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 4,
-  });
+export type Action = "deposit" | "send" | "withdraw" | "swap";
+
+const ACTIONS: { key: Action; label: string; glyph: string }[] = [
+  { key: "deposit", label: "Deposit", glyph: "+" },
+  { key: "send", label: "Send", glyph: "^" },
+  { key: "withdraw", label: "Withdraw", glyph: "v" },
+  { key: "swap", label: "Swap", glyph: "<>" },
+];
+
+function ActionButton({ label, glyph, onPress, disabled }: { label: string; glyph: string; onPress: () => void; disabled: boolean }) {
+  return (
+    <Pressable
+      onPress={disabled ? undefined : onPress}
+      style={({ pressed }) => ({ alignItems: "center", flex: 1, opacity: disabled ? 0.4 : pressed ? 0.7 : 1 })}
+    >
+      <View
+        style={{
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          backgroundColor: theme.accentSoft,
+          borderWidth: 1,
+          borderColor: theme.accentLine,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Text style={[typography.h2, { color: theme.accent }]}>{glyph}</Text>
+      </View>
+      <Text style={[typography.small, { color: theme.textSoft, marginTop: 8 }]}>{label}</Text>
+    </Pressable>
+  );
 }
 
-// Turn a raw unlock failure into an actionable message. The unlock step
-// prompts ONE wallet signature; if it's missed/declined it times out  -  the
-// single most common reason balance "won't load".
-function unlockHint(e: any): string {
-  const m = String(e?.message ?? e);
-  if (/timed?\s*out/i.test(m))
-    return "Unlock timed out  -  open your wallet, approve the signature request, then tap Refresh.";
-  if (/declin|reject|cancel|abort/i.test(m))
-    return "The unlock signature was declined in the wallet. Tap Refresh and approve it.";
-  return `Unlock failed: ${m}`;
-}
-
-// Explain a zero balance precisely: no notes on devnet vs. none owned by this
-// wallet vs. a transient indexer/network hiccup.
-function refreshHint(r: RefreshResult, onChain: number | null, owned: number): string {
-  if (owned > 0) return r.added > 0 ? `Found ${r.added} new note(s)` : "Up to date";
-  if (onChain === 0) return "No notes on devnet yet  -  deposit on the web app first.";
-  if (r.scanned === 0)
-    return "Reached the relayer but scanned 0 notes (indexer/network hiccup)  -  tap Refresh again.";
-  return `Scanned ${r.scanned} note(s) on devnet; none belong to this wallet. Deposit with this same wallet on the web app.`;
-}
-
-export function HomeScreen({
-  onSend,
-  onSendNote,
-  onOpenSettings,
-}: {
-  onSend: () => void;
-  onSendNote: () => void;
-  onOpenSettings: () => void;
-}) {
+export function HomeScreen({ asset, onAsset, onAction }: { asset: string; onAsset: (k: string) => void; onAction: (a: Action) => void }) {
   const { address, disconnect } = useWallet();
-  const { call } = useBridge();
-  const {
-    cluster,
-    balanceLamports,
-    publicBalanceLamports,
-    notes,
-    webcrypto,
-    bridgeReady,
-    busy,
-    busyLabel,
-    error,
-    setBalance,
-    setPublicBalance,
-    setNotes,
-    setBusy,
-    setError,
-    setToast,
-  } = useApp();
+  const { start, refresh } = useAccount();
+  const { bridgeReady, webcrypto, unlocked, assets, balances, walletBalances, busy, busyLabel, error, setError } = useApp();
+  const [pulling, setPulling] = useState(false);
 
-  const refresh = useCallback(async () => {
-    setError(null);
+  // Sign in once the SDK bridge is up for this wallet.
+  const didStart = useRef(false);
+  useEffect(() => {
+    if (!bridgeReady || didStart.current) return;
+    didStart.current = true;
+    start();
+  }, [bridgeReady, start]);
+
+  // New payments (salary, transfers) arrive while the app is open.
+  useEffect(() => {
+    if (!unlocked) return;
+    const t = setInterval(() => refresh().catch(() => {}), 30_000);
+    return () => clearInterval(t);
+  }, [unlocked, refresh]);
+
+  const onPull = useCallback(async () => {
+    setPulling(true);
     try {
-      // 1. Probe the backend from inside the WebView (same fetch path the SDK
-      //    uses). A wrong/dead Backend URL is the #1 cause of a flat 0  -  catch
-      //    it before the wallet signature so the message is exact.
-      let diag: DiagResult | null = null;
-      try {
-        diag = await call<DiagResult>("diag");
-      } catch {}
-      if (diag && !diag.reachable) {
-        setError(
-          `Backend unreachable  -  ${diag.backendUrl || "(empty)"}` +
-            (diag.fetchError ? `  -  ${diag.fetchError}` : "") +
-            `. Set the correct Backend URL in Settings, then tap Refresh.`,
-        );
-        return;
-      }
-
-      // 2. Unlock  -  derives the spending key from ONE wallet signature. A wallet
-      //    prompt appears; it MUST be approved or this hangs and times out.
-      setBusy(true, "Unlock  -  approve the signature in your wallet...");
-      try {
-        await call<unknown>("unlock");
-      } catch (e: any) {
-        throw new Error(unlockHint(e));
-      }
-
-      // 3. Scan devnet for owned notes + hydrate from the encrypted backend blob.
-      setBusy(true, "Scanning devnet for your shielded notes...");
-      const r = await call<RefreshResult>("refresh");
-      const b = await call<BalanceResult>("balance");
-      const n = await call<NoteLike[]>("getNotes");
-      setBalance(b.lamports);
-      setNotes(n);
-      setToast(refreshHint(r, diag?.treeNextLeaf ?? null, b.noteCount));
-      // Wallet's public SOL balance: what's available to deposit-and-send.
-      fetchSolBalance(cluster, address ?? "").then(setPublicBalance).catch(() => {});
+      if (unlocked) await refresh();
+      else await start();
     } catch (e: any) {
-      setError(e?.message ?? "Sync failed");
+      setError(e?.message ?? "Refresh failed");
     } finally {
-      setBusy(false);
+      setPulling(false);
     }
-  }, [call, cluster, address, setBalance, setPublicBalance, setNotes, setBusy, setError, setToast]);
+  }, [unlocked, refresh, start, setError]);
 
-  // Auto-load the shielded balance once the SDK bridge is ready for this wallet,
-  // so a freshly-connected user sees their notes instead of a flat 0. unlock()
-  // derives the spending key and needs one wallet signature (same as web).
-  const didInit = useRef(false);
-  useEffect(() => {
-    if (!bridgeReady || didInit.current) return;
-    didInit.current = true;
-    refresh();
-  }, [bridgeReady, refresh]);
-
-  // Public SOL balance shows as soon as the wallet connects (no bridge/unlock
-  // needed), and refreshes whenever the connected address or cluster changes.
-  useEffect(() => {
-    if (!address) return;
-    fetchSolBalance(cluster, address).then(setPublicBalance).catch(() => {});
-  }, [address, cluster, setPublicBalance]);
-
-  const unspent = notes.filter((n) => !n.spent);
+  const a = assets.find((x) => x.key === asset) ?? assets[0];
+  const priv = balances[a.key]?.total ?? "0";
+  const pub = walletBalances[a.key] ?? "0";
 
   return (
-    // Plain View root (NOT a ScrollView): as a direct flex:1 child of a bounded
-    // parent it is GUARANTEED to fill the screen. ScrollView's contentContainer
-    // flexGrow was not expanding on some devices -> content bunched at the top.
-    // The hero (flex:1) absorbs free space so balance sits centered and the
-    // actions/notes anchor to the bottom  -  full screen, no empty half.
-    <View style={{ flex: 1, backgroundColor: theme.bg, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 20 }}>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: theme.bg }}
+      contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 24 }}
+      refreshControl={<RefreshControl refreshing={pulling} onRefresh={onPull} tintColor={theme.accent} colors={[theme.accent]} />}
+    >
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          <Logo size={30} />
-          <Text style={[typography.micro, { color: theme.textSoft, letterSpacing: 1.5 }]}>CHARON PAY</Text>
+          <Logo size={28} />
+          <Text style={[typography.h2, { color: theme.text }]}>Charon</Text>
+          <View style={{ backgroundColor: theme.amberSoft, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
+            <Text style={[typography.micro, { color: theme.amber }]}>devnet</Text>
+          </View>
         </View>
-        <View style={{ flexDirection: "row", gap: 18 }}>
-          <Pressable onPress={onOpenSettings} hitSlop={8}>
-            <Text style={[typography.small, { color: theme.textMuted }]}>Settings</Text>
-          </Pressable>
-          <Pressable onPress={disconnect} hitSlop={8}>
-            <Text style={[typography.small, { color: theme.textMuted }]}>Disconnect</Text>
-          </Pressable>
-        </View>
+        <Pressable onPress={disconnect} hitSlop={8}>
+          <Text style={[typography.small, { color: theme.textMuted }]}>Disconnect</Text>
+        </Pressable>
       </View>
 
-      <View style={{ flex: 1, justifyContent: "center" }}>
-        <FadeIn>
-          <Text style={[typography.micro, { color: theme.textMuted }]}>
-            Shielded balance
-          </Text>
-          <View style={{ flexDirection: "row", alignItems: "baseline", marginTop: 6 }}>
-            <Text style={[typography.hero, { color: theme.text, fontSize: 52 }]}>{fmtSol(balanceLamports)}</Text>
-            <Text style={[typography.h2, { color: theme.textSoft, marginLeft: 10 }]}>SOL</Text>
+      <FadeIn>
+        <Card style={{ marginTop: 22, padding: 20 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text style={[typography.micro, { color: theme.textMuted }]}>Private balance</Text>
+            <AssetTabs assets={assets} value={a.key} onChange={onAsset} />
           </View>
-          <MonoText style={{ marginTop: 10 }}>
+          <View style={{ flexDirection: "row", alignItems: "baseline", marginTop: 14 }}>
+            <Text style={[typography.hero, { color: theme.text, fontSize: 44, lineHeight: 50 }]} numberOfLines={1} adjustsFontSizeToFit>
+              {unlocked ? formatUnits(priv, a.decimals) : "--"}
+            </Text>
+            <Text style={[typography.h2, { color: theme.textSoft, marginLeft: 8 }]}>{a.symbol}</Text>
+          </View>
+          <View style={{ height: 1, backgroundColor: theme.hairline, marginVertical: 14 }} />
+          <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+            <Text style={[typography.small, { color: theme.textMuted }]}>In your wallet</Text>
+            <Text style={[typography.small, { color: theme.textSoft }]}>
+              {formatUnits(pub, a.decimals)} {a.symbol}
+            </Text>
+          </View>
+          <MonoText style={{ marginTop: 6, color: theme.textMuted }}>
             {address ? address.slice(0, 6) + "..." + address.slice(-6) : ""}
           </MonoText>
-        </FadeIn>
-        <FadeIn delay={90}>
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginTop: 14,
-            }}
-          >
-            <Text style={[typography.small, { color: theme.textMuted }]}>
-              Wallet (deposit funds)
-            </Text>
-            <Text style={[typography.body, { color: theme.textSoft }]}>
-              {fmtSol(publicBalanceLamports)} SOL
-            </Text>
-          </View>
-        </FadeIn>
-
-        {!webcrypto && bridgeReady ? (
-          <View style={{ marginTop: 20 }}>
-            <ErrorBanner message="WebCrypto (crypto.subtle) is unavailable in this WebView. The SDK cannot run without a secure context  -  see bridge/README.md -> secure-context fallback." />
-          </View>
-        ) : null}
-
-        {error ? (
-          <View style={{ marginTop: 20 }}>
-            <ErrorBanner message={error} onDismiss={() => setError(null)} />
-          </View>
-        ) : null}
-      </View>
-
-      <View style={{ gap: 10 }}>
-        <FadeIn delay={140}>
-          <Button title="Send private transfer" onPress={onSend} subtitle="to any address  -  gasless via relayer" />
-        </FadeIn>
-        <FadeIn delay={200}>
-          <Button title="Send payment note" onPress={onSendNote} subtitle="share a redeemable note" variant="ghost" />
-        </FadeIn>
-        <FadeIn delay={260}>
-          <Button title={busy ? busyLabel || "Working..." : "Refresh balance"} variant="ghost" onPress={refresh} loading={busy} />
-        </FadeIn>
-      </View>
-
-      <FadeIn delay={320}>
-        <Text style={[typography.micro, { color: theme.textMuted, marginTop: 24, marginBottom: 10 }]}>
-          Shielded notes ({unspent.length})
-        </Text>
+        </Card>
       </FadeIn>
-      <View>
-        {unspent.length === 0 ? (
-          <Card>
-            <Text style={[typography.body, { color: theme.textSoft }]}>No shielded notes yet.</Text>
-            <Text style={[typography.small, { color: theme.textMuted, marginTop: 6 }]}>
-              Deposit on the web app with this wallet, then tap Refresh balance.
-            </Text>
-          </Card>
-        ) : (
-          unspent
-            .slice()
-            .sort((a, b) => Number(b.amount) - Number(a.amount))
-            .map((n) => (
-              <Card key={n.id} style={{ marginBottom: 10, padding: 14, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                <View>
-                  <Text style={[typography.h2, { color: theme.text }]}>{fmtSol(Number(n.amount))} SOL</Text>
-                  <MonoText style={{ marginTop: 2 }}>index {n.index}</MonoText>
-                </View>
-                <Pill tone="accent">unspent</Pill>
-              </Card>
-            ))
-        )}
-      </View>
-    </View>
+
+      <FadeIn delay={80}>
+        <View style={{ flexDirection: "row", marginTop: 24 }}>
+          {ACTIONS.map((x) => (
+            <ActionButton key={x.key} label={x.label} glyph={x.glyph} onPress={() => onAction(x.key)} disabled={!unlocked || busy} />
+          ))}
+        </View>
+      </FadeIn>
+
+      {!webcrypto && bridgeReady ? (
+        <View style={{ marginTop: 20 }}>
+          <ErrorBanner message="This phone's web engine is missing Web Crypto, which Charon needs. Update Android System WebView and reopen the app." />
+        </View>
+      ) : null}
+
+      {error ? (
+        <View style={{ marginTop: 20 }}>
+          <ErrorBanner message={error} onDismiss={() => setError(null)} />
+          {!unlocked ? <Button title="Try again" onPress={start} loading={busy} /> : null}
+        </View>
+      ) : null}
+
+      {busy ? (
+        <Text style={[typography.small, { color: theme.textMuted, marginTop: 20, textAlign: "center" }]}>{busyLabel}</Text>
+      ) : null}
+
+      <View style={{ flex: 1 }} />
+
+      <FadeIn delay={160}>
+        <Card style={{ marginTop: 28 }}>
+          <Text style={[typography.micro, { color: theme.accent }]}>Payroll</Text>
+          <Text style={[typography.body, { color: theme.text, marginTop: 6 }]}>Salary paid with Charon Payroll lands here, privately.</Text>
+          <Text style={[typography.small, { color: theme.textMuted, marginTop: 4 }]}>
+            Nothing to claim: it shows in your private balance. Withdraw to move it to your wallet.
+          </Text>
+        </Card>
+      </FadeIn>
+    </ScrollView>
   );
 }

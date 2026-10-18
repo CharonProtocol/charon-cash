@@ -33,7 +33,8 @@ const ENTRY_SRC = `
 import "./bridge-polyfill";
 import * as sdk from "privacy-cash-sdk";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
-(globalThis as any).PrivacyCashSDK = Object.assign(Object.create(null), sdk, { PublicKey, VersionedTransaction });
+import { compressedToSnarkjs } from "./groth16-decompress";
+(globalThis as any).PrivacyCashSDK = Object.assign(Object.create(null), sdk, { PublicKey, VersionedTransaction, compressedToSnarkjs });
 `;
 writeFileSync(SDK_ENTRY, ENTRY_SRC);
 

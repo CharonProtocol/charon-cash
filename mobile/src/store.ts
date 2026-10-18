@@ -1,16 +1,11 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import type { NoteLike } from "./lib/rpc";
+import { SOL, type Asset } from "./lib/assets";
+import type { Balances } from "./lib/rpc";
 
-// Settings (persisted) + runtime state (session only).
+// Wallet session (persisted) + runtime state (session only).
 interface AppState {
-  // --- settings (persisted) ---
-  backendUrl: string;
-  circuitBase: string;
-  cluster: "devnet" | "mainnet-beta" | "testnet";
-  setSettings: (p: Partial<Pick<AppState, "backendUrl" | "circuitBase" | "cluster">>) => void;
-
   // --- wallet (persisted so reopening the app does not force a reconnect) ---
   // walletAddress is base58 (display + SDK); walletAddrB64 is the raw base64
   // form MWA requires for signMessages/signTransactions; authToken is the MWA
@@ -31,15 +26,17 @@ interface AppState {
   hasSdk: boolean;
   setBridgeStatus: (p: { ready: boolean; webcrypto: boolean; hasSdk: boolean }) => void;
 
-  // --- data (session) ---
-  balanceLamports: number;
-  // Wallet's PUBLIC (unshielded) SOL balance, in lamports. Read straight from the
-  // RPC so the user sees how much they can deposit-and-send (deposits debit this).
-  publicBalanceLamports: number;
-  notes: NoteLike[];
-  setBalance: (lamports: number) => void;
-  setPublicBalance: (lamports: number) => void;
-  setNotes: (n: NoteLike[]) => void;
+  // --- account (session) ---
+  /** Unlocked + enrolled for private receiving. */
+  unlocked: boolean;
+  assets: Asset[];
+  feeBps: number;
+  balances: Balances;
+  /** Wallet (public) balances in raw units, keyed like `balances`. */
+  walletBalances: Record<string, string>;
+  setAccount: (p: { assets: Asset[]; feeBps: number }) => void;
+  setBalances: (b: Balances) => void;
+  setWalletBalances: (b: Record<string, string>) => void;
 
   // --- ui (session) ---
   busy: boolean;
@@ -51,23 +48,9 @@ interface AppState {
   setToast: (t: string | null) => void;
 }
 
-const DEFAULTS = {
-  // Live devnet stack: Cloudflare quick-tunnel in front of the VM relayer, and
-  // the deployed Vercel frontend (which serves /circuit/*.wasm,zkey). Override
-  // in Settings to point at your own relayer / circuit host. NOTE: the quick-
-  // tunnel subdomain is ephemeral -- if the app shows "Backend unreachable",
-  // the tunnel rotated; update this in Settings to the current tunnel URL.
-  backendUrl: "https://privacy-cash-relayer.theman-ai-1716.workers.dev",
-  circuitBase: "https://privacy-cash-web.vercel.app",
-  cluster: "devnet" as const,
-};
-
 export const useApp = create<AppState>()(
   persist(
     (set) => ({
-      ...DEFAULTS,
-      setSettings: (p) => set(p),
-
       walletAddress: null,
       walletAddrB64: null,
       authToken: null,
@@ -78,18 +61,18 @@ export const useApp = create<AppState>()(
       webcrypto: false,
       hasSdk: false,
       // The bridge posts {ready, webcrypto, hasSdk}; map `ready` onto the
-      // `bridgeReady` state field the rest of the app reads. (Previously this
-      // did `set(p)`, which wrote an unused `ready` key and left `bridgeReady`
-      // false forever -> the auto-load effect never fired -> silent balance 0.)
+      // `bridgeReady` state field the rest of the app reads.
       setBridgeStatus: (p) =>
         set({ bridgeReady: p.ready, webcrypto: p.webcrypto, hasSdk: p.hasSdk }),
 
-      balanceLamports: 0,
-      publicBalanceLamports: 0,
-      notes: [],
-      setBalance: (lamports) => set({ balanceLamports: lamports }),
-      setPublicBalance: (lamports) => set({ publicBalanceLamports: lamports }),
-      setNotes: (n) => set({ notes: n }),
+      unlocked: false,
+      assets: [SOL],
+      feeBps: 25,
+      balances: {},
+      walletBalances: {},
+      setAccount: (p) => set({ unlocked: true, assets: p.assets, feeBps: p.feeBps }),
+      setBalances: (b) => set({ balances: b }),
+      setWalletBalances: (b) => set({ walletBalances: b }),
 
       busy: false,
       busyLabel: "",
@@ -100,18 +83,11 @@ export const useApp = create<AppState>()(
       setToast: (t) => set({ toast: t }),
     }),
     {
-      // Bumped from "privacy-cash-mobile-v3" so a fresh install / upgrade drops
-      // the stale persisted backendUrl (the old quick-tunnel URL is dead now
-      // that the backend lives on Cloudflare Workers).
-      // Only settings are persisted, so a flush is safe.
-      name: "privacy-cash-mobile-v4",
+      // v5: Settings (backend/circuit/cluster) are gone; the network is fixed.
+      name: "charon-mobile-v5",
       storage: createJSONStorage(() => AsyncStorage),
-      // persist settings + the MWA wallet session (auth token) so reopening the
-      // app silently reauthorizes instead of forcing the Connect screen
+      // only the MWA wallet session survives a restart
       partialize: (s) => ({
-        backendUrl: s.backendUrl,
-        circuitBase: s.circuitBase,
-        cluster: s.cluster,
         walletAddress: s.walletAddress,
         walletAddrB64: s.walletAddrB64,
         authToken: s.authToken,
