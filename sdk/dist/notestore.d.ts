@@ -14,15 +14,23 @@
  * the cache; the blob survives. Even without the blob, `syncNotes` rebuilds the
  * notes from the indexer's encrypted outputs, so funds are never locked out.
  */
-import type { PublicKey } from "@solana/web3.js";
+import { PublicKey } from "@solana/web3.js";
 import { EncryptionService } from "./crypto";
 import { type Note } from "./notes";
 /** Encrypt the note set to a hex blob using the wallet-derived key. */
 export declare function encryptNotesBlob(enc: EncryptionService, notes: Note[]): Promise<string>;
 /** Decrypt a hex blob back into notes using the wallet-derived key. */
 export declare function decryptNotesBlob(enc: EncryptionService, hex: string): Promise<Note[]>;
-/** Read the in-memory note set, encrypt, and PUT the blob to the backend (upsert). */
-export declare function pushEncryptedNotes(wallet: PublicKey, enc: EncryptionService): Promise<void>;
+/** What the backup key signs for one upload: wallet, time, and the blob's hash. */
+export declare function noteBackupMessage(wallet: string, ts: number, ciphertext: string): Uint8Array;
+/** What the wallet signs once to link its backup key. */
+export declare function noteKeyLinkMessage(wallet: string, backupKey: string): Uint8Array;
+/**
+ * Read the in-memory note set, encrypt, and PUT the blob to the backend
+ * (upsert), signed by the wallet's backup key. The first upload to a backend
+ * that has no key for this wallet links it with one wallet signature.
+ */
+export declare function pushEncryptedNotes(wallet: PublicKey, enc: EncryptionService, signMessage?: (message: Uint8Array) => Promise<Uint8Array>): Promise<void>;
 /**
  * GET the encrypted blob, decrypt it, and upsert into the in-memory cache.
  * Returns the merged in-memory note set. Missing backup (404 or empty) → [].

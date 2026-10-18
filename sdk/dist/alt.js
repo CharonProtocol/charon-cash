@@ -93,15 +93,27 @@ async function sendIx(signer, ixs) {
     const tx = await signer.signTransaction(new VersionedTransaction(msg));
     return submitTransaction(tx.serialize());
 }
+/** A shared (read-only) table, when it holds every address in `common`. */
+export async function sharedAlt(address, common) {
+    const alt = await fetchAlt(address).catch(() => null);
+    if (!alt)
+        return null;
+    const have = new Set(alt.state.addresses.map((a) => a.toBase58()));
+    return common.every((a) => have.has(a.toBase58())) ? alt : null;
+}
 /**
  * Ensure an ALT exists that contains the given addresses.
- * Prefers `VITE_ALT_ADDRESS` (read-only — may be owned by the CLI keypair).
- * Falls back to a per-wallet ALT in localStorage, creating/extending as needed.
+ * Prefers a shared table — the relayer's per-mint table (`shared`), then
+ * `VITE_ALT_ADDRESS` — when it holds every `common` address (default: all of
+ * `addresses`); the wallet's own addresses then stay inline, which still fits
+ * v0. Falls back to a per-wallet ALT in localStorage, creating/extending as
+ * needed.
  */
 export async function ensureAlt(params) {
-    const fromEnv = params.preferred ?? envAltAddress();
-    if (fromEnv) {
-        const existing = await fetchAlt(fromEnv);
+    for (const addr of [params.shared, params.preferred ?? envAltAddress()]) {
+        if (!addr)
+            continue;
+        const existing = await sharedAlt(addr, params.common ?? params.addresses);
         if (existing)
             return existing;
     }

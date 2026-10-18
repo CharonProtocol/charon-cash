@@ -17,8 +17,6 @@ export interface TransactAccounts {
     globalConfig: PublicKey;
     nullifier0: PublicKey;
     nullifier1: PublicKey;
-    nullifier2: PublicKey;
-    nullifier3: PublicKey;
     bump0: number;
     bump1: number;
 }
@@ -55,13 +53,13 @@ export interface SplTransactExtras {
     /** Optional instructions prepended (e.g. create ATA idempotent). */
     preIxs?: TransactionInstruction[];
 }
-/** Build the 16-account Pinocchio transact_spl instruction. */
+/** Build the 13-account Pinocchio transact_spl instruction. */
 export declare function buildTransactSplInstruction(params: BuildTxParams & SplTransactExtras): {
     ix: TransactionInstruction;
     accounts: TransactAccounts;
     treeAccount: PublicKey;
 };
-/** Assemble an unsigned v0 SPL transaction (uses ALT — required to fit proof + 16 accounts). */
+/** Assemble an unsigned v0 SPL transaction (uses ALT — required to fit proof + 13 accounts). */
 export declare function buildTransactSplTransaction(params: BuildTxParams & SplTransactExtras & {
     lookupTables: AddressLookupTableAccount[];
 }): Promise<{

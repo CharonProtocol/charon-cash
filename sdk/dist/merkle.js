@@ -157,6 +157,16 @@ async function postJson(path, body) {
     }
     return data;
 }
+export async function fetchJupiterRoute(req) {
+    return postJson("/api/jupiter/route", { ...req, slippageBps: req.slippageBps ?? 100 });
+}
+/** Relayer-signed private swap (instruction 7, v1 packet). */
+export async function relaySwap(body) {
+    const r = await postJson("/api/relayer/swap", body);
+    if (!r?.signature)
+        throw new Error("relayer swap returned no signature");
+    return r;
+}
 export async function fetchRelayerInfo() {
     const r = await getJson("/api/relayer/info");
     return {
@@ -168,6 +178,9 @@ export async function fetchRelayerInfo() {
         supportedMints: (r.supported_mints ?? []).map((m) => ({
             mint: m.mint,
             feeAta: m.fee_ata,
+            ...(m.alt ? { alt: m.alt } : {}),
+            ...(typeof m.decimals === "number" ? { decimals: m.decimals } : {}),
+            ...(m.symbol ? { symbol: m.symbol } : {}),
         })),
     };
 }

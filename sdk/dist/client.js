@@ -5,10 +5,12 @@ import BN from "bn.js";
 import { envProgramId, FIELD_SIZE, MERKLE_TREE_DEPTH, RECEIVE_SIGN_MESSAGE, SIGN_MESSAGE, SOL_TREE_KEY, WRAPPED_SOL_MINT, } from "./constants";
 import { EncryptionService, Keypair, Utxo, encryptUtxoTo, getExtDataHash, getMintAddressField, } from "./crypto";
 import { fetchRecipientKeys } from "./recipients";
-import { bytesToHex, fetchCommitmentLeaf, fetchMerkleProof, fetchMerkleSnapshot, fetchRelayerInfo, fetchBlockhash, fetchTreeState, fetchUtxoRange, fieldToHex32, isNullifierSpent, kickIndexer, nullifiersSpent, nullifierInfo, submitTransaction, relayWithdraw, waitForLeafIndex, getBackendUrl, } from "./merkle";
+import { bytesToHex, fetchCommitmentLeaf, fetchMerkleProof, fetchMerkleSnapshot, fetchRelayerInfo, fetchBlockhash, fetchTreeState, fetchUtxoRange, fieldToHex32, isNullifierSpent, kickIndexer, nullifiersSpent, nullifierInfo, submitTransaction, relayWithdraw, fetchJupiterRoute, relaySwap, waitForLeafIndex, getBackendUrl, } from "./merkle";
 import { clearNotes, exportNotes, getSyncOffset, importNotes, loadNotes, markNoteSpent, markNoteUnspent, recordResolveFailure, newNoteId, purgeLegacyStorage, removeStaleNote, readLegacyNotes, flagNotesBeyondTree, resolvePendingNote, saveNote, setSyncOffset, unspentNotes, upsertNote, markNoteSpentByIndex, } from "./notes";
 import { pushEncryptedNotes, pullEncryptedNotes } from "./notestore";
 import { parseProofToBytesArray, parseToBytesArray, prove } from "./prover";
+import { compressG1, compressG2 } from "./compress";
+import { sha256 as sha256n } from "@noble/hashes/sha2";
 import { buildTransactSplTransaction, buildTransactTransaction, } from "./program";
 import { ensureAlt, envAltAddress, splAltAddresses, } from "./alt";
 /**
@@ -71,6 +73,11 @@ const RESOLVE_MAX_FAILURES = 6;
 // same total reads (leaf count) while the common incremental pass costs
 // almost nothing.
 const RANGE_PAGE = 128;
+/** Jupiter's wrapped-SOL mint (the pool's SOL tree uses WRAPPED_SOL_MINT). */
+const JUPITER_SOL_MINT = "So11111111111111111111111111111111111111112";
+function sha256Bytes(data) {
+    return sha256n(data);
+}
 function toPubkey(value) {
     return value instanceof PublicKey ? value : new PublicKey(value);
 }
@@ -175,6 +182,21 @@ export class PrivacyCashClient {
                 this.programId = new PublicKey(this.info.programId);
         }
     }
+    /** This wallet's note-backup key (base58), as derived at unlock. */
+    backupKey() {
+        if (!this.enc)
+            throw new Error("unlock first");
+        return new PublicKey(this.enc.backupSigningKey().publicKey).toBase58();
+    }
+    /** This wallet's receive keys (note + x25519 pubkeys), as derived at unlock. */
+    receiveKeys() {
+        if (!this.utxoKeypair || !this.enc)
+            throw new Error("unlock first");
+        return {
+            notePubkey: this.utxoKeypair.pubkey.toString(),
+            encPubkey: Buffer.from(this.enc.getReceivePublicKey()).toString("hex"),
+        };
+    }
     /** Prompt wallet to sign the constant message; derive the note keypair. */
     async unlock() {
         await this.init();
@@ -216,7 +238,7 @@ export class PrivacyCashClient {
     /** Push the local note set to the backend (encrypted blob; server can't read it). */
     async backupNotes() {
         await this.unlock();
-        await pushEncryptedNotes(this.publicKey, this.enc);
+        await pushEncryptedNotes(this.publicKey, this.enc, (m) => this.signer.signMessage(m));
     }
     /** Pull + decrypt the encrypted note blob from the backend into the in-memory cache. */
     async restoreNotes() {
@@ -231,7 +253,7 @@ export class PrivacyCashClient {
     async persistNotes() {
         if (!this.enc)
             return;
-        await pushEncryptedNotes(this.publicKey, this.enc);
+        await pushEncryptedNotes(this.publicKey, this.enc, (m) => this.signer.signMessage(m));
     }
     persistRunning = null;
     persistAgain = false;
@@ -524,7 +546,10 @@ export class PrivacyCashClient {
         // lamports of change notes this way). Re-scanning 32 leaves per pass is
         // cheap; upserts are idempotent by leaf index.
         const SYNC_OVERLAP = 32;
-        let start = fromScratch ? 0 : Math.max(0, getSyncOffset(wallet, treeKey) - SYNC_OVERLAP);
+        // The saved cursor is per program: a cursor from another deployment (same
+        // backend URL, new program) would start a new tree past real notes.
+        const cursorKey = `${this.programId?.toBase58() ?? "?"}:${treeKey}`;
+        let start = fromScratch ? 0 : Math.max(0, getSyncOffset(wallet, cursorKey) - SYNC_OVERLAP);
         let scanned = 0;
         let added = 0;
         let spent = 0;
@@ -609,7 +634,7 @@ export class PrivacyCashClient {
             const scannedTo = page.utxos.length
                 ? page.utxos[page.utxos.length - 1].leafIndex + 1
                 : start;
-            setSyncOffset(wallet, treeKey, scannedTo);
+            setSyncOffset(wallet, cursorKey, scannedTo);
             const caughtUp = !page.hasMore && page.nextIndex <= scannedTo;
             if (caughtUp)
                 break;
@@ -1064,6 +1089,11 @@ export class PrivacyCashClient {
             .filter((n) => n.mintAddress === mintAddress)
             .reduce((s, n) => s + BigInt(n.amount), 0n);
     }
+    /** The relayer's shared lookup table for `mint`, when it publishes one. */
+    sharedAltFor(mint) {
+        const alt = this.info?.supportedMints.find((m) => m.mint === mint.toBase58())?.alt;
+        return alt ? new PublicKey(alt) : null;
+    }
     feeAta(mint) {
         const hit = this.info.supportedMints.find((m) => m.mint === mint.toBase58());
         if (hit)
@@ -1105,6 +1135,193 @@ export class PrivacyCashClient {
         const dep = await this.depositSPL(mint, amountRaw);
         await this.waitForNoteIndexed(mintStr, dep.leafIndex);
         return this.withdrawSPL(mint, amountRaw, recipient, { relay: true, ...opts });
+    }
+    /**
+     * Deposit straight into another user's private balance in one transaction:
+     * the wallet pays in, the only output note belongs to `recipient` (their
+     * registered note key) and is encrypted to them. Nothing is saved as ours.
+     */
+    async depositSOLTo(amountLamports, recipient) {
+        return this.depositToInternal({ amount: amountLamports, recipient: toPubkey(recipient), isSpl: false });
+    }
+    async depositSPLTo(mint, amountRaw, recipient) {
+        return this.depositToInternal({ amount: amountRaw, recipient: toPubkey(recipient), isSpl: true, mint: toPubkey(mint) });
+    }
+    async depositToInternal(args) {
+        await this.unlock();
+        const keys = await fetchRecipientKeys(args.recipient);
+        if (!keys) {
+            throw new Error(`recipient ${args.recipient.toBase58()} has not enabled private receiving`);
+        }
+        const mintStr = args.isSpl ? args.mint.toBase58() : WRAPPED_SOL_MINT;
+        const treeKey = args.isSpl ? mintStr : SOL_TREE_KEY;
+        const { root, nextLeafIndex } = await fetchTreeState(treeKey);
+        const extAmount = new BN(args.amount.toString());
+        const fee = new BN(DEPOSIT_FEE);
+        const dummyPath = new Array(MERKLE_TREE_DEPTH).fill("0");
+        const wasm = this.wasm;
+        const inputs = [
+            new Utxo({ wasm, keypair: this.utxoKeypair, mintAddress: mintStr }),
+            new Utxo({ wasm, keypair: this.utxoKeypair, mintAddress: mintStr }),
+        ];
+        const outputs = [
+            new Utxo({
+                wasm,
+                amount: extAmount.sub(fee).toString(),
+                pubkey: keys.notePubkey,
+                index: nextLeafIndex,
+                mintAddress: mintStr,
+            }),
+            new Utxo({ wasm, amount: "0", keypair: this.utxoKeypair, index: nextLeafIndex + 1, mintAddress: mintStr }),
+        ];
+        const enc1 = await encryptUtxoTo(Buffer.from(keys.encPubkey, "hex"), outputs[0]);
+        const enc2 = await this.enc.encryptUtxo(outputs[1]);
+        let spl = {};
+        if (args.isSpl) {
+            // as depositSPL: on-chain hashes recipient_token_account = the fee ATA (fee 0)
+            const feeAta = this.feeAta(args.mint);
+            spl = {
+                mint: args.mint,
+                signerTokenAccount: getAssociatedTokenAddressSync(args.mint, this.publicKey),
+                recipientTokenAccount: feeAta,
+                feeRecipientAta: feeAta,
+            };
+        }
+        const { signature } = await this.proveAndSend({
+            root,
+            inputs,
+            outputs,
+            encryptedOutput1: enc1,
+            encryptedOutput2: enc2,
+            inputPathElements: [dummyPath, dummyPath],
+            inputPathIndices: inputs.map((u) => u.index),
+            extAmount,
+            fee,
+            recipient: this.feeRecipient,
+            feeRecipientForHash: args.isSpl ? this.feeAta(args.mint) : this.feeRecipient,
+            mintAddress: mintStr,
+            isSpl: args.isSpl,
+            ...spl,
+        });
+        await this.waitForLeaves(treeKey, nextLeafIndex + 1);
+        return { signature, amountLamports: Number(args.amount), leafIndex: nextLeafIndex };
+    }
+    /**
+     * Private SOL<->SPL swap through Jupiter, inside the pool. Spends `amountIn`
+     * of `fromMint` notes (change back to us), the relayer runs the Jupiter route
+     * and the output (at least the quote's minimum) lands as our note of
+     * `outMint`. Instruction 7 takes COMPRESSED proofs and only fits a v1 packet,
+     * which the relayer signs; mainnet only (Jupiter has no devnet liquidity).
+     */
+    async swap(fromMint, outMint, amountIn, opts) {
+        await this.unlock();
+        const from = toPubkey(fromMint).toBase58();
+        const to = toPubkey(outMint).toBase58();
+        const isSol = (m) => m === WRAPPED_SOL_MINT;
+        if (isSol(from) === isSol(to))
+            throw new Error("swap is SOL to SPL or SPL to SOL only");
+        const fromTree = isSol(from) ? SOL_TREE_KEY : from;
+        const toTree = isSol(to) ? SOL_TREE_KEY : to;
+        await this.syncForSpend(isSol(from) ? SOL_TREE_KEY : from);
+        const wasm = this.wasm;
+        const kp = this.utxoKeypair;
+        const amount = new BN(amountIn.toString());
+        // up to two notes covering amountIn, padded with an empty input
+        const sorted = unspentNotes(this.publicKey)
+            .filter((n) => n.mintAddress === from)
+            .sort((a, b) => Number(b.amount) - Number(a.amount));
+        const one = sorted.find((n) => new BN(n.amount).gte(amount));
+        const picked = one ? [one] : sorted.slice(0, 2);
+        const have = picked.reduce((s, n) => s.add(new BN(n.amount)), new BN(0));
+        if (have.lt(amount))
+            throw new Error(`insufficient private balance: have ${have.toString()}, need ${amount.toString()}`);
+        const realInputs = picked.map((n) => new Utxo({ wasm, amount: n.amount, blinding: n.blinding, keypair: kp, index: n.index, mintAddress: from }));
+        const inputs = realInputs.length === 2 ? realInputs : [realInputs[0], new Utxo({ wasm, keypair: kp, amount: "0", mintAddress: from })];
+        const route = await fetchJupiterRoute({
+            inputMint: isSol(from) ? JUPITER_SOL_MINT : from,
+            outputMint: isSol(to) ? JUPITER_SOL_MINT : to,
+            amount: amount.toString(),
+            slippageBps: opts?.slippageBps,
+        });
+        const minOut = new BN(route.minOut);
+        if (minOut.lten(0))
+            throw new Error("jupiter quote returned no output");
+        const inTree = await convergedMerkleInputs(fromTree, inputs);
+        const outTree = await fetchTreeState(toTree);
+        const change = new Utxo({ wasm, keypair: kp, amount: have.sub(amount).toString(), index: inTree.nextLeafIndex, mintAddress: from });
+        const dummyChange = new Utxo({ wasm, keypair: kp, amount: "0", index: inTree.nextLeafIndex + 1, mintAddress: from });
+        const received = new Utxo({ wasm, keypair: kp, amount: minOut.toString(), index: outTree.nextLeafIndex, mintAddress: to });
+        const dummyOut = new Utxo({ wasm, keypair: kp, amount: "0", index: outTree.nextLeafIndex + 1, mintAddress: to });
+        const outDummyInputs = [
+            new Utxo({ wasm, keypair: kp, mintAddress: to }),
+            new Utxo({ wasm, keypair: kp, mintAddress: to }),
+        ];
+        const encIn1 = await this.enc.encryptUtxo(change);
+        const encIn2 = await this.enc.encryptUtxo(dummyChange);
+        const encOut1 = await this.enc.encryptUtxo(received);
+        const encOut2 = await this.enc.encryptUtxo(dummyOut);
+        // domain-separated ext-data hashes, byte for byte as utils.rs
+        // calculate_swap_in/out_ext_data_hash
+        const i64le = (v) => v.toTwos(64).toArrayLike(Buffer, "le", 8);
+        const lp = (b) => { const n = Buffer.alloc(4); n.writeUInt32LE(b.length); return Buffer.concat([n, Buffer.from(b)]); };
+        const be32 = (dec) => Buffer.from(BigInt(dec).toString(16).padStart(64, "0"), "hex");
+        const mintBytes = (m) => Buffer.from(new PublicKey(m).toBytes());
+        const extIn = amount.neg();
+        const inHash = sha256Bytes(Buffer.concat([
+            Buffer.from("privacy_cash:swap_in:v1"), i64le(extIn), lp(encIn1), lp(encIn2), mintBytes(from), mintBytes(to),
+            i64le(minOut), be32(received.getCommitment()), be32(dummyOut.getCommitment()),
+        ]));
+        const outHash = sha256Bytes(Buffer.concat([
+            Buffer.from("privacy_cash:swap_out:v1"), i64le(minOut), lp(encOut1), lp(encOut2), mintBytes(to),
+        ]));
+        const leg = async (args) => {
+            const { proof, publicSignals } = await prove({
+                root: args.root,
+                inputNullifier: await Promise.all(args.ins.map((x) => x.getNullifier())),
+                outputCommitment: args.outs.map((x) => x.getCommitment()),
+                publicAmount: args.publicAmount.toString(),
+                extDataHash: args.extDataHash,
+                inAmount: args.ins.map((x) => x.amount.toString(10)),
+                inPrivateKey: args.ins.map((x) => x.keypair.privkey),
+                inBlinding: args.ins.map((x) => x.blinding.toString(10)),
+                inPathIndices: args.ins.map((x) => x.index),
+                inPathElements: args.paths,
+                outAmount: args.outs.map((x) => x.amount.toString(10)),
+                outBlinding: args.outs.map((x) => x.blinding.toString(10)),
+                outPubkey: args.outs.map((x) => x.pubkey),
+                mintAddress: getMintAddressField(args.mint),
+            });
+            const raw = parseProofToBytesArray(proof);
+            const sig = parseToBytesArray(publicSignals).map((b) => Buffer.from(b).toString("hex"));
+            return {
+                proof_a: Buffer.from(compressG1(Uint8Array.from(raw.proofA))).toString("hex"),
+                proof_b: Buffer.from(compressG2(Uint8Array.from(raw.proofB))).toString("hex"),
+                proof_c: Buffer.from(compressG1(Uint8Array.from(raw.proofC))).toString("hex"),
+                root: sig[0], public_amount: sig[1], ext_data_hash: sig[2],
+                input_nullifiers: [sig[3], sig[4]], output_commitments: [sig[5], sig[6]],
+            };
+        };
+        const zero = new Array(MERKLE_TREE_DEPTH).fill("0");
+        const proofIn = await leg({
+            root: inTree.root, ins: inputs, outs: [change, dummyChange], paths: inTree.inputPathElements,
+            publicAmount: extIn.add(FIELD_SIZE).mod(FIELD_SIZE), extDataHash: inHash, mint: from,
+        });
+        const proofOut = await leg({
+            root: outTree.root, ins: outDummyInputs, outs: [received, dummyOut], paths: [zero, zero],
+            publicAmount: minOut, extDataHash: outHash, mint: to,
+        });
+        const hex = (b) => Buffer.from(b).toString("hex");
+        const { signature } = await relaySwap({
+            proof_in: proofIn, proof_out: proofOut,
+            ext_amount_in: extIn.toString(), ext_amount_out: minOut.toString(),
+            encrypted_output_in1: hex(encIn1), encrypted_output_in2: hex(encIn2),
+            encrypted_output_out1: hex(encOut1), encrypted_output_out2: hex(encOut2),
+            from_mint: from, out_mint: to, route_data: route.route_data, route_accounts: route.route_accounts,
+        });
+        for (const n of picked)
+            markNoteSpentByIndex(this.publicKey, from, n.index, signature, n.blinding);
+        this.schedulePersist();
+        return { signature, minOut: route.minOut, outAmount: route.outAmount };
     }
     /** Poll until the indexer can serve a Merkle proof for `leafIndex` (mirror caught up). */
     async waitForNoteIndexed(treeKey, leafIndex, timeoutMs = 30_000) {
@@ -1240,18 +1457,9 @@ export class PrivacyCashClient {
                 relayRecipient = recipientAta.toBase58();
                 recipientOwner = args.recipient.toBase58();
                 mintStr = args.mint.toBase58();
-                // The relayer builds a v0 message reusing this ALT so the (otherwise
-                // >1232-byte) SPL withdraw compresses under the transaction-size limit.
-                const alt = await ensureAlt({
-                    signer: this.signer,
-                    preferred: envAltAddress(),
-                    addresses: splAltAddresses({
-                        programId: this.programId,
-                        feeRecipient: this.feeRecipient,
-                        mint: args.mint,
-                    }),
-                });
-                altAddress = alt.key.toBase58();
+                // The relayer builds and signs this tx with its own per-mint table:
+                // the wallet never creates one for a relayed spend.
+                altAddress = this.sharedAltFor(args.mint)?.toBase58();
             }
             const r = await this.proveAndRelay({ ...commonProof, hashRecipient, relayRecipient, recipientOwner, mint: mintStr, altAddress });
             signature = r.signature;
@@ -1541,16 +1749,7 @@ export class PrivacyCashClient {
             if (args.isSpl && args.mint) {
                 recipientOwner = this.feeRecipient.toBase58();
                 mintStr = args.mint.toBase58();
-                const alt = await ensureAlt({
-                    signer: this.signer,
-                    preferred: envAltAddress(),
-                    addresses: splAltAddresses({
-                        programId: this.programId,
-                        feeRecipient: this.feeRecipient,
-                        mint: args.mint,
-                    }),
-                });
-                altAddress = alt.key.toBase58();
+                altAddress = this.sharedAltFor(args.mint)?.toBase58();
             }
             const r = await this.proveAndRelay({
                 ...commonProof,
@@ -1763,15 +1962,21 @@ export class PrivacyCashClient {
         let transaction;
         if (args.isSpl) {
             const mint = args.mint;
+            const common = splAltAddresses({
+                programId: this.programId,
+                feeRecipient: this.feeRecipient,
+                mint,
+            });
+            // The relayer's shared per-mint table holds every common address; the
+            // payer's own accounts stay inline (worst case measured 1152 B < 1232),
+            // so a wallet creates its own table only when no shared one exists.
             const alt = await ensureAlt({
                 signer: this.signer,
                 preferred: envAltAddress(),
+                shared: this.sharedAltFor(mint),
+                common,
                 addresses: [
-                    ...splAltAddresses({
-                        programId: this.programId,
-                        feeRecipient: this.feeRecipient,
-                        mint,
-                    }),
+                    ...common,
                     args.signerTokenAccount,
                     args.recipientTokenAccount,
                     args.feeRecipientAta,

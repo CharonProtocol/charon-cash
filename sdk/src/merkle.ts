@@ -7,7 +7,9 @@ export interface RelayerInfo {
   feeErrorMarginBps: number
   /** Floor on the relayer fee for ext=0 SOL transfers (lamports); absent on older backends. */
   minTransferFee?: number
-  supportedMints: { mint: string; feeAta: string }[]
+  /** `alt`: the relayer's shared lookup table for this mint, when it has one;
+   * `decimals`/`symbol` label the pool for apps (symbol only for known tokens). */
+  supportedMints: { mint: string; feeAta: string; alt?: string; decimals?: number; symbol?: string }[]
 }
 
 export interface TreeState {
@@ -244,6 +246,30 @@ async function postJson(path: string, body: unknown): Promise<any> {
   return data
 }
 
+/** Jupiter route for a pool swap: the instruction the program CPIs, quoted by the backend. */
+export interface JupiterRoute {
+  minOut: string
+  outAmount: string
+  route_data: string
+  route_accounts: Array<{ pubkey: string; isWritable: boolean }>
+}
+
+export async function fetchJupiterRoute(req: {
+  inputMint: string
+  outputMint: string
+  amount: string
+  slippageBps?: number
+}): Promise<JupiterRoute> {
+  return postJson("/api/jupiter/route", { ...req, slippageBps: req.slippageBps ?? 100 })
+}
+
+/** Relayer-signed private swap (instruction 7, v1 packet). */
+export async function relaySwap(body: Record<string, unknown>): Promise<{ signature: string; size?: number }> {
+  const r = await postJson("/api/relayer/swap", body)
+  if (!r?.signature) throw new Error("relayer swap returned no signature")
+  return r
+}
+
 export async function fetchRelayerInfo(): Promise<RelayerInfo> {
   const r = await getJson("/api/relayer/info")
   return {
@@ -255,6 +281,9 @@ export async function fetchRelayerInfo(): Promise<RelayerInfo> {
     supportedMints: (r.supported_mints ?? []).map((m: any) => ({
       mint: m.mint,
       feeAta: m.fee_ata,
+      ...(m.alt ? { alt: m.alt } : {}),
+      ...(typeof m.decimals === "number" ? { decimals: m.decimals } : {}),
+      ...(m.symbol ? { symbol: m.symbol } : {}),
     })),
   }
 }

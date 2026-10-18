@@ -115,6 +115,13 @@ export declare class PrivacyCashClient {
     get publicKey(): PublicKey;
     get feeRecipient(): PublicKey;
     init(): Promise<void>;
+    /** This wallet's note-backup key (base58), as derived at unlock. */
+    backupKey(): string;
+    /** This wallet's receive keys (note + x25519 pubkeys), as derived at unlock. */
+    receiveKeys(): {
+        notePubkey: string;
+        encPubkey: string;
+    };
     /** Prompt wallet to sign the constant message; derive the note keypair. */
     unlock(): Promise<void>;
     isUnlocked(): boolean;
@@ -289,6 +296,8 @@ export declare class PrivacyCashClient {
     /** Poll the indexer's next_leaf_index. Never throws — deposit already settled. */
     private waitForLeaves;
     private balanceForMint;
+    /** The relayer's shared lookup table for `mint`, when it publishes one. */
+    private sharedAltFor;
     private feeAta;
     /**
      * Private transfer: spend a private note to pay another address. Mechanically a
@@ -319,6 +328,28 @@ export declare class PrivacyCashClient {
     sendPrivateSPL(mint: PublicKey | string, amountRaw: number | string, recipient: PublicKey | string, opts?: {
         relay?: boolean;
     }): Promise<WithdrawResult>;
+    /**
+     * Deposit straight into another user's private balance in one transaction:
+     * the wallet pays in, the only output note belongs to `recipient` (their
+     * registered note key) and is encrypted to them. Nothing is saved as ours.
+     */
+    depositSOLTo(amountLamports: number, recipient: PublicKey | string): Promise<DepositResult>;
+    depositSPLTo(mint: PublicKey | string, amountRaw: number | string, recipient: PublicKey | string): Promise<DepositResult>;
+    private depositToInternal;
+    /**
+     * Private SOL<->SPL swap through Jupiter, inside the pool. Spends `amountIn`
+     * of `fromMint` notes (change back to us), the relayer runs the Jupiter route
+     * and the output (at least the quote's minimum) lands as our note of
+     * `outMint`. Instruction 7 takes COMPRESSED proofs and only fits a v1 packet,
+     * which the relayer signs; mainnet only (Jupiter has no devnet liquidity).
+     */
+    swap(fromMint: PublicKey | string, outMint: PublicKey | string, amountIn: number | string, opts?: {
+        slippageBps?: number;
+    }): Promise<{
+        signature: string;
+        minOut: string;
+        outAmount: string;
+    }>;
     /** Poll until the indexer can serve a Merkle proof for `leafIndex` (mirror caught up). */
     private waitForNoteIndexed;
     private withdrawInternal;

@@ -57,6 +57,9 @@ export {
   isNullifierSpent,
   submitTransaction,
   relayWithdraw,
+  fetchJupiterRoute,
+  relaySwap,
+  type JupiterRoute,
   fieldToHex32,
   setBackendUrl,
   getBackendUrl,
@@ -94,6 +97,8 @@ export {
   decryptNotesBlob,
   pushEncryptedNotes,
   pullEncryptedNotes,
+  noteBackupMessage,
+  noteKeyLinkMessage,
 } from "./notestore"
 export {
   setOperatorPassword,
@@ -116,3 +121,6 @@ export {
   SOL_TREE_KEY,
   WRAPPED_SOL_MINT,
 } from "./constants"
+
+export { compressG1, compressG2 } from "./compress"
+export { rememberUnlockSigner } from "./session"

@@ -14,7 +14,9 @@
  * the cache; the blob survives. Even without the blob, `syncNotes` rebuilds the
  * notes from the indexer's encrypted outputs, so funds are never locked out.
  */
-import type { PublicKey } from "@solana/web3.js"
+import { PublicKey } from "@solana/web3.js"
+import { ed25519 } from "@noble/curves/ed25519"
+import { sha256 } from "@noble/hashes/sha2"
 
 import { getBackendUrl } from "./merkle"
 import { EncryptionService } from "./crypto"
@@ -39,17 +41,59 @@ export async function decryptNotesBlob(
   return Array.isArray(parsed) ? (parsed as Note[]) : []
 }
 
-/** Read the in-memory note set, encrypt, and PUT the blob to the backend (upsert). */
+const hex = (b: Uint8Array) => Buffer.from(b).toString("hex")
+
+/** What the backup key signs for one upload: wallet, time, and the blob's hash. */
+export function noteBackupMessage(wallet: string, ts: number, ciphertext: string): Uint8Array {
+  const blobHash = hex(sha256(new TextEncoder().encode(ciphertext)))
+  return new TextEncoder().encode(["charon-notes-v1", wallet, String(ts), blobHash].join("\n"))
+}
+
+/** What the wallet signs once to link its backup key. */
+export function noteKeyLinkMessage(wallet: string, backupKey: string): Uint8Array {
+  return new TextEncoder().encode(["charon-notes-key-v1", wallet, backupKey].join("\n"))
+}
+
+/**
+ * Read the in-memory note set, encrypt, and PUT the blob to the backend
+ * (upsert), signed by the wallet's backup key. The first upload to a backend
+ * that has no key for this wallet links it with one wallet signature.
+ */
 export async function pushEncryptedNotes(
   wallet: PublicKey,
   enc: EncryptionService,
+  signMessage?: (message: Uint8Array) => Promise<Uint8Array>,
 ): Promise<void> {
+  // nothing to back up (a brand-new wallet): no upload, so no link prompt
+  // before the wallet enrolls (enrolling links the backup key in one signature)
+  if (loadNotes(wallet).length === 0) return
   const ciphertext = await encryptNotesBlob(enc, loadNotes(wallet))
-  const res = await fetch(`${getBackendUrl()}/api/notes`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ wallet: wallet.toBase58(), ciphertext }),
-  })
+  const owner = wallet.toBase58()
+  const { secretKey, publicKey } = enc.backupSigningKey()
+  const key = new PublicKey(publicKey).toBase58()
+  const put = () => {
+    const ts = Date.now()
+    const signature = Buffer.from(ed25519.sign(noteBackupMessage(owner, ts, ciphertext), secretKey)).toString("base64")
+    return fetch(`${getBackendUrl()}/api/notes`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ wallet: owner, ciphertext, ts, key, signature }),
+    })
+  }
+  let res = await put()
+  if (res.status === 401 && signMessage) {
+    const err = (await res.json().catch(() => null)) as { error?: { code?: string } } | null
+    if (err?.error?.code === "NOTES_KEY_UNLINKED") {
+      const linkSig = Buffer.from(await signMessage(noteKeyLinkMessage(owner, key))).toString("base64")
+      const link = await fetch(`${getBackendUrl()}/api/notes/key`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ wallet: owner, key, signature: linkSig }),
+      })
+      if (!link.ok) throw new Error(`notes key link failed: HTTP ${link.status}`)
+      res = await put()
+    }
+  }
   if (!res.ok) throw new Error(`notes backup failed: HTTP ${res.status}`)
 }
 

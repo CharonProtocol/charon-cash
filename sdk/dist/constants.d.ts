@@ -12,8 +12,8 @@ export declare const SEED: {
     readonly TREE_ACCOUNT: "merkle_tree";
     readonly TREE_TOKEN: "tree_token";
     readonly GLOBAL_CONFIG: "global_config";
-    readonly NULLIFIER0: "nullifier0";
-    readonly NULLIFIER1: "nullifier1";
+    /** One spent marker per nullifier, whichever input slot spends it. */
+    readonly NULLIFIER: "nullifier";
 };
 export declare const SOL_TREE_KEY = "sol";
 export declare const CIRCUIT: {

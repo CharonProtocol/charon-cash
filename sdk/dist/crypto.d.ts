@@ -100,6 +100,16 @@ export declare class EncryptionService {
     /** The receive secret as a native WebCrypto X25519 key (null: no native support). */
     private receiveKeyV3;
     /**
+     * Ed25519 key that signs this wallet's encrypted note backups, derived from
+     * the unlock signature (only the wallet can produce it). The wallet links it
+     * to itself once; the backend then accepts backups for the wallet only when
+     * signed by this key.
+     */
+    backupSigningKey(): {
+        secretKey: Uint8Array;
+        publicKey: Uint8Array;
+    };
+    /**
      * Derive keys from an ed25519 signature of the constant SIGN_MESSAGE, plus
      * optionally the second signature of RECEIVE_SIGN_MESSAGE that enables v3
      * note decryption (encryptUtxoTo payloads). Re-derivation resets both.

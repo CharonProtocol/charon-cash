@@ -1,4 +1,4 @@
-import { x25519 } from "@noble/curves/ed25519";
+import { ed25519, x25519 } from "@noble/curves/ed25519";
 import { hkdf } from "@noble/hashes/hkdf";
 import { sha256 as sha256n } from "@noble/hashes/sha2";
 import { PublicKey } from "@solana/web3.js";
@@ -216,6 +216,18 @@ export class EncryptionService {
     receivePublicV3 = null;
     /** The receive secret as a native WebCrypto X25519 key (null: no native support). */
     receiveKeyV3 = null;
+    /**
+     * Ed25519 key that signs this wallet's encrypted note backups, derived from
+     * the unlock signature (only the wallet can produce it). The wallet links it
+     * to itself once; the backend then accepts backups for the wallet only when
+     * signed by this key.
+     */
+    backupSigningKey() {
+        if (!this.encKeyV2)
+            throw new Error("EncryptionService not initialized");
+        const seed = sha256n(Buffer.concat([Buffer.from("charon-notes-backup-key-v1"), Buffer.from(this.encKeyV2)]));
+        return { secretKey: seed, publicKey: ed25519.getPublicKey(seed) };
+    }
     /**
      * Derive keys from an ed25519 signature of the constant SIGN_MESSAGE, plus
      * optionally the second signature of RECEIVE_SIGN_MESSAGE that enables v3

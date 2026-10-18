@@ -30,8 +30,6 @@ export interface TransactAccounts {
   globalConfig: PublicKey
   nullifier0: PublicKey
   nullifier1: PublicKey
-  nullifier2: PublicKey
-  nullifier3: PublicKey
   bump0: number
   bump1: number
 }
@@ -54,19 +52,11 @@ export function deriveAccounts(
     programId,
   )
   const [nullifier0, bump0] = PublicKey.findProgramAddressSync(
-    [Buffer.from(SEED.NULLIFIER0), Buffer.from(nullifierHash0)],
+    [Buffer.from(SEED.NULLIFIER), Buffer.from(nullifierHash0)],
     programId,
   )
   const [nullifier1, bump1] = PublicKey.findProgramAddressSync(
-    [Buffer.from(SEED.NULLIFIER1), Buffer.from(nullifierHash1)],
-    programId,
-  )
-  const [nullifier2] = PublicKey.findProgramAddressSync(
-    [Buffer.from(SEED.NULLIFIER0), Buffer.from(nullifierHash1)],
-    programId,
-  )
-  const [nullifier3] = PublicKey.findProgramAddressSync(
-    [Buffer.from(SEED.NULLIFIER1), Buffer.from(nullifierHash0)],
+    [Buffer.from(SEED.NULLIFIER), Buffer.from(nullifierHash1)],
     programId,
   )
   return {
@@ -75,8 +65,6 @@ export function deriveAccounts(
     globalConfig,
     nullifier0,
     nullifier1,
-    nullifier2,
-    nullifier3,
     bump0,
     bump1,
   }
@@ -164,8 +152,6 @@ export async function buildTransactTransaction(
       { pubkey: accounts.treeAccount, isSigner: false, isWritable: true },
       { pubkey: accounts.nullifier0, isSigner: false, isWritable: true },
       { pubkey: accounts.nullifier1, isSigner: false, isWritable: true },
-      { pubkey: accounts.nullifier2, isSigner: false, isWritable: false },
-      { pubkey: accounts.nullifier3, isSigner: false, isWritable: false },
       { pubkey: accounts.treeTokenAccount, isSigner: false, isWritable: true },
       { pubkey: accounts.globalConfig, isSigner: false, isWritable: false },
       { pubkey: params.recipient, isSigner: false, isWritable: true },
@@ -240,7 +226,7 @@ export interface SplTransactExtras {
   preIxs?: TransactionInstruction[]
 }
 
-/** Build the 16-account Pinocchio transact_spl instruction. */
+/** Build the 13-account Pinocchio transact_spl instruction. */
 export function buildTransactSplInstruction(
   params: BuildTxParams & SplTransactExtras,
 ): { ix: TransactionInstruction; accounts: TransactAccounts; treeAccount: PublicKey } {
@@ -265,13 +251,10 @@ export function buildTransactSplInstruction(
       { pubkey: treeAccount, isSigner: false, isWritable: true },
       { pubkey: accounts.nullifier0, isSigner: false, isWritable: true },
       { pubkey: accounts.nullifier1, isSigner: false, isWritable: true },
-      { pubkey: accounts.nullifier2, isSigner: false, isWritable: false },
-      { pubkey: accounts.nullifier3, isSigner: false, isWritable: false },
       { pubkey: accounts.globalConfig, isSigner: false, isWritable: false },
       { pubkey: params.signer, isSigner: true, isWritable: true },
       { pubkey: params.mint, isSigner: false, isWritable: false },
       { pubkey: params.signerTokenAccount, isSigner: false, isWritable: true },
-      { pubkey: params.recipient, isSigner: false, isWritable: false },
       { pubkey: params.recipientTokenAccount, isSigner: false, isWritable: true },
       { pubkey: treeAta, isSigner: false, isWritable: true },
       { pubkey: params.feeRecipientAta, isSigner: false, isWritable: true },
@@ -284,7 +267,7 @@ export function buildTransactSplInstruction(
   return { ix, accounts, treeAccount }
 }
 
-/** Assemble an unsigned v0 SPL transaction (uses ALT — required to fit proof + 16 accounts). */
+/** Assemble an unsigned v0 SPL transaction (uses ALT — required to fit proof + 13 accounts). */
 export async function buildTransactSplTransaction(
   params: BuildTxParams &
     SplTransactExtras & {
@@ -326,6 +309,11 @@ export async function buildTransactSplTransaction(
   let tx = tryCompile([...pre, limitIx, priceIx, ix])
   if (safeSerialize(tx) > 1232) {
     tx = tryCompile([...pre, limitIx, ix])
+  }
+  // Last resort, as on the SOL path: no compute-budget ixs. The transact then
+  // runs on the 200k default per instruction (SPL transact ~140-145k CU).
+  if (safeSerialize(tx) > 1232) {
+    tx = tryCompile([...pre, ix])
   }
   const size = safeSerialize(tx)
   if (size > 1232) {

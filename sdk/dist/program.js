@@ -6,18 +6,14 @@ export function deriveAccounts(programId, nullifierHash0, nullifierHash1) {
     const [treeAccount] = PublicKey.findProgramAddressSync([Buffer.from(SEED.TREE_ACCOUNT)], programId);
     const [treeTokenAccount] = PublicKey.findProgramAddressSync([Buffer.from(SEED.TREE_TOKEN)], programId);
     const [globalConfig] = PublicKey.findProgramAddressSync([Buffer.from(SEED.GLOBAL_CONFIG)], programId);
-    const [nullifier0, bump0] = PublicKey.findProgramAddressSync([Buffer.from(SEED.NULLIFIER0), Buffer.from(nullifierHash0)], programId);
-    const [nullifier1, bump1] = PublicKey.findProgramAddressSync([Buffer.from(SEED.NULLIFIER1), Buffer.from(nullifierHash1)], programId);
-    const [nullifier2] = PublicKey.findProgramAddressSync([Buffer.from(SEED.NULLIFIER0), Buffer.from(nullifierHash1)], programId);
-    const [nullifier3] = PublicKey.findProgramAddressSync([Buffer.from(SEED.NULLIFIER1), Buffer.from(nullifierHash0)], programId);
+    const [nullifier0, bump0] = PublicKey.findProgramAddressSync([Buffer.from(SEED.NULLIFIER), Buffer.from(nullifierHash0)], programId);
+    const [nullifier1, bump1] = PublicKey.findProgramAddressSync([Buffer.from(SEED.NULLIFIER), Buffer.from(nullifierHash1)], programId);
     return {
         treeAccount,
         treeTokenAccount,
         globalConfig,
         nullifier0,
         nullifier1,
-        nullifier2,
-        nullifier3,
         bump0,
         bump1,
     };
@@ -62,8 +58,6 @@ export async function buildTransactTransaction(params) {
             { pubkey: accounts.treeAccount, isSigner: false, isWritable: true },
             { pubkey: accounts.nullifier0, isSigner: false, isWritable: true },
             { pubkey: accounts.nullifier1, isSigner: false, isWritable: true },
-            { pubkey: accounts.nullifier2, isSigner: false, isWritable: false },
-            { pubkey: accounts.nullifier3, isSigner: false, isWritable: false },
             { pubkey: accounts.treeTokenAccount, isSigner: false, isWritable: true },
             { pubkey: accounts.globalConfig, isSigner: false, isWritable: false },
             { pubkey: params.recipient, isSigner: false, isWritable: true },
@@ -113,7 +107,7 @@ export function buildInitializeSplIxData(maxDeposit, bump) {
     data[9] = bump;
     return data;
 }
-/** Build the 16-account Pinocchio transact_spl instruction. */
+/** Build the 13-account Pinocchio transact_spl instruction. */
 export function buildTransactSplInstruction(params) {
     const nullifierHash0 = Uint8Array.from(params.proof.inputNullifiers[0]);
     const nullifierHash1 = Uint8Array.from(params.proof.inputNullifiers[1]);
@@ -127,13 +121,10 @@ export function buildTransactSplInstruction(params) {
             { pubkey: treeAccount, isSigner: false, isWritable: true },
             { pubkey: accounts.nullifier0, isSigner: false, isWritable: true },
             { pubkey: accounts.nullifier1, isSigner: false, isWritable: true },
-            { pubkey: accounts.nullifier2, isSigner: false, isWritable: false },
-            { pubkey: accounts.nullifier3, isSigner: false, isWritable: false },
             { pubkey: accounts.globalConfig, isSigner: false, isWritable: false },
             { pubkey: params.signer, isSigner: true, isWritable: true },
             { pubkey: params.mint, isSigner: false, isWritable: false },
             { pubkey: params.signerTokenAccount, isSigner: false, isWritable: true },
-            { pubkey: params.recipient, isSigner: false, isWritable: false },
             { pubkey: params.recipientTokenAccount, isSigner: false, isWritable: true },
             { pubkey: treeAta, isSigner: false, isWritable: true },
             { pubkey: params.feeRecipientAta, isSigner: false, isWritable: true },
@@ -145,7 +136,7 @@ export function buildTransactSplInstruction(params) {
     });
     return { ix, accounts, treeAccount };
 }
-/** Assemble an unsigned v0 SPL transaction (uses ALT — required to fit proof + 16 accounts). */
+/** Assemble an unsigned v0 SPL transaction (uses ALT — required to fit proof + 13 accounts). */
 export async function buildTransactSplTransaction(params) {
     const { ix, accounts } = buildTransactSplInstruction(params);
     const blockhash = params.blockhash;
@@ -175,6 +166,11 @@ export async function buildTransactSplTransaction(params) {
     let tx = tryCompile([...pre, limitIx, priceIx, ix]);
     if (safeSerialize(tx) > 1232) {
         tx = tryCompile([...pre, limitIx, ix]);
+    }
+    // Last resort, as on the SOL path: no compute-budget ixs. The transact then
+    // runs on the 200k default per instruction (SPL transact ~140-145k CU).
+    if (safeSerialize(tx) > 1232) {
+        tx = tryCompile([...pre, ix]);
     }
     const size = safeSerialize(tx);
     if (size > 1232) {

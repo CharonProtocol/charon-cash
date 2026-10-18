@@ -14,7 +14,13 @@ export interface RecipientKeys {
  * both pubkeys. The backend verifies the third signature before storing, so
  * nobody can overwrite someone else's keys.
  */
-export declare function publishRecipientKeys(signer: Signer): Promise<RecipientKeys>;
+export declare function publishRecipientKeys(signer: Signer, 
+/** Keys an unlocked client already derived (client.receiveKeys()): skips
+ * re-signing SIGN_MESSAGE and RECEIVE_SIGN_MESSAGE, one prompt instead of three. */
+derived?: RecipientKeys, 
+/** The wallet's note-backup key (client.backupKey()): the same signature links
+ * it, so enrolling costs one prompt instead of registry + backup link. */
+backupKey?: string): Promise<RecipientKeys>;
 /** Registered receive keys for a wallet, or null when the wallet has not enrolled. */
 export declare function fetchRecipientKeys(wallet: PublicKey | string): Promise<RecipientKeys | null>;
 /**

@@ -126,7 +126,8 @@ function installFetch(): void {
         withdrawal_fee_rate_bps: FEE_BPS,
         fee_error_margin_bps: 0,
         min_transfer_fee: 10_000,
-        supported_mints: [{ mint: MINT.toBase58(), fee_ata: PublicKey.unique().toBase58() }],
+        // the relayer publishes its shared per-mint table; relayed spends pass it on
+        supported_mints: [{ mint: MINT.toBase58(), fee_ata: PublicKey.unique().toBase58(), alt: ALT_ADDRESS.toBase58() }],
       })
     }
     if (method === "GET" && url.pathname === "/api/relayer/blockhash") {

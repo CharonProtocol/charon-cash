@@ -26,20 +26,33 @@ function b58(wallet: PublicKey | string): string {
  * both pubkeys. The backend verifies the third signature before storing, so
  * nobody can overwrite someone else's keys.
  */
-export async function publishRecipientKeys(signer: Signer): Promise<RecipientKeys> {
-  const sig = await signer.signMessage(new TextEncoder().encode(SIGN_MESSAGE))
-  const receiveSig = await signer.signMessage(
-    new TextEncoder().encode(RECEIVE_SIGN_MESSAGE),
-  )
-  const enc = new EncryptionService()
-  enc.deriveFromSignature(sig, receiveSig)
-
-  const wasm = await WasmFactory.getInstance()
-  const notePubkey = new Keypair(enc.utxoPrivateKey, wasm).pubkey.toString()
-  const encPubkey = Buffer.from(enc.getReceivePublicKey()!).toString("hex")
+export async function publishRecipientKeys(
+  signer: Signer,
+  /** Keys an unlocked client already derived (client.receiveKeys()): skips
+   * re-signing SIGN_MESSAGE and RECEIVE_SIGN_MESSAGE, one prompt instead of three. */
+  derived?: RecipientKeys,
+  /** The wallet's note-backup key (client.backupKey()): the same signature links
+   * it, so enrolling costs one prompt instead of registry + backup link. */
+  backupKey?: string,
+): Promise<RecipientKeys> {
+  let notePubkey: string
+  let encPubkey: string
+  if (derived) {
+    ;({ notePubkey, encPubkey } = derived)
+  } else {
+    const sig = await signer.signMessage(new TextEncoder().encode(SIGN_MESSAGE))
+    const receiveSig = await signer.signMessage(
+      new TextEncoder().encode(RECEIVE_SIGN_MESSAGE),
+    )
+    const enc = new EncryptionService()
+    enc.deriveFromSignature(sig, receiveSig)
+    const wasm = await WasmFactory.getInstance()
+    notePubkey = new Keypair(enc.utxoPrivateKey, wasm).pubkey.toString()
+    encPubkey = Buffer.from(enc.getReceivePublicKey()!).toString("hex")
+  }
 
   const wallet = signer.publicKey.toBase58()
-  const message = `${RECIPIENT_PUT_PREFIX}\n${wallet}\n${notePubkey}\n${encPubkey}`
+  const message = `${RECIPIENT_PUT_PREFIX}\n${wallet}\n${notePubkey}\n${encPubkey}${backupKey ? `\n${backupKey}` : ""}`
   const registrySig = await signer.signMessage(new TextEncoder().encode(message))
 
   const res = await fetch(getBackendUrl() + "/api/recipients", {
@@ -50,6 +63,7 @@ export async function publishRecipientKeys(signer: Signer): Promise<RecipientKey
       note_pubkey: notePubkey,
       enc_pubkey: encPubkey,
       signature: Buffer.from(registrySig).toString("base64"),
+      ...(backupKey ? { backup_key: backupKey } : {}),
     }),
   })
   if (!res.ok) {

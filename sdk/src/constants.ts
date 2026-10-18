@@ -14,6 +14,8 @@ export const SIGN_MESSAGE = "Privacy Money account sign in"
 
 export const RECEIVE_SIGN_MESSAGE = "Privacy Money receive key v2"
 
+// transact / transact_spl take raw (uncompressed) Groth16 points; only swap
+// (7) carries compressed ones.
 export const DISC_TRANSACT = 2
 export const DISC_TRANSACT_SPL = 3
 
@@ -21,8 +23,8 @@ export const SEED = {
   TREE_ACCOUNT: "merkle_tree",
   TREE_TOKEN: "tree_token",
   GLOBAL_CONFIG: "global_config",
-  NULLIFIER0: "nullifier0",
-  NULLIFIER1: "nullifier1",
+  /** One spent marker per nullifier, whichever input slot spends it. */
+  NULLIFIER: "nullifier",
 } as const
 
 export const SOL_TREE_KEY = "sol"

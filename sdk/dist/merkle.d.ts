@@ -5,9 +5,14 @@ export interface RelayerInfo {
     feeErrorMarginBps: number;
     /** Floor on the relayer fee for ext=0 SOL transfers (lamports); absent on older backends. */
     minTransferFee?: number;
+    /** `alt`: the relayer's shared lookup table for this mint, when it has one;
+     * `decimals`/`symbol` label the pool for apps (symbol only for known tokens). */
     supportedMints: {
         mint: string;
         feeAta: string;
+        alt?: string;
+        decimals?: number;
+        symbol?: string;
     }[];
 }
 export interface TreeState {
@@ -79,6 +84,27 @@ export declare function relayWithdraw(req: {
 export declare function bytesToHex(bytes: ArrayLike<number>): string;
 /** Poseidon / Fr decimal string → 32-byte big-endian hex (no 0x). */
 export declare function fieldToHex32(dec: string): string;
+/** Jupiter route for a pool swap: the instruction the program CPIs, quoted by the backend. */
+export interface JupiterRoute {
+    minOut: string;
+    outAmount: string;
+    route_data: string;
+    route_accounts: Array<{
+        pubkey: string;
+        isWritable: boolean;
+    }>;
+}
+export declare function fetchJupiterRoute(req: {
+    inputMint: string;
+    outputMint: string;
+    amount: string;
+    slippageBps?: number;
+}): Promise<JupiterRoute>;
+/** Relayer-signed private swap (instruction 7, v1 packet). */
+export declare function relaySwap(body: Record<string, unknown>): Promise<{
+    signature: string;
+    size?: number;
+}>;
 export declare function fetchRelayerInfo(): Promise<RelayerInfo>;
 export interface BlockhashInfo {
     blockhash: string;
