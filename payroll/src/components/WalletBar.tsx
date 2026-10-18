@@ -32,17 +32,18 @@ function StatusChip({
 
 export function WalletBar({
   vaultSolRaw,
+  tokenVaults = [],
   unlocked,
   unlockBusy,
   onUnlock,
-  onOpenSettings,
   onFunded,
 }: {
   vaultSolRaw: bigint | null
+  /** token pool vaults (USDC, ...), already formatted; null text = not read yet */
+  tokenVaults?: Array<{ key: string; text: string | null }>
   unlocked: boolean
   unlockBusy: boolean
   onUnlock: () => void
-  onOpenSettings: () => void
   onFunded?: () => void
 }) {
   const { publicKey, disconnect } = useWallet()
@@ -77,11 +78,19 @@ export function WalletBar({
             </span>
           </StatusChip>
         )}
+        {tokenVaults.map(
+          (v) =>
+            v.text !== null && (
+              <StatusChip key={v.key}>
+                <span data-tip="Shielded vault balance held by the pool">
+                  <span className="text-mute">vault</span>
+                  <span className="font-semibold text-gold">{v.text}</span>
+                </span>
+              </StatusChip>
+            ),
+        )}
       </div>
       <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2">
-        <Button variant="ghost" size="sm" className="px-2 sm:px-3" onClick={onOpenSettings}>
-          Settings
-        </Button>
         {publicKey ? (
           <>
             {isLocalRpc() && (

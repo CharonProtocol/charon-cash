@@ -11,13 +11,12 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { RangeSlider } from "@/components/motion/range-slider"
 import { Ms } from "@/components/motion/ms"
+import { assetDecimals, assetKey, assetSymbol } from "@/lib/assets"
 import { rawToHuman, shortHash } from "@/lib/format"
 import { config } from "@/lib/config"
 import { estimateTotals, recommendLanes } from "@/lib/estimate"
 import { validateDecimals } from "@/lib/parse"
 import type { Asset, ParsedFile, RunMode } from "@/lib/types"
-
-const SOL_DECIMALS = 9
 
 interface RecipientCheck {
   total: number
@@ -44,7 +43,13 @@ export const PlanReviewCard = forwardRef<
     parsed: ParsedFile | null
     bps: number | null
     minTransferFee: number
-    vaultSolRaw: bigint | null
+    /** the selected settlement asset (owned by EmployerApp so the settlement
+     *  bar and the funding check follow it) and the pools to choose from */
+    asset: Asset
+    tokens: Asset[]
+    onAssetChange: (asset: Asset) => void
+    /** private vault balance of the selected asset */
+    vaultRaw: bigint | null
     /** recipient registry check — owned by EmployerApp so the settlement bar
      *  can run the same verify step from its dispatch button */
     check: RecipientCheck | null
@@ -53,11 +58,11 @@ export const PlanReviewCard = forwardRef<
     onParamsChange?: (p: PlanParams) => void
   }
 >(function PlanReviewCard(
-  { parsed, bps, minTransferFee, vaultSolRaw, check: recipientCheck, onRun, disabled, onParamsChange },
+  { parsed, bps, minTransferFee, asset, tokens, onAssetChange, vaultRaw, check: recipientCheck, onRun, disabled, onParamsChange },
   ref,
 ) {
-  // SOL is the only live settlement asset (USDC/USDT tiles are preview-only).
-  const kind = "sol" as const
+  const kind = asset.kind
+  const symbol = assetSymbol(asset)
   // The app is private-only by design — no public mode, no toggle.
   const mode: RunMode = "shielded"
   // Recommended lanes: small runs pay faster strictly serially (splits cost
@@ -91,9 +96,7 @@ export const PlanReviewCard = forwardRef<
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recommendedLanes])
 
-  const asset: Asset = { kind: "sol" }
-
-  const activeDecimals = SOL_DECIMALS
+  const activeDecimals = assetDecimals(asset)
 
   const decimalErrors =
     parsed && activeDecimals !== null ? validateDecimals(parsed.entries, activeDecimals) : []
@@ -106,9 +109,9 @@ export const PlanReviewCard = forwardRef<
     [parsed, activeDecimals, bps, kind, mode, minTransferFee],
   )
 
-  const vaultBig = vaultSolRaw ?? 0n
+  const vaultBig = vaultRaw ?? 0n
   const shortfall =
-    totals && kind === "sol" && totals.totalNet + totals.totalFees > vaultBig
+    totals && totals.totalNet + totals.totalFees > vaultBig
       ? totals.totalNet + totals.totalFees - vaultBig
       : 0n
 
@@ -165,10 +168,10 @@ export const PlanReviewCard = forwardRef<
               Execution Parameters
             </CardTitle>
             <CardDescription className="mt-0.5 text-xs">
-              {kind === "sol" && totals
+              {totals
                 ? shortfall > 0n
-                  ? `Vault covers ${rawToHuman(vaultBig, SOL_DECIMALS)} SOL - dispatching signs one top-up of ${rawToHuman(shortfall, SOL_DECIMALS)} SOL.`
-                  : `Vault covers the full ${rawToHuman(totals.totalNet + totals.totalFees, SOL_DECIMALS)} SOL - no deposit to sign.`
+                  ? `Vault covers ${rawToHuman(vaultBig, activeDecimals)} ${symbol} - dispatching signs one top-up of ${rawToHuman(shortfall, activeDecimals)} ${symbol}.`
+                  : `Vault covers the full ${rawToHuman(totals.totalNet + totals.totalFees, activeDecimals)} ${symbol} - no deposit to sign.`
                 : "Vault funds are spent first."}
             </CardDescription>
           </div>
@@ -183,21 +186,39 @@ export const PlanReviewCard = forwardRef<
           <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-mute">
             Settlement asset
           </div>
-          <button
-            type="button"
-            className={`flex w-full items-center gap-3 rounded-xl border border-gold-line bg-gold-soft/70 px-3.5 py-2.5 text-left ring-1 ring-[color-mix(in_srgb,var(--gold-2)_30%,transparent)] transition-all`}
-          >
-            <Ms name="currency_exchange" className="text-base text-gold" />
-            <span className="flex-1">
-              <span className="block text-sm font-medium">SOL Native Note</span>
-              <span className="block text-[11px] text-mute">shielded merkle pool · v2 notes</span>
-            </span>
-            <Ms name="check_circle" className="text-base text-gold" />
-          </button>
+          {[{ kind: "sol" } as Asset, ...tokens].map((opt) => {
+            const on = assetKey(opt) === assetKey(asset)
+            return (
+              <button
+                key={assetKey(opt)}
+                type="button"
+                aria-pressed={on}
+                onClick={() => onAssetChange(opt)}
+                className={`flex w-full items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-all ${
+                  on
+                    ? "border-gold-line bg-gold-soft/70 ring-1 ring-[color-mix(in_srgb,var(--gold-2)_30%,transparent)]"
+                    : "border-line bg-panel hover:border-gold-line"
+                }`}
+              >
+                <Ms name={opt.kind === "sol" ? "currency_exchange" : "token"} className={`text-base ${on ? "text-gold" : "text-mute"}`} />
+                <span className="flex-1">
+                  <span className="block text-sm font-medium">
+                    {opt.kind === "sol" ? "SOL Native Note" : `${assetSymbol(opt)} Note`}
+                  </span>
+                  <span className="block text-[11px] text-mute">
+                    {opt.kind === "sol" ? "shielded merkle pool · v2 notes" : `stablecoin pool · ${shortHash(opt.mint, 4, 4)}`}
+                  </span>
+                </span>
+                {on && <Ms name="check_circle" className="text-base text-gold" />}
+              </button>
+            )
+          })}
           {[
             { title: "USDC", sub: "stablecoin pool · preset mint" },
             { title: "USDT", sub: "stablecoin pool · preset mint" },
-          ].map((opt) => (
+          ]
+            .filter((opt) => !tokens.some((t) => assetSymbol(t) === opt.title))
+            .map((opt) => (
             <div
               key={opt.title}
               className="flex items-center gap-3 rounded-xl border border-line bg-panel px-3.5 py-2.5 opacity-55"

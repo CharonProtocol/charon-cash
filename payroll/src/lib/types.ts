@@ -1,6 +1,6 @@
 export type Asset =
   | { kind: "sol" }
-  | { kind: "spl"; mint: string; decimals: number }
+  | { kind: "spl"; mint: string; decimals: number; symbol?: string }
 
 /** One row of an uploaded payroll file. amountHuman is the EXACT net the employee must receive. */
 export interface PayrollEntry {

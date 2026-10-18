@@ -4,6 +4,7 @@ import { Ban, Check, Clock, Cloud, CloudOff, Download, History, Loader2, Trash2 
 import { Button } from "@/components/ui/button"
 import { CountUp } from "@/components/motion/CountUp"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { assetSymbol } from "@/lib/assets"
 import { downloadRun } from "@/lib/history"
 import { shortHash } from "@/lib/format"
 import { clearAll, HISTORY_EVENT, listRuns } from "@/lib/store"
@@ -187,7 +188,7 @@ export function HistoryPage({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
                   Run {selected.summary.sent}/{selected.summary.total} sent
                 </CardTitle>
                 <CardDescription>
-                  {new Date(selected.createdAt).toLocaleString()} · {selected.asset.kind === "sol" ? "SOL" : "SPL"} · {selected.mode === "shielded" ? "private notes" : "direct"}
+                  {new Date(selected.createdAt).toLocaleString()} · {assetSymbol(selected.asset)} · {selected.mode === "shielded" ? "private notes" : "direct"}
                   {runDuration(selected) !== null && ` · full run ${fmtDur(runDuration(selected)!)}`}
                   {selected.fundedAt !== undefined && selected.startedAt !== undefined &&
                     ` · deposit ${fmtDur(selected.fundedAt - selected.startedAt)}`}
@@ -238,7 +239,7 @@ export function HistoryPage({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
                             )}
                           </td>
                           <td className="px-3 py-2 font-mono text-muted-foreground">{shortHash(e.address, 5, 4)}</td>
-                          <td className="px-3 py-2 font-mono">{e.amountHuman}</td>
+                          <td className="px-3 py-2 font-mono">{e.amountHuman} {assetSymbol(selected.asset)}</td>
                           <td className="hidden px-3 py-2 font-mono text-muted-foreground sm:table-cell">{took ?? "-"}</td>
                           <td className="px-3 py-2"><StatusChip status={st} /></td>
                           <td className="px-3 py-2">

@@ -10,4 +10,5 @@ demo/
 .env*
 !.env.example
 .local-recipients.json
+.local-usdc-mint.json
 .env.local.prod

@@ -12,44 +12,45 @@ export interface PayrollConfig {
   cores?: number
 }
 
-const KEY = "payroll:settings:v1"
+// Settings used to persist here: drop that copy so an old saved backend
+// can't outlive this build (there is no Settings screen any more).
+const RETIRED_KEY = "payroll:settings:v1"
+try {
+  localStorage.removeItem(RETIRED_KEY)
+} catch {
+  // storage blocked: nothing to clean
+}
 
+/** Fixed at build time: devnet by default, the local stack via
+ *  .env.development.local (written by ./run.sh, dev server only). */
 const DEFAULTS: PayrollConfig = {
-  backendUrl: "https://privacy-cash-relayer.theman-ai-1716.workers.dev",
-  rpcUrl: "https://api.devnet.solana.com",
+  backendUrl: import.meta.env.VITE_BACKEND_URL || "https://backend.charon.cash",
+  rpcUrl: import.meta.env.VITE_SOLANA_RPC_URL || "https://api.devnet.solana.com",
   // Optional faster RPC for confirmations (websocket + status), e.g. a Helius
   // endpoint. Injected at build time via VITE_FAST_RPC_URL in .env.local —
   // never committed, never defaulted here.
   fastRpcUrl: import.meta.env.VITE_FAST_RPC_URL || undefined,
 }
 
+/** In-memory overrides for this page only (the headless bench sets them). */
+let overrides: Partial<PayrollConfig> = {}
+
 function read(): PayrollConfig {
-  try {
-    const raw = localStorage.getItem(KEY)
-    if (!raw) return { ...DEFAULTS }
-    const parsed = JSON.parse(raw) as Partial<PayrollConfig>
-    return {
-      backendUrl: parsed.backendUrl?.trim() || DEFAULTS.backendUrl,
-      rpcUrl: parsed.rpcUrl?.trim() || DEFAULTS.rpcUrl,
-      fastRpcUrl: parsed.fastRpcUrl?.trim() || DEFAULTS.fastRpcUrl,
-      cores: Number.isInteger(parsed.cores) && parsed.cores! > 0 ? parsed.cores : undefined,
-    }
-  } catch {
-    return { ...DEFAULTS }
-  }
+  return { ...DEFAULTS, ...overrides }
 }
 
 export const config = {
   get: read,
+  /** Page-only override (not persisted): the headless bench points at its stack. */
   set(patch: Partial<PayrollConfig>): void {
-    const next: PayrollConfig = { ...read() }
+    const next: Partial<PayrollConfig> = { ...overrides }
     if (patch.backendUrl?.trim()) next.backendUrl = patch.backendUrl.trim()
     if (patch.rpcUrl?.trim()) next.rpcUrl = patch.rpcUrl.trim()
     if (patch.fastRpcUrl !== undefined) next.fastRpcUrl = patch.fastRpcUrl.trim() || undefined
     if ("cores" in patch) next.cores = patch.cores && patch.cores > 0 ? Math.min(128, Math.floor(patch.cores)) : undefined
-    localStorage.setItem(KEY, JSON.stringify(next))
+    overrides = next
   },
-  /** Cores the prover plans for: the Settings value, else the browser's report. */
+  /** Cores the prover plans for: an override, else the browser's report. */
   cores(): number {
     return read().cores ?? (navigator.hardwareConcurrency || 4)
   },

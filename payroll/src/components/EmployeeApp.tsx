@@ -2,7 +2,6 @@ import { useMemo, useState } from "react"
 import { useWallet } from "@solana/wallet-adapter-react"
 import { toast } from "sonner"
 import { Copy, ShieldCheck } from "lucide-react"
-import { publishRecipientKeys } from "privacy-cash-sdk"
 
 import { Ms } from "@/components/motion/ms"
 import { CountUp } from "@/components/motion/CountUp"
@@ -11,9 +10,13 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { ConnectGate } from "@/components/ConnectGate"
 import { useEmployeeClient } from "@/hooks/useEmployeeClient"
-import { lamportsToSol, shortHash, solToLamports } from "@/lib/format"
+import { assetDecimals, assetKey, assetSymbol, SOL_ASSET } from "@/lib/assets"
+import { shortHash } from "@/lib/format"
+import { toRaw } from "@/lib/parse"
+import type { Asset } from "@/lib/types"
 
-type ClaimRecord = { sig: string; sol: string; at: number }
+/** `amount` is already formatted with its symbol */
+type ClaimRecord = { sig: string; amount: string; at: number }
 
 export function EmployeeApp() {
   const { publicKey, signMessage, signTransaction } = useWallet()
@@ -23,13 +26,32 @@ export function EmployeeApp() {
     busy,
     error,
     registered,
-    noteSolRaw,
-    walletSolRaw,
+    enable: enableReceiving,
+    noteRawOf,
+    walletRawOf,
+    tokens,
     bps,
     minFee,
     rescan,
     notes,
   } = useEmployeeClient()
+
+  // SOL or a token pool (USDC); a pool that disappears falls back to SOL
+  const [assetPick, setAssetPick] = useState<Asset>(SOL_ASSET)
+  const asset = tokens.some((t) => assetKey(t) === assetKey(assetPick)) ? assetPick : SOL_ASSET
+  const decimals = assetDecimals(asset)
+  const symbol = assetSymbol(asset)
+  /** human amount, `digits` decimals at most */
+  const fmt = (raw: bigint, digits = 6) => (Number(raw) / 10 ** decimals).toFixed(Math.min(digits, decimals))
+  // the relayer's minimum fee is lamports: token claims pay bps only
+  const feeFloor = BigInt(asset.kind === "sol" ? minFee : 0)
+  const feeOf = (gross: bigint) => {
+    if (bps === null) return 0n
+    const f = (gross * BigInt(bps)) / 10000n
+    return f > feeFloor ? f : feeFloor
+  }
+  const noteRawNow = noteRawOf(asset)
+  const walletRawNow = walletRawOf(asset)
 
   const [claimSol, setClaimSol] = useState("")
   const [claiming, setClaiming] = useState(false)
@@ -38,10 +60,16 @@ export function EmployeeApp() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [history, setHistory] = useState<ClaimRecord[]>([])
 
-  const noteRows = useMemo(() => notes(), [notes])
-  const maxClaimSol = noteSolRaw !== null ? lamportsToSol(noteSolRaw.toString()) : 0
-  const gross = BigInt(claimSol.trim() ? solToLamports(Number(claimSol) || 0) : 0)
-  const fee = bps !== null ? BigInt(Math.max(minFee, Number((gross * BigInt(bps)) / 10000n))) : 0n
+  const noteRows = useMemo(() => notes(asset), [notes, asset])
+  const maxClaim = noteRawNow ?? 0n
+  const gross = (() => {
+    try {
+      return claimSol.trim() ? toRaw(claimSol.trim(), decimals) : 0n
+    } catch {
+      return 0n
+    }
+  })()
+  const fee = gross > 0n ? feeOf(gross) : 0n
   const net = gross > fee ? gross - fee : 0n
 
   const selectedRaw = useMemo(
@@ -51,19 +79,15 @@ export function EmployeeApp() {
         .reduce((s, n) => s + BigInt(n.amount), 0n),
     [noteRows, selected],
   )
-  const selectedFee =
-    bps !== null && selectedRaw > 0n
-      ? BigInt(Math.max(minFee, Number((selectedRaw * BigInt(bps)) / 10000n)))
-      : 0n
+  const selectedFee = selectedRaw > 0n ? feeOf(selectedRaw) : 0n
   const selectedNet = selectedRaw > selectedFee ? selectedRaw - selectedFee : 0n
 
   const enable = async () => {
     if (!publicKey || !signMessage || !signTransaction) return
     setEnabling(true)
     try {
-      await publishRecipientKeys({ publicKey, signMessage, signTransaction })
+      await enableReceiving()
       toast.success("Private receiving enabled")
-      window.location.reload()
     } catch (e) {
       toast.error(`Could not enable: ${(e as Error).message}`)
     } finally {
@@ -76,9 +100,13 @@ export function EmployeeApp() {
     if (noteId) setClaimingNote(noteId)
     else setClaiming(true)
     try {
-      const r = await client.withdrawSOL(Number(lamports), publicKey, { relay: true })
-      toast.success(`Claimed ${lamportsToSol(r.recipientLamports).toFixed(6)} SOL`, { description: shortHash(r.signature, 10) })
-      setHistory((h) => [{ sig: r.signature, sol: lamportsToSol(r.recipientLamports).toFixed(4), at: Date.now() }, ...h].slice(0, 8))
+      const r =
+        asset.kind === "sol"
+          ? await client.withdrawSOL(Number(lamports), publicKey, { relay: true })
+          : await client.withdrawSPL(asset.mint, Number(lamports), publicKey, { relay: true })
+      const got = BigInt(r.recipientLamports)
+      toast.success(`Claimed ${fmt(got)} ${symbol}`, { description: shortHash(r.signature, 10) })
+      setHistory((h) => [{ sig: r.signature, amount: `${fmt(got, 4)} ${symbol}`, at: Date.now() }, ...h].slice(0, 8))
       setSelected(new Set())
       setClaimSol("")
       await rescan()
@@ -144,6 +172,27 @@ export function EmployeeApp() {
               </h1>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {tokens.length > 0 && (
+                <div role="group" aria-label="Asset" className="flex rounded-lg border border-line bg-card p-0.5">
+                  {[SOL_ASSET, ...tokens].map((t) => (
+                    <button
+                      key={assetKey(t)}
+                      type="button"
+                      aria-pressed={assetKey(t) === assetKey(asset)}
+                      onClick={() => {
+                        setAssetPick(t)
+                        setSelected(new Set())
+                        setClaimSol("")
+                      }}
+                      className={`rounded-md px-2.5 py-1 font-mono text-[11px] font-semibold ${
+                        assetKey(t) === assetKey(asset) ? "bg-gold-soft text-gold" : "text-mute hover:text-ink"
+                      }`}
+                    >
+                      {assetSymbol(t)}
+                    </button>
+                  ))}
+                </div>
+              )}
               <Button variant="outline" size="sm" onClick={() => rescan()} disabled={busy}>
                 <Ms name="radar" className="mr-1 text-sm text-gold" />
                 Scan tree for new notes
@@ -170,14 +219,14 @@ export function EmployeeApp() {
           <div data-stagger className="mt-6 grid gap-4 sm:grid-cols-2">
             <StatCard
               label="Claimable private notes"
-              value={noteSolRaw === null ? <span className="text-mute">-</span> : <CountUp to={Number(lamportsToSol(noteSolRaw.toString()))} decimals={4} suffix=" SOL" />}
+              value={noteRawNow === null ? <span className="text-mute">-</span> : <CountUp to={Number(noteRawNow) / 10 ** decimals} decimals={Math.min(4, decimals)} suffix={` ${symbol}`} />}
               dot="ok"
               dotLabel={noteRows.length > 0 ? `${noteRows.length} note${noteRows.length === 1 ? "" : "s"}` : "none yet"}
               sub="shielded state · unspent leaves"
             />
             <StatCard
               label="Wallet balance"
-              value={walletSolRaw === null ? <span className="text-mute">-</span> : <CountUp to={Number(walletSolRaw) / 1e9} decimals={4} suffix=" SOL" />}
+              value={walletRawNow === null ? <span className="text-mute">-</span> : <CountUp to={Number(walletRawNow) / 10 ** decimals} decimals={Math.min(4, decimals)} suffix={` ${symbol}`} />}
               dot="idle"
               dotLabel="public"
               sub="spendable now · visible on-chain"
@@ -240,7 +289,6 @@ export function EmployeeApp() {
                       </thead>
                       <tbody>
                         {noteRows.map((n) => {
-                          const sol = lamportsToSol(BigInt(n.amount).toString())
                           return (
                             <tr
                               key={n.id}
@@ -265,7 +313,7 @@ export function EmployeeApp() {
                                 </span>
                               </td>
                               <td className="px-3 py-3 text-right">
-                                <span className="font-mono text-xs tabular-nums">{Number(sol).toFixed(6)} SOL</span>
+                                <span className="font-mono text-xs tabular-nums">{fmt(BigInt(n.amount))} {symbol}</span>
                                 <span className="tag tag--priv ml-2">
                                   <Ms name="lock" className="text-[10px]" /> shielded
                                 </span>
@@ -349,10 +397,10 @@ export function EmployeeApp() {
                         Redeem selected
                       </div>
                       <div className="stat-number font-mono text-lg font-semibold tabular-nums">
-                        {selectedRaw > 0n ? `${Number(lamportsToSol(selectedNet.toString())).toFixed(6)} SOL` : "-"}
+                        {selectedRaw > 0n ? `${fmt(selectedNet)} ${symbol}` : "-"}
                         {selectedRaw > 0n && (
                           <span className="ml-2 text-[11px] font-normal text-body-ink">
-                            net of {Number(lamportsToSol(selectedFee.toString())).toFixed(6)} fee
+                            net of {fmt(selectedFee)} fee
                           </span>
                         )}
                       </div>
@@ -367,7 +415,7 @@ export function EmployeeApp() {
                       {claiming
                         ? "Proving…"
                         : selectedRaw > 0n
-                          ? `Redeem selected (${Number(lamportsToSol(selectedRaw.toString())).toFixed(4)} SOL)`
+                          ? `Redeem selected (${fmt(selectedRaw, 4)} ${symbol})`
                           : "Select notes to redeem"}
                     </Button>
                   </div>
@@ -376,11 +424,11 @@ export function EmployeeApp() {
                       <Input
                         value={claimSol}
                         onChange={(e) => setClaimSol(e.target.value)}
-                        placeholder={`or a custom amount, up to ${maxClaimSol.toFixed(6)}`}
+                        placeholder={`or a custom amount, up to ${fmt(maxClaim)} ${symbol}`}
                         inputMode="decimal"
                         className="font-mono text-xs"
                       />
-                      <Button variant="outline" size="sm" onClick={() => setClaimSol(maxClaimSol.toFixed(6))}>
+                      <Button variant="outline" size="sm" onClick={() => setClaimSol(fmt(maxClaim, decimals))}>
                         Max
                       </Button>
                       <Button
@@ -394,7 +442,7 @@ export function EmployeeApp() {
                     </div>
                     <p className="mt-1.5 text-[11px] text-body-ink">
                       {gross > 0n
-                        ? `receive ${lamportsToSol(net.toString()).toFixed(6)} SOL · relayer fee ${lamportsToSol(fee.toString()).toFixed(6)} SOL`
+                        ? `receive ${fmt(net)} ${symbol} · relayer fee ${fmt(fee)} ${symbol}`
                         : "Moves notes out of the shielded pool to your public balance."}
                     </p>
                   </div>
@@ -421,7 +469,7 @@ export function EmployeeApp() {
                           key={h.sig}
                           className="flex items-center justify-between rounded-lg border border-line bg-panel px-3 py-2 text-xs"
                         >
-                          <span className="font-mono tabular-nums text-ok">+{h.sol} SOL</span>
+                          <span className="font-mono tabular-nums text-ok">+{h.amount}</span>
                           <span className="text-mute">{new Date(h.at).toLocaleTimeString()}</span>
                           <span className="font-mono text-mute">{shortHash(h.sig, 4, 4)}</span>
                         </div>

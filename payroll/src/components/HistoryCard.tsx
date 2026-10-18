@@ -3,6 +3,7 @@ import { Download, History } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { assetSymbol } from "@/lib/assets"
 import { downloadRun } from "@/lib/history"
 import { shortHash } from "@/lib/format"
 import { listRuns } from "@/lib/store"
@@ -45,7 +46,7 @@ export function HistoryCard({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
                 {new Date(r.createdAt).toLocaleString()} · file {shortHash(r.fileHash, 6, 4)}
               </span>
               <span>
-                {r.asset.kind === "sol" ? "SOL" : "SPL"}
+                {assetSymbol(r.asset)}
                 {r.mode === "shielded" && " · private"} · {r.summary.sent}/{r.summary.total} sent
                 {r.summary.failed > 0 && ` · ${r.summary.failed} failed`}
                 {r.startedAt !== undefined && r.finishedAt !== undefined &&
@@ -65,7 +66,7 @@ export function HistoryCard({ onResumeFailed }: { onResumeFailed: (r: RunReceipt
                 {r.entries.map((e) => (
                   <div key={e.address} className="flex items-center justify-between gap-2 text-xs">
                     <span className="font-mono">
-                      {shortHash(e.address, 6, 4)} · {e.amountHuman}
+                      {shortHash(e.address, 6, 4)} · {e.amountHuman} {assetSymbol(r.asset)}
                       {e.startedAt !== undefined && e.confirmedAt !== undefined && (
                         <span className="ml-1 text-muted-foreground">({fmtDur(e.confirmedAt - e.startedAt)})</span>
                       )}

@@ -52,13 +52,18 @@ const walletKey = args.wallet
       }
     })()
   : null
+// --claim-keys file (make-employees.ts format: [{wallet, secretKey}]) + --claim N:
+// the page claims as those employees after the run (local test keys only)
+const claimKeys = args["claim-keys"]
+  ? Object.fromEntries(JSON.parse(readFileSync(args["claim-keys"], "utf8")).map((k) => [k.wallet, k.secretKey]))
+  : null
 const csvEntries = args.csv
   ? readFileSync(args.csv, "utf8").trim().split("\n").slice(1).map((l) => l.split(",")).map(([address, amountHuman]) => ({ address, amountHuman }))
   : null
 
 const qs = new URLSearchParams({ rows, collector: `http://localhost:${port}` })
 if (lanes !== "auto") qs.set("lanes", String(lanes))
-for (const k of ["workers", "mode", "backend", "rpc", "amount", "prover", "proverToken", "tree", "exact"]) if (args[k]) qs.set(k, args[k])
+for (const k of ["workers", "mode", "backend", "rpc", "amount", "prover", "proverToken", "tree", "exact", "asset", "claim"]) if (args[k]) qs.set(k, args[k])
 
 const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*" }
 let resolveResult
@@ -73,6 +78,7 @@ const server = Bun.serve({
     // --csv path: pay the file's exact rows (address,amount[,memo]) instead of a flat amount
     if (u.pathname === "/entries") return Response.json(csvEntries, { headers: cors })
     if (u.pathname === "/wallet") return Response.json(walletKey, { headers: cors })
+    if (u.pathname === "/claimers") return Response.json(claimKeys, { headers: cors })
     if (u.pathname === "/progress") {
       const line = await req.text()
       if (Date.now() - lastPrint > 5000) {

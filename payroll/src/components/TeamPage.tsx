@@ -7,12 +7,11 @@ import { PublicKey } from "@solana/web3.js"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { assetDecimals, assetKey, assetSymbol } from "@/lib/assets"
 import { rawToHuman, shortHash } from "@/lib/format"
 import { toRaw } from "@/lib/parse"
 import { listRuns, listManualTeam, addManualTeam, removeManualTeam, TEAM_EVENT } from "@/lib/store"
-import type { PayrollEntry } from "@/lib/types"
-
-const SOL_DECIMALS = 9
+import type { Asset, PayrollEntry } from "@/lib/types"
 
 interface Member {
   address: string
@@ -20,7 +19,8 @@ interface Member {
   registered: boolean | null // null = not checked yet
   added?: boolean // manually added (persisted, not from a CSV/receipt)
   /** Cumulative chain-confirmed payouts from this browser's run receipts. */
-  paidRaw: bigint
+  /** cumulative paid per settlement asset (SOL and USDC never mix) */
+  paid: Map<string, { asset: Asset; raw: bigint }>
   payouts: number
   lastPaidAt?: number
   /** Most recent receipt row for this address: paid / pending / failed. */
@@ -54,17 +54,19 @@ export function TeamPage({ extraEntries }: { extraEntries?: PayrollEntry[] }) {
     const runs = [...listRuns()].sort((a, b) => a.createdAt - b.createdAt)
     for (const r of runs) {
       for (const e of r.entries) {
-        const m = byAddress.get(e.address) ?? {
+        const m: Member = byAddress.get(e.address) ?? {
           address: e.address,
           name: e.memo,
           registered: null,
-          paidRaw: 0n,
+          paid: new Map(),
           payouts: 0,
         }
         m.name = m.name ?? e.memo
         if (e.status === "sent") {
           try {
-            m.paidRaw += toRaw(e.amountHuman, SOL_DECIMALS)
+            const k = assetKey(r.asset)
+            const cur = m.paid.get(k) ?? { asset: r.asset, raw: 0n }
+            m.paid.set(k, { asset: r.asset, raw: cur.raw + toRaw(e.amountHuman, assetDecimals(r.asset)) })
           } catch {
             /* malformed amount — skip the sum, still count the payout */
           }
@@ -82,11 +84,11 @@ export function TeamPage({ extraEntries }: { extraEntries?: PayrollEntry[] }) {
     }
     for (const e of extraEntries ?? []) {
       if (!byAddress.has(e.address))
-        byAddress.set(e.address, { address: e.address, name: e.memo, registered: null, paidRaw: 0n, payouts: 0 })
+        byAddress.set(e.address, { address: e.address, name: e.memo, registered: null, paid: new Map(), payouts: 0 })
     }
     for (const e of manual) {
       if (!byAddress.has(e.address))
-        byAddress.set(e.address, { address: e.address, name: e.memo, registered: null, added: true, paidRaw: 0n, payouts: 0 })
+        byAddress.set(e.address, { address: e.address, name: e.memo, registered: null, added: true, paid: new Map(), payouts: 0 })
     }
     return [...byAddress.values()]
   }, [extraEntries, manual])
@@ -284,7 +286,9 @@ export function TeamPage({ extraEntries }: { extraEntries?: PayrollEntry[] }) {
                       {m.payouts > 0 ? (
                         <>
                           <span className="font-mono font-medium">
-                            {rawToHuman(m.paidRaw, SOL_DECIMALS)} SOL
+                            {[...m.paid.values()]
+                              .map((p) => `${rawToHuman(p.raw, assetDecimals(p.asset))} ${assetSymbol(p.asset)}`)
+                              .join(" · ")}
                           </span>
                           <span className="block text-[10px] text-muted-foreground">
                             {m.payouts} payout{m.payouts === 1 ? "" : "s"}

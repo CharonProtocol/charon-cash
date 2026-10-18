@@ -1806,7 +1806,96 @@ function confirmConnection(): Connection {
   return confirmConn
 }
 
+const CONFIRM_TIMEOUT_MS = 45_000
+
+// Confirm feed from our backend (/ws): the backend's one RPC subscription
+// decides every payout, so browsers hold no RPC websockets. A backend
+// without /ws (the Workers relayer) falls back to the RPC path below.
+type Feed = { url: string; ws: WebSocket; ready: Promise<boolean>; waiters: Map<string, Set<(o: ConfirmOutcome) => void>> }
+let feed: Feed | null = null
+// A backend without /ws: skip the 3s connect attempt on every payout.
+const noFeedUntil = new Map<string, number>()
+function backendFeed(): Feed | null {
+  const url = config.get().backendUrl.replace(/\/+$/, "").replace(/^http/, "ws") + "/ws"
+  if (feed && feed.url === url && feed.ws.readyState <= WebSocket.OPEN) return feed
+  if ((noFeedUntil.get(url) ?? 0) > Date.now()) return null
+  let ws: WebSocket
+  try {
+    ws = new WebSocket(url)
+  } catch {
+    noFeedUntil.set(url, Date.now() + 60_000)
+    return null
+  }
+  const f: Feed = {
+    url,
+    ws,
+    waiters: new Map(),
+    ready: new Promise((resolve) => {
+      let opened = false
+      const fail = () => {
+        clearTimeout(t)
+        // A drop after open is not "no /ws": the next confirm reconnects.
+        if (!opened) noFeedUntil.set(url, Date.now() + 60_000)
+        resolve(false)
+      }
+      const t = setTimeout(() => (ws.close(), fail()), 3000)
+      ws.onopen = () => {
+        opened = true
+        clearTimeout(t)
+        resolve(true)
+      }
+      ws.onerror = fail
+    }),
+  }
+  ws.onmessage = (ev) => {
+    try {
+      const { sig, outcome } = JSON.parse(String(ev.data)) as { sig: string; outcome: ConfirmOutcome }
+      if (outcome !== "confirmed" && outcome !== "failed") return
+      for (const done of f.waiters.get(sig) ?? []) done(outcome)
+      f.waiters.delete(sig)
+    } catch {
+      /* not ours */
+    }
+  }
+  ws.onclose = () => {
+    if (feed === f) feed = null
+  }
+  feed = f
+  return f
+}
+
 async function defaultConfirm(sig: string): Promise<ConfirmOutcome> {
+  const f = backendFeed()
+  if (!f || !(await f.ready) || f.ws.readyState !== WebSocket.OPEN) return rpcConfirm(sig)
+  const backend = config.get().backendUrl.replace(/\/+$/, "")
+  return new Promise((resolve) => {
+    let done = false
+    const finish = (outcome: ConfirmOutcome) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      clearInterval(poll)
+      f.waiters.get(sig)?.delete(finish)
+      resolve(outcome)
+    }
+    if (!f.waiters.has(sig)) f.waiters.set(sig, new Set())
+    f.waiters.get(sig)!.add(finish)
+    f.ws.send(JSON.stringify({ watch: sig }))
+    // Socket dropped mid-wait: ask the backend over HTTP until it answers.
+    const poll = setInterval(async () => {
+      if (f.ws.readyState === WebSocket.OPEN) return
+      try {
+        const r = (await (await fetch(`${backend}/api/tx/${sig}`)).json()) as { outcome?: ConfirmOutcome | null }
+        if (r.outcome === "confirmed" || r.outcome === "failed") finish(r.outcome)
+      } catch {
+        /* next tick */
+      }
+    }, 2000)
+    const timer = setTimeout(() => finish("unknown"), CONFIRM_TIMEOUT_MS)
+  })
+}
+
+async function rpcConfirm(sig: string): Promise<ConfirmOutcome> {
   const conn = confirmConnection()
   // Push, not poll: Alpenglow finality is sub-second on devnet. Subscribe
   // FIRST, then read the status: the relay answers on broadcast, so a tx can
@@ -1835,7 +1924,7 @@ async function defaultConfirm(sig: string): Promise<ConfirmOutcome> {
       }
     }
     const poll = setInterval(check, 2000)
-    const timer = setTimeout(() => finish("unknown"), 45_000)
+    const timer = setTimeout(() => finish("unknown"), CONFIRM_TIMEOUT_MS)
     void check()
   })
 }

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useConnection, useWallet } from "@solana/wallet-adapter-react"
 import { toast } from "sonner"
 import { Copy, Search, Trash2 } from "lucide-react"
+import { getAssociatedTokenAddressSync } from "@solana/spl-token"
+import { PublicKey } from "@solana/web3.js"
 import { fetchRecipientsBatch, getBackendUrl, totalBalance } from "privacy-cash-sdk"
 
 import { Button } from "@/components/ui/button"
@@ -12,7 +14,6 @@ import { Scramble } from "@/components/motion/Scramble"
 import { HistoryPage } from "@/components/HistoryPage"
 import { PlanReviewCard, type PlanParams, type PlanReviewHandle } from "@/components/PlanReviewCard"
 import { RunProgressCard } from "@/components/RunProgressCard"
-import { SettingsDrawer } from "@/components/SettingsDrawer"
 import { TeamPage } from "@/components/TeamPage"
 import { UploadCard } from "@/components/UploadCard"
 import { WalletBar } from "@/components/WalletBar"
@@ -21,6 +22,7 @@ import { browserProverInfo, detectNativeProver, ensureBrowserProver, useNativePr
 import { createEngine, type RunSnapshot } from "@/lib/engine"
 import { config } from "@/lib/config"
 import { planRun } from "@/lib/fees"
+import { assetKey, formatAmount, SOL_ASSET } from "@/lib/assets"
 import { lamportsToSol, shortHash } from "@/lib/format"
 import { estimateTotals } from "@/lib/estimate"
 import { navigate } from "@/lib/router"
@@ -37,8 +39,16 @@ export function EmployerApp({ page }: { page: Page }) {
   const { publicKey } = useWallet()
   const { connection } = useConnection()
   useUiSync()
-  const { client, ready, busy, error, vaultSolRaw, bps, minTransferFee, refreshVault, unlocked, unlockBusy, unlockNow } =
+  const { client, ready, busy, error, vaultSolRaw, vaultOf, tokens, bps, minTransferFee, refreshVault, unlocked, unlockBusy, unlockNow } =
     usePayrollClient()
+  // Settlement asset: SOL or a token pool the relayer runs (USDC). A pool
+  // that disappears (backend switched) falls back to SOL.
+  const [assetPick, setAssetPick] = useState<Asset>(SOL_ASSET)
+  const asset = tokens.some((t) => assetKey(t) === assetKey(assetPick)) ? assetPick : SOL_ASSET
+  const tokenVaults = tokens.map((t) => {
+    const raw = vaultOf(t)
+    return { key: assetKey(t), text: raw === null ? null : formatAmount(raw, t) }
+  })
   useEffect(() => {
     if (publicKey) identifyWallet(publicKey.toBase58())
   }, [publicKey])
@@ -47,7 +57,6 @@ export function EmployerApp({ page }: { page: Page }) {
   const [parsed, setParsed] = useState<ParsedFile | null>(null)
   const [snapshot, setSnapshot] = useState<RunSnapshot | null>(null)
   const [receipt, setReceipt] = useState<RunReceipt | null>(null)
-  const [settingsOpen, setSettingsOpen] = useState(false)
 
   // Recipient registry check — shared by the plan card (warning list) and the
   // settlement bar's stateful Verify → Dispatch button.
@@ -184,6 +193,20 @@ export function EmployerApp({ page }: { page: Page }) {
           )
           return
         }
+        // A token run deposits from the wallet's token account: check it
+        // holds the deposit (SOL above only pays fees).
+        if (asset.kind === "spl" && plan.shortfall > 0n) {
+          const ata = getAssociatedTokenAddressSync(new PublicKey(asset.mint), publicKey)
+          const bal = await connection.getTokenAccountBalance(ata).then((r) => BigInt(r.value.amount)).catch(() => 0n)
+          if (bal < plan.shortfall) {
+            toast.error(
+              `Treasury wallet has ${formatAmount(bal, asset)} on this network; this run deposits ${formatAmount(plan.shortfall, asset)}. ` +
+                `Fund the wallet with ${formatAmount(plan.shortfall - bal, asset)} more.`,
+              { duration: 12000 },
+            )
+            return
+          }
+        }
       }
       lastRun.current = { asset, mode, fileHash, lanes }
       setReceipt(null)
@@ -207,7 +230,7 @@ export function EmployerApp({ page }: { page: Page }) {
           const plan = proverPlan(lanes, config.cores())
           // A native helper on loopback (prover-server) proves ~3x faster per
           // core and keeps the witness on this machine; else the wasm pool.
-          // Paired helpers only (Settings -> pairing code); a helper that
+          // Paired helpers only (?prover=<pairing code> link); a helper that
           // fails the HMAC challenge is ignored.
           const helper = params.get("prover") === "wasm" ? null : await detectNativeProver()
           if (helper) {
@@ -220,7 +243,7 @@ export function EmployerApp({ page }: { page: Page }) {
         } catch (e) {
           toast.warning(`Browser prover unavailable, using snarkjs: ${(e as Error).message}`)
         }
-        let vaultRaw = vaultSolRaw ?? 0n
+        let vaultRaw = vaultOf(asset) ?? 0n
         if (asset.kind === "spl") {
           await client.syncNotes(asset.mint)
           vaultRaw = totalBalance(client.publicKey, asset.mint)
@@ -296,7 +319,7 @@ export function EmployerApp({ page }: { page: Page }) {
         setSnapshot((s) => (s ? { ...s, phase: "aborted" } : null))
       }
     },
-    [client, parsed, bps, minTransferFee, vaultSolRaw, refreshVault, publicKey, connection],
+    [client, parsed, bps, minTransferFee, vaultSolRaw, vaultOf, refreshVault, publicKey, connection],
   )
 
   const dispatch = useCallback(() => {
@@ -365,10 +388,10 @@ export function EmployerApp({ page }: { page: Page }) {
             right={
               <WalletBar
                 vaultSolRaw={vaultSolRaw}
+                tokenVaults={tokenVaults}
                 unlocked={unlocked}
                 unlockBusy={unlockBusy}
                 onUnlock={unlockNow}
-                onOpenSettings={() => setSettingsOpen(true)}
                 onFunded={refreshVault}
               />
             }
@@ -387,10 +410,10 @@ export function EmployerApp({ page }: { page: Page }) {
             right={
               <WalletBar
                 vaultSolRaw={vaultSolRaw}
+                tokenVaults={tokenVaults}
                 unlocked={unlocked}
                 unlockBusy={unlockBusy}
                 onUnlock={unlockNow}
-                onOpenSettings={() => setSettingsOpen(true)}
                 onFunded={refreshVault}
               />
             }
@@ -416,10 +439,10 @@ export function EmployerApp({ page }: { page: Page }) {
             <div className="mt-4 mb-2 flex flex-wrap items-center justify-end gap-2">
               <WalletBar
                 vaultSolRaw={vaultSolRaw}
+                tokenVaults={tokenVaults}
                 unlocked={unlocked}
                 unlockBusy={unlockBusy}
                 onUnlock={unlockNow}
-                onOpenSettings={() => setSettingsOpen(true)}
                 onFunded={refreshVault}
               />
             </div>
@@ -431,7 +454,8 @@ export function EmployerApp({ page }: { page: Page }) {
               parsed={parsed}
               bps={bps}
               minTransferFee={minTransferFee}
-              vaultSolRaw={vaultSolRaw}
+              asset={asset}
+              vaultRaw={vaultOf(asset)}
               mode={planParams.current?.mode ?? "shielded"}
               check={recipientCheck}
               verifying={verifying}
@@ -454,7 +478,10 @@ export function EmployerApp({ page }: { page: Page }) {
                     parsed={parsed}
                     bps={bps}
                     minTransferFee={minTransferFee}
-                    vaultSolRaw={vaultSolRaw}
+                    asset={asset}
+                    tokens={tokens}
+                    onAssetChange={setAssetPick}
+                    vaultRaw={vaultOf(asset)}
                     check={recipientCheck}
                     disabled={!ready}
                     onRun={(asset, mode, lanes) => startRun(asset, undefined, undefined, mode, lanes)}
@@ -486,7 +513,6 @@ export function EmployerApp({ page }: { page: Page }) {
         </>
       )}
 
-      {settingsOpen && <SettingsDrawer onClose={() => setSettingsOpen(false)} />}
     </div>
   )
 }
@@ -699,7 +725,8 @@ function SettlementBar({
   parsed,
   bps,
   minTransferFee,
-  vaultSolRaw,
+  asset,
+  vaultRaw,
   mode,
   check,
   verifying,
@@ -710,7 +737,8 @@ function SettlementBar({
   parsed: ParsedFile | null
   bps: number | null
   minTransferFee: number
-  vaultSolRaw: bigint | null
+  asset: Asset
+  vaultRaw: bigint | null
   mode: RunMode
   check: { total: number; registered: number; unregistered: string[] } | null
   verifying: boolean
@@ -718,15 +746,17 @@ function SettlementBar({
   canDispatch: boolean
   onDispatch: () => void
 }) {
-  // SOL-preview figures — the plan card owns the authoritative number when an
-  // SPL asset is selected; this bar mirrors the common case.
+  // Same figures as the plan card, for the selected settlement asset.
   const totals = useMemo(
-    () => (parsed && bps !== null ? estimateTotals(parsed, 9, bps, minTransferFee, mode, true) : null),
-    [parsed, bps, minTransferFee, mode],
+    () =>
+      parsed && bps !== null
+        ? estimateTotals(parsed, asset.kind === "sol" ? 9 : asset.decimals, bps, minTransferFee, mode, asset.kind === "sol")
+        : null,
+    [parsed, bps, minTransferFee, mode, asset],
   )
 
   const required = totals ? totals.totalNet + totals.totalFees : 0n
-  const vaultBig = vaultSolRaw ?? 0n
+  const vaultBig = vaultRaw ?? 0n
   const shortfall = totals && required > vaultBig ? required - vaultBig : 0n
   const n = parsed?.entries.length ?? 0
   // One stateful action instead of two buttons in two places: with a batch
@@ -751,16 +781,16 @@ function SettlementBar({
   return (
     <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-band-line bg-band/95 px-5 py-4 text-band-ink shadow-[0_12px_40px_rgba(0,0,0,0.18)]">
         <div className="flex flex-1 flex-wrap items-center gap-x-6 gap-y-2">
-          <BarStat label="Total distributed" value={totals ? `${lamportsToSol(totals.totalNet.toString()).toFixed(4)} SOL` : "-"} />
+          <BarStat label="Total distributed" value={totals ? formatAmount(totals.totalNet, asset) : "-"} />
           <BarStat
             label="Total required"
-            value={totals ? `${lamportsToSol(required.toString()).toFixed(4)} SOL` : "-"}
+            value={totals ? formatAmount(required, asset) : "-"}
             accent
             sub={
               !totals
                 ? "load a batch"
                 : shortfall > 0n
-                  ? `top-up ${lamportsToSol(shortfall.toString()).toFixed(4)} SOL on dispatch`
+                  ? `top-up ${formatAmount(shortfall, asset)} on dispatch`
                   : "vault funded"
             }
           />
