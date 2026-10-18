@@ -1009,12 +1009,20 @@ fn native_token_account(owner: Pubkey) -> Account {
 /// Instructions sysvar for a real SOL -> SPL swap tx: wrap, SyncNative on the
 /// pool wSOL, then Swap from the SOL tree spending exactly `amount`.
 fn paired_swap_sysvar(ctx: &BenchContext, wrap: &Instruction, pool_wsol: Pubkey, amount: u64) -> (Pubkey, Account) {
+    swap_sysvar(ctx, wrap, pool_wsol, pool_wsol, amount)
+}
+
+/// [top, SyncNative(pool_wsol), Swap] with `swap_pool_wsol` at the swap's account 9.
+fn swap_sysvar(ctx: &BenchContext, top: &Instruction, pool_wsol: Pubkey, swap_pool_wsol: Pubkey, amount: u64) -> (Pubkey, Account) {
     let sync = Instruction { program_id: spl_token::ID, accounts: vec![AccountMeta::new(pool_wsol, false)], data: vec![17] };
     let mut swap_data = vec![PrivacyCashInstructions::Swap as u8];
     swap_data.extend_from_slice(&[0u8; 352 + 352]);
     swap_data.extend_from_slice(&(-(amount as i64)).to_le_bytes());
-    let swap = Instruction { program_id: ctx.program_id, accounts: vec![AccountMeta::new(ctx.tree_account, false)], data: swap_data };
-    mollusk_svm::instructions_sysvar::keyed_account([wrap, &sync, &swap].into_iter())
+    let mut swap_accounts = vec![AccountMeta::new(ctx.tree_account, false)];
+    swap_accounts.extend((1..9).map(|_| AccountMeta::new_readonly(Pubkey::new_unique(), false)));
+    swap_accounts.push(AccountMeta::new(swap_pool_wsol, false));
+    let swap = Instruction { program_id: ctx.program_id, accounts: swap_accounts, data: swap_data };
+    mollusk_svm::instructions_sysvar::keyed_account([top, &sync, &swap].into_iter())
 }
 
 #[test]
@@ -1146,6 +1154,56 @@ fn wrap_sol_rejects_attacker_owned_wsol() {
             privacy_cash::error::PrivacyCashError::InvalidTokenAccount as u32,
         ))],
     );
+}
+
+#[test]
+fn wrap_sol_rejects_cpi_and_foreign_swap_pool() {
+    let ctx = setup();
+    let wrap_amount = LAMPORTS_PER_SOL;
+    let pool_wsol_key = Pubkey::new_unique();
+    let native_mint = spl_token::native_mint::ID;
+
+    let mut data = vec![PrivacyCashInstructions::WrapSol as u8];
+    data.extend_from_slice(&wrap_amount.to_le_bytes());
+    let instruction = Instruction {
+        program_id: ctx.program_id,
+        accounts: vec![
+            AccountMeta::new(ctx.tree_token_account, false),
+            AccountMeta::new(pool_wsol_key, false),
+            AccountMeta::new_readonly(native_mint, false),
+            AccountMeta::new(ctx.random_user.pubkey(), true),
+            AccountMeta::new_readonly(spl_token::ID, false),
+            AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
+            AccountMeta::new_readonly(solana_sdk_ids::sysvar::instructions::ID, false),
+        ],
+        data,
+    };
+    // wrap reached by CPI: the top-level instruction is another program's
+    let caller = Instruction { program_id: Pubkey::new_unique(), accounts: vec![], data: vec![] };
+    // or the paired swap pays out of a different wSOL account
+    let sysvars = [
+        swap_sysvar(&ctx, &caller, pool_wsol_key, pool_wsol_key, wrap_amount),
+        swap_sysvar(&ctx, &instruction, pool_wsol_key, Pubkey::new_unique(), wrap_amount),
+    ];
+
+    for sysvar in sysvars {
+        let accounts = vec![
+            (ctx.tree_token_account, funded_tree_token_account(ctx.authority.pubkey(), ctx.tree_token_bump, wrap_amount)),
+            (pool_wsol_key, native_token_account(ctx.global_config)),
+            (native_mint, native_mint_account()),
+            (ctx.random_user.pubkey(), funded_account(10 * LAMPORTS_PER_SOL)),
+            mollusk_svm_programs_token::token::keyed_account(),
+            system_program_keyed_account(),
+            sysvar,
+        ];
+        ctx.mollusk.process_and_validate_instruction(
+            &instruction,
+            &accounts,
+            &[Check::err(ProgramError::Custom(
+                privacy_cash::error::PrivacyCashError::InvalidSwapAmount as u32,
+            ))],
+        );
+    }
 }
 
 #[test]

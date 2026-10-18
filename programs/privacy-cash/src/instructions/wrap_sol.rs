@@ -24,7 +24,9 @@ use pinocchio_token::state::TokenAccount;
 /// Token `SyncNative` on this wSOL account and the one after it this
 /// program's Swap spending exactly `amount` from the SOL tree. A standalone
 /// wrap (or a wrap bigger than its swap) is rejected, so vault SOL can only
-/// move into wSOL for a swap whose proof released it.
+/// move into wSOL for a swap whose proof released it. The wrap must be a
+/// top-level instruction (no CPI: the transaction's current instruction is
+/// this exact WrapSol), and the swap's pool wSOL must be this wSOL account.
 ///
 /// Accounts:
 /// 0 sol_vault, 1 pool_wsol, 2 wsol_mint, 3 signer,
@@ -58,7 +60,7 @@ pub fn process_wrap_sol(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
     }
 
     verify_address(sol_vault, &TREE_TOKEN_ACCOUNT_ADDRESS)?;
-    verify_paired_swap(instructions, pool_wsol, amount)?;
+    verify_paired_swap(instructions, pool_wsol, &data[..8], amount)?;
 
     let rent_exempt_minimum = Rent::get()?.try_minimum_balance(TreeTokenAccount::LEN)?;
     let required = amount
@@ -103,12 +105,33 @@ pub fn process_wrap_sol(accounts: &[AccountView], data: &[u8]) -> ProgramResult 
 /// Swap data: discriminator, proof_in (352), proof_out (352), ext_amount_in.
 const SWAP_DISCRIMINATOR: u8 = 7;
 const SWAP_EXT_AMOUNT_IN_OFFSET: usize = 1 + 352 + 352;
+/// Swap account 9 = pool wSOL.
+const SWAP_POOL_WSOL_INDEX: usize = 9;
+const WRAP_SOL_DISCRIMINATOR: u8 = 8;
 /// Token program SyncNative.
 const SYNC_NATIVE_DISCRIMINATOR: u8 = 17;
 
-fn verify_paired_swap(instructions: &AccountView, pool_wsol: &AccountView, amount: u64) -> ProgramResult {
+fn verify_paired_swap(
+    instructions: &AccountView,
+    pool_wsol: &AccountView,
+    amount_bytes: &[u8],
+    amount: u64,
+) -> ProgramResult {
     let ixs = Instructions::try_from(instructions)?;
     let bad = || ProgramError::from(PrivacyCashError::InvalidSwapAmount);
+
+    // Relative lookups index the top-level instruction; a CPI'd wrap would
+    // borrow another instruction's neighbours. Our program never CPIs
+    // itself, so the top-level instruction must be this WrapSol.
+    let current = ixs.get_instruction_relative(0).map_err(|_| bad())?;
+    let current_data = current.get_instruction_data();
+    if current.get_program_id().as_array() != &crate::ID
+        || current_data.first() != Some(&WRAP_SOL_DISCRIMINATOR)
+        || current_data.get(1..9) != Some(amount_bytes)
+        || &current.get_instruction_account_at(1)?.key != pool_wsol.address()
+    {
+        return Err(bad());
+    }
 
     let sync = ixs.get_instruction_relative(1).map_err(|_| bad())?;
     if sync.get_program_id() != &pinocchio_token::ID
@@ -127,7 +150,9 @@ fn verify_paired_swap(instructions: &AccountView, pool_wsol: &AccountView, amoun
         return Err(bad());
     }
     // SOL -> SPL only: the swap spends from the SOL tree
-    if swap.get_instruction_account_at(0)?.key.as_array() != &TREE_ACCOUNT_ADDRESS {
+    if swap.get_instruction_account_at(0)?.key.as_array() != &TREE_ACCOUNT_ADDRESS
+        || &swap.get_instruction_account_at(SWAP_POOL_WSOL_INDEX)?.key != pool_wsol.address()
+    {
         return Err(bad());
     }
     let ext_in = i64::from_le_bytes(
