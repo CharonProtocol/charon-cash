@@ -1,5 +1,5 @@
 [package]
-name = "privacy-cash"
+name = "charon"
 version = "0.1.0"
 edition = "2021"
 
@@ -61,7 +61,7 @@ ark-ec = "0.6.0"
 ark-groth16 = "0.6.0"
 ark-relations = "0.6.0"
 num-bigint = "0.4"
-privacy-cash-prover = { path = "../../crates/privacy-cash-prover" }
+charon-prover = { path = "../../crates/charon-prover" }
 solana-compute-budget-interface = "3.0.0"
 solana-system-interface = "3.2.0"
 solana-address = "2.6.1"

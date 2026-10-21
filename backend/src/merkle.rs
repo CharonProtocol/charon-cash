@@ -3,7 +3,7 @@ use rocksdb::{DBWithThreadMode, Options, SingleThreaded, DB};
 use rs_merkle_tree::{hasher::PoseidonHasher, stores::RocksDbStoreV2, MerkleTree};
 use std::{collections::HashMap, sync::Arc};
 
-const MERKLE_STORE_PATH: &'static str = "silent_pay_merkle_store.db";
+const MERKLE_STORE_PATH: &'static str = "charon_merkle_store.db";
 
 pub type Pool = MerkleTree<PoseidonHasher, RocksDbStoreV2, 26>;
 

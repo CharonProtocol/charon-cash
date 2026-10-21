@@ -2,13 +2,16 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 
-const source = new URL("../../programs/privacy-cash/artifacts/circuits/", import.meta.url);
+const source = new URL(
+  "../../programs/charon/artifacts/circuits/",
+  import.meta.url,
+);
 const destination = new URL("../public/circuit/", import.meta.url);
 const manifest = await readFile(new URL("SHA256SUMS", source), "utf8");
 await mkdir(destination, { recursive: true });
 
 for (const file of ["transaction2.zkey", "transaction2.graph"]) {
-  const entry = manifest.split("\n").find(line => line.endsWith(`/` + file));
+  const entry = manifest.split("\n").find((line) => line.endsWith(`/` + file));
   if (!entry) throw new Error(`No pinned checksum for ${file}`);
   const expected = entry.split(/\s+/)[0];
   const bytes = await readFile(new URL(file, source));

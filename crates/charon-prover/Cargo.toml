@@ -1,8 +1,8 @@
 [package]
-name = "privacy-cash-prover"
+name = "charon-prover"
 version = "0.2.0"
 edition = "2021"
-description = "Groth16 prover for Privacy Cash: witness graph + snarkjs zkey, native and wasm32"
+description = "Groth16 prover for Charon: witness graph + snarkjs zkey, native and wasm32"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

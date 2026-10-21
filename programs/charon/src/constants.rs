@@ -55,9 +55,9 @@ pub const NULLIFIER1_SEED: &[u8] = b"nullifier1";
 // `tests::singleton_pdas_are_canonical` pins each bump to
 // `Address::find_program_address` for this program id.
 
-pub const TREE_ACCOUNT_BUMP: u8 = 254;
-pub const TREE_TOKEN_ACCOUNT_BUMP: u8 = 255;
-pub const GLOBAL_CONFIG_BUMP: u8 = 253;
+pub const TREE_ACCOUNT_BUMP: u8 = 255;
+pub const TREE_TOKEN_ACCOUNT_BUMP: u8 = 254;
+pub const GLOBAL_CONFIG_BUMP: u8 = 255;
 
 pub const TREE_ACCOUNT_ADDRESS: [u8; 32] =
     derive_address_const(&[TREE_ACCOUNT_SEED], Some(TREE_ACCOUNT_BUMP), &crate::ID);

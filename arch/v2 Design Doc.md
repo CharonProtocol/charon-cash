@@ -1,4 +1,4 @@
-# SilentPay App — Design Doc
+# Charon App — Design Doc
 
 - **_New Design_**
 

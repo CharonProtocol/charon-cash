@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-    "programs/privacy-cash",
+    "programs/charon",
 ]
 # The QEDGen model crate and fuzz harness are standalone workspaces. `backend`
 # has no lockfile and pulls sqlx/postgres, so it stays out of the `--locked`

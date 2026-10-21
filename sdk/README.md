@@ -116,7 +116,7 @@ using the committed proving artifacts:
 import { readFileSync } from "node:fs";
 import { configureProver, verifyArtifact } from "charonprotocol-sdk";
 
-const dir = "programs/privacy-cash/artifacts/circuits";
+const dir = "programs/charon/artifacts/circuits";
 configureProver({
   inThread: true,
   wasm: readFileSync(
