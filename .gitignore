@@ -60,3 +60,6 @@ HANDOFF.md
 *.tsbuildinfo
 workers/.cache/
 **/.tmp-*
+
+# video sources live in the private CharonProtocol/charon-videos repo
+presentations/videos/
