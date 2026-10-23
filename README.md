@@ -1,4 +1,4 @@
-# Privacy Cash
+# Charon
 
 A confidential pool for SOL and SPL tokens on Solana, written with [pinocchio](https://github.com/anza-xyz/pinocchio) (zero-dependency, no Anchor).
 
@@ -21,9 +21,9 @@ Four mechanisms make this safe:
 - **ext_data_hash binding.** The program recomputes `keccak256(recipient, ext_amount, encrypted_output1, encrypted_output2, fee, fee_recipient, mint)` and requires it to equal the value committed inside the proof. A proof therefore cannot be replayed with a different recipient, fee, or fee recipient — it is front-run proof.
 - **Public amount check.** `public_amount` from the proof must be consistent with `ext_amount` and `fee` in field arithmetic, and the fee must fall inside the configured rate ± error margin.
 
-Only then is the Groth16 proof itself checked against the verifying key baked into the program (`VERIFYING_KEY` in `programs/privacy-cash/src/utils.rs`).
+Only then is the Groth16 proof itself checked against the verifying key baked into the program (`VERIFYING_KEY` in `programs/charon/src/utils.rs`).
 
-All program paths below (`src/`, `tests/`, `circuits/`, `artifacts/`) are relative to `programs/privacy-cash/` unless stated otherwise.
+All program paths below (`src/`, `tests/`, `circuits/`, `artifacts/`) are relative to `programs/charon/` unless stated otherwise.
 
 ---
 
@@ -102,11 +102,11 @@ The repository root is a Cargo workspace; run these from the root.
 
 ```bash
 cargo build                                                    # native, for tests
-cargo build-sbf --manifest-path programs/privacy-cash/Cargo.toml  # writes target/deploy/privacy_cash.so
+cargo build-sbf --manifest-path programs/charon/Cargo.toml  # writes target/deploy/charon.so
 ```
 
 The SBF build is required before any test: the integration tests embed
-`target/deploy/privacy_cash.so` at compile time.
+`target/deploy/charon.so` at compile time.
 
 ### Test
 
@@ -139,7 +139,7 @@ The required checks are:
   changed warning details, all errors, and tool failures fail CI. Existing
   warnings stay visible; remove baseline entries as the model is improved.
 - Circuit integrity: every file in `circuits/` and `artifacts/circuits/` must match
-  the pinned [`SHA256SUMS`](programs/privacy-cash/artifacts/circuits/SHA256SUMS);
+  the pinned [`SHA256SUMS`](programs/charon/artifacts/circuits/SHA256SUMS);
   `transaction2.circom` is recompiled with circom 2.2.3 and circomlib 2.0.5 (locked in
   `scripts/package-lock.json`) and must reproduce the committed
   `.r1cs` and `.sym` byte for byte; the verifying key exported from
@@ -160,8 +160,8 @@ appropriate lockfile change. Download caches exclude compiled targets so a stale
 program cannot be embedded in the integration tests. Clippy style warnings are
 reported; existing formatting differences are not a correctness gate.
 
-After the checks pass, the run delivers `privacy-cash-<sha>` as a downloadable
-artifact containing `privacy_cash.so`, the dependency lockfile, checked-out commit,
+After the checks pass, the run delivers `charon-<sha>` as a downloadable
+artifact containing `charon.so`, the dependency lockfile, checked-out commit,
 toolchain versions, circuit artifact hashes and `SHA256SUMS`. Verify the package
 with `sha256sum --check SHA256SUMS` inside the extracted directory. Test logs,
 including compute-unit measurements, are retained separately. The workflow does
@@ -187,8 +187,8 @@ adding them as mandatory jobs; do not hide failures with `continue-on-error`.
 To reproduce the program checks locally with the pinned toolchain installed:
 
 ```bash
-cargo build-sbf --manifest-path programs/privacy-cash/Cargo.toml --tools-version v1.52 -- --locked
-cargo clippy --locked --package privacy-cash --lib -- -D clippy::correctness
+cargo build-sbf --manifest-path programs/charon/Cargo.toml --tools-version v1.52 -- --locked
+cargo clippy --locked --package charon --lib -- -D clippy::correctness
 cargo test --locked --workspace --all-targets -- --test-threads=1 --nocapture
 cargo test --locked --workspace --doc
 cargo test --locked --manifest-path verification/programs/Cargo.toml --all-targets
@@ -199,7 +199,7 @@ bash .github/scripts/check-circuits.sh   # needs circom 2.2.3, node and npx
 
 ```
 Cargo.toml                    workspace root (members: programs/*)
-programs/privacy-cash/        the deployed program
+programs/charon/              the deployed program
   src/                        program source
     instructions/             one file per instruction
     groth16.rs                BN254 Groth16 verifier
@@ -220,7 +220,7 @@ verification/                 QEDGen project — NOT deployed
 ```
 
 `verification/programs/` is a generated model of the program used only by the
-verification harnesses. It is never deployed; `programs/privacy-cash/` is the real
+verification harnesses. It is never deployed; `programs/charon/` is the real
 thing. New on-chain programs go in `programs/<name>/` and are added to the workspace
 members in the root `Cargo.toml`.
 
@@ -276,6 +276,6 @@ proofs. CI records these limits rather than claiming complete formal verificatio
 Never hand-edit anything under `verification/programs/`, `verification/formal_verification/`
 or `verification/fuzz/` — the next `codegen` run overwrites it. Fix the spec.
 
-The fuzz harness loads the program from `../../target/deploy/privacy_cash.so`
+The fuzz harness loads the program from `../../target/deploy/charon.so`
 relative to its own crate, so build it for fuzzing with
-`cargo build-sbf --manifest-path programs/privacy-cash/Cargo.toml --sbf-out-dir verification/target/deploy`.
+`cargo build-sbf --manifest-path programs/charon/Cargo.toml --sbf-out-dir verification/target/deploy`.

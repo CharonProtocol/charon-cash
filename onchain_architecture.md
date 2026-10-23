@@ -1,6 +1,6 @@
-# Privacy Cash: On-Chain Architecture
+# Charon: On-Chain Architecture
 
-This document outlines the architecture and execution flow of the Privacy Cash on-chain program, which is built using Pinocchio.
+This document outlines the architecture and execution flow of the Charon on-chain program, which is built using Pinocchio.
 
 ## Overview
 
@@ -10,7 +10,7 @@ The on-chain program provides a zero-knowledge privacy pool on Solana, supportin
 
 ```mermaid
 graph TD
-    subgraph "Privacy Cash Program (Pinocchio)"
+    subgraph "Charon Program (Pinocchio)"
         Dispatcher[Instruction Dispatcher<br/>1-byte discriminator]
         
         %% 7 Instructions

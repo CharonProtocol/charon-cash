@@ -1,5 +1,5 @@
 {
-  "name": "privacy-cash",
+  "name": "charon",
   "private": true,
   "workspaces": ["sdk", "frontend"]
 }

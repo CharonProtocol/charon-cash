@@ -66,4 +66,4 @@ txtx.yml
 docs/
 
 **/target
-**/silent_pay_merkle_store.db/
+**/charon_merkle_store.db/

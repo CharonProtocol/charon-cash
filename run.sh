@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run.sh - Local development flow automation for Privacy Cash
+# run.sh - Local development flow automation for Charon
 set -e # exit on error
 set -u # exit on undefined variables
 
@@ -10,7 +10,7 @@ PROJECT_ROOT=$(pwd)
 export PATH="$HOME/.local/bin:$HOME/.local/share/solana/install/active_release/bin:$HOME/.cargo/bin:$PATH"
 
 # Logs directory
-L=/tmp/privacy-cash
+L=/tmp/charon
 mkdir -p "$(dirname "$L")"
 
 # Utility to check if Surfpool is up
@@ -52,9 +52,9 @@ fi
 echo "==========================================================="
 echo "▶ 2/10 Starting Postgres database..."
 # Always remove the old container to ensure a fresh database state
-docker rm -f privacycash-pg >/dev/null 2>&1 || true
+docker rm -f charon-pg privacycash-pg >/dev/null 2>&1 || true
 
-if docker run -d --name privacycash-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=privacy_cash -p 5433:5432 postgres:16-alpine >/dev/null 2>&1; then
+if docker run -d --name charon-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=charon -p 5433:5432 postgres:16-alpine >/dev/null 2>&1; then
   echo "  Postgres (fresh) started on :5433"
 else
   echo "  ⚠ Docker not running or failed to start container, skipping database start."
@@ -62,11 +62,19 @@ fi
 
 echo "==========================================================="
 echo "▶ 3/10 Updating IDs and Keypairs..."
+PROGRAM_DIR="programs/charon"
+if [ ! -d "$PROGRAM_DIR" ]; then
+  PROGRAM_DIR="programs/privacy-cash"
+fi
+
 # Program ID must be known before the SBF build: singleton PDA addresses
 # (`TREE_ACCOUNT_ADDRESS` and friends) are compile-time constants of
 # `declare_id!` plus the canonical bumps for that id.
-[ -f target/deploy/privacy-cash-program.json ] || solana-keygen new --no-bip39-passphrase --silent -o target/deploy/privacy-cash-program.json
-PROG=$(solana-keygen pubkey target/deploy/privacy-cash-program.json)
+if [ ! -f target/deploy/charon-program.json ] && [ -f target/deploy/privacy-cash-program.json ]; then
+  cp target/deploy/privacy-cash-program.json target/deploy/charon-program.json
+fi
+[ -f target/deploy/charon-program.json ] || solana-keygen new --no-bip39-passphrase --silent -o target/deploy/charon-program.json
+PROG=$(solana-keygen pubkey target/deploy/charon-program.json)
 echo "  Program ID: $PROG"
 
 # Fee Recipient Keypair
@@ -83,7 +91,7 @@ echo "  Funding Relayer..."
 solana airdrop 10 "$RELAYER_PUBKEY" --url localhost >/dev/null 2>&1 || true
 
 # Update lib.rs with Program ID
-perl -0pi -e 's/declare_id!\("[^"]+"\);/declare_id!("'"$PROG"'");/' programs/privacy-cash/src/lib.rs
+perl -0pi -e 's/declare_id!\("[^"]+"\);/declare_id!("'"$PROG"'");/' "$PROGRAM_DIR/src/lib.rs"
 
 pda_bump() {
   local seed="$1"
@@ -101,9 +109,9 @@ TREE_ACCOUNT_BUMP=$(pda_bump merkle_tree)
 TREE_TOKEN_ACCOUNT_BUMP=$(pda_bump tree_token)
 GLOBAL_CONFIG_BUMP=$(pda_bump global_config)
 echo "  Canonical PDA bumps: merkle_tree=$TREE_ACCOUNT_BUMP tree_token=$TREE_TOKEN_ACCOUNT_BUMP global_config=$GLOBAL_CONFIG_BUMP"
-perl -pi -e 's/pub const TREE_ACCOUNT_BUMP: u8 = \d+;/pub const TREE_ACCOUNT_BUMP: u8 = '"$TREE_ACCOUNT_BUMP"';/' programs/privacy-cash/src/constants.rs
-perl -pi -e 's/pub const TREE_TOKEN_ACCOUNT_BUMP: u8 = \d+;/pub const TREE_TOKEN_ACCOUNT_BUMP: u8 = '"$TREE_TOKEN_ACCOUNT_BUMP"';/' programs/privacy-cash/src/constants.rs
-perl -pi -e 's/pub const GLOBAL_CONFIG_BUMP: u8 = \d+;/pub const GLOBAL_CONFIG_BUMP: u8 = '"$GLOBAL_CONFIG_BUMP"';/' programs/privacy-cash/src/constants.rs
+perl -pi -e 's/pub const TREE_ACCOUNT_BUMP: u8 = \d+;/pub const TREE_ACCOUNT_BUMP: u8 = '"$TREE_ACCOUNT_BUMP"';/' "$PROGRAM_DIR/src/constants.rs"
+perl -pi -e 's/pub const TREE_TOKEN_ACCOUNT_BUMP: u8 = \d+;/pub const TREE_TOKEN_ACCOUNT_BUMP: u8 = '"$TREE_TOKEN_ACCOUNT_BUMP"';/' "$PROGRAM_DIR/src/constants.rs"
+perl -pi -e 's/pub const GLOBAL_CONFIG_BUMP: u8 = \d+;/pub const GLOBAL_CONFIG_BUMP: u8 = '"$GLOBAL_CONFIG_BUMP"';/' "$PROGRAM_DIR/src/constants.rs"
 
 # Update backend/.env (perl -i, not sed -i: BSD sed on macOS treats the
 # filename as the script and fails with "undefined label").
@@ -113,7 +121,7 @@ fi
 {
   echo "PROGRAM_ID=$PROG"
   echo "RELAYER_KEYPAIR=$RELAYER_KP_PATH"
-  echo "DATABASE_URL=postgres://postgres:postgres@localhost:5433/privacy_cash"
+  echo "DATABASE_URL=postgres://postgres:postgres@localhost:5433/charon"
   echo "RELAYER_FEE_RECIPIENT=$FEE_RECIPIENT_PUBKEY"
   echo "RELAYER_FEE_RECIPIENT_KEYPAIR=$PROJECT_ROOT/target/deploy/fee-recipient.json"
   echo "YELLOWSTONE_GRPC_URL=http://127.0.0.1:10000"
@@ -130,12 +138,12 @@ EOF
 
 echo "==========================================================="
 echo "▶ 4/10 Building program..."
-cargo build-sbf --manifest-path programs/privacy-cash/Cargo.toml
+cargo build-sbf --manifest-path "$PROGRAM_DIR/Cargo.toml"
 
 echo "==========================================================="
 echo "▶ 5/10 Deploying program..."
-cp target/deploy/privacy_cash.so target/deploy/privacy-cash.so 2>/dev/null || true
-solana --url localhost --keypair "$HOME/.config/solana/id.json" program deploy target/deploy/privacy-cash.so --program-id target/deploy/privacy-cash-program.json --use-rpc
+cp target/deploy/charon.so target/deploy/charon.so 2>/dev/null || cp target/deploy/privacy_cash.so target/deploy/charon.so 2>/dev/null || true
+solana --url localhost --keypair "$HOME/.config/solana/id.json" program deploy target/deploy/charon.so --program-id target/deploy/charon-program.json --use-rpc
 
 echo "==========================================================="
 echo "▶ 6/10 Running SDK setup scripts (initialize, init-spl, alt-init)..."
@@ -184,6 +192,8 @@ echo "▶ 7/10 Building SDK..."
 
 echo "==========================================================="
 echo "▶ 8/10 Starting Backend (Relayer)..."
+pkill -f "charon_backend" >/dev/null 2>&1 || true
+pkill -f "charon-backend" >/dev/null 2>&1 || true
 pkill -f "privacy_cash_backend" >/dev/null 2>&1 || true
 pkill -f "privacy-cash-backend" >/dev/null 2>&1 || true
 # Kill any existing cargo run just in case

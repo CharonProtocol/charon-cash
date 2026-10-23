@@ -1,15 +1,15 @@
 # IDLs for Crucible fuzz harness
 
-Drop the Anchor IDL JSON for `privacy_cash` here as `privacy_cash.json`. The simplest
+Drop the Anchor IDL JSON for `charon` here as `charon.json`. The simplest
 path:
 
 ```
 # from the program crate root:
 anchor build
-cp target/idl/privacy_cash.json ../path/to/fuzz/privacy_cash/idls/privacy_cash.json
+cp target/idl/charon.json ../path/to/fuzz/charon/idls/charon.json
 ```
 
-`qedgen probe --fuzz` will look up `target/idl/privacy_cash.json` and symlink it
+`qedgen probe --fuzz` will look up `target/idl/charon.json` and symlink it
 into this directory automatically if it exists. Manual copy is the
 fallback when discovery doesn't apply (Codama / non-Anchor / hand-rolled).
 

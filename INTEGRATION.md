@@ -34,7 +34,7 @@ the previous 16-account limit.
   and production builds. Correct the Vite SDK exclusion and benchmark import.
 - Export the prover API used by the browser benchmark and documentation.
 - Fix the frontend's unused symbols and Node test storage setup.
-- Derive integration-test program IDs from `privacy_cash::ID`; enable SHA-256
+- Derive integration-test program IDs from `charon::ID`; enable SHA-256
   only for host tests. Clarify the SPL test that rejects a foreign Merkle tree.
 - Isolate backend Merkle tests in temporary databases and use valid field leaves.
 - Restore balance-sync regression tests and add real WASM proof tests for SOL
