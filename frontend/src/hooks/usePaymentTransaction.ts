@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { RPC_URL } from "../lib/config";
+import { explorerTxUrl } from "../lib/explorer";
 import { PublicKey } from "@solana/web3.js";
 import {
   describePaymentError,
@@ -163,20 +163,11 @@ export function usePaymentTransaction(
     setSignature("");
     setError("");
   };
-  // as payroll's explorer links: devnet -> cluster=devnet, a local chain ->
-  // custom RPC link, anything else -> mainnet (no param)
-  const query = /^https?:\/\/(127\.0\.0\.1|localhost)/.test(RPC_URL)
-    ? `?${new URLSearchParams({ cluster: "custom", customUrl: RPC_URL })}`
-    : RPC_URL.includes("devnet")
-      ? "?cluster=devnet"
-      : "";
   return {
     status,
     error,
     submit,
     reset,
-    explorerUrl: signature
-      ? `https://explorer.solana.com/tx/${signature}${query}`
-      : undefined,
+    explorerUrl: signature ? explorerTxUrl(signature) : undefined,
   };
 }

@@ -1,17 +1,21 @@
 import { config } from "@/lib/config"
 
 /**
- * Explorer URLs that follow the configured RPC: a local simnet gets a
- * custom-cluster link (so demo txs actually resolve), devnet gets
- * cluster=devnet, anything else is treated as mainnet.
+ * Explorer URLs for the configured cluster: a local simnet gets a
+ * custom-cluster link (so demo txs actually resolve), otherwise the cluster
+ * comes from VITE_SOLANA_CLUSTER (devnet by default). It can't come from the
+ * RPC URL: the app reaches Solana through the backend's /rpc, which names no
+ * cluster, so a URL check sent every devnet link to mainnet.
  */
+const CLUSTER: string = import.meta.env.VITE_SOLANA_CLUSTER || "devnet"
+
 function clusterParams(): string {
   const rpc = config.get().rpcUrl
   if (/^https?:\/\/(127\.0\.0\.1|localhost)/.test(rpc)) {
     return `cluster=custom&customUrl=${encodeURIComponent(rpc)}`
   }
-  if (rpc.includes("devnet")) return "cluster=devnet"
-  return ""
+  if (CLUSTER === "mainnet-beta" || CLUSTER === "mainnet") return ""
+  return `cluster=${encodeURIComponent(CLUSTER)}`
 }
 
 export function explorerTxUrl(signature: string): string {
